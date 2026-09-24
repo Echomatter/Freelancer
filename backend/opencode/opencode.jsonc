@@ -1,0 +1,31 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+
+  // App-owned OpenCode configuration for the local web runtime.
+  // Does not pin a parent model; the user chooses it. named agents come from the application catalog.
+  "default_agent": "engineer",
+  "subagent_depth": 6,
+  "share": "disabled",
+  "autoupdate": false,
+  "snapshot": true,
+
+  "instructions": ["../global/WORKSTYLE.md", "global-instructions.md"],
+  "compaction": {
+    "auto": true,
+    "prune": true,
+    "reserved": 8192
+  },
+
+  "watcher": {
+    "ignore": [
+      "node_modules/**",
+      "dist/**",
+      "build/**",
+      "target/**",
+      ".venv/**",
+      "venv/**",
+      ".git/**",
+      ".runtime/**"
+    ]
+  }
+}

@@ -1,0 +1,75 @@
+name: Verify
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  application:
+    name: Application (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - name: JavaScript contracts and real Git fixtures
+        run: npm test
+      - name: Python content-index and evidence contracts
+        run: python -m unittest discover -s backend/tests -p '*_test.py'
+      - name: Native plugin typecheck
+        run: npx tsc --noEmit --target ES2022 --moduleResolution bundler --module esnext --skipLibCheck backend/opencode/plugins/delegation.ts backend/opencode/plugins/git-project.ts
+      - name: Palette contract
+        run: node scripts/palette-css.mjs --check
+      - name: Typecheck and build production UI
+        run: npm run build
+      - name: Install Chromium
+        run: npx playwright install chromium
+      - name: Production browser journeys
+        run: npm run test:browser
+      - name: PowerShell selector and outcome contracts
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: |
+          & backend/tests/selector-contract.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          & backend/tests/outcome-contract.ps1
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Install native compatibility baseline
+        if: runner.os == 'Windows'
+        shell: powershell
+        run: npm install --global --prefix "$env:APPDATA\npm" opencode-ai@1.18.31
+      - name: Native startup smoke (no inference)
+        if: runner.os == 'Windows'
+        shell: powershell
+        env:
+          XDG_DATA_HOME: ${{ runner.temp }}/freelancer-native-data
+          FREELANCER_DATA_HOME: ${{ runner.temp }}/freelancer-library
+        run: npm run smoke:runtime
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: browser-${{ matrix.os }}
+          path: |
+            artifacts/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7

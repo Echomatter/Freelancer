@@ -1,0 +1,27 @@
+node_modules/
+dist/
+artifacts/
+!package-lock.json
+release/
+*.log
+.state/
+.opencode/
+runtime.json
+__pycache__/
+
+# Disposable browser screenshots and fixtures
+test-results/
+
+# Freelancer: private state and generated files
+backend/.state/
+.state/
+.runtime/
+node_modules/
+dist/
+target/
+.venv/
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template

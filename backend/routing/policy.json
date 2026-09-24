@@ -1,0 +1,16 @@
+{
+  "allowed_surfaces": ["opencode-free", "opencode-go", "openai-oauth", "github-copilot-oauth"],
+  "forbidden_auto_providers": ["openrouter", "vercel", "anthropic", "google", "xai", "groq", "together", "fireworks"],
+  "routine_priority": ["opencode/muse-spark-1.3-contributor-free", "opencode/mimo-v2.5-free", "opencode/nemotron-3.5-lightning-free", "opencode/ling-3.0-flash-fin-free", "opencode/big-pickle", "opencode/nemotron-3-ultra-free"],
+  "deep_priority": ["openai/gpt-6-astra", "openai/gpt-5.6-sol", "openai/gpt-5.6-terra", "openai/gpt-5.5", "openai/gpt-5.6-luna", "github-copilot/claude-opus-5", "github-copilot/claude-sonnet-5", "github-copilot/claude-opus-4.8", "github-copilot/claude-sonnet-4.6", "github-copilot/gpt-5.5", "opencode/nemotron-3-ultra-free", "opencode/muse-spark-1.3-contributor-free", "opencode/mimo-v2.5-free"],
+  "review_priority": ["github-copilot/claude-sonnet-5", "github-copilot/claude-opus-5", "github-copilot/claude-sonnet-4.6", "github-copilot/claude-opus-4.8", "github-copilot/gpt-5.3-codex", "github-copilot/gpt-5.5", "openai/gpt-5.6-terra", "openai/gpt-5.6-luna", "openai/gpt-5.6-sol", "opencode/ling-3.0-flash-fin-free", "opencode/nemotron-3-ultra-free", "opencode/muse-spark-1.3-contributor-free", "opencode/mimo-v2.5-free"],
+  "allow_overage": false,
+  "notes": [
+    "Preserve the user-selected customized Build model.",
+    "Roles are model-neutral. delegate binds one selected provider/model to a child execution.",
+    "Capability and availability are gates; economics compares qualified routes.",
+    "Provider API prices are proxies, not measured subscription quota or cash savings.",
+    "Provider overage permission is not toolkit authorization.",
+    "No Economics agent, second selector or compulsory orchestration for small tasks."
+  ]
+}

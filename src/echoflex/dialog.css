@@ -1,0 +1,26 @@
+.ef-dialog { width: min(560px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); margin: auto; padding: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); color: var(--text); box-shadow: 0 16px 64px var(--shadow); overflow: hidden; }
+.ef-dialog:not([open]) { display: none; }
+.ef-dialog[data-size="compact"] { width: min(440px, calc(100vw - 24px)); }
+.ef-dialog[data-size="wide"] { width: min(820px, calc(100vw - 24px)); }
+.ef-dialog::backdrop { background: var(--overlay-strong); backdrop-filter: blur(3px); }
+.ef-dialog-frame { display: flex; flex-direction: column; max-height: calc(100dvh - 26px); min-height: 0; }
+.ef-dialog-header { display: flex; align-items: flex-start; gap: 10px; padding: 14px 16px; border-bottom: 1px solid var(--line); flex: 0 0 auto; }
+.ef-dialog-header > div { min-width: 0; flex: 1; }
+.ef-dialog-header h2 { margin: 0; font-size: 17px; line-height: 1.35; overflow-wrap: anywhere; }
+.ef-dialog-description { margin-top: 5px; font-size: 12px; line-height: 1.5; color: var(--muted); overflow-wrap: anywhere; }
+.ef-dialog-icon { display: flex; color: var(--accent); flex: 0 0 auto; }
+.ef-dialog-icon svg { width: 20px; height: 20px; }
+.ef-dialog .ef-dialog-close { width: 26px; height: 26px; margin: -3px -4px -3px 0; flex: 0 0 auto; }
+.ef-dialog-body { padding: 16px; overflow-y: auto; overscroll-behavior: contain; min-height: 0; min-width: 0; display: grid; gap: 12px; font-size: 13px; }
+.ef-dialog-body > * { min-width: 0; }
+.ef-dialog-stack { display: grid; gap: 12px; align-content: start; }
+.ef-dialog-body > p { margin: 0; line-height: 1.5; overflow-wrap: anywhere; }
+.ef-dialog-body .field { margin: 0; }
+.ef-dialog-body input:not([type="checkbox"]):not([type="radio"]), .ef-dialog-body select, .ef-dialog-body textarea { width: 100%; min-width: 0; }
+.ef-dialog-body[data-layout="split"] { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+.ef-dialog-footer { padding: 10px 16px; border-top: 1px solid var(--line); display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 8px; flex: 0 0 auto; }
+.ef-dialog-footer > .notice { flex-basis: 100%; margin: 0; }
+.ef-dialog-footer .button { padding: 7px 12px; font-size: 13px; }
+.ef-dialog :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+@media (max-width: 600px) { .ef-dialog-body[data-layout="split"] { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 400px) { .ef-dialog-header, .ef-dialog-body { padding: 12px; } .ef-dialog-footer { padding: 10px 12px; } }

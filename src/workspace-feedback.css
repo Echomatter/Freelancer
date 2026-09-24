@@ -1,0 +1,19 @@
+/* Component-scoped feedback; does not change workspace, costs, or todo layout. */
+
+.question-body fieldset { min-width: 0; margin: 0; }
+.question-body fieldset > small { display: block; margin-bottom: 6px; }
+.question-body legend, .question-option span { overflow-wrap: anywhere; }
+.question-body .question-option { display: flex; align-items: flex-start; margin: 10px 0; }
+.question-body .question-option small { display: block; }
+.question-body input:not([type="radio"]):not([type="checkbox"]) { box-sizing: border-box; width: 100%; }
+
+.question-reminder { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.session-activity { display: inline-flex; align-items: center; flex: 0 0 14px; }
+.permission-patterns { margin: 0; padding-left: 18px; overflow-wrap: anywhere; }
+@media (max-width: 480px) {
+
+  .question-reminder { flex-wrap: wrap; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .session-progress.spin { animation: none; }
+}

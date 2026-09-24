@@ -1,0 +1,40 @@
+{
+  "name": "freelancer-for-opencode",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "node scripts/check-echoflex.mjs && tsc --noEmit && vite build",
+    "check:echoflex": "node scripts/check-echoflex.mjs",
+    "test": "node --test tests/*.test.mjs backend/tests/*.test.mjs",
+    "test:app": "node --test tests/*.test.mjs",
+    "test:fast": "node scripts/test-fast.mjs",
+    "test:git": "node --test tests/git-project.test.mjs tests/git-project-http.test.mjs",
+    "test:backend": "node --test backend/tests/*.test.mjs",
+    "test:browser": "node scripts/test-browser.mjs",
+    "start": "node server/main.mjs",
+    "smoke:runtime": "node scripts/smoke-runtime.mjs"
+  },
+  "dependencies": {
+    "@opencode-ai/plugin": "1.18.31",
+    "lucide-react": "^0.468.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-markdown": "^9.0.0",
+    "remark-gfm": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^18.2.0",
+    "@types/react-dom": "^18.2.0",
+    "@vitejs/plugin-react": "^4.2.0",
+    "playwright": "^1.63.0",
+    "prettier": "3.9.8",
+    "typescript": "^5.8.2",
+    "vite": "^6.4.0"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  }
+}

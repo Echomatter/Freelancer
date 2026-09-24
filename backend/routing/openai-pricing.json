@@ -1,0 +1,22 @@
+{
+  "_comment": "Public OpenAI per-model allocation rates for ChatGPT-subscription routing (committed; NOT account data, NOT API billing). Used only to differentiate estimated consumption among qualified openai-oauth models; ChatGPT access stays subscription/quota, never metered API. Fast variants share base-model rates. Estimates are allocation estimates, not charges.",
+  "provenance": { "source": "https://developers.openai.com/api/docs/models/ and https://openai.com/index/ model announcements (public pricing pages)", "as_of": "2026-09-18", "note": "Static public reference with estimated subscription-allocation rates; fast variants share base rates. Pricing age is surfaced by select-model.ps1." },
+  "credit_note": "openai-oauth has no monthly dollar cap; estCost is scaled into window-consistent pressure (see select-model.ps1 formula), never treated as a bill.",
+  "models": {
+    "openai/gpt-6-astra": { "input": 4.0, "output": 20.0, "cache_read": 0.4, "cache_write": 0, "note": "flagship allocation rate, estimated" },
+    "openai/gpt-6-astra-fast": { "input": 4.0, "output": 20.0, "cache_read": 0.4, "cache_write": 0, "note": "fast variant shares base rates" },
+    "openai/gpt-5.6-sol": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 0, "note": "estimated" },
+    "openai/gpt-5.6-sol-fast": { "input": 3.0, "output": 15.0, "cache_read": 0.3, "cache_write": 0, "note": "fast variant shares base rates" },
+    "openai/gpt-5.6-terra": { "input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 0, "note": "estimated" },
+    "openai/gpt-5.6-terra-fast": { "input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 0, "note": "fast variant shares base rates" },
+    "openai/gpt-5.6-luna": { "input": 0.5, "output": 3.0, "cache_read": 0.05, "cache_write": 0, "note": "lowest-cost family, estimated" },
+    "openai/gpt-5.6-luna-fast": { "input": 0.5, "output": 3.0, "cache_read": 0.05, "cache_write": 0, "note": "fast variant shares base rates" },
+    "openai/gpt-5.5": { "input": 2.5, "output": 12.5, "cache_read": 0.25, "cache_write": 0, "note": "estimated" },
+    "openai/gpt-5.5-fast": { "input": 2.5, "output": 12.5, "cache_read": 0.25, "cache_write": 0, "note": "fast variant shares base rates" },
+    "openai/gpt-5.4": { "input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 0, "note": "estimated" },
+    "openai/gpt-5.4-fast": { "input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 0, "note": "fast variant shares base rates" },
+    "openai/gpt-5.4-mini": { "input": 0.75, "output": 4.5, "cache_read": 0.075, "cache_write": 0, "note": "public mini pricing" },
+    "openai/gpt-5.4-mini-fast": { "input": 0.75, "output": 4.5, "cache_read": 0.075, "cache_write": 0, "note": "fast variant shares base rates" },
+    "openai/gpt-5.3-codex-spark": { "input": 1.75, "output": 14.0, "cache_read": 0.175, "cache_write": 0, "note": "estimated from public codex pricing" }
+  }
+}

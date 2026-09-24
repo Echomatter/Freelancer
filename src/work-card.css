@@ -1,0 +1,21 @@
+.work-card { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); overflow: hidden; font-size: 12px; }
+.work-card-heading { display: flex; align-items: center; gap: 6px; padding: 7px 9px; }
+.work-card-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 5px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
+.work-card-toggle strong { flex: 1; font-size: 12px; font-weight: 600; }
+.work-card-toggle > svg:first-child { color: var(--accent); }
+.work-card-toggle > svg { flex-shrink: 0; transition: transform 140ms ease; }
+.work-card-toggle .collapsed { transform: rotate(-90deg); }
+.work-card-dismiss { width: 28px; height: 28px; flex-shrink: 0; }
+.work-card-body { padding: 0 14px 10px; max-height: min(180px, 22dvh); overflow: auto; overflow-wrap: anywhere; }
+.work-card-body .todo { display: flex; gap: 9px; padding: 9px 0; margin: 0; border-bottom: 1px solid var(--line); }
+.work-card-body .todo:last-child { border-bottom: 0; }
+.work-card-body .todo > svg { flex-shrink: 0; color: var(--muted); }
+.work-card-body .todo > span { flex: 1; min-width: 0; }
+.work-card-body .todo small { color: var(--muted); }
+.work-card-body p { margin: 6px 0; white-space: pre-wrap; }
+.work-card-body small { color: var(--muted); }
+.work-card-toggle:focus-visible, .work-card-dismiss:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
+.composer-cards { display: grid; gap: 8px; margin-bottom: 10px; overflow: visible; }
+.composer-cards:empty { display: none; }
+@media (prefers-reduced-motion: reduce) { .work-card-toggle > svg { transition: none; } }
+.work-card .todo-dock-list { max-height: none; overflow: visible; }

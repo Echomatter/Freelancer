@@ -1,0 +1,25 @@
+.ef-progress { --progress-color: var(--accent); position: relative; isolation: isolate; width: 100%; min-width: 0; padding: 4px 10px; margin: 6px 0; border-radius: 7px; border: 1px solid var(--line); text-align: left; box-sizing: border-box; }
+.ef-progress[data-state="waiting"], .ef-progress[data-state="warning"] { --progress-color: var(--warning); }
+.ef-progress[data-state="success"] { --progress-color: var(--success); }
+.ef-progress[data-state="error"] { --progress-color: var(--danger); }
+.ef-progress[data-state="stopped"] { --progress-color: var(--muted); }
+.ef-progress-row { position: relative; z-index: 1; display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 30px; }
+.ef-progress-label { font-size: 13px; color: var(--text); overflow-wrap: anywhere; }
+.ef-progress-actions { display: flex; align-items: center; gap: 4px; flex-shrink: 0; }
+.ef-progress-actions .button { padding: 5px 9px; font-size: 12px; }
+.ef-progress-actions .icon-button { width: 28px; height: 28px; }
+.ef-progress-track { position: absolute; z-index: 0; inset: 0; border-radius: inherit; overflow: hidden; pointer-events: none; }
+.ef-progress-track > span { display: block; height: 100%; border-radius: inherit; background: var(--progress-color); opacity: .15; border-bottom: 2px solid var(--progress-color); transition: width .3s ease, background-color .3s ease; }
+.ef-progress-track[data-indeterminate="true"] > span { animation: ef-progress-travel 2.4s ease-in-out infinite, ef-progress-color 4.8s ease-in-out infinite; }
+.ef-progress-detail { margin-top: 8px; font-size: 12px; color: var(--muted); overflow-wrap: anywhere; }
+.workspace-progress { padding: 0 24px; }
+.project-progress .ef-progress { margin: 0; }
+.empty-description { color: var(--muted); max-width: 600px; width: 100%; }
+.project-progress-steps { padding: 0; list-style: none; text-align: left; display: grid; gap: 10px; font-size: 13px; color: var(--muted); }
+.project-progress-steps li { display: flex; gap: 10px; align-items: center; }
+.project-progress-steps li[aria-current="step"] { color: var(--text); }
+.project-progress-steps .complete { color: var(--success); }
+@keyframes ef-progress-travel { 0% { transform: translateX(-100%); } 100% { transform: translateX(395%); } }
+@keyframes ef-progress-color { 0%, 100% { background: var(--accent); } 50% { background: var(--info); } }
+@media (prefers-reduced-motion: reduce) { .ef-progress-track > span { animation: none !important; transition: none; } }
+@media (max-width: 480px) { .workspace-progress { padding: 0 12px; } .ef-progress-row { gap: 6px; } }

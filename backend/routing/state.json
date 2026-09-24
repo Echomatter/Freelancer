@@ -1,0 +1,34 @@
+{
+    "generated":  true,
+    "generated_at":  "2026-09-19T19:35:00Z",
+    "available_count":  67,
+    "oauth":  {
+                  "openai":  true,
+                  "github_copilot":  true
+              },
+    "eligible":  {
+                     "opencode_free":  8,
+                     "opencode_go":  27,
+                     "openai_oauth":  15,
+                     "github_copilot_oauth":  17
+                 },
+    "routine":  "opencode/muse-spark-1.3-contributor-free",
+    "architect":  "openai/gpt-6-astra",
+    "researcher":  "opencode/muse-spark-1.3-contributor-free",
+    "worker":  "opencode/muse-spark-1.3-contributor-free",
+    "review":  "github-copilot/claude-sonnet-5",
+    "deep":  "openai/gpt-6-astra",
+    "index":  "opencode/muse-spark-1.3-contributor-free",
+    "free_fallback":  "opencode/muse-spark-1.3-contributor-free",
+    "review_is_distinct_model":  true,
+    "review_is_independent":  true,
+    "desktop_agents":  [
+                           "build",
+                           "researcher",
+                           "worker",
+                           "architect",
+                           "review"
+                       ],
+    "policy":  "free OpenCode first -\u003e OpenCode Go or bounded OAuth subscription escalation; no local engine and no metered API gateways",
+    "promotion":  "search/narrow with free tools first; delegate bounded hard chunks to Deep; if paid escalation is unavailable, continue on free Build/index/Explore; full-session switching remains explicit"
+}

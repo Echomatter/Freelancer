@@ -1,0 +1,425 @@
+/* EchoFlex consumer: geometry lives here; palette and identity come from the
+   existing semantic tokens. Never interpolate foreground/background colors. */
+.usage {
+  min-width: 0;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+.usage-dock {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+}
+.usage-dock > button {
+  flex-shrink: 0;
+}
+.usage-sidebar {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+}
+.usage-sidebar[data-expanded="true"] {
+  min-height: 260px;
+}
+.usage-disclosure {
+  flex-shrink: 0;
+  display: grid;
+  gap: 8px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  width: 100%;
+  padding: 14px;
+  text-align: left;
+  min-height: 38px;
+}
+.usage-disclosure:hover {
+  background: var(--hover);
+}
+.usage-summary-line {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.usage-label {
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+}
+.usage-headline {
+  display: block;
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.6px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+}
+.usage-text-state {
+  font-size: 19px;
+  letter-spacing: -0.2px;
+}
+.usage-chevron {
+  transition: transform 180ms ease;
+  color: var(--muted);
+}
+.usage-disclosure[aria-expanded="true"] .usage-chevron {
+  transform: rotate(180deg);
+}
+.usage-compact-icon {
+  display: none;
+}
+.usage-compound {
+  display: flex;
+  align-items: stretch;
+  gap: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  direction: ltr;
+  height: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.usage-rail {
+  position: relative;
+  display: block;
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 4px;
+  background: var(--provider-tint, var(--bg));
+}
+.usage-slice {
+  display: block;
+  flex: 0 0 0;
+  min-width: 0;
+  height: 100%;
+  background: var(--provider-tint, var(--bg));
+  transition: flex-basis 180ms ease;
+}
+.usage-slice-remaining {
+  background: var(--provider-solid, var(--text));
+}
+.usage-fill {
+  display: block;
+  height: 100%;
+  background: var(--provider-solid, var(--text));
+  transition: width 180ms ease;
+}
+.usage-unknown {
+  background: repeating-linear-gradient(
+    135deg,
+    var(--provider-tint, var(--bg)) 0 3px,
+    var(--border-strong) 3px 4px,
+    var(--provider-tint, var(--bg)) 4px 7px
+  );
+}
+.usage-no-quota {
+  background: var(--bg);
+  border: 1px dashed var(--border-strong);
+}
+.usage-reset {
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.usage-reset time {
+  white-space: nowrap;
+  color: var(--text);
+}
+.usage-sidebar-reset {
+  display: block;
+}
+.usage-breakout {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px;
+  max-height: min(360px, 42dvh);
+  border-bottom: 1px solid var(--line);
+  border-radius: 12px 12px 0 0;
+}
+.usage-breakout[hidden] {
+  display: none;
+}
+.usage-breakout-rows {
+  overflow-y: auto;
+  min-height: 0;
+  padding: 0 3px;
+}
+.usage-breakout-heading {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  flex-wrap: wrap;
+  font-size: 13px;
+}
+.usage-breakout .usage-refresh {
+  padding: 8px;
+  min-width: 38px;
+}
+.usage-breakout .usage-refresh > span {
+  display: none;
+}
+.usage-breakout .usage-provider-row {
+  padding-block: 10px;
+  gap: 5px;
+}
+.usage-provider-row {
+  padding-block: 14px;
+  display: grid;
+  gap: 7px;
+  min-width: 0;
+  color: var(--text);
+}
+.usage-provider-row + .usage-provider-row {
+  border-top: 1px solid var(--line);
+}
+.usage-provider-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+}
+.usage-provider-heading strong {
+  min-width: 0;
+  font-weight: 550;
+  overflow-wrap: anywhere;
+}
+.usage-provider-value {
+  color: var(--text);
+  flex-shrink: 0;
+  font-weight: 600;
+  font-size: 13px;
+}
+.usage-rail {
+  height: 6px;
+}
+.usage-provider-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 4px 10px;
+}
+.usage-provider-meta small {
+  font-size: 12px;
+}
+.usage-warning,
+.usage-sidebar-warning {
+  color: var(--warning);
+  font-size: 12px;
+}
+.usage-sidebar-warning {
+  display: block;
+}
+.usage-open {
+  flex-shrink: 0;
+  padding-inline: 2px;
+  font-size: 12px;
+  width: 100%;
+  justify-content: space-between;
+  text-align: left;
+}
+.usage-hero {
+  margin-bottom: 22px;
+  display: grid;
+  gap: 22px;
+}
+.usage-hero-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.usage-hero-value {
+  display: grid;
+  gap: 6px;
+}
+.usage-hero .usage-headline {
+  font-size: 40px;
+  letter-spacing: -1px;
+}
+.usage-hero .usage-text-state {
+  font-size: 28px;
+}
+.usage-hero-actions {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.usage-hero-actions > div {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  color: var(--muted);
+}
+.usage-hero .usage-compound {
+  height: 12px;
+}
+.usage-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 24px;
+}
+.usage-legend > span {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  font-size: 13px;
+  align-items: baseline;
+}
+.usage-legend strong {
+  font-weight: 600;
+  color: var(--text);
+}
+.usage-hero-footer {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.usage-method {
+  font-size: 12px;
+  min-width: 0;
+}
+.usage-method summary {
+  color: var(--muted);
+  padding-block: 6px;
+  min-height: 30px;
+}
+.usage-method[open] {
+  flex-basis: 100%;
+}
+.usage-method > div {
+  padding-block: 10px;
+  display: grid;
+  gap: 8px;
+  max-width: 680px;
+}
+.usage-method p {
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--muted);
+}
+.usage-event {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  padding-block: 6px;
+  border-top: 1px solid var(--line);
+}
+.usage-event time {
+  color: var(--muted);
+}
+.usage-refresh {
+  color: var(--text);
+}
+@media (max-width: 720px) {
+  /* Preserve the shell's existing icon-only rail. A nonmodal disclosure opens
+     beside it; the page, draft, and selection remain mounted and unchanged. */
+  .usage-sidebar {
+    border: 0;
+    background: transparent;
+  }
+  .usage-sidebar[data-expanded="true"] {
+    min-height: 0;
+  }
+  .usage-disclosure {
+    padding: 7px 0;
+    gap: 4px;
+    justify-items: center;
+  }
+  .usage-disclosure > .usage-summary-line,
+  .usage-sidebar-reset,
+  .usage-sidebar-warning {
+    display: none;
+  }
+  .usage-compact-icon {
+    display: block;
+    color: var(--text);
+  }
+  .usage-sidebar .usage-headline {
+    font-size: 11px;
+    letter-spacing: 0;
+    text-align: center;
+  }
+  .usage-sidebar .usage-text-state {
+    font-size: 10px;
+  }
+  .usage-sidebar .usage-compound {
+    max-width: 38px;
+    height: 4px;
+  }
+  .usage-breakout {
+    position: fixed;
+    z-index: 110;
+    left: 76px;
+    bottom: 74px;
+    width: min(300px, calc(100vw - 88px));
+    max-height: calc(100dvh - 100px);
+    background: var(--paper);
+    border: 1px solid var(--border-strong);
+    border-radius: 12px;
+    box-shadow: 0 8px 30px var(--shadow-soft);
+  }
+  .usage-hero {
+    gap: 18px;
+  }
+  .usage-hero-top {
+    gap: 14px;
+  }
+  .usage-hero .usage-headline {
+    font-size: 34px;
+  }
+  .usage-hero .usage-text-state {
+    font-size: 24px;
+  }
+  .usage-hero-actions {
+    width: 100%;
+    justify-content: space-between;
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .usage-chevron,
+  .usage-slice,
+  .usage-fill {
+    transition: none;
+  }
+}
+@media (forced-colors: active) {
+  .usage-compound,
+  .usage-rail {
+    background: Canvas;
+    border: 1px solid CanvasText;
+  }
+  .usage-slice {
+    background: Canvas;
+  }
+  .usage-slice-remaining,
+  .usage-fill {
+    background: Highlight;
+    border-block: 3px solid Highlight;
+  }
+  .usage-unknown {
+    background: Canvas;
+    border: 1px dashed CanvasText;
+  }
+  .usage-hero,
+  .usage-sidebar,
+  .usage-breakout {
+    border-color: CanvasText;
+  }
+}

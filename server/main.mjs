@@ -38,12 +38,28 @@ refreshUsage();
 const usageTimer = setInterval(refreshUsage, 5 * 60 * 1000);
 usageTimer.unref();
 let runtime;
+const shutdownToken = randomBytes(32).toString("hex");
+let closing = false;
+let shutdownPromise;
+const shutdown = () => shutdownPromise ??= (async () => {
+  closing = true;
+  clearInterval(usageTimer);
+  try { await runtime?.close(); } catch (error) { console.error("Freelancer server cleanup failed", error); }
+  try { host.stop(); } catch (error) { console.error("OpenCode shutdown failed", error); }
+  try { await observer.stop(); } catch (error) { console.error("Activity observer shutdown failed", error); }
+  try { await app.store.flush(); } catch (error) { console.error("Settings flush failed", error); }
+  await unlink(launchFile).catch(() => {});
+  await releaseLock();
+})();
+const launchFile = path.join(backendRoot, ".state/webpage/launch.json");
 try {
   runtime = await startServer({
     application: app,
     readActivity: createActivityReader({ project: app.project, host }),
     assets: path.resolve(config.appRoot, "dist"),
     port: Number(process.env.FREELANCER_WEB_PORT) || 0,
+    shutdownToken,
+    onShutdown: () => { void shutdown(); },
   });
 } catch (e) {
   clearInterval(usageTimer);
@@ -53,22 +69,7 @@ try {
   throw e;
 }
 console.log(JSON.stringify({ url: runtime.url, pid: process.pid }));
-const launchFile = path.join(backendRoot, ".state/webpage/launch.json");
-await writeFile(`${launchFile}.tmp`, JSON.stringify({ url: runtime.url, pid: process.pid, appRoot: config.appRoot }));
+await writeFile(`${launchFile}.tmp`, JSON.stringify({ url: runtime.url, pid: process.pid, appRoot: config.appRoot, shutdownToken }));
 await rename(`${launchFile}.tmp`, launchFile);
-let closing = false;
-const shutdown = async () => {
-  if (closing) return;
-  closing = true;
-  clearInterval(usageTimer);
-  runtime.server.close();
-  runtime.server.closeAllConnections();
-  host.stop();
-  await observer.stop();
-  await app.store.flush();
-  await unlink(launchFile).catch(() => {});
-  await releaseLock();
-  setTimeout(() => process.exit(), 1000).unref();
-};
-process.on("SIGINT", shutdown);
-process.on("SIGTERM", shutdown);
+process.on("SIGINT", () => { void shutdown(); });
+process.on("SIGTERM", () => { void shutdown(); });

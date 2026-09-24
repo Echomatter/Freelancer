@@ -26,6 +26,7 @@ import {
   summarizeCosts,
 } from "../domain/costs.mjs";
 import { createStore } from "./store.mjs";
+import { isLocalDataUnavailable } from "./data/store.mjs";
 import { normalizeAttachments } from "../domain/attachments.mjs";
 import { publicCatalog } from "./catalog.mjs";
 import { sessionSummary } from "../shared/view.mjs";
@@ -292,11 +293,17 @@ export function createApplication({
         costClass: settings.plans.providers[row.provider].mode === 'free' ? 'free'
           : settings.plans.providers[row.provider].mode === 'api' ? 'metered' : 'subscription',
       }));
-      const ratings = modelRatings.catalog(catalogRows);
+      let ratings = {}, localDataError;
+      try { ratings = modelRatings.catalog(catalogRows); }
+      catch (error) {
+        if (!isLocalDataUnavailable(error)) throw error;
+        localDataError = error.message;
+      }
       const models = catalogRows.map(({ native, ...row }) => row);
       return {
         uiContract,
-        indexPreparation: true,
+        indexPreparation: !localDataError,
+        ...(localDataError ? { localDataError } : {}),
         settings: { ...settings, ...workspaceCatalog(settings) },
         project: p ?? null,
         providers: catalog,

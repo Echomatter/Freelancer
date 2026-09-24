@@ -24,7 +24,26 @@ function Stop-FreelancerServer {
     if (-not $procPath -or ([IO.Path]::GetFileName($procPath) -ne 'node.exe')) {
         throw "Refusing to stop unexpected process $($process.Id) ($procPath)."
     }
-    Stop-Process -Id $process.Id -ErrorAction Stop
+    if ($record.shutdownToken) {
+        if ($record.url -notmatch '^http://127\.0\.0\.1:\d+/$') {
+            throw 'Freelancer has an invalid graceful-shutdown address. No process was stopped.'
+        }
+        try {
+            $response = Invoke-WebRequest -UseBasicParsing -Method Post `
+                -Uri ($record.url.TrimEnd('/') + '/__shutdown') `
+                -Headers @{ 'X-Freelancer-Shutdown' = [string]$record.shutdownToken } `
+                -TimeoutSec 5
+        } catch { throw 'Freelancer did not accept a graceful shutdown request. No process was stopped.' }
+        if ($response.StatusCode -ne 202) { throw 'Freelancer rejected its graceful shutdown request. No process was stopped.' }
+        $deadline = (Get-Date).AddSeconds(60)
+        do {
+            Start-Sleep -Milliseconds 250
+            $stillRunning = Get-Process -Id $process.Id -ErrorAction SilentlyContinue
+        } while ($stillRunning -and (Get-Date) -lt $deadline)
+        if ($stillRunning) { throw 'Freelancer did not finish its graceful shutdown. It was left running to protect local data.' }
+        return
+    }
+    # Compatibility for a server started before graceful shutdown support.
     $deadline = (Get-Date).AddSeconds(15)
     do {
         Start-Sleep -Milliseconds 250

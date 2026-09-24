@@ -13,7 +13,7 @@ const types = {
   ".png": "image/png",
   ".ico": "image/x-icon",
 };
-export async function startServer({ application: app, assets, port = 0, readActivity }) {
+export async function startServer({ application: app, assets, port = 0, readActivity, shutdownToken, onShutdown }) {
   const history = app.history;
   const sender = createSender(app, { beforeSend: history?.ensureWritable });
   await sender.ready;
@@ -34,6 +34,18 @@ export async function startServer({ application: app, assets, port = 0, readActi
         return send(403, { error: "Local application only" });
       const url = new URL(req.url, origin),
         route = url.pathname;
+      if (route === "/__shutdown" && req.method === "POST") {
+        const supplied = String(req.headers["x-freelancer-shutdown"] ?? "");
+        const remote = req.socket.remoteAddress;
+        const loopback = remote === "127.0.0.1" || remote === "::ffff:127.0.0.1" || remote === "::1";
+        if (!loopback || !shutdownToken || supplied.length !== shutdownToken.length ||
+          !timingSafeEqual(Buffer.from(supplied), Buffer.from(shutdownToken)))
+          return send(403, { error: "Local application only" });
+        res.writeHead(202, { "Cache-Control": "no-store" });
+        res.end();
+        setImmediate(() => onShutdown?.());
+        return;
+      }
       if (route.startsWith("/api/")) {
         const supplied = String(req.headers["x-freelancer-git-bridge"] ?? "");
         const expected = process.env.FREELANCER_GIT_BRIDGE || "";
@@ -308,13 +320,15 @@ export async function startServer({ application: app, assets, port = 0, readActi
       });
     }
   });
-  server.once("close", () => {
-    void sender.close()
-      .then(() => app.indexJobs?.close())
-      .finally(() => { history?.close(); app.modelRatings?.close(); })
-      .finally(() => app.gitProjects?.close())
-      .catch(() => {});
-  });
+  let disposal;
+  const dispose = () => disposal ??= (async () => {
+    await sender.close();
+    await app.indexJobs?.close();
+    history?.close();
+    app.modelRatings?.close();
+    await app.gitProjects?.close();
+  })();
+  server.once("close", () => { void dispose().catch(() => {}); });
   server.requestTimeout = 30000;
   server.headersTimeout = 10000;
   await new Promise((resolve, reject) => {
@@ -323,5 +337,16 @@ export async function startServer({ application: app, assets, port = 0, readActi
   });
   origin = `http://127.0.0.1:${server.address().port}`;
   sender.start();
-  return { server, url: origin, sender };
+  return {
+    server, url: origin, sender,
+    async close() {
+      if (server.listening) {
+        await new Promise(resolve => {
+          server.close(resolve);
+          server.closeAllConnections();
+        });
+      }
+      await dispose();
+    },
+  };
 }

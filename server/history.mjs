@@ -1,6 +1,6 @@
 import path from "node:path";
 import { stat } from "node:fs/promises";
-import { createLocalDataStore } from "./data/store.mjs";
+import { createLocalDataStore, isLocalDataUnavailable } from "./data/store.mjs";
 import { maintainLocalData } from './data/maintenance.mjs';
 import { openDataFolder } from "./native-data.mjs";
 import { importedChatID } from './chatgpt-import.mjs';
@@ -160,18 +160,32 @@ export function createHistoryService({
   }
   async function ensureWritable(projectID, id) {
     const project = await app.project(projectID);
-    if (data().projects()[projectID]?.archivedAt)
+    let archivedProject, localData;
+    try {
+      localData = data();
+      archivedProject = localData.projects()[projectID]?.archivedAt;
+    } catch (error) {
+      if (!isLocalDataUnavailable(error)) throw error;
+    }
+    if (archivedProject)
       throw Error("Restore this project before starting work.");
     if (!id || id === "new") return;
     let current = await own(project, id);
+    if (!localData) {
+      if (current.time?.archived)
+        throw Error("Restore this archived conversation in OpenCode before sending a message.");
+      if (String(current.title ?? "").startsWith("Configuration ·"))
+        throw Error("Configuration tasks are managed from Models.");
+      return;
+    }
     const seen = new Set();
     while (current) {
-      if (data().systemSessions(projectID).has(current.id)) throw Error('Configuration tasks are managed from Models.');
+      if (localData.systemSessions(projectID).has(current.id)) throw Error('Configuration tasks are managed from Models.');
       if (seen.has(current.id) || seen.size > 100)
         throw Error("Invalid parent chat history.");
       seen.add(current.id);
       if (
-        data().annotation(projectID, current.id).hiddenAt ||
+        localData.annotation(projectID, current.id).hiddenAt ||
         current.time?.archived
       )
         throw Error(
@@ -288,25 +302,49 @@ export function createHistoryService({
       db = undefined;
     },
     async decorateBootstrap(result) {
-      const projects = data().projects();
-      const settings = {
-        ...result.settings,
-        projects: result.settings.projects.map((p) => ({
-          ...p,
-          organization: projects[p.id] ?? { revision: 0 },
-        })),
-      };
-      const p = result.project;
-      const sessions = p ? await enrich(p.id, result.sessions ?? []) : [];
-      return {
-        ...result,
-        settings,
-        historyContract,
-        sessions,
-        project: p
-          ? { ...p, organization: projects[p.id] ?? { revision: 0 } }
-          : p,
-      };
+      try {
+        if (result.localDataError) throw Object.assign(new Error(result.localDataError), { code: "ERR_SQLITE_UNAVAILABLE" });
+        const projects = data().projects();
+        const settings = {
+          ...result.settings,
+          projects: result.settings.projects.map((p) => ({
+            ...p,
+            organization: projects[p.id] ?? { revision: 0 },
+          })),
+        };
+        const p = result.project;
+        const sessions = p ? await enrich(p.id, result.sessions ?? []) : [];
+        return {
+          ...result,
+          settings,
+          historyContract,
+          sessions,
+          project: p
+            ? { ...p, organization: projects[p.id] ?? { revision: 0 } }
+            : p,
+        };
+      } catch (error) {
+        if (!isLocalDataUnavailable(error)) throw error;
+        const fallbackOrganization = { revision: 0, pinnedAt: null, hiddenAt: null,
+          projectArchived: false, hiddenByParent: false, archived: false,
+          nativeArchived: false, archiveScope: null };
+        return {
+          ...result,
+          indexPreparation: false,
+          localDataError: error.message,
+          historyContract,
+          settings: { ...result.settings, projects: result.settings.projects.map((p) => ({
+            ...p, organization: fallbackOrganization,
+          })) },
+          project: result.project ? { ...result.project, organization: fallbackOrganization } : null,
+          sessions: (result.sessions ?? []).map((session) => ({
+            ...session,
+            organization: { ...fallbackOrganization, archived: !!session.time?.archived,
+              nativeArchived: !!session.time?.archived,
+              archiveScope: session.time?.archived ? "opencode" : null },
+          })),
+        };
+      }
     },
     async list(
       projectID,

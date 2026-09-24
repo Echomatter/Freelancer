@@ -15,6 +15,10 @@ import { randomUUID } from "node:crypto";
 const APP_ID = 1414482766;
 const SCHEMA = 6;
 const plain = (row) => row && { ...row };
+export function isLocalDataUnavailable(error) {
+  return String(error?.code ?? "").startsWith("ERR_SQLITE") ||
+    /malformed database|database disk image is malformed|invalid rootpage|unsupported local data database/i.test(String(error?.message ?? ""));
+}
 export function conflict(
   message = "This item changed in another window. Reload before saving.",
 ) {

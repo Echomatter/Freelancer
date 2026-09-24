@@ -4,6 +4,7 @@ import { createSender } from "./sender.mjs";
 import { savedTheme, themeDocument } from "./theme.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { isLocalDataUnavailable } from "./data/store.mjs";
 
 const types = {
   ".html": "text/html",
@@ -140,7 +141,12 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(200, await app.selectProject(body.project));
         if (req.method === "GET" && route === "/api/chat") {
           const id = url.searchParams.get("session");
-          const result = await app.chat(project, id);
+          let result;
+          try { result = await app.chat(project, id); }
+          catch (error) {
+            if (!isLocalDataUnavailable(error)) throw error;
+            result = await app.chatTranscript(project, id, error.message);
+          }
           if (history && id) void history.indexCurrent(project, id, result.messages).catch(() => {});
           return send(200, result);
         }

@@ -579,6 +579,29 @@ export function createApplication({
         availabilityWarnings,
       };
     },
+    async chatTranscript(id, session, reason) {
+      const p = await project(id);
+      if (importedChatID(session)) {
+        const imported = app.chatgpt.get(id, session);
+        if (!imported) throw Error('This imported chat belongs to another project or is unavailable.');
+        return { title: imported.title, messages: imported.messages, imported: imported.source,
+          receipts: [], status: {}, permissions: [], questions: [], activity: [], summary: sessionSummary(),
+          todos: [], diff: [], availabilityWarnings: [`Chat details unavailable: ${reason}`] };
+      }
+      const nativeSession = await ownSession(p, session);
+      const rows = await request(p, `/session/${part(session)}/message`);
+      if (!Array.isArray(rows)) throw Error('OpenCode returned no chat transcript.');
+      const importedSource = app.chatgpt.source(id, session);
+      return {
+        title: nativeSession.title || "New chat",
+        messages: [...(importedSource?.messages ?? []), ...rows.map(row => ({ ...row,
+          parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) }))],
+        continuation: importedSource?.source ?? null,
+        receipts: [], status: {}, permissions: [], questions: [], activity: [],
+        summary: sessionSummary(rows.map(row => row.info), [], []), todos: [], diff: [],
+        availabilityWarnings: [`Chat details unavailable: ${reason}`],
+      };
+    },
     async saveSessionDefaults(id, input) {
       await project(id);
       const catalog = await providers();

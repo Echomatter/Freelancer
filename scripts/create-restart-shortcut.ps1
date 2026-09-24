@@ -14,7 +14,7 @@ $shortcut.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
 $shortcut.Arguments = '"' + (Join-Path $PSScriptRoot 'restart-chrome-app.vbs') + '"'
 $shortcut.WorkingDirectory = $appRoot
 $shortcut.IconLocation = "$iconPath,0"
-$shortcut.Description = 'Restart the Freelancer server and native services, then open a fresh Chrome app window.'
+$shortcut.Description = 'Gracefully restart Freelancer through its system tray controller.'
 $shortcut.WindowStyle = 7
 $shortcut.Save()
 Write-Output $shortcutPath

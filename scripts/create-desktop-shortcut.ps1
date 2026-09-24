@@ -54,7 +54,7 @@ $shortcut.TargetPath = Join-Path $env:WINDIR 'System32\wscript.exe'
 $shortcut.Arguments = '"' + (Join-Path $PSScriptRoot 'launch-chrome-app.vbs') + '"'
 $shortcut.WorkingDirectory = $appRoot
 $shortcut.IconLocation = "$iconPath,0"
-$shortcut.Description = 'Start Freelancer in a Chrome app window with its local backend hidden.'
+$shortcut.Description = 'Open Freelancer and keep its local server in the system tray.'
 $shortcut.WindowStyle = 7
 $shortcut.Save()
 Write-Output $shortcutPath

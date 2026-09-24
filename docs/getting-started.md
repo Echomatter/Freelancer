@@ -63,17 +63,19 @@ After building the UI:
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-shortcut.ps1
 ```
 
-This creates `Freelancer.lnk` on the desktop. It starts or reuses the verified server for this checkout and opens the current URL in a **Chrome app window**. It is the existing web application, not an installed standalone package. The execution-policy flag applies to this invocation, not a persistent machine-policy change.
+This creates `Freelancer.lnk` on the desktop. It starts or reuses the verified server for this checkout, opens the current URL in a **Chrome app window**, and keeps a controller in the Windows system tray. Closing Chrome leaves the server running. Use the tray icon's **Exit Freelancer** command to close the server cleanly. The execution-policy flag applies to this invocation, not a persistent machine-policy change.
 
 The launcher verifies the source root, process, lock, and live page before reusing a server. A stale remembered port is not used. Its diagnostic output is under `backend/.state/webpage/server.stdout.log` and `server.stderr.log`.
 
-For a second shortcut that restarts the local server and opens a fresh Chrome app window after a reboot or update:
+For a second shortcut that gracefully restarts the local server and opens a fresh Chrome app window after an update:
 
 ```powershell
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-restart-shortcut.ps1
 ```
 
-Closing a browser/Chrome window does not necessarily stop its Node server. When updating, stop the Freelancer server for this checkout before relaunching; do not terminate unrelated Node processes or delete state files to get around a live lock.
+The tray **Restart server** command sends the server's authenticated shutdown request, waits for its process and application lock to close, then starts it again. It never force-kills a live server. The equivalent command is `scripts/restart-web.ps1`. Use **Exit Freelancer** to stop both tray and server.
+
+If local search data is irreparably corrupt and you accept losing its derived indexes and imported local history, stop the server with **Exit Freelancer**, then run `node scripts/reset-local-data.mjs --confirm`. The reset acquires the application lock, validates a fresh database, replaces only the Freelancer SQLite file family, and verifies the settings JSON is unchanged. Native OpenCode chats and project files remain elsewhere. Relaunch Freelancer and use **Application settings → Content index → Refresh File Index** and **Refresh Conversation Index** to rebuild retrieval data.
 
 ## Updating and recovery
 

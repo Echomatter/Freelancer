@@ -7,7 +7,10 @@ $launchFile = Join-Path $state 'launch.json'
 $lockFile = Join-Path $state 'application.lock'
 
 if (Test-Path -LiteralPath $launchFile) {
-    try { $record = Get-Content -LiteralPath $launchFile -Raw | ConvertFrom-Json }
+    try {
+        $launchText = Get-Content -LiteralPath $launchFile -Raw
+        $record = $launchText | ConvertFrom-Json
+    }
     catch { throw 'Freelancer launch record is unreadable. No process was stopped.' }
     if ($record.appRoot -ne $appRoot -or -not $record.pid -or -not $record.shutdownToken -or
         $record.url -notmatch '^http://127\.0\.0\.1:\d+/?$') {
@@ -33,6 +36,10 @@ if (Test-Path -LiteralPath $launchFile) {
             $serverProcess = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
         } while ($serverProcess -and (Get-Date) -lt $deadline)
         if ($serverProcess) { throw 'Freelancer did not finish its graceful shutdown. It was left running to protect local data.' }
+    } elseif ((Get-Content -LiteralPath $launchFile -Raw) -eq $launchText) {
+        # A crashed server cannot remove its launch record. The recorded PID is
+        # gone and the document is unchanged, so it is safe to discard.
+        Remove-Item -LiteralPath $launchFile -Force
     }
 }
 

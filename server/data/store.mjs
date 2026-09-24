@@ -87,6 +87,11 @@ export function createLocalDataStore(directory) {
       }
     }
     db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
+    // Match the native OpenCode store's startup maintenance: fold any frames
+    // left by an unclean previous exit without waiting for active readers.
+    // Closing the connection below remains responsible for the normal
+    // connection lifecycle; startup never truncates a potentially busy WAL.
+    db.prepare("PRAGMA wal_checkpoint(PASSIVE)").get();
     if (process.platform !== "win32") chmodSync(filename, 0o600);
   } catch (e) {
     db.close();

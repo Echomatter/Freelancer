@@ -202,6 +202,13 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         throw error;
       } finally { starting = false; release(); watch(); }
     },
+    async quiesceForLocalDataMaintenance() {
+      if (active(data().currentRatingJob()) || checking || starting || stopping)
+        throw Error('Wait for model ratings activity to finish before resetting local search indexes.');
+      clearInterval(timer);
+      timer = null;
+      release();
+    },
     close() { clearInterval(timer); timer = null; release(); },
   };
 }

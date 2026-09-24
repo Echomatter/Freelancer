@@ -293,7 +293,13 @@ export function createHistoryService({
       }) };
     },
     async maintainIndex(operation) {
-      if (operation === 'reset') this.close();
+      if (operation === 'reset') {
+        // Reset swaps the database file in a worker. Quiesce every other
+        // long-lived application connection first so no client keeps writing
+        // to the old file after the replacement is installed.
+        await app.modelRatings?.quiesceForLocalDataMaintenance();
+        this.close();
+      }
       const result = await maintainLocalData(dataRoot ?? path.join(backendRoot, '.state', 'local-data'), operation);
       return { ...result, stats: await this.indexStats() };
     },

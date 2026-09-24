@@ -26,7 +26,7 @@ import {
   summarizeCosts,
 } from "../domain/costs.mjs";
 import { createStore } from "./store.mjs";
-import { isLocalDataUnavailable } from "./data/store.mjs";
+import { createLocalDataService, isLocalDataUnavailable } from "./data/store.mjs";
 import { normalizeAttachments } from "../domain/attachments.mjs";
 import { publicCatalog } from "./catalog.mjs";
 import { sessionSummary } from "../shared/view.mjs";
@@ -80,6 +80,7 @@ export function createApplication({
   importOptions = {},
 }) {
   const supported = new Set(providerCatalog.map((p) => p.id));
+  const localData = createLocalDataService(dataRoot ?? path.join(backendRoot, ".state", "local-data"));
   const gitProjects = createGitProjects({ store, project, host, backendRoot, ...gitOptions });
   let connecting = false;
   let sending = 0;
@@ -192,7 +193,7 @@ export function createApplication({
     );
   }
   const contentIndexRefresh = new Map();
-  const modelRatings = createModelRatingService({ host, backendRoot, dataRoot, project, store,
+  const modelRatings = createModelRatingService({ host, backendRoot, dataRoot, localData, project, store,
     getCatalog: async (id) => app.bootstrap(id) });
   const app = {
     store,
@@ -1204,8 +1205,9 @@ export function createApplication({
       return host.events((await project(id)).directory, signal);
     },
   };
-  app.history = createHistoryService({ app, host, backendRoot, dataRoot });
-  app.chatgpt = createChatGPTImport({ app, backendRoot, dataRoot, ...importOptions });
-  app.indexJobs = createIndexJobs({ app, backendRoot, dataRoot });
+  app.localData = localData;
+  app.history = createHistoryService({ app, host, backendRoot, dataRoot, localData });
+  app.chatgpt = createChatGPTImport({ app, backendRoot, dataRoot, localData, ...importOptions });
+  app.indexJobs = createIndexJobs({ app, backendRoot, dataRoot, localData });
   return app;
 }

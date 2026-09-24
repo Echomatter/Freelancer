@@ -24,6 +24,36 @@ export function conflict(
 ) {
   return Object.assign(new Error(message), { status: 409 });
 }
+export function createLocalDataService(directory) {
+  let store;
+  let maintenance = false;
+  return {
+    get() {
+      if (maintenance)
+        throw Object.assign(Error("Local SQLite maintenance is in progress. Retry shortly."), {
+          code: "ERR_SQLITE_MAINTENANCE",
+        });
+      return (store ??= createLocalDataStore(directory));
+    },
+    beginMaintenance() {
+      if (maintenance) throw Error("Another local SQLite maintenance operation is running.");
+      maintenance = true;
+      store?.close();
+      store = undefined;
+      let released = false;
+      return () => {
+        if (released) return;
+        released = true;
+        maintenance = false;
+      };
+    },
+    close() {
+      store?.close();
+      store = undefined;
+      maintenance = false;
+    },
+  };
+}
 export function createLocalDataStore(directory) {
   if (!path.isAbsolute(directory))
     throw Error("The local data folder must be an absolute path.");

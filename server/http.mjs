@@ -333,6 +333,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
     history?.close();
     app.modelRatings?.close();
     await app.gitProjects?.close();
+    app.localData?.close();
   })();
   server.once("close", () => { void dispose().catch(() => {}); });
   server.requestTimeout = 30000;

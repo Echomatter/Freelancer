@@ -3,7 +3,7 @@ import { open, realpath, readdir, stat } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
-import { createLocalDataStore } from './data/store.mjs';
+import { createLocalDataService } from './data/store.mjs';
 
 export const importedChatID = id => /^ses_chatgpt_[a-f0-9]{32}$/.test(id ?? '');
 const cleanPath = value => String(value).replace(/^\\\\\?\\/, '');
@@ -79,9 +79,11 @@ export async function listProjectFolders(directory = '') {
     folders: entries.slice(0, 1000).map(entry => ({ name: entry.name, path: path.join(current, entry.name) })), truncated: entries.length > 1000 };
 }
 
-export function createChatGPTImport({ app, backendRoot, dataRoot, codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex') }) {
+export function createChatGPTImport({ app, backendRoot, dataRoot,
+  localData = createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data')),
+  codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex') }) {
   const previews = new Map(), flights = new Map();
-  const data = fn => { const db = createLocalDataStore(dataRoot ?? path.join(backendRoot, '.state', 'local-data')); try { return fn(db); } finally { db.close(); } };
+  const data = fn => fn(localData.get());
   async function inventory(directory, recordedDirectory = directory) {
     let files;
     try { files = await readdir(codexHome); } catch {

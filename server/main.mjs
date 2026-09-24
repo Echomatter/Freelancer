@@ -63,6 +63,8 @@ try {
   });
 } catch (e) {
   clearInterval(usageTimer);
+  app.modelRatings?.close();
+  app.localData?.close();
   host.stop();
   await observer.stop();
   await releaseLock();

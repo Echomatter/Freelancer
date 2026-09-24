@@ -1,17 +1,18 @@
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
-import { createLocalDataStore } from './data/store.mjs';
+import { createLocalDataService } from './data/store.mjs';
 import { parseModelRatings, ratingsPrompt } from '../domain/model-ratings.mjs';
 import { checkedCatalog } from '../backend/tools/runtime/agent-catalog.mjs';
 import { executionPrompt, policyVersion } from './execution.mjs';
 
 const active = job => job && ['starting', 'running'].includes(job.status);
 const batchSize = 6;
-export function createModelRatingService({ host, backendRoot, dataRoot, project, getCatalog, store }) {
-  let db, timer, checking = false, starting = false, stopping = false;
+export function createModelRatingService({ host, backendRoot, dataRoot, project, getCatalog, store,
+  localData = createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data')) }) {
+  let timer, checking = false, starting = false, stopping = false;
   let decisions = { permissions: [], questions: [] };
-  const data = () => db ??= createLocalDataStore(dataRoot ?? path.join(backendRoot, '.state', 'local-data'));
-  const release = () => { db?.close(); db = null; };
+  const data = () => localData.get();
+  const release = () => {};
   const publicJob = job => job && ({ ...job, progress: undefined,
     missing: job.progress?.missing?.length ?? 0, variant: job.progress?.variant ?? '', ...decisions });
   const request = (p, route, options = {}) => host.request(route, { ...options, directory: p.directory });
@@ -209,6 +210,6 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
       timer = null;
       release();
     },
-    close() { clearInterval(timer); timer = null; release(); },
+    close() { clearInterval(timer); timer = null; },
   };
 }

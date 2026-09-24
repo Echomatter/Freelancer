@@ -1,14 +1,14 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { createLocalDataStore } from './data/store.mjs';
+import { createLocalDataService } from './data/store.mjs';
 
 const labels = { files: 'Refreshing file indexes', chats: 'Refreshing conversation indexes',
   prepare: 'Preparing project indexes', optimize: 'Optimizing SQLite search', check: 'Checking SQLite integrity', compact: 'Compacting SQLite database', reset: 'Resetting local search indexes' };
-export function createIndexJobs({ app, backendRoot, dataRoot }) {
+export function createIndexJobs({ app, backendRoot, dataRoot,
+  localData = createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data')) }) {
   let job = null, controller, work;
   const withData = fn => {
-    const db = createLocalDataStore(dataRoot ?? path.join(backendRoot, '.state', 'local-data'));
-    try { return fn(db); } finally { db.close(); }
+    return fn(localData.get());
   };
   async function execute(current) {
     const signal = controller.signal;

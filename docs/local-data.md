@@ -137,12 +137,12 @@ not reset. Empty draft rows retain revision tombstones so stale windows cannot
 resurrect a cleared draft. New-chat draft rebinding clears the source and writes
 the destination in one transaction; it refuses a nonempty destination.
 
-The local store is opened by the server runtime and closed during its graceful
-shutdown. Startup performs a passive WAL checkpoint, which does not wait for
-active readers or truncate the log. Do not force-kill the server as a normal
-restart method. Replacing the local database for a derived-index reset first
-quiesces the model-ratings connection and closes the history connection, so
-both stop using the old database file before the replacement is installed.
+The local store uses one lazy connection shared by the server's history,
+ratings, import and indexing services. The server runtime closes it during
+graceful shutdown. Startup performs a passive WAL checkpoint, which does not
+wait for active readers or truncate the log. Do not force-kill the server as a
+normal restart method. A derived-index reset pauses the shared connection while
+its worker replaces the database file; services reopen it after the reset.
 
 The UI debounces draft writes and drains edits serially. Every write checks a
 revision. Cross-window conflicts and lost acknowledgements preserve local text

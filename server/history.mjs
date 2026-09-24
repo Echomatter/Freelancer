@@ -1,6 +1,6 @@
 import path from "node:path";
 import { stat } from "node:fs/promises";
-import { createLocalDataStore, isLocalDataUnavailable } from "./data/store.mjs";
+import { createLocalDataService, isLocalDataUnavailable } from "./data/store.mjs";
 import { maintainLocalData } from './data/maintenance.mjs';
 import { openDataFolder } from "./native-data.mjs";
 import { importedChatID } from './chatgpt-import.mjs';
@@ -30,14 +30,12 @@ export function createHistoryService({
   host,
   backendRoot,
   dataRoot,
+  localData = createLocalDataService(dataRoot ?? path.join(backendRoot, ".state", "local-data")),
   openFolder = openDataFolder,
 }) {
-  let db, capabilities, databaseLocation;
+  let capabilities, databaseLocation;
   const indexing = new Map();
-  const data = () =>
-    (db ??= createLocalDataStore(
-      dataRoot ?? path.join(backendRoot, ".state", "local-data"),
-    ));
+  const data = () => localData.get();
   const request = (project, route, options = {}) =>
     host.request(route, { ...options, directory: project.directory });
   async function own(project, id) {
@@ -293,20 +291,23 @@ export function createHistoryService({
       }) };
     },
     async maintainIndex(operation) {
+      let release;
       if (operation === 'reset') {
-        // Reset swaps the database file in a worker. Quiesce every other
-        // long-lived application connection first so no client keeps writing
-        // to the old file after the replacement is installed.
+        // The maintenance worker replaces the database file. Pause the
+        // process-wide connection so no other service can attach to the old
+        // file while that replacement is in progress.
         await app.modelRatings?.quiesceForLocalDataMaintenance();
-        this.close();
+        release = localData.beginMaintenance();
       }
-      const result = await maintainLocalData(dataRoot ?? path.join(backendRoot, '.state', 'local-data'), operation);
+      let result;
+      try {
+        result = await maintainLocalData(dataRoot ?? path.join(backendRoot, '.state', 'local-data'), operation);
+      } finally {
+        release?.();
+      }
       return { ...result, stats: await this.indexStats() };
     },
-    close() {
-      db?.close();
-      db = undefined;
-    },
+    close() {},
     async decorateBootstrap(result) {
       try {
         if (result.localDataError) throw Object.assign(new Error(result.localDataError), { code: "ERR_SQLITE_UNAVAILABLE" });

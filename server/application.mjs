@@ -591,12 +591,11 @@ export function createApplication({
       const nativeSession = await ownSession(p, session);
       const rows = await request(p, `/session/${part(session)}/message`);
       if (!Array.isArray(rows)) throw Error('OpenCode returned no chat transcript.');
-      const importedSource = app.chatgpt.source(id, session);
       return {
         title: nativeSession.title || "New chat",
-        messages: [...(importedSource?.messages ?? []), ...rows.map(row => ({ ...row,
-          parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) }))],
-        continuation: importedSource?.source ?? null,
+        messages: rows.map(row => ({ ...row,
+          parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) })),
+        continuation: null,
         receipts: [], status: {}, permissions: [], questions: [], activity: [],
         summary: sessionSummary(rows.map(row => row.info), [], []), todos: [], diff: [],
         availabilityWarnings: [`Chat details unavailable: ${reason}`],

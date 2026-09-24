@@ -25,7 +25,7 @@ function Stop-FreelancerServer {
         throw "Refusing to stop unexpected process $($process.Id) ($procPath)."
     }
     if ($record.shutdownToken) {
-        if ($record.url -notmatch '^http://127\.0\.0\.1:\d+/$') {
+        if ($record.url -notmatch '^http://127\.0\.0\.1:\d+/?$') {
             throw 'Freelancer has an invalid graceful-shutdown address. No process was stopped.'
         }
         try {

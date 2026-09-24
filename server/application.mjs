@@ -456,17 +456,7 @@ export function createApplication({
           receipts: [], status: {}, permissions: [], questions: [], activity: [], summary: sessionSummary(), todos: [], diff: [] };
       }
       const nativeSession = await ownSession(p, session);
-      const [
-        rows,
-        status,
-        permissions,
-        questions,
-        snapshot,
-        catalog,
-        todos,
-        diff,
-        fileStatus,
-      ] = await Promise.all([
+      const reads = await Promise.allSettled([
         messages(p, session),
         request(p, "/session/status"),
         request(p, "/permission"),
@@ -477,6 +467,25 @@ export function createApplication({
         request(p, `/session/${part(session)}/diff`),
         gitProjects.changedFiles(id).then(files => ({ files }), () => ({ files: [], unavailable: true })),
       ]);
+      const availabilityWarnings = [];
+      const value = (index, label, fallback, valid = () => true) => {
+        const read = reads[index];
+        if (read.status === "fulfilled" && valid(read.value)) return read.value;
+        const error = read.status === "rejected" ? read.reason?.message : "returned an invalid response";
+        availabilityWarnings.push(`${label}: ${error || "unavailable"}`);
+        return fallback;
+      };
+      const rows = value(0, "Transcript", null, Array.isArray);
+      if (!rows) throw Error(`Native transcript is unavailable: ${availabilityWarnings.at(-1)?.replace(/^Transcript: /, "") || "OpenCode returned no messages."}`);
+      const status = value(1, "Activity status", {}, result => result && typeof result === "object" && !Array.isArray(result));
+      const permissions = value(2, "Permissions", [], Array.isArray);
+      const questions = value(3, "Questions", [], Array.isArray);
+      const snapshot = value(4, "Chat state", { receipts: [], history: { entries: [] } }, result => result && typeof result === "object");
+      snapshot.receipts ??= [];
+      const catalog = value(5, "Model catalog", { all: [] }, result => Array.isArray(result?.all));
+      const todos = value(6, "Todos", [], Array.isArray);
+      const diff = value(7, "Diff", [], Array.isArray);
+      const fileStatus = value(8, "Project changes", { files: [], unavailable: true }, result => Array.isArray(result?.files));
       const activity = reconcileActivity(
         rows.flatMap((m) => m.parts ?? []),
         snapshot.receipts,
@@ -536,12 +545,15 @@ export function createApplication({
         sessionTitle: decisionOrigins.get(row.sessionID)?.title || 'Subagent',
       }));
       const importedSource = app.chatgpt.source(id, session);
+      let requestRows = [];
+      try { requestRows = Object.values((await store.read("requests")).records); }
+      catch (error) { availabilityWarnings.push(`Request receipts: ${error.message}`); }
       return {
         title: nativeSession.title || "New chat",
         messages: [...(importedSource?.messages ?? []), ...rows.map(row => ({ ...row,
           parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) }))],
         continuation: importedSource?.source ?? null,
-        receipts: Object.values((await store.read("requests")).records)
+        receipts: requestRows
           .filter((r) => r.sessionID === session && r.projectID === id)
           .map(({ agent, workflow, catalog: _catalog, catalogModels: _models, catalogConnected: _connected, ...r }) => ({
             ...r,
@@ -564,6 +576,7 @@ export function createApplication({
         todos: visibleTodosForRequest(todos, rows),
         diff: chatChanges(diff, rows, fileStatus.files, p.directory),
         changesUnavailable: fileStatus.unavailable === true,
+        availabilityWarnings,
       };
     },
     async saveSessionDefaults(id, input) {

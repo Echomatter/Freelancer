@@ -642,6 +642,11 @@ export default function App() {
             Freelancer could not open its local SQLite data: {data.localDataError}. Native OpenCode chats remain available; local pins, archives, drafts, and search may be unavailable. The database was left untouched.
           </div>
         )}
+        {chat.availabilityWarnings?.length > 0 && (
+          <div className="error-banner" role="alert">
+            This chat loaded with incomplete live data: {chat.availabilityWarnings.join(" · ")}
+          </div>
+        )}
         {!data ? (
           <Empty
             icon={LoaderCircle}

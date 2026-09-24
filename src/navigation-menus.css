@@ -1,0 +1,68 @@
+.nav-accordion { min-width: 0; position: relative; }
+.nav-accordion-trigger {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--paper);
+  color: var(--text);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 600;
+}
+.nav-accordion-trigger > span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-accordion-trigger > svg:first-child { color: var(--accent); flex: 0 0 auto; }
+.nav-chevron { color: var(--muted); transition: transform .16s ease; }
+.nav-chevron.expanded { transform: rotate(180deg); }
+.nav-accordion-content { display: grid; gap: 5px; padding: 7px 0 0; min-width: 0; }
+.nav-create {
+  appearance: none;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  padding: 9px 11px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: var(--tint);
+  color: var(--accent);
+  text-align: left;
+  font-size: 12px;
+  font-weight: 600;
+}
+.nav-create:hover:not(:disabled) { background: var(--hover); }
+.nav-create:disabled { opacity: .55; }
+.nav-create-spinner { width: 15px; height: 15px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin 1s linear infinite; }
+.nav-project-list, .nav-chat-list { display: grid; gap: 2px; min-width: 0; max-height: min(32vh, 300px); overflow-y: auto; scrollbar-width: thin; }
+.nav-project-row, .nav-chat-row { position: relative; display: flex; align-items: center; min-width: 0; border-radius: 8px; }
+.nav-project-row:hover, .nav-chat-row:hover { background: var(--hover); }
+.nav-project-row.selected, .nav-chat-row.selected { background: var(--tint); color: var(--accent); }
+.nav-project-select, .nav-chat-select {
+  appearance: none; display: flex; align-items: center; gap: 9px; flex: 1; min-width: 0;
+  padding: 9px 8px; border: 0; border-radius: 8px; background: transparent; color: inherit;
+  text-align: left; font-size: 12px;
+}
+.nav-project-select > span, .nav-chat-select > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nav-project-select > svg, .nav-chat-select > svg { flex: 0 0 auto; color: var(--muted); }
+.nav-chat-manage-trigger { display: flex; align-items: center; gap: 3px; flex: 0 0 auto; margin: 0 4px 0 0; padding: 5px 6px; border: 0; border-radius: 7px; background: transparent; color: var(--muted); font-size: 10px; opacity: .7; }
+.nav-chat-row:hover .nav-chat-manage-trigger, .nav-chat-manage-trigger:focus-visible, .nav-chat-manage-trigger[aria-expanded="true"] { opacity: 1; }
+.nav-chat-pinned { flex: 0 0 auto; color: var(--accent); }
+.nav-manage { flex: 0 0 auto; margin-right: 5px; padding: 4px 7px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); font-size: 10px; }
+.nav-manage:hover, .nav-chat-manage-trigger:hover { background: var(--paper); color: var(--text); }
+.nav-chat-menu { position: absolute; z-index: 30; top: calc(100% - 3px); right: 4px; display: grid; min-width: 185px; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); box-shadow: 0 10px 30px var(--shadow); }
+.nav-chat-menu button { display: flex; align-items: center; gap: 8px; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; font-size: 11px; }
+.nav-chat-menu button:hover:not(:disabled) { background: var(--hover); }
+.nav-chat-menu button:disabled { opacity: .5; }
+.nav-empty { display: block; padding: 9px 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
+@media (max-width: 720px) {
+  .nav-accordion-trigger { justify-content: center; padding: 12px; }
+  .nav-accordion-trigger > span, .nav-chevron { display: none; }
+  .nav-accordion-content { position: absolute; z-index: 35; top: 0; left: calc(100% + 8px); width: min(270px, calc(100vw - 90px)); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 10px 30px var(--shadow); }
+  .nav-create { justify-content: center; padding: 11px; font-size: 0; }
+  .nav-project-list, .nav-chat-list { max-height: min(48vh, 420px); }
+}

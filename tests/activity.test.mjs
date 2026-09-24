@@ -1,6 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { visibleActivity } from "../domain/activity.mjs";
+import { visibleActivity, activityLabel } from "../domain/activity.mjs";
+
+test("routing failures have a clear activity label", () => {
+  assert.equal(activityLabel("no_qualified_route"), "Route unavailable");
+  assert.equal(activityLabel("delegation_unavailable"), "Route unavailable");
+});
 test("only a matching executed handoff resolves an earlier model lookup", () => {
   const base = {
     role: "researcher",

@@ -21,9 +21,16 @@ export function senderState(chat, session) {
   // that stale status: stop treating the chat as running so the user can send
   // a recovery message and queued delivery can record the failure.
   const failed = !!last?.info?.error && !approvals && !tools;
-  const busy = !failed && (status !== 'idle' || approvals || tools || awaitingReceipt || !complete);
-  return { busy, approvals, ready: !busy, userID: user?.info.id, failed,
-    failure: failed ? String(last.info.error) : '' };
+  // OpenCode may retain `busy` after its owning web server is restarted. If
+  // the latest user turn has no assistant response at all, no live tools or
+  // approvals, and no delivery receipt still awaiting its native message,
+  // there is no execution left to wait for. Surface a recoverable idle state
+  // without deleting history or replaying the original prompt.
+  const interrupted = status !== 'idle' && !approvals && !tools && !awaitingReceipt &&
+    (!!user && (!last || complete) || !user && messages.some(m => m.info?.role === 'assistant'));
+  const busy = !failed && !interrupted && (status !== 'idle' || approvals || tools || awaitingReceipt || !complete);
+  return { busy, approvals, ready: !busy, userID: user?.info.id, failed, interrupted,
+    failure: failed ? String(last.info.error) : interrupted ? 'The server restarted before this response began. Send a recovery message to continue.' : '' };
 }
 
 export function normalizeIntent(input) {

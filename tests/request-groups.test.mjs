@@ -45,6 +45,44 @@ test("a terminal assistant error clears a stale native busy status", () => {
   assert.equal(state.failure, "provider disconnected");
 });
 
+test("an unanswered user turn with stale busy status is recoverable after restart", () => {
+  const state = senderState({ messages: [user("u1")], status: { chat: { type: "busy" } },
+    permissions: [], questions: [], receipts: [] }, "chat");
+  assert.equal(state.interrupted, true);
+  assert.equal(state.ready, true);
+  assert.equal(state.busy, false);
+});
+
+test("stale busy status with an already-answered latest turn is recoverable", () => {
+  const answered = { ...assistantText("a1"), info: { id: "a1", role: "assistant", parentID: "u1",
+    time: { completed: 100 }, finish: "stop" } };
+  const state = senderState({ messages: [user("u1"), answered], status: { chat: { type: "busy" } },
+    permissions: [], questions: [], receipts: [] }, "chat");
+  assert.equal(state.interrupted, true);
+  assert.equal(state.ready, true);
+});
+
+test("stale busy status after native conversation compaction is recoverable", () => {
+  const state = senderState({ messages: [assistantText("a1")], status: { chat: { type: "busy" } },
+    permissions: [], questions: [], receipts: [] }, "chat");
+  assert.equal(state.interrupted, true);
+  assert.equal(state.ready, true);
+});
+
+test("live tools, approvals, and unobserved accepted prompts remain busy", () => {
+  const unanswered = user("u1");
+  const activeTool = toolMsg("a1", "bash", "running");
+  const hasLiveTool = senderState({ messages: [unanswered, activeTool], status: { chat: { type: "busy" } },
+    permissions: [], questions: [], receipts: [] }, "chat");
+  assert.equal(hasLiveTool.busy, true);
+  const hasApproval = senderState({ messages: [unanswered], status: { chat: { type: "busy" } },
+    permissions: [{ id: "p1" }], questions: [], receipts: [] }, "chat");
+  assert.equal(hasApproval.busy, true);
+  const awaitingPrompt = senderState({ messages: [unanswered], status: { chat: { type: "busy" } },
+    permissions: [], questions: [], receipts: [{ id: "accepted", status: "accepted" }] }, "chat");
+  assert.equal(awaitingPrompt.busy, true);
+});
+
 test("a detached worker remains working after its parent dispatch tool completes", () => {
   const delegated = toolMsg("worker", "delegate");
   delegated.parts[0].state.metadata = { freelancer_status: "running" };

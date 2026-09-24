@@ -16,7 +16,7 @@ const MAX_BYTES = 64 * 1024 * 1024;
 // Only persisted public conversation parts are adapted. Credentials, developer
 // instructions, hidden reasoning, machine state and external attachment bytes
 // never enter the transcript. The source files are opened read-only.
-export function parseCodexTranscript(text, source, directory) {
+export function parseCodexTranscript(text, source, directory, recordedDirectory = directory) {
   const lines = text.split('\n'), messages = [], events = [], tools = new Map();
   let metadata, model = source.model || '', skippedTail = false;
   for (let i = 0; i < lines.length; i++) {
@@ -51,7 +51,7 @@ export function parseCodexTranscript(text, source, directory) {
       if (tool) { tool.state.output = typeof item.output === 'string' ? item.output : JSON.stringify(item.output ?? ''); tool.state.time.end = timestamp(row.timestamp); }
     }
   }
-  if (!metadata || (metadata.id || metadata.session_id) !== source.id || typeof metadata.cwd !== 'string' || !same(metadata.cwd, directory))
+  if (!metadata || (metadata.id || metadata.session_id) !== source.id || typeof metadata.cwd !== 'string' || !same(metadata.cwd, recordedDirectory))
     throw Error('The transcript identity or project folder changed. Review the import again.');
   if (!messages.some(m => m.parts.some(p => p.type === 'text'))) {
     for (const event of events) if (typeof event.text === 'string') messages.push({ info: { role: event.role, imported: true, time: { created: event.time } }, parts: [{ type: 'text', text: event.text }] });
@@ -65,7 +65,7 @@ export function parseCodexTranscript(text, source, directory) {
   });
   return { id, sourceID: source.id, title: String(source.title || 'Imported Codex chat').slice(0, 500), directory,
     time: { created: source.createdAt || timestamp(metadata.timestamp), updated: source.updatedAt || timestamp(metadata.timestamp) }, messages,
-    source: { application: 'ChatGPT / Codex', format: 'codex-rollout', importedAt: Date.now(), archived: !!source.archived, skippedTail } };
+    source: { application: 'ChatGPT / Codex', format: 'codex-rollout', recordedDirectory, importedAt: Date.now(), archived: !!source.archived, skippedTail } };
 }
 
 export async function listProjectFolders(directory = '') {
@@ -82,7 +82,7 @@ export async function listProjectFolders(directory = '') {
 export function createChatGPTImport({ app, backendRoot, dataRoot, codexHome = process.env.CODEX_HOME || path.join(os.homedir(), '.codex') }) {
   const previews = new Map(), flights = new Map();
   const data = fn => { const db = createLocalDataStore(dataRoot ?? path.join(backendRoot, '.state', 'local-data')); try { return fn(db); } finally { db.close(); } };
-  async function inventory(directory) {
+  async function inventory(directory, recordedDirectory = directory) {
     let files;
     try { files = await readdir(codexHome); } catch {
       const packages = process.platform === 'win32' && process.env.LOCALAPPDATA
@@ -101,12 +101,16 @@ export function createChatGPTImport({ app, backendRoot, dataRoot, codexHome = pr
       if (!['id', 'cwd', 'rollout_path', 'title'].every(name => columns.has(name))) throw Error('Unsupported conversation catalog');
       const fields = ['id', 'cwd', 'rollout_path', 'title', 'created_at', 'updated_at', 'archived', 'model'].filter(name => columns.has(name));
       const rows = db.prepare(`SELECT ${fields.join(',')} FROM threads`).all();
-      const chats = [];
+      const chats = [], otherDirectories = new Set();
+      const roots = (await Promise.all(['sessions', 'archived_sessions'].map(name => realpath(path.join(codexHome, name)).catch(() => null)))).filter(Boolean);
       for (const row of rows) {
-        if (!row.cwd || !same(row.cwd, directory)) continue;
+        if (!row.cwd) continue;
+        if (!same(row.cwd, recordedDirectory)) {
+          if (path.basename(cleanPath(row.cwd)).toLowerCase() === path.basename(directory).toLowerCase()) otherDirectories.add(cleanPath(row.cwd));
+          continue;
+        }
         try {
           const filename = await realpath(cleanPath(row.rollout_path));
-          const roots = await Promise.all(['sessions', 'archived_sessions'].map(name => realpath(path.join(codexHome, name)).catch(() => null)));
           if (!roots.some(root => root && inside(root, filename))) continue;
           const info = await stat(filename);
           if (!info.isFile()) continue;
@@ -115,7 +119,12 @@ export function createChatGPTImport({ app, backendRoot, dataRoot, codexHome = pr
             supported: info.size <= MAX_BYTES });
         } catch { /* Missing transcript: catalog alone is not a conversation. */ }
       }
-      return { detected: true, chats: chats.sort((a, b) => b.updatedAt - a.updatedAt), notice: 'One-time local copy. Only conversations recorded in this exact project folder are listed, including archived chats. No live sync.' };
+      const notice = chats.length
+        ? 'One-time local copy. Only conversations recorded in this exact project folder are listed, including archived chats. No live sync.'
+        : otherDirectories.size
+          ? `Local Codex chats with this folder name were found under a different path (${[...otherDirectories].slice(0, 2).join(', ')}). Open that exact folder to import them; chats are not reassigned by folder name.`
+          : 'One-time local copy. Only conversations recorded in this exact project folder are listed, including archived chats. No live sync.';
+      return { detected: true, chats: chats.sort((a, b) => b.updatedAt - a.updatedAt), notice };
     } catch { return { detected: true, chats: [], notice: 'Codex was detected, but its conversation catalog could not be read. Close Codex and retry, or skip import.' }; }
     finally { db?.close(); }
   }
@@ -124,19 +133,26 @@ export function createChatGPTImport({ app, backendRoot, dataRoot, codexHome = pr
     list: project => data(db => db.chatGPTChats(project)),
     get: (project, id) => data(db => db.chatGPTChat(project, id)),
     source: (project, nativeID) => data(db => db.chatGPTSource(project, nativeID)),
-    async preview(directory) {
+    async preview(directory, recordedDirectory) {
       if (typeof directory !== 'string' || !path.isAbsolute(directory)) throw Error('Choose an existing project folder.');
       directory = await realpath(directory);
       if (!(await stat(directory)).isDirectory()) throw Error('Choose a folder.');
+      recordedDirectory ??= directory;
+      if (typeof recordedDirectory !== 'string' || !path.isAbsolute(cleanPath(recordedDirectory))) throw Error('Choose a recorded conversation folder.');
+      recordedDirectory = cleanPath(recordedDirectory);
+      if (!same(recordedDirectory, directory) && path.basename(recordedDirectory).toLowerCase() !== path.basename(directory).toLowerCase())
+        throw Error('Recorded chats must belong to the same named project folder.');
       const existing = (await app.store.read('settings')).projects.find(row => same(row.directory, directory));
-      if (existing) return { existing, directory, chats: [], notice: 'This project is already set up. Import is offered only for new projects.' };
-      const projectID = createHash('sha256').update(pathKey(directory)).digest('hex').slice(0, 24);
+      if (existing && same(recordedDirectory,directory)) return { existing, directory, chats: [], notice: 'This project is already set up. Import is offered only for new projects.' };
+      const projectID = existing?.id ?? createHash('sha256').update(pathKey(directory)).digest('hex').slice(0, 24);
       const completed = data(db => db.onboarding(projectID));
-      const result = completed ? { detected: true, chats: [], notice: 'This folder was previously set up. Its saved imported history will be reused; no new import or sync will run.' } : await inventory(directory), token = randomUUID();
+      const result = completed ? { detected: true, chats: [], notice: 'This folder was previously set up. Its saved imported history will be reused; no new import or sync will run.' } : await inventory(directory,recordedDirectory), token = randomUUID();
+      if (!same(recordedDirectory,directory) && result.chats.length)
+        result.notice = `These local Codex chats were recorded under ${recordedDirectory}. Selected snapshots will appear in ${directory}; the originals stay unchanged.`;
       for (const [key, value] of previews) if (value.expires < Date.now()) previews.delete(key);
       if (previews.size >= 20) throw Error('Too many setup windows are open. Close one and try again shortly.');
-      previews.set(token, { directory, completed: !!completed, chats: result.chats, expires: Date.now() + 30 * 60 * 1000 });
-      return { ...result, directory, token, chats: result.chats.map(({ filename, model, ...chat }) => chat) };
+      previews.set(token, { directory, recordedDirectory, projectID, completed: !!completed, chats: result.chats, expires: Date.now() + 30 * 60 * 1000 });
+      return { ...result, directory, recordedDirectory, token, chats: result.chats.map(({ filename, model, ...chat }) => chat) };
     },
     async complete(token, selected = []) {
       if (flights.has(token)) return flights.get(token);
@@ -158,7 +174,7 @@ export function createChatGPTImport({ app, backendRoot, dataRoot, codexHome = pr
             const buffer = Buffer.alloc(source.bytes);
             let offset = 0;
             while (offset < buffer.length) { const { bytesRead } = await file.read(buffer, offset, buffer.length - offset, offset); if (!bytesRead) break; offset += bytesRead; }
-            chats.push(parseCodexTranscript(buffer.subarray(0, offset).toString('utf8'), source, preview.directory));
+            chats.push(parseCodexTranscript(buffer.subarray(0, offset).toString('utf8'), source, preview.directory, preview.recordedDirectory));
           } finally { await file.close(); }
         }
         const registered = (await app.store.read('settings')).projects.find(row => same(row.directory, preview.directory));

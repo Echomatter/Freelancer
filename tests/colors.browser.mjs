@@ -151,8 +151,7 @@ try {
   const neutral = await page.locator('.message.assistant .markdown p').first().evaluate(e => getComputedStyle(e).color);
   assert.equal(neutral, rgb(palettes.find(p => p.id === 'midnight').tokens.text));
   await page.getByRole('button', { name: 'Details', exact: true }).click();
-  await page.locator('.activity-detail-toggle').first().click();
-  await colorOf(page.locator('.activity-detail-body small .provider-identity'), rgb(providerTokens('opencode', { theme: 'midnight' })['--provider-fg']));
+  await colorOf(page.locator('.activity-summary-button .provider-identity').first(), rgb(providerTokens('opencode', { theme: 'midnight' })['--provider-fg']));
   await page.getByLabel('Parent model', { exact: true }).selectOption('github-copilot/forge');
   assert.equal(await page.getByLabel('Parent model', { exact: true }).getAttribute('data-provider'), 'github-copilot');
   f.setBusy(true);

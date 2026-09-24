@@ -263,7 +263,7 @@ legend {
   padding: 30px 18px 18px;
   display: flex;
   flex-direction: column;
-  gap: 22px;
+  gap: 12px;
 }
 .brand {
   display: flex;
@@ -490,6 +490,7 @@ legend {
   display: grid;
   gap: 12px;
   flex-shrink: 0;
+  margin-top: auto;
 }
 .settings-drawers { display: grid; gap: 5px; border-top: 1px solid var(--line); padding-top: 9px; }
 .settings-drawer-trigger, .settings-drawer-links button {
@@ -1653,21 +1654,48 @@ legend {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.activity-detail-chevron {
-  flex: 0 0 auto;
-  transition: transform 120ms ease;
+.activity-summary-button {
+  flex-wrap: wrap;
+  cursor: pointer;
 }
-.activity-detail-chevron.open {
-  transform: rotate(90deg);
+.activity-summary-button:disabled {
+  cursor: default;
 }
-.activity-detail-body {
-  padding-top: 12px;
+.activity-summary-button:hover:not(:disabled) {
+  color: var(--accent);
 }
-@media (prefers-reduced-motion: reduce) {
-  .activity-detail-chevron {
-    transition: none;
-  }
+.activity-action-count {
+  margin-left: auto;
+  white-space: nowrap;
 }
+.activity-summary-button .activity-detail-title {
+  flex: 1 1 100%;
+}
+.activity-summary-button .activity-detail-identity {
+  order: 0;
+  flex-wrap: nowrap;
+  gap: 8px;
+}
+.activity-detail-identity strong {
+  flex: 0 1 auto;
+}
+.activity-open-indicator { flex: 0 0 auto; color: var(--muted); }
+.activity-detail-identity .activity-action-count {
+  margin-left: 0;
+}
+.activity-summary-button .activity-detail-model {
+  flex: 1 1 100%;
+  order: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-summary-button .activity-detail-title small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.activity-route-note { display: block; padding-top: 9px; color: var(--muted); line-height: 1.45; }
 .agent-card {
   width: min(100%, 360px);
   justify-content: flex-start;
@@ -1693,6 +1721,9 @@ legend {
   white-space: nowrap;
 }
 .agent-card-copy small { color: var(--muted); }
+.agent-route-unavailable { align-items: flex-start; color: var(--warning, #d49327); }
+.agent-route-unavailable > span { display: grid; gap: 4px; min-width: 0; }
+.agent-route-unavailable small { color: var(--muted); font-size: 11px; line-height: 1.45; white-space: normal; }
 .todo-dock {
   border: 1px solid var(--line);
   border-radius: 10px;

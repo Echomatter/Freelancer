@@ -45,7 +45,11 @@ export function ProjectImport({ preview, busy, error, onClose, onComplete }: { p
     <p>{preview.notice}</p><p className="project-import-path">{preview.directory}</p>
     <p>Saved messages open in the same chat layout. Continuing a chat uses its history to orient a new Freelancer conversation. The original app and its database stay unchanged.</p>
     {!!supported.length && <label className="check"><input type="checkbox" disabled={busy} checked={selected.length === supported.length} onChange={event => setSelected(event.target.checked ? supported.map((chat: any) => chat.id) : [])} />Select all matching chats ({supported.length})</label>}
-    {!preview.chats.length && <p>No matching local conversations were found for this exact folder.</p>}
+    {!preview.chats.length && <p>{preview.notice?.includes('different path')
+      ? preview.notice
+      : preview.notice?.includes('catalog could not be read') || preview.notice?.includes('Close Codex')
+      ? 'The local conversation catalog could not be read yet. Close Codex and retry, or skip import.'
+      : 'No matching local conversations were found for this exact folder. Chats are listed only when their saved working folder matches this project.'}</p>}
     <div className="project-import-list">{preview.chats.map((chat: any) => <label className="check" key={chat.id}>
       <input type="checkbox" disabled={busy || !chat.supported} checked={selected.includes(chat.id)} onChange={event => setSelected(previous => event.target.checked ? [...previous, chat.id] : previous.filter(id => id !== chat.id))} />
       <span><strong>{chat.title || 'Untitled chat'}</strong><small>{new Date(chat.updatedAt).toLocaleDateString()}{chat.archived ? ' · Archived in Codex' : ''}{!chat.supported ? ' · Too large for import (64 MB limit)' : ''}</small></span>

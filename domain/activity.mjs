@@ -21,6 +21,8 @@ export function activityLabel(phase) {
   return (
     {
       completed: "Finished",
+      no_qualified_route: "Route unavailable",
+      delegation_unavailable: "Route unavailable",
       selection_required: "Choosing a model",
       running: "Working",
       working: "Working",

@@ -19,22 +19,13 @@ function runCommand(cmd: string[], cwd: string): Promise<{ stdout: string; stder
 }
 
 async function run(args: string[], cwd: string) {
-  const candidates: string[][] = [["python", ...args]]
-  const userProfile = process.env.USERPROFILE || ""
-  const localAppData = process.env.LOCALAPPDATA || path.join(userProfile, "AppData", "Local")
-  const programFiles = process.env.ProgramFiles || "C:\\Program Files"
-  const pythonRoots = [
-    path.join(localAppData, "Programs", "Python", "Python313", "python.exe"),
-    path.join(localAppData, "Programs", "Python", "Python312", "python.exe"),
-    path.join(programFiles, "Python313", "python.exe"),
-    path.join(programFiles, "Python312", "python.exe"),
-  ]
-  for (const executable of pythonRoots) {
-    if (fs.existsSync(executable)) candidates.push([executable, ...args])
+  const candidates: string[][] = []
+  const node = process.env.FREELANCER_NODE || process.execPath
+  const runtimeRoot = process.env.FREELANCER_RUNTIME_ROOT
+  if (runtimeRoot) {
+    const nodeIndexer = path.join(runtimeRoot, "tools", "project-content-indexer.mjs")
+    if (fs.existsSync(nodeIndexer)) candidates.push([node, nodeIndexer, ...args])
   }
-  const pyLauncher = path.join(process.env.WINDIR || "C:\\Windows", "py.exe")
-  if (fs.existsSync(pyLauncher)) candidates.push([pyLauncher, "-3", ...args])
-  candidates.push(["py", "-3", ...args], ["python3", ...args])
   let last = ""
   for (const cmd of candidates) {
     try {
@@ -66,6 +57,7 @@ function projectKey(root: string) {
 export default tool({
   description:
     "Project retrieval for files and native conversation text. Search/index docs, data, and chats. Use results as locators; verify decisive claims against original files or OpenCode messages.",
+  title: (args) => `Content index · ${args.operation}`,
   args: {
     operation: tool.schema
       .enum(["status", "search", "chats", "sources", "unit", "facts", "meta", "rebuild"])
@@ -115,12 +107,12 @@ export default tool({
       )
     }
 
-    const script = path.join(toolkitRoot, "tools", "Project_Content_Indexer.py")
+    const script = path.join(toolkitRoot, "tools", "project-content-indexer.mjs")
     if (!fs.existsSync(script)) throw new Error(`Project content indexer missing: ${script}`)
     const db = freelancerDatabasePath()
     const key = projectKey(root)
 
-    const cli: string[] = [script, "--db", db, "--project-key", key]
+    const cli: string[] = ["--db", db, "--project-key", key]
     switch (args.operation) {
       case "status":
         cli.push("status", "--root", root)

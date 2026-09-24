@@ -32,24 +32,27 @@ import { browseModels } from "../shared/view.mjs";
 const WorkspaceCatalog = lazy(() => import('./WorkspaceCatalog').then(module => ({ default: module.WorkspaceCatalog })));
 import { startingChoices } from "../domain/session-defaults.mjs";
 import { compatibleApplication } from "../domain/protocol.mjs";
-import { ProjectPicker, ProjectProgress } from "./ProjectPicker";
+import { ProjectProgress } from "./ProjectPicker";
+import { ChatNavigation, ProjectNavigation } from "./NavigationMenus";
 import { Questions } from "./Question";
 import { Permissions } from './Permissions';
 import { Dialog, useConfirmation } from './echoflex/Dialog';
 import { FolderPicker, ProjectImport } from './ProjectImport';
-import { SessionActivity, useProjectActivity } from "./SessionActivity";
+import { useProjectActivity } from "./SessionActivity";
 import { UsageHero, UsageSidebar, UsageProviders } from "./AvailableUsage";
 import { useAvailability } from "./useAvailability";
 import { applyTodoLayout } from "../domain/appearance.mjs";
 import { ContributionRows } from "./Contributions";
 import { AppearanceContext, ProviderText, ProviderSelect, providerAttributes, type ColorPatch } from "./ProviderColors";
 import { mergeProviderColors } from "../domain/provider-colors.mjs";
+import { senderState } from "../domain/sender.mjs";
 
 const EMPTY_TODOS: any[] = [];
 
-function modelStatus(availability: string) {
+function modelStatus(availability: string, used = false) {
   if (availability === 'deprecated') return { label: 'Deprecated', tone: 'error' };
   if (availability === 'quota constrained') return { label: 'Quota limited', tone: 'warning' };
+  if (used) return { label: 'Used', tone: 'success' };
   return { label: 'Not tested', tone: 'neutral' };
 }
 
@@ -70,6 +73,11 @@ export default function App() {
       permissions: [],
       questions: [],
     });
+  useEffect(() => {
+    if (!project || !session) return;
+    try { localStorage.setItem(`freelancer:last-chat:${project}`, session); }
+    catch { /* Storage can be unavailable in restricted browser contexts. */ }
+  }, [project, session]);
   const [view, setViewState] = useState("chat"),
     [tab, setTab] = useState("providers"),
     [settingsScope, setSettingsScope] = useState<SettingsScope>("application"),
@@ -110,10 +118,10 @@ export default function App() {
     setSettingsScope(scope);
     setExpandedSettings(scope);
     setTab(item);
-    setView(({ workspace: "chat", github: "github", models: "models", agents: "agents", workflows: "workflows", files: "files" } as Record<string, string>)[item] ?? "settings");
+    setView(({ workspace: "chat", github: "github", models: "models", usage: "overview", agents: "agents", workflows: "workflows", files: "files" } as Record<string, string>)[item] ?? "settings");
   };
-  const navigationScope: SettingsScope = historyOpen ? "application" : view === "settings" ? settingsScope : view === "models" ? "application" : "project";
-  const navigationTab = historyOpen ? "history" : view === "settings" ? tab : view === "chat" ? "workspace" : view === "overview" ? "" : view;
+  const navigationScope: SettingsScope = historyOpen ? "application" : view === "settings" ? settingsScope : view === "models" || view === "overview" ? "application" : "project";
+  const navigationTab = historyOpen ? "history" : view === "settings" ? tab : view === "chat" ? "workspace" : view === "overview" ? "usage" : view;
   const [details, setDetails] = useState(false),
     [detailsSel, setDetailsSel] = useState({ tab: "activity", n: 0 }),
     [agentID, setAgentID] = useState("inherit"),
@@ -316,7 +324,8 @@ export default function App() {
     };
   }, [project]);
   const current = data?.sessions.find((s) => s.id === session),
-    busy = sending || ["busy", "retry"].includes(chat.status[session]?.type);
+    turnState = session ? senderState(chat, session) : { busy: false },
+    busy = sending || turnState.busy;
   const selectedKey = query(project, session);
   const selectedChoicesKey = session
     ? selectedKey
@@ -429,7 +438,10 @@ export default function App() {
         restoredChoices.current = "";
         setData({ ...next, selectionKey: key });
         setProject(p.id);
-        setSession("");
+        let remembered = "";
+        try { remembered = localStorage.getItem(`freelancer:last-chat:${p.id}`) ?? ""; }
+        catch { /* Fall back to the project with no chat selected. */ }
+        setSession(next.sessions.some((item: any) => item.id === remembered) ? remembered : "");
         setChat({ messages: [], status: {}, permissions: [], questions: [] });
         setFolderOpen(false);
         setFolder("");
@@ -478,6 +490,39 @@ export default function App() {
       else setFolderOpen(true);
     }
   }
+  async function continueChatInNew(sessionRow: any) {
+    await run(async () => {
+      const next = await api("chat/action", { project, session: sessionRow.id, action: "fork" });
+      setSession(next.id);
+      setView("chat");
+    });
+  }
+  async function archiveChat(sessionRow: any) {
+    if (!await confirmation.ask({ title: `Archive “${sessionRow.title || "New chat"}”?`,
+      description: "Archived chats stay in history and can be restored later.", confirmLabel: "Archive chat", danger: true })) return;
+    await run(async () => {
+      await api("history/archive", { project, session: sessionRow.id, archived: true,
+        revision: sessionRow.organization?.revision ?? 0 }, "PUT");
+      if (session === sessionRow.id) setSession("");
+      await refresh();
+    });
+  }
+  async function pinChat(sessionRow: any) {
+    await run(async () => {
+      await api("history/pin", { project, session: sessionRow.id, pinned: !sessionRow.organization?.pinnedAt,
+        revision: sessionRow.organization?.revision ?? 0 }, "PUT");
+      await refresh();
+    });
+  }
+  async function exportChat(sessionRow: any) {
+    await run(async () => {
+      const saved = await api("history/export", { project, sessions: [sessionRow.id], format: "markdown", includeWorkers: false });
+      const url = URL.createObjectURL(new Blob([saved.content], { type: saved.mime }));
+      const link = document.createElement("a");
+      link.href = url; link.download = saved.filename; document.body.append(link); link.click(); link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 30_000);
+    });
+  }
 
   return (
     <AppearanceContext.Provider value={data?.settings.appearance ?? {}}>
@@ -490,7 +535,7 @@ export default function App() {
           </span>
           Freelancer
         </div>
-        <ProjectPicker
+        <ProjectNavigation
           projects={(data?.settings.projects ?? []).filter(p => !p.organization?.archivedAt || p.id === project)}
           selected={project}
           disabled={!!projectLoading || !data || !compatibleApplication(data)}
@@ -504,36 +549,14 @@ export default function App() {
           }}
           onManage={(p) => { setProjectEdit(p); setProjectName(p.name); }}
         />
-        <div className="sidebar-label recent-heading">
-          <span>Recent Chats</span>
-          <button
-            className="icon-button"
-            aria-label="New chat"
-            disabled={creatingChat}
-            onClick={() => run(createChat)}
-          >
-            {creatingChat ? <LoaderCircle size={17} className="spin" /> : <Plus size={17} />}
-          </button>
-        </div>
-        <div className="sessions">
-          {data?.sessions
-            .filter((s) => !s.parentID && !s.organization?.archived)
-            .slice(0, 40)
-            .map((s) => (
-              <button
-                key={s.id}
-                className={s.id === session ? "selected" : ""}
-                onClick={() => {
-                  setSession(s.id);
-                  setView("chat");
-                }}
-              >
-                {!s.imported && <SessionActivity activity={sessionActivity?.[s.id]} />}
-                <span>{s.imported ? 'Imported · ' : ''}{s.organization?.pinnedAt ? "Pinned · " : ""}{s.title || "New chat"}</span>
-              </button>
-            ))}
-          {!data?.sessions.length && <small>Your work will appear here.</small>}
-        </div>
+        <ChatNavigation
+          sessions={(data?.sessions ?? []).filter((s) => !s.parentID && !s.organization?.archived).slice(0, 40)
+            .map((s) => ({ ...s, activity: sessionActivity?.[s.id] }))}
+          selected={session} disabled={!!projectLoading || !data || !compatibleApplication(data)} creating={creatingChat}
+          onNew={() => run(createChat)}
+          onSelect={(s) => { setSession(s.id); setView("chat"); }}
+          onContinue={continueChatInNew} onArchive={archiveChat} onPin={pinChat} onExport={exportChat}
+        />
         <div className="sidebar-bottom usage-dock">
           <SettingsNavigation expanded={expandedSettings} scope={navigationScope} tab={navigationTab}
             project={!!project} onToggle={(scope) => setExpandedSettings(expandedSettings === scope ? null : scope)}
@@ -874,7 +897,9 @@ export default function App() {
                     sort: modelSort,
                     freeOnly,
                   }).map((m) => {
-                    const status = modelStatus(m.availability);
+                    const used = !!m.recent || m.outcomes?.total > 0 ||
+                      data.costs.contributions?.models?.rows?.some((row: any) => row.id === m.id);
+                    const status = modelStatus(m.availability, used);
                     const facts = [
                       m.context ? `Context ${modelQuantity(m.context)}` : null,
                       m.output ? `Output ${modelQuantity(m.output)}` : null,

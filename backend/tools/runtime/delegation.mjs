@@ -380,8 +380,11 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     const allowedModels = pool(variant).filter(id => !legacyContract || modelAllowed(workflow, execution.catalogModels.find(m => m.id === id), execution.catalogConnected ?? []));
     if (args.selectedModel && !allowedModels.includes(args.selectedModel))
       throw fault('PreferenceConstraint', 'Selected model is excluded by the request budget, user preferences, or workflow restrictions. No child started.');
-    if (!allowedModels.length) return { status: 'delegation_unavailable', agent: { id: agent.id, name: agent.name },
-      attempts: [], result: 'No models satisfy this request’s delegation budget. No child started. Work directly when permitted, or report the limitation; do not relax user limits.' };
+    if (!allowedModels.length) return { status: 'delegation_unavailable', failure_class: 'unavailable',
+      agent: { id: agent.id, name: agent.name }, model_selection: null, attempts: [],
+      routing_diagnostics: { eligible_model_count: 0, free_only: inherited?.freeOnly === true || args.freeOnly === true || savedPreferences.costPreference === 'free-only' || freeOnlyAssignment(assignment),
+        cost_preference: savedPreferences.costPreference, requested_variant: variant || null },
+      result: 'No agent started. No model satisfies the current delegation budget and provider rules. Continue directly in the parent chat when allowed, or report this as unresolved if the user required a separate worker or independent review. Do not relax the user limits or retry unchanged.' };
     const preferences = { ...savedPreferences, allowedModels,
       maxParallel: legacyContract && workflow.parallel === false ? 1 : savedPreferences.maxParallel };
     const defaultModel = agent.model && agent.model !== 'auto' ? agent.model : null;
@@ -523,7 +526,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
             reasons: selection?.reason_codes || [], filtered_out: selection?.filtered_out || [] };
           if (legacyContract) return propose(selection?.choice_unavailable ? selection : { ...selection, selected_model: null, choices: null });
           receipt.failure_class = 'unavailable';
-          receipt.result = 'No eligible route is available within the user budget. Continue directly when allowed or report the unresolved assignment. Do not relax the budget or retry unchanged.';
+          receipt.result = `No agent started. No eligible route met the current budget, provider availability and task-fit requirements${receipt.routing_diagnostics.reasons.length ? ` (routing reasons: ${receipt.routing_diagnostics.reasons.join(', ')})` : ''}. Continue directly in the parent chat when allowed, or report this as unresolved if the user required a separate worker or independent review. Do not relax the budget or retry unchanged.`;
           await atomicJson(receiptFile, receipt);
           return receipt;
         }

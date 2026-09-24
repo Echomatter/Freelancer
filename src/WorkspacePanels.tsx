@@ -9,7 +9,6 @@ import {
   Check,
   Clock,
   Activity,
-  ChevronRight,
 } from "lucide-react";
 import { api, query } from "./api";
 import { Button, Panel, Field, Badge, Empty } from "./echoflex/Controls";
@@ -44,70 +43,34 @@ export function Diff({ text }: { text: string }) {
 
 function ActivityCard({ activity, onChild }: { activity: any; onChild: (id: string) => void }) {
   const completed = activity.phase === "completed";
-  const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (completed) setOpen(false);
-  }, [completed]);
-
+  const routeUnavailable = ["no_qualified_route", "delegation_unavailable"].includes(activity.phase);
+  const model = activity.observed ?? activity.selected ?? "Model pending";
+  const status = activityLabel(activity.phase);
+  const reasons = activity.raw?.routing_diagnostics?.reasons;
+  const reasonText = Array.isArray(reasons) && reasons.length ? `Routing reasons: ${reasons.slice(0, 3).join(", ")}.` : "No model qualified under the current delegation settings.";
+  const detail = routeUnavailable ? `No worker started. ${reasonText} The parent continues directly when permitted.` : "";
+  const label = `${activity.agentName ?? activity.agentID ?? activity.role ?? "Agent"} · ${model} · ${status} · ${activity.completedTools ?? 0} actions${detail ? ` · ${detail}` : ""}`;
   return (
     <Panel className="activity-detail-card">
       <button
         type="button"
-        className="activity-detail-toggle"
-        aria-expanded={open}
-        onClick={() => setOpen((value) => !value)}
+        className="activity-detail-toggle activity-summary-button"
+        aria-label={activity.child ? `${label} · Open conversation` : label}
+        title={label}
+        disabled={!activity.child}
+        onClick={() => activity.child && onChild(activity.child)}
       >
-        <span className="activity-detail-title">
-          <ChevronRight
-            size={15}
-            className={open ? "activity-detail-chevron open" : "activity-detail-chevron"}
-          />
+        <span className="activity-detail-title activity-detail-identity">
           <strong>{activity.agentName ?? activity.agentID ?? activity.role ?? "Unknown agent"}</strong>
+          {activity.child && <ArrowUpRight className="activity-open-indicator" size={14} aria-hidden="true" />}
+          <small className="activity-action-count">{activity.completedTools ?? 0} actions</small>
+          <Badge tone={completed ? "success" : routeUnavailable ? "warning" : "neutral"}>
+            {activityLabel(activity.phase)}
+          </Badge>
         </span>
-        <Badge tone={completed ? "success" : "neutral"}>
-          {activityLabel(activity.phase)}
-        </Badge>
+        <small className="activity-detail-model"><ProviderText provider={model} mark>{model}</ProviderText></small>
       </button>
-      {open && (
-        <div className="activity-detail-body">
-          {activity.raw?.activity?.assignment && <p>{activity.raw.activity.assignment}</p>}
-          <p>
-            {activity.subject ??
-              (completed
-                ? "Finished the assigned work."
-                : activity.phase === "failed"
-                  ? "Open the agent to see what happened."
-                  : "Preparing the next step")}
-          </p>
-          {Number.isFinite(activity.elapsedMs) && <small>{Math.round(activity.elapsedMs / 1000)}s elapsed{activity.raw?.activity?.last_meaningful_at ? ` · Last activity ${new Date(activity.raw.activity.last_meaningful_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''}</small>}
-          {activity.raw?.worker_result && <p>{activity.raw.worker_result.summary}</p>}
-          {activity.observed && (
-            <small><ProviderText provider={activity.observed} mark>{activity.observed.split("/").slice(1).join("/")}</ProviderText></small>
-          )}
-          <div className="balance-row">
-            <small>{activity.completedTools} steps completed</small>
-            {activity.child && (
-              <Button variant="quiet" onClick={() => onChild(activity.child)}>
-                Open
-                <ArrowUpRight size={14} />
-              </Button>
-            )}
-          </div>
-          <details>
-            <summary>Details</summary>
-            <dl>
-              <dt>Selected</dt>
-              <dd><ProviderText provider={activity.selected}>{activity.selected ?? "Pending"}</ProviderText></dd>
-              <dt>Dispatched</dt>
-              <dd><ProviderText provider={activity.dispatched}>{activity.dispatched ?? "Pending"}</ProviderText></dd>
-              <dt>Observed</dt>
-              <dd><ProviderText provider={activity.observed}>{activity.observed ?? "Pending"}</ProviderText></dd>
-              <dt>Validation</dt>
-              <dd>{activity.validation}</dd>
-            </dl>
-          </details>
-        </div>
-      )}
+      {routeUnavailable && <small className="activity-route-note">No worker started. {reasonText} The parent continues directly when permitted.</small>}
     </Panel>
   );
 }

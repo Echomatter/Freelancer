@@ -113,13 +113,25 @@ export function createLocalDataStore(directory) {
     ];
     let clean;
     let moved = false;
+    const movedSidecars = [];
     try {
       clean = new DatabaseSync(replacement);
       clean.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
       clean.exec("PRAGMA foreign_keys=OFF");
-      clean.prepare("ATTACH DATABASE ? AS prior").run(filename);
-      for (const table of durableTables) clean.exec(`INSERT INTO ${table} SELECT * FROM prior.${table}`);
-      clean.exec("DETACH DATABASE prior");
+      const recovered = {};
+      for (const table of durableTables) {
+        try {
+          // Read rows through the application connection first. A damaged page
+          // may stop a cross-database INSERT even when readable durable rows
+          // can still be returned. Keep the original file as a backup.
+          const rows = db.prepare(`SELECT * FROM ${table} NOT INDEXED`).all();
+          const columns = clean.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
+          const insert = clean.prepare(`INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`);
+          for (const row of rows) insert.run(...columns.map(column => row[column]));
+          recovered[table] = rows.length;
+        }
+        catch (error) { throw Error(`Could not preserve ${table} during search-index reset: ${error.message}`, { cause: error }); }
+      }
       clean.exec("PRAGMA foreign_keys=ON");
       const fk = clean.prepare("PRAGMA foreign_key_check").all();
       const integrity = clean.prepare("PRAGMA integrity_check").get().integrity_check;
@@ -130,11 +142,23 @@ export function createLocalDataStore(directory) {
       closed = true;
       renameSync(filename, backup);
       moved = true;
+      // SQLite may leave WAL/SHM files after the last handle closes. They
+      // belong to the original database and must not be opened with the
+      // replacement file, which has different page and schema content.
+      for (const suffix of ["-wal", "-shm"]) {
+        if (existsSync(`${filename}${suffix}`)) {
+          renameSync(`${filename}${suffix}`, `${backup}${suffix}`);
+          movedSidecars.push(suffix);
+        }
+      }
       renameSync(replacement, filename);
-      return { backup };
+      return { backup, recovered };
     } catch (error) {
       try { clean?.close(); } catch { /* best-effort cleanup */ }
       if (moved && !existsSync(filename) && existsSync(backup)) {
+        for (const suffix of movedSidecars.reverse()) {
+          try { renameSync(`${backup}${suffix}`, `${filename}${suffix}`); } catch { /* preserve original failure */ }
+        }
         try { renameSync(backup, filename); } catch { /* preserve the original failure */ }
       }
       throw error;

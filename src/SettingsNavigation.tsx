@@ -1,4 +1,4 @@
-import { Bot, BrainCircuit, ChevronUp, Database, Files, GitBranch, Github, History, MessageSquare, Palette, Search, Settings2, SlidersHorizontal, Wallet, Workflow } from "lucide-react";
+import { Bot, BrainCircuit, ChevronUp, Database, Files, Gauge, GitBranch, Github, History, MessageSquare, Palette, Search, Settings2, SlidersHorizontal, Wallet, Workflow } from "lucide-react";
 
 export type SettingsScope = "project" | "application";
 
@@ -21,6 +21,7 @@ const groups = {
     icon: Settings2,
     items: [
       { id: "models", label: "Models", icon: BrainCircuit },
+      { id: "usage", label: "Available Usage", icon: Gauge },
       { id: "providers", label: "Providers", icon: Wallet },
       { id: "appearance", label: "Appearance", icon: Palette },
       { id: "storage", label: "Data & Storage", icon: Database },

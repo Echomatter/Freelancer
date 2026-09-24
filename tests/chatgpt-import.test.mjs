@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, appendFile } from 'node:fs/promises';
+import { readFile, appendFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { codexHistoryFixture } from './fixtures/codex-history.mjs';
@@ -86,6 +86,32 @@ test('skip is final, missing installations are optional, and malformed/foreign t
   await f.store.update('settings', settings => ({ ...settings, projects: [] }));
   const noInstallation = createChatGPTImport({ app: f.app, backendRoot: f.root, codexHome: path.join(f.root, 'absent') });
   assert.deepEqual((await noInstallation.preview(f.directory)).chats, []);
+});
+
+test('same-name old-folder chats require an explicit source and preserve that provenance', async t => {
+  const f = await localDataFixture(); t.after(() => f.close());
+  const source = await codexHistoryFixture(f);
+  const db = createLocalDataStore(path.join(f.root, 'user-data'));
+  db.close();
+  // Replace the exact-folder catalog row with one from a different workspace
+  // while retaining the same basename and transcript path.
+  const { DatabaseSync } = await import('node:sqlite');
+  const catalog = new DatabaseSync(source.database);
+  const oldDirectory = path.join(f.root, 'elsewhere', path.basename(f.directory));
+  catalog.prepare('UPDATE threads SET cwd=? WHERE id=?').run(oldDirectory, 'codex-exact');
+  catalog.close();
+  await writeFile(source.source,source.records.map(row => JSON.stringify(row.type === 'session_meta' ? {...row,payload:{...row.payload,cwd:oldDirectory}} : row)).join('\n')+'\n');
+  const preview = await f.app.chatgpt.preview(f.directory);
+  assert.equal(preview.chats.length, 0);
+  assert.match(preview.notice, /different path/);
+  assert.match(preview.notice, /not reassigned by folder name/);
+  await assert.rejects(f.app.chatgpt.preview(f.directory,path.join(f.root,'elsewhere','Other')),/same named project folder/);
+  const explicit = await f.app.chatgpt.preview(f.directory,oldDirectory);
+  assert.deepEqual(explicit.chats.map(chat => chat.id),['codex-exact']);
+  const result = await f.app.chatgpt.complete(explicit.token,['codex-exact']);
+  const imported = f.app.chatgpt.list(result.project.id)[0];
+  assert.equal(imported.directory,f.directory);
+  assert.equal(imported.source.recordedDirectory,oldDirectory);
 });
 
 test('uncertain native continuation creation is not replayed or duplicated', async t => {

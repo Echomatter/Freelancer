@@ -1072,6 +1072,16 @@ test("state-aware sender queues FIFO, deduplicates IDs, and scopes parent overri
   await sender.close();
 });
 
+test("chat display recovers stale busy status for an unanswered interrupted turn", async (t) => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  f.rows = [{ id: "ses_owned", title: "Interrupted", directory: f.directory }];
+  f.messages = [{ info: { id: "msg_unanswered", role: "user" }, parts: [{ type: "text", text: "Original request" }] }];
+  f.status = { ses_owned: { type: "busy" } };
+  const chat = await f.app.chat(p.id, "ses_owned");
+  assert.equal(chat.status.ses_owned.type, "idle");
+  assert.match(chat.status.ses_owned.failure, /server restarted/i);
+});
+
 test("state-aware sender blocks Queue on pending approvals and cancels waiting work before stop", async (t) => {
   const { createSender } = await import("../server/sender.mjs");
   const f = await fixture(t), p = await f.app.addProject(f.directory);

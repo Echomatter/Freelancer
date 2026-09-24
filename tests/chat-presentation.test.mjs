@@ -134,9 +134,10 @@ test("workspace Details shows chat title, newest agents first, and activity card
   const older = html.indexOf("old-worker");
   assert.ok(newest >= 0 && middle >= 0 && older >= 0);
   assert.ok(newest < middle && middle < older);
-  assert.match(html, /aria-expanded="false"[\s\S]*?new-review/);
-  assert.match(html, /aria-expanded="false"[\s\S]*?middle-researcher/);
-  assert.match(html, /middle-researcher[\s\S]*?aria-expanded="false"[\s\S]*?old-worker/);
+  assert.equal((html.match(/activity-summary-button/g) ?? []).length, 3);
+  assert.doesNotMatch(html, /aria-expanded=|expanded job card/);
+  assert.match(html, /new-review[\s\S]*?Working[\s\S]*?2 actions/);
+  assert.match(html, /middle-researcher[\s\S]*?Finished[\s\S]*?1 actions/);
   assert.doesNotMatch(html, /Newest agent|Middle agent|Older agent/);
 });
 

@@ -503,7 +503,7 @@ export function createApplication({
       // remain frozen until an unrelated native restart changes it.
       const deliveryState = senderState({ messages: rows, status, permissions, questions,
         receipts: snapshot.receipts }, session);
-      const displayStatus = deliveryState.failed
+      const displayStatus = deliveryState.failed || deliveryState.interrupted
         ? { ...status, [session]: { ...(status[session] ?? {}), type: 'idle', failure: deliveryState.failure } }
         : status;
       // Surface only this session's verified descendants, never another project's

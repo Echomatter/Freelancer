@@ -133,7 +133,14 @@ function Tool({ part, onChild }: { part: any; onChild: (id: string) => void }) {
     const modelName = String(
       saved?.selected_model ?? meta.selected_model ?? "Model pending",
     );
-    const label = `${running ? "Agent working" : failed ? "Agent stopped" : "Agent finished"}: ${agentName} · ${modelName}${child ? " · Open conversation" : " · Conversation not available yet"}`;
+    let result: any = null;
+    try { result = typeof state.output === "string" ? JSON.parse(state.output) : state.output && typeof state.output === "object" ? state.output : null; } catch { /* Native host may truncate a long receipt. */ }
+    const routeUnavailable = ["no_qualified_route", "delegation_unavailable"].includes(meta.freelancer_status ?? result?.status);
+    const statusLabel = routeUnavailable ? "Route unavailable" : running ? "Agent working" : failed ? "Agent stopped" : "Agent finished";
+    const reasons = Array.isArray(result?.routing_diagnostics?.reasons) ? result.routing_diagnostics.reasons.slice(0, 3).join(", ") : "";
+    const routeExplanation = result?.result || (reasons ? `Routing reasons: ${reasons}.` : "No model qualified under the current delegation budget and provider rules.");
+    const label = `${statusLabel}: ${agentName} · ${modelName}${child ? " · Open conversation" : " · No worker started"}${reasons ? ` · ${reasons}` : ""}`;
+    if (routeUnavailable && !child) return <span className="agent-activity agent-route-unavailable" role="status" aria-label={label} title={label}><CircleAlert size={16} aria-hidden="true" /><span><strong>{agentName} was not started</strong><small>{routeExplanation}</small></span></span>;
     return (
       <button
         type="button"
@@ -144,12 +151,12 @@ function Tool({ part, onChild }: { part: any; onChild: (id: string) => void }) {
         onClick={() => child && onChild(child)}
       >
         <span className="agent-card-icon">
-          {running ? <LoaderCircle size={20} className="spin" /> : failed ? <CircleAlert size={20} /> : <Bot size={20} />}
-          {!running && !failed && <Check size={10} className="agent-check" />}
+          {running ? <LoaderCircle size={20} className="spin" /> : failed || routeUnavailable ? <CircleAlert size={20} /> : <Bot size={20} />}
+          {!running && !failed && !routeUnavailable && <Check size={10} className="agent-check" />}
         </span>
         <span className="agent-card-copy">
           <strong>{agentName}</strong>
-          <small><ProviderText provider={modelName} mark>{modelName}</ProviderText></small>
+          <small>{routeUnavailable ? "Route unavailable" : <ProviderText provider={modelName} mark>{modelName}</ProviderText>}</small>
         </span>
       </button>
     );
@@ -201,6 +208,7 @@ function Tool({ part, onChild }: { part: any; onChild: (id: string) => void }) {
 function toolTitle(part: any): string {
   const state = part.state ?? {};
   const input = state.input ?? {};
+  const toolName = String(part.tool ?? "").toLowerCase().replace(/[.-]/g, "_");
   const fileName = String(input.filePath ?? input.path ?? "").split(/[\\/]/).filter(Boolean).at(-1);
   const title = {
     read: fileName ? `Read ${fileName}` : "Read a file",
@@ -210,11 +218,19 @@ function toolTitle(part: any): string {
     grep: "Search the project",
     bash: input.description ?? "Run a command",
     skill: state.title ?? "Load a skill",
-  }[part.tool];
+    content_index: contentIndexTitle(input),
+    contentIndex: contentIndexTitle(input),
+  }[toolName];
   if (title) return String(title);
+  if (toolName.includes("content_index")) return contentIndexTitle(input);
   if (part.tool === "delegate" || part.tool === "task")
     return `Delegating to ${state.metadata?.agentName ?? input.agentID ?? input.role ?? "an agent"}`;
-  return String(state.title ?? part.tool ?? "Using a tool");
+  return String(state.title || part.tool || "Using a tool");
+}
+function contentIndexTitle(input: any): string {
+  const operation = String(input.operation ?? "search");
+  const subject = input.query ? `: ${String(input.query)}` : "";
+  return `Content index ${operation}${subject}`;
 }
 function Attachment({ file }: { file: any }) {
   const name = String(file.filename || file.source?.path?.split(/[\\/]/).at(-1) || "Attachment");

@@ -41,20 +41,23 @@ test("normal activity surfaces expose neither dollar estimates nor raw usage cou
   assert.doesNotMatch(panels, /JSON.stringify\(result/);
 });
 
-test("chat-specific shares sit above the Details tabs and retain validation/navigation", () => {
-  const details = section(panels, 'function ActivityCard(', 'export function Files(');
-  assert.ok(details.indexOf('<ChatContributions') < details.indexOf('<nav'));
+test("activity summaries show model and status and navigate directly to the child", () => {
+  const card = section(panels, 'function ActivityCard(', 'function CurrentFile(');
+  assert.match(card, /activityLabel\(activity\.phase\)/);
+  assert.match(card, /ProviderText provider=\{model\}/);
+  assert.match(card, /\{activity\.completedTools \?\? 0\} actions/);
+  assert.match(card, /onChild\(activity\.child\)/);
+  assert.doesNotMatch(card, /<details>|<summary>|aria-expanded|activity-detail-body/);
+  assert.ok(panels.indexOf('<ChatContributions') < panels.indexOf('<nav'));
   assert.match(app, /contributions=\{data.costs.contributions\?\.chats.find/);
   assert.match(app, /\(c\) => c.sessionID === session/);
-  assert.match(details, /<dt>Observed<\/dt>/);
-  assert.match(details, /<dt>Validation<\/dt>/);
-  assert.match(details, /onChild\(activity\.child\)/);
   assert.doesNotMatch(contributions, /Share of work|Recorded activity|its recorded delegated work|contributions\?\.month/);
 });
 
-test("worker cards start collapsed and omit the result-validation status line", () => {
+test("worker cards have no expanded result-validation view", () => {
   const card = section(panels, 'function ActivityCard(', 'function CurrentFile(');
-  assert.match(card, /const \[open, setOpen\] = useState\(false\)/);
+  assert.doesNotMatch(card, /const \[open, setOpen\]/);
+  assert.doesNotMatch(card, /<details>|<summary>|activity-detail-body/);
   assert.doesNotMatch(card, /Partial result|Result ready.*Validation|worker_result\.validationStatus/);
 });
 

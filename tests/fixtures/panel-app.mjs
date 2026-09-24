@@ -13,6 +13,7 @@ export async function panelFixture() {
   const directory = path.join(root, "project"); await mkdir(directory);
   const project = { id: "panel_project", name: "Panel test", directory };
   const session = { id: "ses_panel", title: "Resize test chat", directory };
+  const child = { id: "ses_panel_child", parentID: session.id, title: "Browser worker job", directory };
   const store = createStore(root);
   await store.update("settings", (s) => ({ ...s, projects: [project], appearance: { theme: "dark", todoLayout: "docked" } }));
   const snapshot = { preferences: { scope: "default", revision: 0, preferences: defaults }, usage: { providers: [] }, receipts: [], history: { entries: [] } };
@@ -29,12 +30,21 @@ export async function panelFixture() {
     parts: [{
       id: "prt_panel_agent",
       type: "tool",
+      tool: "delegate",
       state: {
         metadata: {
           task_id: "task_panel_agent",
+          child_session: child.id,
+          selected_model: "opencode/free",
+          observed_model: "opencode/free",
           freelancer_activity: {
             schema_version: 1,
-            role: "worker",
+            agentID: "engineer",
+            agentName: "Engineer",
+            workflowID: "build",
+            child_session: child.id,
+            selected_model: "opencode/free",
+            observed_model: "opencode/free",
             phase: activityPhase,
             subject: "Browser worker job",
             completed_tools: activityPhase === "completed" ? 2 : 1,
@@ -47,8 +57,10 @@ export async function panelFixture() {
   const host = {
     async request(route) {
       if (route === "/provider") return { connected: [], all: [] };
-      if (route === "/session?limit=1000") return [session];
+      if (route === "/session?limit=1000") return [session, child];
       if (route === "/session/ses_panel") return session;
+      if (route === "/session/ses_panel_child") return child;
+      if (route === "/session/ses_panel_child/message") return [{ info: { id: "msg_child", role: "assistant", providerID: "opencode", modelID: "free", time: { created: Date.now(), completed: Date.now() } }, parts: [{ id: "part_child", type: "text", text: "Child conversation content" }] }];
       if (route === "/session/ses_panel/message") return activityMessages();
       if (route === "/session/status" || route === "/config") return {};
       if (route.endsWith("/todo")) return [{ content: "Preserve this task", status: "pending" }];

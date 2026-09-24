@@ -6,9 +6,7 @@ import { localDataFixture } from './fixtures/local-data-app.mjs';
 
 const f = await localDataFixture();
 await mkdir(path.join(f.root, 'tools'));
-await copyFile('backend/tools/Project_Content_Indexer.py', path.join(f.root, 'tools/Project_Content_Indexer.py'));
-await mkdir(path.join(f.root, 'tools/runtime'));
-await copyFile('backend/tools/runtime/publish-index.mjs', path.join(f.root, 'tools/runtime/publish-index.mjs'));
+await copyFile('backend/tools/project-content-indexer.mjs', path.join(f.root, 'tools/project-content-indexer.mjs'));
 const request = f.host.request.bind(f.host);
 f.host.request = (route, options) => route === '/session' && options?.method !== 'POST'
   ? Promise.resolve(structuredClone(f.state.sessions)) : request(route, options);

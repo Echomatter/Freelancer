@@ -100,8 +100,17 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(200, await app.addProject(body.directory));
         if (req.method === 'GET' && route === '/api/projects/folders')
           return send(200, await app.listProjectFolders(url.searchParams.get('directory') ?? ''));
-        if (req.method === 'POST' && route === '/api/projects/import-preview')
-          return send(200, await app.chatgpt.preview(body.directory));
+        if (req.method === 'POST' && route === '/api/projects/import-preview') {
+          // Existing projects need no catalog scan; let the client reopen them
+          // immediately through the ordinary project path.
+          const settings = await app.store.read('settings');
+          const directory = await import('node:fs/promises').then(fs => fs.realpath(body.directory));
+          const existing = settings.projects.find(row => (process.platform === 'win32'
+            ? row.directory.replace(/^\\\\\?\\/, '').toLowerCase() === directory.replace(/^\\\\\?\\/, '').toLowerCase()
+            : row.directory === directory));
+          if (existing && !body.sourceDirectory) return send(200, { existing, directory, chats: [], notice: 'This project is already set up. Import is offered only for new projects.' });
+          return send(200, await app.chatgpt.preview(body.directory, body.sourceDirectory));
+        }
         if (req.method === 'POST' && route === '/api/projects/setup')
           return send(200, await app.chatgpt.complete(body.token, body.selected));
         if (req.method === 'POST' && route === '/api/chat/imported/continue')

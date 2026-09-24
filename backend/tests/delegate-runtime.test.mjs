@@ -155,7 +155,7 @@ test('workflow intelligence reaches the native child without changing its parent
   const f = await fixture(t, { surface: 'opencode-free', models: ['opencode/free'] });
   await savePreferences(f.root, f.root, { scope: 'project', preferences: { ...defaults, childVariant: 'high' } });
   const result = await f.service.execute({ ...args, variant: 'low' }, f.ctx);
-  assert.equal(result.status, 'completed', JSON.stringify({ result, updates }));
+  assert.equal(result.status, 'completed', JSON.stringify({ result }));
   const prompt = f.requests.find(r => r.kind === 'prompt');
   assert.equal(prompt.body.variant, 'low');
   assert.equal(prompt.body.model.modelID, 'free');

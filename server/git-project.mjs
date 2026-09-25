@@ -70,9 +70,13 @@ export function createGitProjects({
     jobs = new Map(),
     leases = new Map();
   let setupBusy = false;
-  function locked(id, action) {
-    if (locks.has(id))
-      throw Error("This project already has an action in progress.");
+  async function locked(id, action, wait = false) {
+    const current = locks.get(id);
+    if (current) {
+      if (!wait) throw Error("This project already has an action in progress.");
+      await current.catch(() => {});
+      return locked(id, action, true);
+    }
     const task = Promise.resolve().then(action);
     locks.set(id, task);
     task
@@ -1612,9 +1616,11 @@ export function createGitProjects({
     const agreement = await policy(id);
     if (!agreement.tracking) return;
     if (agreement.preset === "inspect") return;
+    // Build preparation is serialized with other history actions, but it does
+    // not require every chat to be idle unless it must change the shared
+    // checkout. Chats staying on the current branch can run concurrently.
     return locked(id, async () => {
       const p = await project(id);
-      await idle(p, session);
       await assertAgreement(p, agreement);
       const state = await local(p);
       if (!state.branch) throw Error("Return to a branch before building.");
@@ -1627,6 +1633,7 @@ export function createGitProjects({
                 `freelancer/${session.replace(/^ses_/, "").slice(0, 70)}`,
             );
       if (state.branch !== target) {
+        await idle(p, session);
         if (state.files.length)
           throw Error(
             "Save the current changes as a local checkpoint in Project history before starting a different task.",
@@ -1639,12 +1646,12 @@ export function createGitProjects({
           p.directory,
           ["show-ref", "--verify", `refs/heads/${target}`],
           { allowFailure: true },
-        );
+            );
         await git(
           p.directory,
-          exists.code === 0
-            ? ["switch", target]
-            : ["switch", "-c", target, agreement.mainBranch],
+            exists.code === 0
+              ? ["switch", target]
+              : ["switch", "-c", target, agreement.mainBranch],
         );
       }
       if (agreement.preset !== "main")
@@ -1655,7 +1662,7 @@ export function createGitProjects({
         });
       if (!leases.has(id))
         leases.set(id, { sessionID: session, messageID: null });
-    });
+    }, true);
   }
   return {
     inspect,

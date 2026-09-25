@@ -41,6 +41,29 @@ export function isHandoffPart(part) {
   ) && meta.freelancer_status !== "selection_required";
 }
 
+export function delegateChildSession(part) {
+  const meta = part?.state?.metadata ?? {};
+  const child = meta.freelancer_activity?.child_session ?? meta.sessionId ?? meta.child_session;
+  return typeof child === "string" && child.trim() ? child : null;
+}
+
+export function delegateModel(part) {
+  const state = part?.state ?? {};
+  const meta = state.metadata ?? {};
+  const saved = meta.freelancer_delegate_display ?? meta.ai_toolkit_delegate_display;
+  let receipt = null;
+  if (typeof state.output === "string") {
+    try { receipt = JSON.parse(state.output); } catch { /* A native receipt may be truncated. */ }
+  } else if (state.output && typeof state.output === "object") receipt = state.output;
+  const model = meta.selected_model ?? meta.freelancer_activity?.selected_model ??
+    saved?.selected_model ?? saved?.original_metadata?.selected_model ??
+    receipt?.attempts?.at(-1)?.selected_model ??
+    receipt?.model_selection?.selected_model ??
+    (typeof meta.model === "string" ? meta.model :
+      meta.model?.providerID && meta.model?.modelID ? `${meta.model.providerID}/${meta.model.modelID}` : null);
+  return typeof model === "string" && model.trim() && !/^(?:unknown(?: model)?|model pending)$/i.test(model.trim()) ? model.trim() : null;
+}
+
 // Honest fallback purpose groups. No model calls, no inferred dependencies.
 // Note: delegate/task handoffs are routed to the workers rollup in
 // summarizeRequestWork, never to purposes, so they intentionally have no
@@ -157,11 +180,10 @@ export function buildRequestGroups(messages = [], options = {}) {
   return groups.filter((g) => g.allMessages.length > 0);
 }
 
-// Compact observable work summary for one request group. Counts come only
-// from the supplied parts/todos; unknown progress is left unknown.
-export function summarizeRequestWork(allMessages = [], todos = []) {
-  const tools = [];
-  const workers = [];
+// A native part can be replayed with the same id, while callbacks for one
+// call or child can arrive with distinct part ids. Keep the latest visible
+// state without merging separate calls or separate child sessions.
+export function latestToolParts(messages = []) {
   // Same part id means the same item updated (arguments → output →
   // completion) or a replayed snapshot: the latest snapshot supersedes
   // earlier ones, so a running tool that completes does not stick at
@@ -170,14 +192,35 @@ export function summarizeRequestWork(allMessages = [], todos = []) {
   // cross-stream timestamps, so array order is the ordering source; this is
   // the documented adapter limit, not perfect reconstruction.
   const latestByPartID = new Map();
-  for (const m of allMessages) {
+  for (const m of messages) {
     for (const part of m?.parts ?? []) {
-      if (part?.id) latestByPartID.set(part.id, part);
+      if (part?.type !== "tool") continue;
+      if (part?.id) { latestByPartID.delete(part.id); latestByPartID.set(part.id, part); }
       else latestByPartID.set(Symbol(), part);
     }
   }
+  const latestByCall = new Map();
   for (const part of latestByPartID.values()) {
-    if (part?.type !== "tool") continue;
+    const key = part.callID ? `call:${part.callID}` : Symbol();
+    if (latestByCall.has(key)) latestByCall.delete(key);
+    latestByCall.set(key, part);
+  }
+  const latestByWorker = new Map();
+  for (const part of latestByCall.values()) {
+    const child = isHandoffPart(part) ? delegateChildSession(part) : null;
+    const key = child ? `worker:${child}` : Symbol();
+    if (latestByWorker.has(key)) latestByWorker.delete(key);
+    latestByWorker.set(key, part);
+  }
+  return [...latestByWorker.values()];
+}
+
+// Compact observable work summary for one request group. Counts come only
+// from the supplied parts/todos; unknown progress is left unknown.
+export function summarizeRequestWork(allMessages = [], todos = []) {
+  const tools = [];
+  const workers = [];
+  for (const part of latestToolParts(allMessages)) {
     const status = toolOutcomeStatus(part);
     if (isHandoffPart(part)) {
       const meta = part?.state?.metadata ?? {};

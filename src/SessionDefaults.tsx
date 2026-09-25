@@ -77,16 +77,11 @@ export function SessionDefaults({
   }
   return (
     <div className="session-defaults">
-      <PageHeading title="Session defaults" description={<>
-          New chats in{" "}
-          <strong>
-            {data.project.name ?? data.project.directory.split(/[\\/]/).pop()}
-          </strong>{" "}
-          start here. Existing chats keep their choices.
-        </>} actions={<PageCloseButton onClick={onClose} />} />
+      <PageHeading title="Session defaults" actions={<PageCloseButton onClick={onClose} />} />
       <form onSubmit={save}>
         <Panel className="session-start">
           <h3>Start a new chat</h3>
+          <p className="settings-context">New chats in <strong>{data.project.name ?? data.project.directory.split(/[\\/]/).pop()}</strong> start here. Existing chats keep their choices.</p>
           <div className="editor-columns">
             <Field label="Workflow">
               <select

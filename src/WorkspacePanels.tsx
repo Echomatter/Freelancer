@@ -11,7 +11,7 @@ import {
   Activity,
 } from "lucide-react";
 import { api, query } from "./api";
-import { Button, PageCloseButton, Panel, Field, Badge, Empty } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Panel, Field, Badge, Empty } from "./echoflex/Controls";
 import { visibleActivity, activityLabel } from "../domain/activity.mjs";
 import { ChatContributions } from "./Contributions";
 import { resolveTodoLayout } from "../domain/appearance.mjs";
@@ -44,12 +44,12 @@ export function Diff({ text }: { text: string }) {
 function ActivityCard({ activity, onChild }: { activity: any; onChild: (id: string) => void }) {
   const completed = activity.phase === "completed";
   const routeUnavailable = ["no_qualified_route", "delegation_unavailable"].includes(activity.phase);
-  const model = activity.observed ?? activity.selected ?? "Model pending";
+  const model = activity.observed ?? activity.selected;
   const status = activityLabel(activity.phase);
   const reasons = activity.raw?.routing_diagnostics?.reasons;
   const reasonText = Array.isArray(reasons) && reasons.length ? `Routing reasons: ${reasons.slice(0, 3).join(", ")}.` : "No model qualified under the current delegation settings.";
   const detail = routeUnavailable ? `No worker started. ${reasonText} The parent continues directly when permitted.` : "";
-  const label = `${activity.agentName ?? activity.agentID ?? activity.role ?? "Agent"} · ${model} · ${status} · ${activity.completedTools ?? 0} actions${detail ? ` · ${detail}` : ""}`;
+  const label = `${activity.agentName ?? activity.agentID ?? activity.role ?? "Agent"}${model ? ` · ${model}` : ""} · ${status} · ${activity.completedTools ?? 0} actions${detail ? ` · ${detail}` : ""}`;
   return (
     <Panel className="activity-detail-card">
       <button
@@ -68,7 +68,7 @@ function ActivityCard({ activity, onChild }: { activity: any; onChild: (id: stri
             {activityLabel(activity.phase)}
           </Badge>
         </span>
-        <small className="activity-detail-model"><ProviderText provider={model} mark>{model}</ProviderText></small>
+        {model && <small className="activity-detail-model"><ProviderText provider={model} mark>{model}</ProviderText></small>}
       </button>
       {routeUnavailable && <small className="activity-route-note">No worker started. {reasonText} The parent continues directly when permitted.</small>}
     </Panel>
@@ -245,12 +245,7 @@ export function Files({ project, run, onClose }: { project: string; run: any; on
   }
   return (
     <div className="page files-page">
-      <div className="page-title">
-        <div>
-          <h1>Project files</h1>
-          <p>{file?.path || folder || "Your project"}</p>
-        </div>
-        <>
+      <PageHeading title="Files" actions={<>
           {(folder || file) && (
             <Button
               onClick={() =>
@@ -264,8 +259,8 @@ export function Files({ project, run, onClose }: { project: string; run: any; on
             </Button>
           )}
           <PageCloseButton onClick={onClose} />
-        </>
-      </div>
+        </>} />
+      <p className="files-location" aria-label="Current location">{file?.path || folder || "Your project"}</p>
       {file ? (
         <Panel>
           {file.type === "binary" || file.encoding === "base64" ? (

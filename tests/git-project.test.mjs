@@ -523,6 +523,16 @@ test("other running chats block branch switches and saves; dirty work is not mov
     /Save the current changes/,
   );
 });
+test("same-branch builds can start alongside other chats and configuration work", async (t) => {
+  const f = await fixture(t, "main");
+  await f.initialize();
+  f.busy({ ses_refresh: { type: "busy" } });
+  await Promise.all([
+    f.service.beforeBuild(f.p.id, "ses_one", { mode: "build", id: "build" }),
+    f.service.beforeBuild(f.p.id, "ses_two", { mode: "build", id: "build" }),
+  ]);
+  assert.equal(await f.runGit("branch", "--show-current"), "main");
+});
 test("deleted secret in earlier outgoing history still blocks upload", async (t) => {
   const f = await fixture(t, "main");
   await f.initialize();

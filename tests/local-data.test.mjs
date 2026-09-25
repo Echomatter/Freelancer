@@ -4,7 +4,7 @@ import { mkdtemp, rm, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
 import { DatabaseSync } from "node:sqlite";
-import { createLocalDataStore } from "../server/data/store.mjs";
+import { createLocalDataService, createLocalDataStore, isLocalDataUnavailable } from "../server/data/store.mjs";
 import {
   organizedSessions,
   nativeArchiveSupported,
@@ -23,6 +23,15 @@ async function localStore(t) {
   });
   return { root, store };
 }
+test("closed local data service cannot reopen SQLite during shutdown", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-service-close-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const service = createLocalDataService(root);
+  service.get();
+  service.close();
+  assert.throws(() => service.get(), /closed/);
+  assert.throws(() => service.beginMaintenance(), /closed/);
+});
 test("new data store is real SQLite with a versioned application-owned schema", async (t) => {
   const { store } = await localStore(t);
   assert.equal(
@@ -37,6 +46,20 @@ test("new data store is real SQLite with a versioned application-owned schema", 
     6,
   );
   reader.close();
+});
+test("transient SQLite locks are not reported as unavailable local data", () => {
+  assert.equal(
+    isLocalDataUnavailable({ code: "ERR_SQLITE_ERROR", errcode: 5, message: "database is locked" }),
+    false,
+  );
+  assert.equal(
+    isLocalDataUnavailable({ code: "ERR_SQLITE_ERROR", errcode: 6, message: "database table is locked" }),
+    false,
+  );
+  assert.equal(
+    isLocalDataUnavailable({ code: "ERR_SQLITE_ERROR", errcode: 11, message: "database disk image is malformed" }),
+    true,
+  );
 });
 test("legacy library.sqlite is renamed and migrated in place without losing drafts", async (t) => {
   const { root, store } = await localStore(t);

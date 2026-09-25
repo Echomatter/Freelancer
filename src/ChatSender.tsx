@@ -11,7 +11,7 @@ import './chat-sender.css';
 type Intent = { id: string; project: string; session: string; text: string; model: string; variant: string; workflowID: string; agentID: string; draftToken?: any };
 type Delivery = { id: string; kind: 'queue' | 'clarify'; status: string; model: string; text?: string; error?: string; notice?: string };
 type Options = { data: any; session: any; busy: boolean; loading: boolean; draft: string; setDraft: (text: string) => void;
-  parentModel: string; intelligence: string; agentID: string; workflowID: string; models: any[]; onSend: (variant: string) => void; disabled?: boolean; hasAttachments?: boolean; captureDraft?: () => any; acceptDraft?: (token: any) => void };
+  parentModel: string; intelligence: string; agentID: string; workflowID: string; models: any[]; onSend: (variant: string) => void; onStop: () => void; disabled?: boolean; hasAttachments?: boolean; captureDraft?: () => any; acceptDraft?: (token: any) => void };
 
 export function useChatSender(options: Options) {
   const { data, busy, loading, draft, parentModel, intelligence, agentID, workflowID } = options;
@@ -27,10 +27,12 @@ export function useChatSender(options: Options) {
   const [deliveries, setDeliveries] = useState<{ context: string; rows: Delivery[] }>({ context: '', rows: [] });
   const flight = useRef(new Set<string>());
   const revision = useRef(0);
+  const activeDelivery = useRef(false);
   const [connectionError, setConnectionError] = useState('');
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const dismissalKey = (row: Delivery) => `${context}/${row.id}/${row.status}/${row.error ?? ''}`;
   const rows = deliveries.context === context ? deliveries.rows : [];
+  activeDelivery.current = rows.some(row => ['waiting', 'sending', 'submitted'].includes(row.status));
   const action = pending ? 'loading' : senderAction({ busy: busy || rows.some(r => ['waiting', 'sending', 'submitted'].includes(r.status)), draft, loading, available: !!parentModel && !!project && !options.disabled, hasAttachments: options.hasAttachments });
   useEffect(() => {
     setIntent(null); setOverride(''); setPending(flight.current.has(context)); setError(''); setConnectionError('');
@@ -50,7 +52,8 @@ export function useChatSender(options: Options) {
       } catch (e) {
         if (!controller.signal.aborted) setConnectionError((e as Error).message);
       } finally {
-        if (!controller.signal.aborted) timer = setTimeout(refresh, 1200);
+        if (!controller.signal.aborted) timer = setTimeout(refresh,
+          document.hidden ? 8000 : activeDelivery.current ? 1200 : 3000);
       }
     };
     void refresh();
@@ -113,7 +116,7 @@ export function useChatSender(options: Options) {
             {row.kind === 'clarify' && row.status === 'submitted' && <small>Actual worker progress appears in Details.</small>}
             {(row.error || row.notice) && <p role="status">{row.error || row.notice}</p>}
       </WorkCard>)}
-      {intent && <Dialog title="Queue or Delegate?" description="Keep the current work moving. Choose how this message joins it."
+      {intent && <Dialog title="While this response runs" description="Choose what happens to the current response and your message."
         icon={<Hand />} onClose={() => setIntent(null)} busy={pending} initialFocus="first"
         footer={<>{pending && <span role="status"><LoaderCircle className="spin" size={16} /> Saving message…</span>}
           <Button type="button" disabled={pending} onClick={() => setIntent(null)}>Cancel</Button></>}>
@@ -124,8 +127,9 @@ export function useChatSender(options: Options) {
         </ProviderSelect></label>
         <p className="sender-scope">Queue uses this model for the next parent turn. Delegate uses it for the worker only. Saved defaults stay unchanged.</p>
         <div className="sender-options">
-          <button type="button" disabled={pending} onClick={() => void choose('queue')}><ListPlus size={22} aria-hidden="true" /><strong>Queue</strong><span>Send automatically after the current turn finishes.</span></button>
           <button type="button" disabled={pending} onClick={() => void choose('clarify')}><Bot size={22} aria-hidden="true" /><strong>Delegate</strong><span>Ask a worker to handle this concern at the parent’s next safe boundary.</span></button>
+          <button type="button" disabled={pending} onClick={() => void choose('queue')}><ListPlus size={22} aria-hidden="true" /><strong>Queue</strong><span>Send automatically after the current turn finishes.</span></button>
+          <button type="button" disabled={pending} onClick={() => { setIntent(null); options.onStop(); }}><CircleStop size={22} aria-hidden="true" /><strong>Interrupt</strong><span>Stop the current response and cancel waiting messages. Keep this draft to revise or send next.</span></button>
         </div>
         {error && <p className="notice error" role="alert">{error}</p>}
       </Dialog>}
@@ -138,12 +142,12 @@ export function SenderControls({ sender, busy, onStop, disabled }: { sender: Ret
   const stop = sender.action === 'stop';
   const hand = sender.action === 'handoff';
   return <div className="sender-controls">
-    <button type={stop ? 'button' : 'submit'} className={`sender-main ${hand ? 'handoff' : ''} ${stop ? 'stop' : ''}`}
-      aria-label={stop ? 'Stop response' : hand ? 'Queue or delegate message' : sender.pending ? 'Submitting message' : 'Send message'}
+    <button type="button" className={`sender-main ${hand ? 'handoff' : ''} ${stop ? 'stop' : ''}`}
+      aria-label={stop ? 'Stop response' : hand ? 'Choose Delegate, Queue, or Interrupt' : sender.pending ? 'Submitting message' : 'Send message'}
       aria-haspopup={hand ? 'dialog' : undefined}
-      title={stop ? 'Stop the response and cancel pending messages' : hand ? 'Choose Queue or Delegate — attached files stay in the composer' : 'Send message'}
+      title={stop ? 'Stop the response and cancel pending messages' : hand ? 'Choose Delegate, Queue, or Interrupt — attached files stay in the composer' : 'Send message'}
       disabled={!stop && (disabled || sender.pending || sender.action === 'disabled' || sender.action === 'loading')}
-      onClick={stop ? onStop : undefined}>
+      onClick={stop ? onStop : sender.submit}>
       {sender.action === 'loading' ? <LoaderCircle size={21} className="spin" /> : stop ? <CircleStop size={21} /> : hand ? <Hand size={22} /> : <ArrowUp size={22} />}
     </button>
   </div>;

@@ -119,7 +119,6 @@ export function WorkspaceCatalog({
     <div className="page catalog-page" key={kind}>
       {!edit && <>
       <PageHeading title={isAgent ? "Agents" : "Workflows"}
-        description={isAgent ? "One catalog for main chats and delegated work. Changes apply to the next main request; active assignments keep their saved definition." : "Choose the method and agent for a task. Changes apply to future requests."}
         actions={<>
           <Button
             variant="primary"
@@ -239,7 +238,7 @@ export function WorkspaceCatalog({
               void save();
             }}
           >
-            <PageHeading title={`${edit.id ? "Edit" : "New"} ${isAgent ? "agent" : "workflow"}`} description="Changes apply to future requests and assignments."
+            <PageHeading title={`${edit.id ? "Edit" : "New"} ${isAgent ? "agent" : "workflow"}`}
               actions={<Button
                 type="button"
                 variant="quiet"

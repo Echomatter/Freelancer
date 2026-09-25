@@ -22,7 +22,8 @@ const shots = process.env.FREELANCER_QA_SHOTS;
 async function shot(name) { if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, name + '.png') }); } }
 try {
   await page.goto(f.url);
-  await page.getByRole('button', { name: 'New chat', exact: true }).click();
+  await page.locator('.project-navigation .nav-accordion-trigger').click();
+  await page.getByRole('button', { name: 'New project', exact: true }).click();
   const project = page.getByRole('dialog', { name: 'Open project', exact: true });
   await project.getByRole('button', { name: 'Browse folders…' }).click();
   const picker = page.getByRole('dialog', { name: 'Choose project folder', exact: true });
@@ -46,7 +47,8 @@ try {
   await page.setViewportSize({ width: 1280, height: 900 });
   await importing.getByRole('button', { name: 'Import 1 and open project', exact: true }).click();
   await importing.waitFor({ state: 'hidden' });
-  await page.locator('.sidebar .sessions').getByRole('button', { name: /Turquoise widget/ }).click();
+  await page.getByRole('button', { name: 'Chats', exact: true }).click();
+  await page.locator('.nav-chat-select').filter({ hasText: 'Turquoise widget' }).click();
   await page.getByText('Fix the turquoise widget', { exact: true }).waitFor();
   await page.getByText('The turquoise widget needs a color fix.', { exact: true }).waitFor();
   assert.equal(indexedAfterImport, true);

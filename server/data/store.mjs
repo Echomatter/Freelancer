@@ -16,8 +16,14 @@ const APP_ID = 1414482766;
 const SCHEMA = 6;
 const plain = (row) => row && { ...row };
 export function isLocalDataUnavailable(error) {
+  const message = String(error?.message ?? "");
+  const code = Number(error?.errcode);
+  // SQLITE_BUSY/LOCKED is transient contention, not evidence that the
+  // application's data is unavailable or corrupt.
+  if ([5, 6].includes(code & 0xff) || /database (?:table )?is locked/i.test(message))
+    return false;
   return String(error?.code ?? "").startsWith("ERR_SQLITE") ||
-    /malformed database|database disk image is malformed|invalid rootpage|unsupported local data database/i.test(String(error?.message ?? ""));
+    /malformed database|database disk image is malformed|invalid rootpage|unsupported local data database/i.test(message);
 }
 export function conflict(
   message = "This item changed in another window. Reload before saving.",
@@ -27,8 +33,10 @@ export function conflict(
 export function createLocalDataService(directory) {
   let store;
   let maintenance = false;
+  let closed = false;
   return {
     get() {
+      if (closed) throw Error("Local data service is closed.");
       if (maintenance)
         throw Object.assign(Error("Local SQLite maintenance is in progress. Retry shortly."), {
           code: "ERR_SQLITE_MAINTENANCE",
@@ -36,6 +44,7 @@ export function createLocalDataService(directory) {
       return (store ??= createLocalDataStore(directory));
     },
     beginMaintenance() {
+      if (closed) throw Error("Local data service is closed.");
       if (maintenance) throw Error("Another local SQLite maintenance operation is running.");
       maintenance = true;
       store?.close();
@@ -48,6 +57,7 @@ export function createLocalDataService(directory) {
       };
     },
     close() {
+      closed = true;
       store?.close();
       store = undefined;
       maintenance = false;
@@ -94,7 +104,9 @@ export function createLocalDataStore(directory) {
       throw Error(
         "Unsupported local data database. Existing data was not changed.",
       );
-    db.exec("PRAGMA busy_timeout = 3000; PRAGMA foreign_keys = ON;");
+    // Match the separate index-publisher connection so short app writes wait
+    // through its transactional publication instead of surfacing SQLITE_BUSY.
+    db.exec("PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON;");
     if (!version) {
       db.exec("BEGIN IMMEDIATE");
       try {
@@ -357,11 +369,12 @@ export function createLocalDataStore(directory) {
     },
     maintainIndex(operation) {
       if (operation === "optimize") {
-        tx(() => {
-          db.exec("PRAGMA optimize");
-          db.exec("INSERT INTO chat_search(chat_search) VALUES('optimize')");
-          db.exec("INSERT INTO content_units_fts(content_units_fts) VALUES('optimize')");
-        });
+        // These are independent maintenance hints. Avoid holding one write
+        // transaction across all FTS optimization so normal app writes have
+        // shorter windows in which to contend.
+        db.exec("PRAGMA optimize");
+        db.exec("INSERT INTO chat_search(chat_search) VALUES('optimize')");
+        db.exec("INSERT INTO content_units_fts(content_units_fts) VALUES('optimize')");
         return { operation, message: "SQLite query plans and conversation search were optimized." };
       }
       if (operation === "check") {

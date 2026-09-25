@@ -2,6 +2,7 @@ import { mkdir, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { createChatGPTImport } from '../../server/chatgpt-import.mjs';
+import { createLocalDataService } from '../../server/data/store.mjs';
 
 export async function codexHistoryFixture(f) {
   const home = path.join(f.root, 'codex');
@@ -27,7 +28,10 @@ export async function codexHistoryFixture(f) {
   insert.run('codex-nested', path.join(f.directory, 'nested'), source, 'Nested directory', 100, 200, 0, 'test-model');
   db.close();
   await writeFile(path.join(home, 'auth.json'), 'AUTH MUST NOT BE READ');
-  f.app.chatgpt = createChatGPTImport({ app: f.app, backendRoot: f.root, dataRoot: path.join(f.root, 'user-data'), codexHome: home });
+  const importData = createLocalDataService(path.join(f.root, 'user-data'));
+  f.app.chatgpt = createChatGPTImport({ app: f.app, backendRoot: f.root, dataRoot: path.join(f.root, 'user-data'), localData: importData, codexHome: home });
+  const close = f.close.bind(f);
+  f.close = async () => { importData.close(); await close(); };
   await f.store.update('settings', settings => ({ ...settings, projects: [], lastProjectID: undefined }));
   return { home, source, database, records };
 }

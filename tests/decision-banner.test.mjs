@@ -50,7 +50,7 @@ test("latest request shows a decision banner only when decisions are pending", a
 });
 
 
-test("work expands inline while prose stays outside the work block", async (t) => {
+test("work details remain grouped by turn while prose stays outside the work block", async (t) => {
   const server = await createServer({ root: fileURLToPath(new URL("../", import.meta.url)), optimizeDeps: { noDiscovery: true, entries: [], include: [] }, server: { middlewareMode: true, hmr: false }, appType: "custom" });
   t.after(() => server.close());
   const { Chat } = await server.ssrLoadModule("/src/Chat.tsx");
@@ -63,7 +63,7 @@ test("work expands inline while prose stays outside the work block", async (t) =
       { id: "p1", type: "text", text: "Helpful explanation." },
     ] },
   ] })));
-  const workStart = html.indexOf('class="request-working"');
+  const workStart = html.indexOf('class="request-working ');
   const proseStart = html.indexOf('class="message assistant"');
   assert.ok(workStart >= 0 && proseStart > workStart);
   assert.ok(html.indexOf('unique tool output') < proseStart);

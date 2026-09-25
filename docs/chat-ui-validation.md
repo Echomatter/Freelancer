@@ -1,7 +1,8 @@
 # Chat validation
 
 The production journeys use the real React bundle, loopback HTTP handlers and
-application stores with disposable data. Native model transport is simulated.
+application stores with disposable data. `chat-dock.browser.mjs` uses the
+dedicated React presentation fixture through Vite. Native model transport is simulated.
 Run `npm run build` followed by `npm run test:browser`.
 
 `polish.browser.mjs` checks the scrollbar and composer reach the window bottom,
@@ -9,7 +10,13 @@ right-aligned content-sized user bubbles, retained reading position after
 navigation, shared task/delivery cards, dismissal/restoration, explicit queue
 cancellation, settings close controls, and narrow layouts. `chat-tweaks.browser.mjs`
 checks that assistant prose, including reasoning parts, stays in the chat while
-tool calls stay in the collapsed work card. `chat-loading-cache.browser.mjs`
+tool calls stay in the collapsed work card. `chat-dock.browser.mjs` checks the floating work header, the
+expanded card's own scroll area, downward roll-up, turn replacement in both
+scroll directions, and narrow layout. The card stays tied to each request;
+scrolling chat changes the docked request without moving tool content into
+assistant prose.
+
+`chat-loading-cache.browser.mjs`
 holds chat responses to verify one loading stage fills the chat and Details
 area, then switches projects and verifies a recent transcript appears before
 the network read completes. The composer stays disabled until native state is

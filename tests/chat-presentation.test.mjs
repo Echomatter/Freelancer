@@ -58,6 +58,31 @@ test("parent chat exposes only the child navigation icon, never handoff argument
   );
 });
 
+test("delegate requests and child reports render as collapsed Handoff cards", async (t) => {
+  const server = await createServer({
+    root: fileURLToPath(new URL("../", import.meta.url)),
+    optimizeDeps: { noDiscovery: true, entries: [], include: [] },
+    server: { middlewareMode: true, hmr: false }, appType: "custom",
+  });
+  t.after(() => server.close());
+  const { Chat } = await server.ssrLoadModule("/src/Chat.tsx");
+  const data = { settings: workspaceCatalog({}), snapshot: {}, models: [],
+    providers: { all: [], connected: [] }, project: { id: "project" } };
+  const render = (session, messages) => renderToStaticMarkup(React.createElement(Chat, {
+    data, session, messages, agentID: "engineer", workflowID: "build", draft: "", model: "", busy: false,
+  }));
+  const parent = render({ id: "parent" }, [{ info: { id: "user", role: "user" },
+    parts: [{ type: "text", text: "[Freelancer Delegate handoff abc123]\nUser concern:\nCheck this" }] }]);
+  assert.match(parent, /<details class="handoff-card"><summary>.*Handoff · Delegate request/);
+  assert.doesNotMatch(parent, /<blockquote[^>]*>.*Freelancer Delegate handoff/);
+  const child = render({ id: "child", parentID: "parent" }, [
+    { info: { id: "user", role: "user" }, parts: [{ type: "text", text: "Investigate" }] },
+    { info: { id: "report", role: "assistant", parentID: "user", finish: "stop", time: { completed: 1 } },
+      parts: [{ type: "text", text: "Report outcome" }] },
+  ]);
+  assert.match(child, /<details class="handoff-card"><summary>.*Handoff · Agent report/);
+});
+
 test("docked todos render above the composer within the sticky composer", async (t) => {
   const server = await createServer({
     root: fileURLToPath(new URL("../", import.meta.url)),
@@ -340,7 +365,7 @@ test("state-aware sender renders send, stop, and handoff states without exposing
   }));
   assert.match(render("send"), /aria-label="Send message"/);
   assert.match(render("stop", true), /aria-label="Stop response"/);
-  assert.match(render("handoff", true), /aria-label="Queue or delegate message"/);
+  assert.match(render("handoff", true), /aria-label="Choose Delegate, Queue, or Interrupt"/);
   assert.match(render("handoff", true), /aria-haspopup="dialog"/);
   for (const action of ["send", "stop", "handoff"])
     assert.equal((render(action, action !== "send").match(/<button/g) ?? []).length, 1);

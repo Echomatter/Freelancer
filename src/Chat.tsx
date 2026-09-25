@@ -37,6 +37,10 @@ import {
   summarizeRequestWork,
   toolOutcomeStatus,
   requestWorkLabel,
+  delegateChildSession,
+  delegateModel,
+  isHandoffPart,
+  latestToolParts,
 } from "../domain/chat-view.mjs";
 
 function Code({ children, className }: { children?: any; className?: string }) {
@@ -102,7 +106,7 @@ const Markdown = memo(function Markdown({ text }: { text: string }) {
     </div>
   );
 });
-function Tool({ part, onChild }: { part: any; onChild: (id: string) => void }) {
+function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: string) => void; modelFallback?: string }) {
   const state = part.state ?? {},
     meta = state.metadata ?? {},
     saved =
@@ -112,10 +116,7 @@ function Tool({ part, onChild }: { part: any; onChild: (id: string) => void }) {
   const handoff =
     !selection && (!!saved || part.tool === "delegate" || part.tool === "task");
   const title = toolTitle(part);
-  const child =
-    meta.freelancer_activity?.child_session ??
-    meta.sessionId ??
-    meta.child_session;
+  const child = delegateChildSession(part);
   if (selection)
     return state.status === "running" || state.status === "pending" ? (
       <span
@@ -127,19 +128,18 @@ function Tool({ part, onChild }: { part: any; onChild: (id: string) => void }) {
       </span>
     ) : null;
   if (handoff) {
-    const running = state.status === "running" || state.status === "pending";
-    const failed = state.status === "error";
-    const agentName = String(meta.agentName ?? meta.freelancer_activity?.agentName ?? saved?.agent?.name ?? input.agentID ?? input.role ?? "Unknown agent");
-    const modelName = String(
-      saved?.selected_model ?? meta.selected_model ?? "Model pending",
-    );
+    const outcome = toolOutcomeStatus(part);
+    const running = outcome === "running" || outcome === "pending";
+    const failed = outcome === "error";
     let result: any = null;
     try { result = typeof state.output === "string" ? JSON.parse(state.output) : state.output && typeof state.output === "object" ? state.output : null; } catch { /* Native host may truncate a long receipt. */ }
+    const agentName = String(meta.agentName ?? meta.freelancer_activity?.agentName ?? result?.agent?.name ?? saved?.agent?.name ?? input.agentID ?? input.role ?? "Agent");
+    const modelName = delegateModel(part) ?? modelFallback;
     const routeUnavailable = ["no_qualified_route", "delegation_unavailable"].includes(meta.freelancer_status ?? result?.status);
     const statusLabel = routeUnavailable ? "Route unavailable" : running ? "Agent working" : failed ? "Agent stopped" : "Agent finished";
     const reasons = Array.isArray(result?.routing_diagnostics?.reasons) ? result.routing_diagnostics.reasons.slice(0, 3).join(", ") : "";
     const routeExplanation = result?.result || (reasons ? `Routing reasons: ${reasons}.` : "No model qualified under the current delegation budget and provider rules.");
-    const label = `${statusLabel}: ${agentName} · ${modelName}${child ? " · Open conversation" : " · No worker started"}${reasons ? ` · ${reasons}` : ""}`;
+    const label = `${statusLabel}: ${agentName}${modelName ? ` · ${modelName}` : ""}${child ? " · Open conversation" : " · No worker started"}${reasons ? ` · ${reasons}` : ""}`;
     if (routeUnavailable && !child) return <span className="agent-activity agent-route-unavailable" role="status" aria-label={label} title={label}><CircleAlert size={16} aria-hidden="true" /><span><strong>{agentName} was not started</strong><small>{routeExplanation}</small></span></span>;
     return (
       <button
@@ -156,7 +156,7 @@ function Tool({ part, onChild }: { part: any; onChild: (id: string) => void }) {
         </span>
         <span className="agent-card-copy">
           <strong>{agentName}</strong>
-          <small>{routeUnavailable ? "Route unavailable" : <ProviderText provider={modelName} mark>{modelName}</ProviderText>}</small>
+          <small>{routeUnavailable ? "Route unavailable" : modelName ? <ProviderText provider={modelName} mark>{modelName}</ProviderText> : statusLabel}</small>
         </span>
       </button>
     );
@@ -295,7 +295,7 @@ function distinctGroupModels(group: { messages: any[] }, catalog: any[] = []) {
 function GroupLabel({ role, models }: { role: string; models: { provider?: string; model: string }[] }) {
   if (role === "user") return <>You</>;
   if (role !== "assistant") return <>{role.charAt(0).toUpperCase() + role.slice(1)}</>;
-  if (!models.length) return <>Model pending</>;
+  if (!models.length) return <>Assistant</>;
   const [first, ...rest] = models;
   return (
     <>
@@ -307,29 +307,35 @@ function GroupLabel({ role, models }: { role: string; models: { provider?: strin
   );
 }
 
-function RequestWorking({ summary, messages, onChild, live, changeCount = 0, onOpenDetails }: {
+function RequestWorking({ summary, messages, onChild, live, changeCount = 0, onOpenDetails, requestKey, docked = false, expanded = false, onToggle }: {
   summary: ReturnType<typeof summarizeRequestWork>;
   messages: any[];
   onChild: (id: string) => void;
   live?: boolean;
   changeCount?: number;
   onOpenDetails?: (tab: string) => void;
+  requestKey: string;
+  docked?: boolean;
+  expanded?: boolean;
+  onToggle: (key: string) => void;
 }) {
   const recorded = messages.length > 0 && messages.every(message => message.info?.imported);
   live = live && !recorded;
   if (!summary.hasWork && !changeCount && !live && !messages.some(m => m.info?.summary === true)) return null;
-  const tools = messages.flatMap((message) => message.parts ?? []).filter((part) => part.type === "tool");
-  const recentTools = [...tools].reverse();
+  const recentTools = latestToolParts(messages).reverse();
   const active = recentTools.find((part) => part.state?.status === "running") ?? recentTools.find((part) => part.state?.status === "pending");
-  const status = recorded ? 'Imported activity' : live && active ? toolTitle(active) : requestWorkLabel(summary, live);
+  const latest = recentTools[0];
+  const status = recorded ? 'Imported activity' : live && active ? toolTitle(active) : `${requestWorkLabel(summary, live)}${latest ? ` · ${toolTitle(latest)}` : ""}`;
   return (
-    <details className="request-working" aria-label="Work summary">
-      <summary className="request-working-head">
+    <details className={`request-working ${docked ? "is-docked" : ""}`} data-request-work-key={docked ? undefined : requestKey} open={expanded} aria-label="Work summary">
+      <summary className="request-working-head" onClick={(event) => { event.preventDefault(); onToggle(requestKey); }}>
         {live ? <LoaderCircle size={16} className="spin" /> : summary.errors ? <CircleAlert size={16} /> : <Terminal size={16} />}
-        <span className="request-working-title">{status}</span>
+        <span className="request-working-title" title={status}>{status}</span>
         <span className="request-working-meta">
           {summary.toolCount + summary.workerCount > 0 && <span>{summary.toolCount + summary.workerCount} action{summary.toolCount + summary.workerCount === 1 ? "" : "s"}</span>}
           {summary.workers.total > 0 && <span>{summary.workers.total} helper{summary.workers.total === 1 ? "" : "s"}</span>}
+          {summary.tasks.total > 0 && <span>{summary.tasks.completed}/{summary.tasks.total} tasks</span>}
+          {summary.errors > 0 && <span className="request-working-error">{summary.errors} failed</span>}
         </span>
         <ChevronDown size={15} className="work-chevron" />
       </summary>
@@ -342,10 +348,17 @@ function RequestWorking({ summary, messages, onChild, live, changeCount = 0, onO
   );
 }
 
-function GroupBody({ group, onChild, mode = "all" }: { group: { messages: any[] }; onChild: (id: string) => void; mode?: "all" | "work" | "prose" }) {
+function GroupBody({ group, onChild, mode = "all", childReport = false }: { group: { messages: any[] }; onChild: (id: string) => void; mode?: "all" | "work" | "prose"; childReport?: boolean }) {
   const flat: { msg: any; part: any }[] = [];
   for (const msg of group.messages)
     for (const part of msg.parts ?? []) flat.push({ msg, part });
+  const visibleTools = new Set(latestToolParts(group.messages));
+  const modelByChild = new Map<string, string>();
+  for (const { part } of flat) {
+    if (!isHandoffPart(part)) continue;
+    const child = delegateChildSession(part), model = delegateModel(part);
+    if (child && model) modelByChild.set(child, model);
+  }
   const nodes: any[] = [];
   let textBuffer: { key: string; text: string }[] = [];
   const flushTexts = () => {
@@ -364,6 +377,7 @@ function GroupBody({ group, onChild, mode = "all" }: { group: { messages: any[] 
   });
   flat.forEach(({ msg, part }, index) => {
     if (part?.id && lastIndexByPartID.get(part.id) !== index) return;
+    if (part.type === "tool" && !visibleTools.has(part)) return;
     const isWork = part.type === "tool" || msg.info?.summary === true;
     if (mode === "work" && !isWork || mode === "prose" && isWork) return;
     const key = `${msg?.info?.id ?? index}/${part.id ?? index}`;
@@ -373,6 +387,16 @@ function GroupBody({ group, onChild, mode = "all" }: { group: { messages: any[] 
     } else if (part.type === "text") {
       const text = typeof part.text === "string" ? part.text : "";
       if (!text.trim()) return;
+      if (msg.info?.role === "user" && /^\[Freelancer Delegate handoff [\w-]+\]\n/.test(text)) {
+        flush();
+        nodes.push(<details key={key} className="handoff-card"><summary><Bot size={16} />Handoff · Delegate request<ChevronDown size={14} /></summary><pre>{text}</pre></details>);
+        return;
+      }
+      if (childReport && msg.info?.role === "assistant" && msg.info?.time?.completed && msg.info?.finish && msg.info.finish !== "tool-calls") {
+        flush();
+        nodes.push(<details key={key} className="handoff-card"><summary><Bot size={16} />Handoff · Agent report<ChevronDown size={14} /></summary><div className="handoff-content"><Markdown text={text} /></div></details>);
+        return;
+      }
       textBuffer.push({ key, text });
     } else if (part.type === "reasoning") {
       const text = typeof part.text === "string" ? part.text : "";
@@ -380,7 +404,7 @@ function GroupBody({ group, onChild, mode = "all" }: { group: { messages: any[] 
       textBuffer.push({ key, text });
     } else if (part.type === "tool") {
       flush();
-      nodes.push(<Tool key={key} part={part} onChild={onChild} />);
+      nodes.push(<Tool key={key} part={part} onChild={onChild} modelFallback={modelByChild.get(delegateChildSession(part) ?? "")} />);
     } else if (part.type === "file") {
       flush();
       nodes.push(<Attachment key={key} file={part} />);
@@ -451,6 +475,11 @@ export function Chat({
     area = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [showNewActivity, setShowNewActivity] = useState(false);
+  const [dock, setDock] = useState<{ key: string; push: number; height: number } | null>(null);
+  const [expandedWork, setExpandedWork] = useState<string | null>(null);
+  const [rollingWork, setRollingWork] = useState(false);
+  const lastScrollTop = useRef(0);
+  const rollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const attachmentCache = useRef(attachmentStore ?? new Map<string, PendingAttachment[]>());
   const [, updateAttachments] = useState(0);
@@ -498,19 +527,63 @@ export function Chat({
     taskSession.current = session?.id;
     taskHistory.current.clear();
   }
+  const updateDock = useCallback(() => {
+    const scroll = area.current;
+    if (!scroll) return;
+    const top = scroll.getBoundingClientRect().top;
+    const cards = [...scroll.querySelectorAll<HTMLElement>('.request-working[data-request-work-key]')];
+    let current: HTMLElement | undefined;
+    let next: HTMLElement | undefined;
+    for (const card of cards) {
+      if (card.getBoundingClientRect().top <= top + 1) current = card;
+      else { next = card; break; }
+    }
+    const key = current?.dataset.requestWorkKey;
+    const height = current?.querySelector('summary')?.getBoundingClientRect().height ?? 0;
+    const push = next && height ? Math.min(0, next.getBoundingClientRect().top - top - height) : 0;
+    const viewportHeight = scroll.clientHeight;
+    setDock((previous) => key ? previous?.key === key && Math.abs(previous.push - push) < 0.5 && previous.height === viewportHeight ? previous : { key, push, height: viewportHeight } : null);
+  }, []);
+  const toggleWork = useCallback((key: string) => {
+    if (rollTimer.current) clearTimeout(rollTimer.current);
+    setRollingWork(false);
+    if (dock?.key === key) {
+      setExpandedWork((previous) => previous === key ? null : key);
+      return;
+    }
+    const scroll = area.current;
+    const card = [...(scroll?.querySelectorAll<HTMLElement>('.request-working[data-request-work-key]') ?? [])].find((item) => item.dataset.requestWorkKey === key);
+    if (scroll && card) {
+      const delta = card.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
+      scroll.scrollTop += delta;
+      lastScrollTop.current = scroll.scrollTop;
+      updateDock();
+    }
+    setExpandedWork(key);
+  }, [dock?.key, updateDock]);
   const followLatest = () => {
     const scroll = area.current;
-    if (scroll && stick.current && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 2)
+    if (scroll && stick.current && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 2) {
       scroll.scrollTop = scroll.scrollHeight;
+      // A streamed tool can grow the transcript. This automatic follow is not
+      // a user scroll and must not roll an open work panel shut.
+      lastScrollTop.current = scroll.scrollTop;
+    }
   };
   useLayoutEffect(() => {
     stick.current = true;
     setShowNewActivity(false);
+    setDock(null);
+    setExpandedWork(null);
+    if (rollTimer.current) clearTimeout(rollTimer.current);
+    setRollingWork(false);
     followLatest();
   }, [session?.id]);
   useLayoutEffect(() => {
     followLatest();
+    updateDock();
   }, [messages, busy]);
+  useEffect(() => () => { if (rollTimer.current) clearTimeout(rollTimer.current); }, []);
   useEffect(() => {
     const scroll = area.current;
     const content = scroll?.firstElementChild;
@@ -520,6 +593,7 @@ export function Chat({
       if (!frame) frame = requestAnimationFrame(() => {
         frame = 0;
         followLatest();
+        updateDock();
       });
     });
     observer.observe(scroll);
@@ -581,6 +655,7 @@ export function Chat({
     agentID,
     workflowID,
     models,
+    onStop,
     onSend: (selectedVariant) => {
       const captured = attachments.map(({ filename, mime, url }) => ({ filename, mime, url }));
       const capturedIDs = new Set(attachments.map((file) => file.id));
@@ -604,7 +679,8 @@ export function Chat({
   const openChild = useCallback((id: string) => actions.current.onChild(id), []);
   const openDetails = useCallback((tab: string) => actions.current.onOpenDetails?.(tab), []);
   const reviewDecisions = useCallback(() => actions.current.onReviewDecisions?.(), []);
-  const requestContent = useMemo(() => buildRequestGroups(messages).map((request, requestIndex, all) => {
+  const requestGroups = useMemo(() => buildRequestGroups(messages), [messages]);
+  const requestContent = useMemo(() => requestGroups.map((request, requestIndex, all) => {
     const isLast = requestIndex === all.length - 1;
     if (isLast) taskHistory.current.set(request.key, todos);
     const requestTodos = isLast ? todos : (taskHistory.current.get(request.key) ?? EMPTY_TODOS);
@@ -621,7 +697,8 @@ export function Chat({
         ))}
         <RequestWorking summary={summary} changeCount={isLast ? changeCount : 0}
           live={isLast && busy} messages={request.responseMessages}
-          onChild={openChild} onOpenDetails={openDetails} />
+          requestKey={request.key} expanded={expandedWork === request.key && dock?.key !== request.key}
+          onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
         {isLast && pendingDecisions > 0 && (
           <div className="decision-banner" role="status">
             <span>Needs your decision · {pendingDecisions} pending — review to continue.</span>
@@ -632,7 +709,7 @@ export function Chat({
           <article key={group.key} className={`message ${group.role}`}>
             <div className="message-label"><GroupLabel role={group.role} models={group.role === "assistant" ? distinctGroupModels(group, data.models) : []} />{group.role === "assistant" && <CopyResponse messages={group.messages} />}</div>
             <div className="message-body">
-              <GroupBody group={group} onChild={openChild} mode="prose" />
+              <GroupBody group={group} onChild={openChild} mode="prose" childReport={!!session?.parentID} />
               {group.messages.some((m) => m.info?.error) && (
                 <p className="notice error">{group.messages.find((m) => m.info?.error)?.info.error.data?.message ?? "This response stopped. You can try again."}</p>
               )}
@@ -641,7 +718,11 @@ export function Chat({
         ))}
       </section>
     );
-  }), [messages, todos, busy, changeCount, pendingDecisions, data.models, openChild, openDetails, reviewDecisions]);
+  }), [requestGroups, todos, busy, changeCount, pendingDecisions, data.models, expandedWork, dock?.key, toggleWork, openChild, openDetails, reviewDecisions]);
+  const dockIndex = requestGroups.findIndex((request) => request.key === dock?.key);
+  const dockRequest = dockIndex < 0 ? null : requestGroups[dockIndex];
+  const dockTodos = dockIndex === requestGroups.length - 1 ? todos : (taskHistory.current.get(dockRequest?.key ?? "") ?? EMPTY_TODOS);
+  useLayoutEffect(() => { updateDock(); }, [requestContent, updateDock]);
   return (
     <div className="chat-view" aria-busy={syncing}>
       <div
@@ -649,6 +730,14 @@ export function Chat({
         ref={area}
         onScroll={() => {
           const x = area.current!;
+          const movement = x.scrollTop - lastScrollTop.current;
+          lastScrollTop.current = x.scrollTop;
+          if (movement > 2 && expandedWork && !rollingWork) {
+            setRollingWork(true);
+            if (rollTimer.current) clearTimeout(rollTimer.current);
+            rollTimer.current = setTimeout(() => { setExpandedWork(null); setRollingWork(false); }, 650);
+          }
+          updateDock();
           stick.current = x.scrollHeight - x.scrollTop - x.clientHeight < 120;
           setShowNewActivity((visible) => (visible === stick.current ? !stick.current : visible));
         }}
@@ -676,6 +765,13 @@ export function Chat({
         )}
         <div ref={end} />
         </div>
+      {dockRequest && <div className={`request-dock ${rollingWork ? "is-rolling" : ""}`} style={{ transform: `translateY(${dock?.push ?? 0}px)`, "--chat-scroll-height": `${dock?.height ?? 0}px` } as React.CSSProperties}>
+        <RequestWorking summary={summarizeRequestWork(dockRequest.allMessages, dockTodos)}
+          messages={dockRequest.responseMessages} requestKey={dockRequest.key} docked
+          expanded={expandedWork === dockRequest.key} live={dockIndex === requestGroups.length - 1 && busy}
+          changeCount={dockIndex === requestGroups.length - 1 ? changeCount : 0}
+          onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
+      </div>}
       {showNewActivity && messages.length > 0 && (
         <div className="new-activity-row">
           <button type="button" className="new-activity" onClick={jumpToLatest}>

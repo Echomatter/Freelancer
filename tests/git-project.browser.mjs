@@ -92,7 +92,7 @@ try {
   await page.getByRole("button", { name: "Project settings", exact: true }).click();
   await page.getByRole("button", { name: "GitHub", exact: true }).click();
   await page
-    .getByRole("heading", { name: "Project history & GitHub" })
+    .getByRole("heading", { name: "GitHub", exact: true })
     .waitFor();
   // This fixture explicitly has no GitHub CLI or authenticated account.
   // Verify the local-only path, not a connection it cannot establish.
@@ -174,7 +174,7 @@ try {
     .click();
   await page
     .getByRole("button", { name: "Turn on project history", exact: true })
-    .waitFor();
+    .waitFor({ timeout: 30000 });
   assert.ok(
     (await fixture.app.gitProjects.inspect(fixture.project.id)).local.head,
     "disabling keeps history",

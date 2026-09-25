@@ -48,7 +48,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
     },
     tool: {
       delegate: tool({
-        description: 'Assign a bounded task to a named agent. The runtime selects eligible capacity in this call; paid routes use native paid_delegate consent. A new worker starts in the background so the parent can continue independent work. Use worker and task to continue an existing child. Returns a compact result with evidence limits; the full child conversation remains available.',
+        description: 'Assign a bounded task to a named agent. A new worker starts in the background. Use workers:true to list this parent conversation’s durable child assignments; use worker alone to read its current native chat transcript and status; use worker with task to continue it. Paid routes use native paid_delegate consent.',
         args: {
           agent: tool.schema.string().optional().describe('Named agent ID from the supplied catalog. Omit all arguments for catalog details.'),
           task: tool.schema.string().min(1).optional().describe('A bounded assignment, relevant files and acceptance checks. Give concurrent writers disjoint areas.'),
@@ -57,14 +57,17 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
           freeOnly: tool.schema.boolean().optional().describe('Only eligible free capacity, including descendants.'),
           inspectionOnly: tool.schema.boolean().optional().describe('No source modifications.'),
           independentReview: tool.schema.boolean().optional().describe('Seek a different model and exclude prior reviewers.'),
-          worker: tool.schema.string().optional().describe('Existing child session ID to continue with its same agent and model.'),
+          worker: tool.schema.string().optional().describe('Child session ID. Alone reads its live transcript; with task continues its same agent and model.'),
+          workers: tool.schema.boolean().optional().describe('List this parent conversation’s saved worker assignments.'),
+          from: tool.schema.number().int().min(0).optional().describe('Zero-based native message offset for reading a worker transcript. Omit for the latest messages.'),
+          limit: tool.schema.number().int().min(1).max(20).optional().describe('Number of worker messages to read, default 8.'),
         },
         async execute(args, context) {
           try {
           const receipt = await delegate.execute({ ...args, background: !args.worker }, { ...context,
             metadata: async (update: any) => { await present.metadata(context, update).catch(() => false) },
           })
-          const output = receipt.status === 'catalog' ? receipt : {
+          const output = ['catalog', 'workers', 'worker_transcript'].includes(receipt.status) ? receipt : {
             status: receipt.status, task_id: receipt.task_id, parent_session: receipt.parent_session,
             agent: receipt.agent && { id: receipt.agent.id, name: receipt.agent.name },
             workflow: receipt.workflow && { id: receipt.workflow.id, mode: receipt.workflow.mode },

@@ -41,7 +41,7 @@ export function ContentIndex({ onClose }: { onClose: () => void }) {
   const files = stats?.projects.reduce((total, item) => total + (item.files?.sources ?? 0), 0) ?? 0;
   const chats = stats?.projects.reduce((total, item) => total + (item.chats?.conversations ?? 0), 0) ?? 0;
   return <div className="content-index-page">
-    <PageHeading title="Content index" description="Search files throughout every registered project and conversations across your OpenCode history. These indexes are local copies; files and native chats remain the originals."
+    <PageHeading title="Content index"
       actions={<><Button type="button" disabled={!!pending} onClick={() => void refresh().catch((failure) => setError(failure.message))}><RefreshCw size={16} />Refresh stats</Button><PageCloseButton onClick={onClose} /></>} />
     {error && <p className="notice error" role="alert">{error}</p>}
     {!stats ? <p>Loading index stats…</p> : <>

@@ -13,7 +13,7 @@ import {
   History,
   X,
 } from "lucide-react";
-import { Button, PageCloseButton, Badge, Empty, Panel } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Badge, Empty, Panel } from "./echoflex/Controls";
 import { api, query } from "./api";
 import { gitPresets, agreementText } from "../domain/git-project.mjs";
 import "./git-project.css";
@@ -220,18 +220,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
       : "Account connected";
   return (
     <div className="page git-project-page">
-      <div className="page-title">
-        <div>
-          <div className="git-eyebrow">
-            <Github size={19} /> THIS PROJECT
-          </div>
-          <h1>Project history &amp; GitHub</h1>
-          <p>
-            Git remembers checkpoints on your computer. GitHub keeps the
-            checkpoints you choose to upload online.
-          </p>
-        </div>
-        <>
+      <PageHeading title="GitHub" actions={<>
           <Button
             aria-label="Refresh Git status"
             disabled={pending}
@@ -240,8 +229,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
             <RefreshCw size={17} className={pending ? "spin" : ""} />
           </Button>
           <PageCloseButton onClick={onClose} />
-        </>
-      </div>
+        </>} />
       {error && !confirmation && (
         <div className="notice error" role="alert">
           {error}

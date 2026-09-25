@@ -11,8 +11,6 @@ import { Button, Panel, Field, Badge, PageCloseButton, PageHeading } from "./ech
 import { api } from "./api";
 import { ProviderConnection } from "./ProviderConnection";
 import { SessionDefaults } from "./SessionDefaults";
-import { TodoPlacement } from "./TodoPlacement";
-import { persistTodoLayout } from "../domain/appearance.mjs";
 const providers = [
   ["openai", "OpenAI"],
   ["github-copilot", "GitHub Copilot"],
@@ -26,7 +24,6 @@ export function Settings({
   run,
   refresh,
   onNavigate,
-  onAppearanceSaved,
   onColorsSaved,
   onHistory,
   onClose,
@@ -35,7 +32,6 @@ export function Settings({
   sessionID?: string;
   onHistory?: () => void;
   onClose: () => void;
-  onAppearanceSaved?: (layout: string) => void;
   onColorsSaved: (patch: ColorPatch) => void;
   onNavigate: (view: string) => void;
   tab: string;
@@ -63,13 +59,13 @@ export function Settings({
   return (
     <div className="settings-layout">
       <div className="settings-content">
-        {tab === "delegation" && <><PageHeading title="Delegation" description="Set the project’s delegation budget and limits." actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
+        {tab === "delegation" && <><PageHeading title="Delegation" actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
         {tab === "storage" && <DataStorage onHistory={() => onHistory?.()} onClose={onClose} onChange={refresh} />}
         {tab === "index" && <ContentIndex onClose={onClose} />}
         {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} onClose={onClose} refresh={refresh} />}
         {tab === "providers" && (
           <>
-            <PageHeading title="Providers" description="Manage connections, billing preferences, and provider colors." actions={closeAction} />
+            <PageHeading title="Providers" actions={closeAction} />
             <div className="provider-list">
               {providers.map(([id, name]) => (
                 <Panel key={id} className="provider-card" aria-label={`${name} settings`} {...providerAttributes(id, data.settings.appearance ?? {})}>
@@ -184,21 +180,8 @@ export function Settings({
         )}
         {tab === "appearance" && (
           <>
-            <PageHeading title="Appearance" description="Choose how Freelancer looks and arranges your workspace." actions={closeAction} />
+            <PageHeading title="Appearance" actions={closeAction} />
               <Panel>
-                <TodoPlacement
-                  appearance={data.settings.appearance}
-                  save={async (todoLayout) => {
-                    await persistTodoLayout(
-                      todoLayout,
-                      (patch) => api("appearance", patch, "PUT"),
-                      async (layout) => {
-                        if (onAppearanceSaved) onAppearanceSaved(layout);
-                        else await refresh();
-                      },
-                    );
-                  }}
-                />
                 <label className="check">
                 <input
                   type="checkbox"

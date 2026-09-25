@@ -18,7 +18,6 @@ async function fixture(t, realPreferences = false) {
   // Windows TEMP may use an 8.3 alias; native fixtures must use the same
   // canonical paths as addProject(), including preference-store keys.
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "freelancer-app-")));
-  t.after(() => rm(root, { recursive: true, force: true }));
   const directory = path.join(root, "project");
   await mkdir(directory);
   const store = createStore(root),
@@ -101,6 +100,15 @@ async function fixture(t, realPreferences = false) {
           return savePreferences(root, projectDirectory, input);
       },
     }),
+  });
+  t.after(async () => {
+    await app.indexJobs.close();
+    app.history.close();
+    app.modelRatings.close();
+    await app.gitProjects.close();
+    app.localData.close();
+    await store.flush();
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
   return {
     root,
@@ -1072,14 +1080,14 @@ test("state-aware sender queues FIFO, deduplicates IDs, and scopes parent overri
   await sender.close();
 });
 
-test("chat display recovers stale busy status for an unanswered interrupted turn", async (t) => {
+test("chat display recovers an unanswered turn after native status becomes idle", async (t) => {
   const f = await fixture(t), p = await f.app.addProject(f.directory);
   f.rows = [{ id: "ses_owned", title: "Interrupted", directory: f.directory }];
-  f.messages = [{ info: { id: "msg_unanswered", role: "user" }, parts: [{ type: "text", text: "Original request" }] }];
-  f.status = { ses_owned: { type: "busy" } };
+  f.messages = [{ info: { id: "msg_unanswered", role: "user", time: { created: Date.now() - 61000 } }, parts: [{ type: "text", text: "Original request" }] }];
+  f.status = {};
   const chat = await f.app.chat(p.id, "ses_owned");
   assert.equal(chat.status.ses_owned.type, "idle");
-  assert.match(chat.status.ses_owned.failure, /server restarted/i);
+  assert.match(chat.status.ses_owned.failure, /appears to have stopped/i);
 });
 
 test("state-aware sender blocks Queue on pending approvals and cancels waiting work before stop", async (t) => {

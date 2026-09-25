@@ -18,8 +18,9 @@ export function GitDefaults({ preset = "review", onClose, refresh }: { preset?: 
     finally { setPending(false); }
   };
   return <>
-    <PageHeading title="Git defaults" description="Choose the starting working style for newly configured projects. Each project keeps its own saved agreement." actions={<PageCloseButton onClick={onClose} />} />
+    <PageHeading title="Git defaults" actions={<PageCloseButton onClick={onClose} />} />
     <Panel title="New project working style">
+      <p className="settings-context">This is the starting style for new projects. Existing projects keep their own saved agreements.</p>
       <label className="field"><span>Working style</span>
         <select value={choice} disabled={pending} onChange={(e) => setChoice(e.target.value)}>
           {gitPresets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}

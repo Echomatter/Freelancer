@@ -171,7 +171,9 @@ test("real HTTP route serves scoped activity and preserves local-only guards", a
 
 test("source contract: sidebar and history share project activity; answers bypass error swallowing", async () => {
   const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8");
-  assert.equal(app.match(/<SessionActivity activity=\{sessionActivity\?\.\[s.id\]\}/g)?.length, 1);
+  const navigation = await readFile(new URL("../src/NavigationMenus.tsx", import.meta.url), "utf8");
+  assert.match(app, /activity: sessionActivity\?\.\[s.id\]/);
+  assert.equal(navigation.match(/<SessionActivity activity=\{session.activity\}/g)?.length, 1);
   const history = await readFile(new URL("../src/History.tsx", import.meta.url), "utf8");
   assert.equal(history.match(/<SessionActivity activity=\{sessionActivity\?\.\[row.id\]\}/g)?.length, 1);
   assert.match(app, /<HistoryPage[^>]*activity=\{sessionActivity\}/);

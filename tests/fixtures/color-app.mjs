@@ -65,11 +65,7 @@ export async function colorFixture() {
   return { ...runtime, store, setBusy(value) { busy = value; },
     setQuestion(value) { questions = value ? [{ id: 'que_colors', sessionID: 'ses_colors', questions: [{ header: 'Color review', question: 'Does this palette look readable?', options: [{ label: 'Yes', description: 'Keep the current palette.' }, { label: 'Review', description: 'Inspect the controls again.' }] }] }] : []; },
     async close() {
-      await runtime.sender.close();
-      await app.indexJobs.close();
-      runtime.server.closeAllConnections();
-      await new Promise(r => runtime.server.close(r));
-      app.localData.close();
+      await runtime.close();
       await store.flush();
       await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },

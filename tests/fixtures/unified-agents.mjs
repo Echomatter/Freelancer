@@ -218,9 +218,13 @@ export async function unifiedFixture(t) {
   });
   t?.after(async () => {
     await app.sender?.close();
+    await app.indexJobs.close();
+    app.modelRatings.close();
+    app.history.close();
     await app.gitProjects.close();
+    app.localData.close();
     await store.flush();
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   });
   const project = await app.addProject(directory),
     parent = await app.createChat(project.id, "Named agent test");
@@ -287,6 +291,20 @@ export async function unifiedFixture(t) {
     });
     return context();
   };
+  let closed = false;
+  const close = async () => {
+    if (closed) return;
+    closed = true;
+    await app.sender?.close();
+    await app.indexJobs.close();
+    app.modelRatings.close();
+    app.history.close();
+    await app.gitProjects.close();
+    app.localData.close();
+    await store.flush();
+    await rm(root, { recursive: true, force: true });
+  };
+  t?.after?.(close);
   return {
     root,
     directory,
@@ -306,11 +324,6 @@ export async function unifiedFixture(t) {
     send,
     context,
     calls,
-    close: async () => {
-      await app.sender?.close();
-      await app.gitProjects.close();
-      await store.flush();
-      await rm(root, { recursive: true, force: true });
-    },
+    close,
   };
 }

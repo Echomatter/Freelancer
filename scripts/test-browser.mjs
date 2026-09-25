@@ -12,6 +12,7 @@ const journeys = [
   "usage-meter",
   "polish",
   "chat-tweaks",
+  "chat-dock",
   "chat-loading-cache",
   "unfinished-work",
   "history-search",

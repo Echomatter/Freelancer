@@ -7,6 +7,8 @@ release/
 .state/
 .opencode/
 runtime.json
+/model-assessments*.json
+/models_assessment.json
 __pycache__/
 
 # Disposable browser screenshots and fixtures

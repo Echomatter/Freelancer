@@ -8,7 +8,13 @@ Choose a project → choose a model if desired → ask for work → watch it hap
 
 ## Run on Windows
 
-Install Node.js 22.13 or newer, the native OpenCode executable, and Git. Then, in this source folder:
+On a fresh Windows computer, download and extract this repository's source ZIP. If Git is already installed, you can clone it instead. Open PowerShell in the extracted or cloned folder and run:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1
+```
+
+The setup checks Node.js 22.13+, Git, GitHub CLI, Chrome, and native OpenCode, installs missing prerequisites through WinGet or npm, builds from the lockfile, checks native startup, and creates the desktop links. GitHub access still requires your own sign-in; the script does not copy credentials. To run without creating links, pass `-NoShortcuts -NoLaunch`. For manual setup, install Node.js 22.13 or newer, the native OpenCode executable, and Git. Then, in this source folder:
 
 ```powershell
 npm.cmd ci
@@ -33,7 +39,7 @@ Optional desktop links are created by `scripts/create-desktop-shortcut.ps1` and 
 - **Queue / Delegate:** schedule another parent request or hand it a bounded concern while work continues. Dismissing a card hides it; canceling a queued message is a separate action.
 - **Managed Git:** save locally, synchronize or put changes up for review through the saved project agreement. A local checkpoint is not an upload. GitHub is optional.
 - **Models and Available Usage:** browse connected models and estimated capacity. Share of Work measures participation, not correctness or quality.
-- **Appearance:** consistent provider colors, four palettes, resizable panels, compact dismissible task cards and reduced-motion support.
+- **Appearance:** consistent provider colors, selectable palettes, resizable panels, compact dismissible task cards and reduced-motion support.
 
 | Term | Meaning |
 | --- | --- |
@@ -53,7 +59,7 @@ Freelancer is a React browser interface and local Node server around native Open
 
 Private JSON lives under ignored `backend/.state/`. Organization, drafts and retrieval data use `%LOCALAPPDATA%\Freelancer\freelancer.sqlite`; an absolute `FREELANCER_DATA_HOME` overrides that folder. Native OpenCode data remains in its existing location. This fresh tree imports no old application history, registrations, databases, receipts or caches. [Data ownership](docs/local-data.md)
 
-This is a Windows-oriented source-run application, with no hosted service or installer. Provider observations can be missing or stale. Native permissions are not a filesystem sandbox, and independent writers must use disjoint scope. Native questions are answered in their worker's own session. No real provider inference or authentication is implied by fixture tests.
+This is a Windows-oriented source-run application, with no hosted service or packaged binary. Provider observations can be missing or stale. Native permissions are not a filesystem sandbox, and independent writers must use disjoint scope. Native questions are answered in their worker's own session. No real provider inference or authentication is implied by fixture tests.
 
 ## Development
 
@@ -67,6 +73,6 @@ npm.cmd run test:browser
 npm.cmd run smoke:runtime
 ```
 
-Browser journeys run against production assets and simulated native services. Runtime smoke separately starts installed OpenCode without inference. See [the architecture](docs/ARCHITECTURE.md) for ownership, safeguards and code entry points. This local source repository has no configured publication destination.
+Browser journeys run against production assets and simulated native services. Runtime smoke separately starts installed OpenCode without inference. See [the architecture](docs/ARCHITECTURE.md) for ownership, safeguards and code entry points.
 
 [Consolidation verification](docs/consolidation-verification.md) records the exercised checks and their limits.

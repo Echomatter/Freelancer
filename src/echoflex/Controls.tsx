@@ -33,14 +33,13 @@ export function Panel({
     </section>
   );
 }
-export function PageHeading({ title, description, actions }: {
+export function PageHeading({ title, actions }: {
   title: string;
-  description?: ReactNode;
   actions?: ReactNode;
 }) {
   return <header className="page-title">
-    <div><h1>{title}</h1>{description && <p>{description}</p>}</div>
-    {actions}
+    <div className="page-title-main"><h1>{title}</h1></div>
+    {actions && <div className="page-title-actions">{actions}</div>}
   </header>;
 }
 export function Field({

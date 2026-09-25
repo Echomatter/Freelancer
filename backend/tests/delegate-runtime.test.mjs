@@ -94,7 +94,7 @@ async function fixture(t, options = {}) {
   service.execute = async (a, c) => {
     // Most contracts start after the host reasoned over evidence. The new
     // selection contracts use rawSelection to exercise the no-execution proposal.
-    if (Object.keys(a).length && !options.rawSelection && !a.selectedModel) {
+    if (Object.keys(a).length && !a.workers && !(a.worker && !a.task) && !options.rawSelection && !a.selectedModel) {
       if (!fixtureChoices.has(a.task)) fixtureChoices.set(a.task, options.models?.[choice++] || options.models?.at(-1) || 'opencode-go/model-b');
       a = {...a, selectedModel: fixtureChoices.get(a.task), selectionReason: 'Fixture host compared task fit and cost; verify fixture output.'};
     }
@@ -120,6 +120,34 @@ test('delegation receipts replace an existing JSON file without discarding it', 
   await atomicJson(file, {status:'completed', attempts:[{child:'ses_1'}]});
   assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), {status:'completed', attempts:[{child:'ses_1'}]});
   assert.deepEqual(await readdir(path.dirname(file)), ['receipt.json']);
+});
+test('parent rediscovers workers and reads current native child chat after controller restart', async t => {
+  const f = await fixture(t);
+  const started = await f.service.execute(args, f.ctx);
+  const childID = started.attempts[0].child_session;
+  const restarted = createDelegator({ client: f.client, toolkitRoot: f.root, directory: f.root });
+  const listed = await restarted.execute({ workers: true }, f.ctx);
+  assert.equal(listed.workers[0].child_session, childID);
+  assert.equal(listed.workers[0].task_id, started.task_id);
+  f.messages.set(childID, [
+    { info: { id: 'user-child', role: 'user' }, parts: [{ type: 'text', text: 'Work on the assigned file.' }] },
+    { info: { id: 'assistant-child', role: 'assistant', agent: 'engineer' }, parts: [
+      { type: 'reasoning', text: 'Checking the implementation.' },
+      { type: 'tool', tool: 'read', state: { status: 'running', input: { filePath: 'feature.mjs' } } },
+      { type: 'text', text: 'First finding.' },
+    ] },
+  ]);
+  f.states[childID] = { type: 'busy' };
+  const current = await restarted.execute({ worker: childID, from: 1, limit: 1 }, f.ctx);
+  assert.equal(current.status, 'worker_transcript');
+  assert.equal(current.native_status, 'busy');
+  assert.equal(current.total_messages, 2);
+  assert.equal(current.messages[0].parts[0].text, 'Checking the implementation.');
+  assert.equal(current.messages[0].parts[1].tool, 'read');
+  assert.equal(current.messages[0].parts[1].status, 'running');
+  assert.equal(current.messages[0].parts[2].text, 'First finding.');
+  await assert.rejects(restarted.execute({ worker: childID }, { ...f.ctx, sessionID: 'other' }), /does not belong/);
+  await assert.rejects(restarted.execute({ worker: childID }, { ...f.ctx, directory: path.join(f.root, 'other') }), /does not belong/);
 });
 test('todos work for every managed role without granting source writes', async t => {
   for (const [agentID, workflowID] of [['engineer','build'],['engineer','plan'],['researcher','explore'],['engineer','review'],['designer','build']]) {

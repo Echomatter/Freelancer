@@ -68,7 +68,7 @@ npm run test:browser
 
 Usage tests exercise the real app, HTTP, settings and draft stores with synthetic
 native transport and quota data. Browser artifacts under `artifacts/usage/`
-cover all four palettes, compact/expanded/dashboard views, actual computed
+cover saved palettes, compact/expanded/dashboard views, actual computed
 contrast, custom colors, save races, narrow widths, touch/keyboard, 200% zoom,
 forced colors, reduced motion, refresh failures and clock-driven expiry. The
 fixture never authenticates or performs model inference. `USAGE_OFFLINE=1` is an

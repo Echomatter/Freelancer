@@ -4,6 +4,8 @@
 
 Freelancer currently runs from a source checkout on Windows. Use a browser or the provided Chrome app-window shortcut. There is no additional native application shell.
 
+For a fresh computer, download and extract the repository's source ZIP, or clone `https://github.com/Echomatter/Freelancer.git` if Git is installed. Open PowerShell in its root and run `powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1`. The script checks or installs Node.js, Git, GitHub CLI, Chrome, and native OpenCode; runs `npm ci`, the production build, and native startup smoke; then creates desktop links and launches the app. Use `-NoShortcuts -NoLaunch` for browser-only setup, or `-SkipPrerequisiteInstall` to require prerequisites already installed. Existing Freelancer and OpenCode data stay in their user folders; the script does not copy them into the checkout. GitHub and provider connections still need your own sign-in.
+
 ## Prerequisites
 
 | Dependency | Required for |
@@ -31,7 +33,7 @@ A different installed native version needs its own startup/behavior check. Freel
 From PowerShell:
 
 ```powershell
-Set-Location F:\Freelancer
+Set-Location C:\path\to\Freelancer
 npm.cmd ci
 npm.cmd run build
 npm.cmd start
@@ -53,7 +55,7 @@ The **Available Usage** meter is an estimate from provider observations. A missi
 
 The sidebar keeps the project picker, recent chats, and Available Usage meter visible. Expand **Project settings** for Files, Agents, Workflows, GitHub, and project defaults. Expand **Application settings** for Models, Providers, Appearance, Data & Storage, Content index, Git defaults, and History. Each icon opens its feature in the main pane; collapsing the drawers leaves more room for recent chats. History searches indexed titles and message text across registered projects and can filter by model. Open chats refresh their indexed text as they load. **Application settings → Content index** shows coverage and database stats, refreshes files throughout all registered project roots or all native conversations, and offers SQLite maintenance. Both indexes are retrieval aids; native chats and project files remain the sources of truth.
 
-GitHub is optional. **GitHub → Project history & GitHub** separately configures local checkpoints, account sign-in, the destination repository, and the working agreement. Connecting is not uploading. [Set up Git safely →](github-projects.md)
+GitHub is optional. **Project settings → GitHub** separately configures local checkpoints, account sign-in, the destination repository, and the working agreement. Connecting is not uploading. [Set up Git safely →](github-projects.md)
 
 ## Convenient Windows shortcut
 
@@ -64,6 +66,8 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-s
 ```
 
 This creates `Freelancer.lnk` on the desktop. It starts or reuses the verified server for this checkout, opens the current URL in a **Chrome app window**, and keeps a controller in the Windows system tray. Closing Chrome leaves the server running. Use the tray icon's **Exit Freelancer** command to close the server cleanly. The execution-policy flag applies to this invocation, not a persistent machine-policy change.
+
+The favicon, desktop link, and installable-page manifest use the same Route mark as the application corner. A plain `chrome.exe --app` launch still groups under Chrome on the Windows taskbar because the running executable is Chrome; that part cannot be overridden from this checkout. Chrome's **Install page as app** can create a separately grouped taskbar entry, but it remembers the current loopback port, which may change on restart. Use the provided `Freelancer.lnk` for a reliable fresh-URL launch.
 
 The launcher verifies the source root, process, lock, and live page before reusing a server. A stale remembered port is not used. Its diagnostic output is under `backend/.state/webpage/server.stdout.log` and `server.stderr.log`.
 

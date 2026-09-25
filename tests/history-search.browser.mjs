@@ -18,7 +18,7 @@ try {
   await page.goto(f.url);
   await page.getByRole('button', { name: 'Application settings', exact: true }).click();
   await page.getByRole('button', { name: 'History', exact: true }).click();
-  await page.getByRole('heading', { name: 'Your history' }).waitFor();
+  await page.getByRole('heading', { name: 'History' }).waitFor();
   assert.equal(await page.getByRole('textbox', { name: 'Search conversation content' }).count(), 1);
   const search = page.getByRole('textbox', { name: 'Search conversation content' });
   await search.fill('findable worker phrase');

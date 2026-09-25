@@ -2,7 +2,7 @@
 
 Freelancer uses shared EchoFlex styling. The application owns a small semantic token catalog, theme startup handling and provider color derivation.
 
-Keep Light and Dark, with Sandstone (warm light) and Midnight (blue dark) as established alternate palettes, and add Coast, Lilac, Ember, and Aurora as bespoke choices. A palette choice must color the shell, EchoFlex controls, custom dialogs, status badges, code/diff surfaces and focus states consistently. Saved palettes apply before the first application paint and survive restarts without origin-specific browser storage.
+The palette catalog offers 54 distinctively named choices, evenly split across light and dark modes. In Application settings > Appearance, collapsible Light themes and Dark themes groups are each sorted by accent hue. Sage Daybreak and Forest Night are the default light and dark palettes; each choice colors the shell, EchoFlex controls, custom dialogs, status badges, code/diff surfaces and focus states consistently. Theme changes preview immediately while saving and revert with an error if the save is not confirmed. Saved palettes apply before the first application paint and survive restarts without origin-specific browser storage.
 
 Provider colors are appearance metadata, never routing, authentication or accounting policy. OpenCode Free defaults to green. Each provider offers preset colors, a custom hex color, a preview and a reset to its default on Application settings > Providers. Derive readable foreground, subtle tint and solid-marker variants from the selected color for each application palette. Preserve provider labels; never rely on color alone. Status/error colors and user-authored message content retain their own semantics.
 
@@ -12,7 +12,7 @@ Verification must cover token contrast, input validation, partial saves/reset, o
 
 ## Use
 
-Open **Application settings > Appearance** and choose **Light**, **Dark**, **Sandstone**, **Midnight**, **Coast**, **Lilac**, **Ember**, or **Aurora** from the preview cards. Sandstone is warm ivory with terracotta accents. Midnight is navy with blue accents. Coast is sea-glass blue, Lilac is soft violet, Ember is smoked plum, and Aurora is deep evergreen. A checkmark and pressed state identify the selected palette independently of color.
+Open **Application settings > Appearance**, expand Light themes or Dark themes, and choose a palette from its color-sorted preview grid. Either category can be collapsed independently. A checkmark and pressed state identify the selected palette independently of color. The grid adapts to two columns on medium screens and one column on narrow screens. Todo placement is retained from older preferences, but is no longer an Appearance setting; the current workspace behavior remains in effect.
 
 Open **Application settings > Providers** to set each provider's color. Choose a named swatch, the system color picker, or a three/six-digit hex value. The sample previews the choice without changing the rest of the app. **Save color** persists it; **Use default** removes only that provider's override. Color changes do not save unsaved billing fields or require authentication.
 

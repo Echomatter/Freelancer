@@ -1,12 +1,17 @@
 import assert from 'node:assert/strict';
-import { mkdir, copyFile } from 'node:fs/promises';
+import { mkdir, copyFile, readFile, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 
 const f = await localDataFixture();
 await mkdir(path.join(f.root, 'tools'));
-await copyFile('backend/tools/project-content-indexer.mjs', path.join(f.root, 'tools/project-content-indexer.mjs'));
+const indexerSource = await readFile('backend/tools/project-content-indexer.mjs', 'utf8');
+assert.ok(indexerSource.includes('../../server/data/schema.sql'));
+await writeFile(path.join(f.root, 'tools/project-content-indexer.mjs'),
+  indexerSource.replace('../../server/data/schema.sql', '../server/data/schema.sql'));
+await mkdir(path.join(f.root, 'server', 'data'), { recursive: true });
+await copyFile('server/data/schema.sql', path.join(f.root, 'server', 'data', 'schema.sql'));
 const request = f.host.request.bind(f.host);
 f.host.request = (route, options) => route === '/session' && options?.method !== 'POST'
   ? Promise.resolve(structuredClone(f.state.sessions)) : request(route, options);

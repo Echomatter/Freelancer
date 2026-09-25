@@ -14,23 +14,26 @@ export function senderState(chat, session) {
   const awaitingReceipt = !!(receipt && !messages.some(m => m.info?.id === receipt.id));
   const replies = user ? messages.filter(m => m.info?.role === 'assistant' && m.info?.parentID === user.info.id) : [];
   const last = replies.at(-1);
-  const tools = messages.some(m => m.parts?.some(p => p.type === 'tool' && ['running', 'pending'].includes(p.state?.status)));
+  const staleTools = (user ? replies : messages).some(m => m.parts?.some(p => p.type === 'tool' && ['running', 'pending'].includes(p.state?.status)));
+  const tools = status !== 'idle' && staleTools;
   const complete = !user || !!(last?.info.time?.completed && (last.info.error || (last.info.finish && last.info.finish !== 'tool-calls')));
   // Some native failures leave a stale busy status behind. A terminal
   // assistant error with no live tool or approval is stronger evidence than
   // that stale status: stop treating the chat as running so the user can send
   // a recovery message and queued delivery can record the failure.
   const failed = !!last?.info?.error && !approvals && !tools;
-  // OpenCode may retain `busy` after its owning web server is restarted. If
-  // the latest user turn has no assistant response at all, no live tools or
-  // approvals, and no delivery receipt still awaiting its native message,
-  // there is no execution left to wait for. Surface a recoverable idle state
-  // without deleting history or replaying the original prompt.
-  const interrupted = status !== 'idle' && !approvals && !tools && !awaitingReceipt &&
-    (!!user && (!last || complete) || !user && messages.some(m => m.info?.role === 'assistant'));
+  // A busy native session may be doing slow inference even with no assistant
+  // message yet. Elapsed time alone cannot authorize another parent turn.
+  // Native idle with an older unanswered turn is recoverable after the brief
+  // acceptance/status transition window has passed.
+  const userAge = user?.info?.time?.created == null ? 0 : Date.now() - user.info.time.created;
+  const interrupted = !approvals && !awaitingReceipt &&
+    (status === 'idle' && (staleTools || !!user && !complete && userAge > 3000) ||
+      status !== 'idle' && !tools &&
+      (!!user && complete || !user && messages.some(m => m.info?.role === 'assistant')));
   const busy = !failed && !interrupted && (status !== 'idle' || approvals || tools || awaitingReceipt || !complete);
   return { busy, approvals, ready: !busy, userID: user?.info.id, failed, interrupted,
-    failure: failed ? String(last.info.error) : interrupted ? 'The server restarted before this response began. Send a recovery message to continue.' : '' };
+    failure: failed ? String(last.info.error) : interrupted ? 'This response appears to have stopped. Inspect the chat, then send a recovery message to continue.' : '' };
 }
 
 export function normalizeIntent(input) {

@@ -12,10 +12,10 @@ const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
 page.setDefaultTimeout(8000);
 const errors = []; page.on("pageerror", (e) => errors.push(e.message));
 const offline = process.env.PANEL_OFFLINE === "1";
-let saves = 0, fault;
+let saves = 0, fault, responseGate, releaseResponse;
 if (offline) {
   await page.exposeBinding("panelFetch", async (_, route, options) => {
-    if (route === "/api/appearance") { saves++; if (fault) return fault; }
+    if (route === "/api/appearance") { saves++; if (fault) { if (responseGate) await responseGate; return fault; } }
     const response = await fetch(fixture.url + route, options);
     return { status: response.status, body: await response.text() };
   });
@@ -42,9 +42,9 @@ async function load() {
 }
 async function failSave(body, status = 400) {
   if (offline) { fault = { status, body: JSON.stringify(body) }; return; }
-  await page.route("**/api/appearance", (r) => r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) }));
+  await page.route("**/api/appearance", async (r) => { if (responseGate) await responseGate; return r.fulfill({ status, contentType: "application/json", body: JSON.stringify(body) }); });
 }
-async function restore() { fault = undefined; await page.unroute("**/api/appearance"); }
+async function restore() { fault = undefined; responseGate = undefined; await page.unroute("**/api/appearance"); }
 const nav = page.getByRole("separator", { name: "Navigation width" }), detail = page.getByRole("separator", { name: "Details width" });
 const width = (selector) => page.locator(selector).evaluate((e) => Math.round(e.getBoundingClientRect().width));
 async function settled() { await page.waitForFunction(() => [...document.querySelectorAll('.panel-resizer')].every((e) => e.getAttribute('aria-disabled') === 'false')); }
@@ -132,9 +132,18 @@ try {
   await page.getByRole("button", { name: "Application settings", exact: true }).click();
   await page.getByRole("button", { name: "Appearance", exact: true }).click();
   assert.equal(await page.locator(".palette-picker select").count(), 0);
-  const lightPalette = page.getByRole("button", { name: "Use Light palette", exact: true });
-  const darkPalette = page.getByRole("button", { name: "Use Dark palette", exact: true });
-  await failSave({ error: "Theme save failed" }); await lightPalette.click();
+  const lightPalette = page.getByRole("button", { name: "Use Sage Daybreak palette", exact: true });
+  const darkPalette = page.getByRole("button", { name: "Use Forest Night palette", exact: true });
+  const darkCategory = page.getByRole("button", { name: "Dark themes (27)" });
+  assert.equal(await darkCategory.getAttribute("aria-expanded"), "true");
+  await darkCategory.click(); assert.equal(await darkCategory.getAttribute("aria-expanded"), "false");
+  assert.equal(await darkPalette.count(), 0); await darkCategory.click();
+  assert.equal(await darkPalette.count(), 1);
+  await failSave({ error: "Theme save failed" });
+  responseGate = new Promise((resolve) => { releaseResponse = resolve; });
+  const failedSave = lightPalette.click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === "light");
+  releaseResponse(); await failedSave;
   await page.getByRole("alert").filter({ hasText: "Theme save failed" }).waitFor();
   assert.equal(await page.locator("html").getAttribute("data-theme"), "dark"); await restore();
   await lightPalette.click(); await page.waitForFunction(() => document.documentElement.dataset.theme === "light");

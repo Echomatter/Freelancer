@@ -86,9 +86,7 @@ export async function gitProjectFixture() {
     root,
     directory,
     async close() {
-      runtime.server.closeAllConnections();
-      await new Promise((r) => runtime.server.close(r));
-      await app.gitProjects.close();
+      await runtime.close();
       await store.flush();
       await rm(root, { recursive: true, force: true, maxRetries: 10, retryDelay: 100 });
     },

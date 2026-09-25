@@ -54,7 +54,7 @@ try {
   await page.getByRole('button',{name:'Project settings',exact:true}).click();
   assert.equal(await page.getByRole('button',{name:'Workspace',exact:true}).count(),0);
   await page.getByRole('button',{name:'Files',exact:true}).click();
-  await page.getByRole('heading',{name:'Project files',exact:true}).waitFor();
+  await page.getByRole('heading',{name:'Files',exact:true}).waitFor();
   assert.equal(await page.locator('.page-title').getByRole('button',{name:'Close settings'}).count(),1,'Files close button stays in the page heading');
   await page.getByRole('button',{name:'Close settings',exact:true}).click();
   await composer.waitFor();
@@ -76,8 +76,9 @@ try {
   if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
   await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
   await page.locator('.composer textarea').fill('Check the navigation while the current work continues.');
-  await page.getByRole('button',{name:'Queue or delegate message',exact:true}).click();
-  const dialog=page.getByRole('dialog',{name:'Queue or Delegate?'});
+  await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
+  const dialog=page.getByRole('dialog',{name:'While this response runs'});
+  for (const choice of ['Delegate','Queue','Interrupt']) assert.equal(await dialog.getByRole('button',{name:new RegExp('^'+choice+' ')}).count(),1);
   await dialog.getByRole('button',{name:/^Queue Send automatically/}).click();
   const queued=page.locator('.work-card').filter({hasText:'Queue · Waiting'});
   await queued.waitFor();
@@ -100,6 +101,13 @@ try {
   await page.screenshot({path:'artifacts/polish/workspace-cards.png'});
   await queued.getByRole('button',{name:'Cancel message'}).click();
   await queued.waitFor({state:'detached'});
+  await page.locator('.composer textarea').fill('Keep this draft after stopping.');
+  await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
+  await dialog.getByRole('button',{name:/^Interrupt Stop the current response/}).click();
+  await page.getByRole('dialog',{name:'While this response runs'}).waitFor({state:'detached'});
+  await page.getByRole('button',{name:'Send message'}).waitFor();
+  assert.equal(await page.locator('.composer textarea').inputValue(),'Keep this draft after stopping.');
+  assert.ok(f.calls.some(call=>call.route.endsWith('/abort')),'Interrupt reaches native abort');
   await page.setViewportSize({width:480,height:840});
   await composer.waitFor();
   const mobile=await composer.boundingBox();

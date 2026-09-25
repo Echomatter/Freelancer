@@ -80,7 +80,7 @@ export async function panelFixture() {
     store,
     setActivity(phase) { activityPhase = phase; },
     async close() {
-    runtime.server.closeAllConnections(); await new Promise((r) => runtime.server.close(r));
+    await runtime.close();
     await store.flush(); await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
   } };
 }

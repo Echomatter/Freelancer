@@ -79,7 +79,7 @@ async function screenshot(name) { await mkdir('artifacts/colors', { recursive: t
 try {
   await load(); await settings();
   await page.getByRole('button', { name: /^Use .* palette$/ }).first().waitFor();
-  assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), 16);
+  assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), palettes.length);
   assert.equal(await page.locator('.palette-picker select').count(), 0);
   for (const p of palettes) {
     await chooseTheme(p.id);
@@ -94,10 +94,12 @@ try {
     await button.hover(); await readable(button, p.name + ' palette hover');
     await screenshot(p.id);
   }
-  report('sixteen saved palettes, live shell surfaces, selected and focused palette cards');
+  report(`${palettes.length} saved palettes, live shell surfaces, selected and focused palette cards`);
   await chooseTheme('sandstone');
-  fault = true;
-  await page.getByRole('button', { name: 'Use Midnight palette' }).click();
+  fault = true; gate = new Promise(r => { release = r; });
+  const failedSave = page.getByRole('button', { name: 'Use Blue Hour palette' }).click();
+  await page.waitForFunction(() => document.documentElement.dataset.theme === 'midnight');
+  release(); gate = undefined; await failedSave;
   await page.getByRole('alert').filter({ hasText: 'Deliberate save failure' }).waitFor();
   assert.equal(await page.locator('html').getAttribute('data-theme'), 'sandstone');
   fault = false; await chooseTheme('midnight');
@@ -164,8 +166,8 @@ try {
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep this typed concern.');
   assert.equal(await page.getByRole('button', { name: 'Stop response', exact: true }).count(), 0);
   assert.equal(await page.locator('.sender-controls button').count(), 1);
-  await page.getByRole('button', { name: 'Queue or delegate message' }).click();
-  const dialog = page.getByRole('dialog', { name: 'Queue or Delegate?' });
+  await page.getByRole('button', { name: 'Choose Delegate, Queue, or Interrupt' }).click();
+  const dialog = page.getByRole('dialog', { name: 'While this response runs' });
   await dialog.waitFor();
   await page.getByLabel('Message model override').selectOption('opencode/free');
   assert.equal(await page.getByLabel('Message model override').getAttribute('data-provider'), 'opencode');

@@ -34,7 +34,7 @@ Start with what you are trying to do. These guides describe the **single browser
 | Local checkpoints, GitHub setup, working agreements, and managed Sync | [Project history & GitHub](github-projects.md) |
 | Pins, archives, recoverable drafts, exports, SQLite, and storage locations | [Local data and history](local-data.md) |
 | Navigation/Details resizing and saved appearance at startup | [Panels and theme](panels-and-theme.md) |
-| Four palettes, provider identities, semantic colors, and extension points | [Color system](color-system.md) |
+| Palettes, provider identities, semantic colors, and extension points | [Color system](color-system.md) |
 
 For agents versus workflows versus delegated assignments, start with the [component glossary](ARCHITECTURE.md#ownership). For first-chat model selection and project defaults, see [first use](getting-started.md#first-use).
 

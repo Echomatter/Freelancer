@@ -6,9 +6,9 @@ import { compatibleApplication, uiContract } from "../domain/protocol.mjs";
 
 // Compare canonical source on both LF and CRLF checkouts; keep the content hash exact.
 const read = async (path) => (await readFile(new URL(path, import.meta.url), "utf8")).replaceAll("\r\n", "\n");
-const [app, panels, chat, settings, contributions, todo] = await Promise.all([
+const [app, panels, chat, settings, contributions] = await Promise.all([
   read("../src/App.tsx"), read("../src/WorkspacePanels.tsx"), read("../src/Chat.tsx"),
-  read("../src/Settings.tsx"), read("../src/Contributions.tsx"), read("../src/TodoPlacement.tsx"),
+  read("../src/Settings.tsx"), read("../src/Contributions.tsx"),
 ]);
 function section(source, start, end) {
   // Git checkout line endings are not a presentation change.
@@ -87,17 +87,10 @@ test("saved placement updates the workspace without erasing unrelated settings",
   assert.throws(() => applyTodoLayout(before, "wrong"));
 });
 
-test("settings save applies immediately and invalidates stale bootstrap responses", () => {
-  const handler = section(app, 'const appearanceSaved =', 'const refreshChat =');
-  assert.match(handler, /bootstrapVersion.current\+\+/);
-  assert.match(handler, /applyTodoLayout\(current, layout\)/);
-  assert.match(app, /onAppearanceSaved=\{appearanceSaved\}/);
-  assert.match(settings, /api\("appearance", patch, "PUT"\)/);
-  assert.match(settings, /onAppearanceSaved\(layout\)/);
-  assert.match(todo, /setValue\(next\)/);
-  assert.match(todo, /disabled=\{saving\}/);
-  assert.match(todo, /setValue\(previous\)/);
-  assert.match(todo, /role="alert"/);
+test("todo placement is no longer an Appearance control; saved layout behavior remains compatible", () => {
+  assert.doesNotMatch(settings, /TodoPlacement|Todo placement|todoLayout|persistTodoLayout/);
+  assert.match(chat, /resolveTodoLayout\(data\.settings\.appearance\)/);
+  assert.equal(resolveTodoLayout({ todoLayout: "inline" }), "inline");
 });
 
 test("todos render in one selected location; dock shares the full-height scroll container", () => {

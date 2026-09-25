@@ -192,7 +192,7 @@ try {
     .selectOption("opencode/free");
   await page.getByRole("button", { name: "Send message", exact: true }).click();
   await page.waitForFunction(() =>
-    document.querySelector('[aria-label="Queue or delegate message"]'),
+    document.querySelector('[aria-label="Choose Delegate, Queue, or Interrupt"]'),
   );
   await box.fill("Typed while the earlier request was being accepted");
   release();
@@ -209,7 +209,7 @@ try {
   report("send acknowledgment preserves newer typing");
 
   await page
-    .getByRole("button", { name: "Queue or delegate message", exact: true })
+    .getByRole("button", { name: "Choose Delegate, Queue, or Interrupt", exact: true })
     .click();
   const sender = page.getByRole("dialog").filter({ hasText: "Queue" });
   // The exact dialog choices come from the existing Queue/Clarify component.

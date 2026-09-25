@@ -314,6 +314,61 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     try { await record?.(receipt); }
     catch { receipt.recording_error = 'Outcome hook failed; durable execution receipt retained'; }
   }
+  async function workerReceipts(ctx) {
+    const names = await readdir(stateDir).catch(error => {
+      if (error.code === 'ENOENT') return [];
+      throw error;
+    });
+    const rows = [];
+    for (const name of names.filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
+      const receipt = await readJson(path.join(stateDir, name));
+      if (receipt?.parent_session === ctx.sessionID &&
+          path.resolve(receipt.directory || '') === path.resolve(ctx.directory || directory)) rows.push(receipt);
+    }
+    return rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
+  }
+  async function inspectWorkers(args, ctx) {
+    const receipts = await workerReceipts(ctx);
+    if (!args.worker) {
+      const statuses = await call('session', 'status', { query: query(ctx.directory) }, ctx.abort);
+      return { status: 'workers', workers: receipts.flatMap(receipt =>
+      (receipt.attempts || []).filter(attempt => attempt.child_session).map(attempt => ({
+        task_id: receipt.task_id, child_session: attempt.child_session,
+        agent: receipt.agent?.name, assignment: receipt.activity?.assignment || null,
+        receipt_status: receipt.status, native_status: statuses?.[attempt.child_session]?.type || 'idle',
+        attempt_status: attempt.status,
+        created_at: receipt.created_at, activity: receipt.activity || null,
+      }))) };
+    }
+    const receipt = receipts.find(row => row.attempts?.some(attempt => attempt.child_session === args.worker));
+    if (!receipt) throw fault('PermissionError', 'This worker does not belong to this parent and project.');
+    const child = await call('session', 'get', sessionArgs(args.worker, ctx.directory), ctx.abort);
+    if (child?.parentID !== ctx.sessionID) throw fault('BindingFailure', 'Native child session does not match the recorded parent.');
+    const [messages, statuses] = await Promise.all([
+      call('session', 'messages', sessionArgs(args.worker, ctx.directory), ctx.abort),
+      call('session', 'status', { query: query(ctx.directory) }, ctx.abort),
+    ]);
+    if (!Array.isArray(messages)) throw fault('UnsupportedRuntime', 'Native worker messages are unavailable.');
+    const limit = Math.min(20, Math.max(1, Number.isInteger(args.limit) ? args.limit : 8));
+    const from = Number.isInteger(args.from) && args.from >= 0 ? Math.min(args.from, messages.length) : Math.max(0, messages.length - limit);
+    const selected = messages.slice(from, from + limit);
+    const parts = row => (row.parts || []).filter(part => ['text', 'reasoning', 'tool'].includes(part.type)).map(part => {
+      if (part.type === 'tool') return { type: 'tool', tool: part.tool, status: part.state?.status,
+        title: part.state?.title, input: part.state?.input,
+        output: typeof part.state?.output === 'string' ? part.state.output.slice(0, 4000) : part.state?.output,
+        output_truncated: typeof part.state?.output === 'string' && part.state.output.length > 4000,
+        error: part.state?.error };
+      return { type: part.type, text: String(part.text || '') };
+    });
+    return { status: 'worker_transcript', task_id: receipt.task_id, child_session: args.worker,
+      parent_session: ctx.sessionID, agent: receipt.agent?.name, assignment: receipt.activity?.assignment || null,
+      receipt_status: receipt.status, native_status: statuses?.[args.worker]?.type || 'idle',
+      activity: receipt.activity || null, worker_result: receipt.worker_result || null,
+      total_messages: messages.length, from, next_from: from + selected.length < messages.length ? from + selected.length : null,
+      messages: selected.map(row => ({ id: row.info?.id, role: row.info?.role, agent: row.info?.agent,
+        created_at: row.info?.time?.created, completed_at: row.info?.time?.completed,
+        error: row.info?.error, parts: parts(row) })) };
+  }
   async function run(args, ctx, resolvedParent) {
     if (args.role !== undefined) throw fault('InvalidAssignment', 'Helper roles are retired. Use agentID and workflowID from delegate with no arguments.');
     const { parent, parentModel, config, assignment, userMessageID, execution, previousReviewModels } = resolvedParent;
@@ -826,6 +881,11 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       // A small public API; operational fields remain internal for diagnostics.
       const { agent, workflow, model, inspectionOnly, independentReview, ...rest } = args;
       args = { ...rest, ...(agent ? { agentID: agent } : {}), ...(workflow ? { workflowID: workflow } : {}), ...(model ? { selectedModel: model } : {}), ...(inspectionOnly ? { needsWrites: false } : {}), ...(independentReview ? { needsModelDiversity: true } : {}) };
+      if (args.workers === true || args.worker && !args.task) {
+        if (args.task || args.agentID || args.workflowID || args.selectedModel || args.inspectionOnly || args.independentReview)
+          throw fault('InvalidAssignment', 'Worker reads cannot include an assignment.');
+        return inspectWorkers(args, ctx);
+      }
       const resolvedParent = await parentContext(ctx);
       // Normalize inherited workflow BEFORE deduplication. An omitted workflow
       // and its explicit equivalent must not start two copies of the same job.

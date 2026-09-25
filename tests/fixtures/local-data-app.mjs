@@ -165,6 +165,7 @@ export async function localDataFixture() {
               id: options.body.messageID,
               role: "user",
               model: options.body.model,
+              time: { created: Date.now() },
             },
             parts: options.body.parts,
           });
@@ -263,15 +264,9 @@ export async function localDataFixture() {
     exports,
     api,
     async close() {
-      await runtime.sender.close();
-      await app.indexJobs.close();
-      runtime.server.closeAllConnections();
-      await new Promise((resolve) => runtime.server.close(resolve));
-      app.history.close();
-      app.modelRatings.close();
-      app.localData.close();
+      await runtime.close();
       await store.flush();
-      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+      await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
     },
   };
 }

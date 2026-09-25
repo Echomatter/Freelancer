@@ -71,3 +71,11 @@ test("selection and execution in different assistant messages reconcile only wit
     ["lookup", "executed"],
   );
 });
+
+test("multiple callbacks to one child appear once with the known model", () => {
+  const first = { id: "start", child: "ses_child", phase: "completed", selected: "opencode/free", updatedAt: "2026-09-20T00:00:00Z" };
+  const callback = { id: "followup", child: "ses_child", phase: "running", updatedAt: "2026-09-20T00:01:00Z" };
+  const other = { id: "other", child: "ses_other", phase: "completed", selected: "provider/model", updatedAt: "2026-09-20T00:01:00Z" };
+  assert.deepEqual(visibleActivity([first, callback, other]).map((row) => [row.id, row.selected]),
+    [["followup", "opencode/free"], ["other", "provider/model"]]);
+});

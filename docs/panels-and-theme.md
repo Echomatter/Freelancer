@@ -41,6 +41,6 @@ loopback handler; that mode is not evidence of normal navigation or CSP behavior
 
 For current executed checks, see [consolidation verification](consolidation-verification.md).
 
-Still perform one real Windows Chrome-shortcut launch: select Dark, close/reopen
+Still perform one real Windows Chrome-shortcut launch: select Nightfall, close/reopen
 the window and confirm saved panel sizes, palette, keyboard controls and exports.
 Closing the window does not stop the Node server. No native compilation is needed.

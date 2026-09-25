@@ -4,7 +4,7 @@ import { readFile, readdir, mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { colorChannels, contrast, normalizeColor } from '../domain/color.mjs';
-import { palettes, paletteCSS, themePalette, resolveTheme, applyTheme } from '../domain/theme.mjs';
+import { palettes, lightPalettes, darkPalettes, paletteHue, paletteCSS, themePalette, resolveTheme, applyTheme } from '../domain/theme.mjs';
 import { providerColor, providerDefaults, providerColorPresets, providerID, providerTokens, normalizeProviderPatch, mergeProviderColors } from '../domain/provider-colors.mjs';
 import { themeDocument, savedTheme } from '../server/theme.mjs';
 import { createApplication } from '../server/application.mjs';
@@ -16,18 +16,32 @@ async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-colors-'));
   const store = createStore(root), app = createApplication({ backendRoot: root, store, host: {} });
   const server = await startServer({ application: app, assets: process.cwd() });
-  t.after(async () => { await server.sender.close(); server.server.closeAllConnections(); await new Promise(r => server.server.close(r)); await store.flush(); await rm(root, { recursive: true, force: true }); });
+  t.after(async () => { await server.close(); await store.flush(); await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }); });
   return { root, store, app, ...server };
 }
 
 test('palette registry keeps legacy identities and adds bespoke palettes', () => {
-  assert.deepEqual(palettes.map(p => p.id), ['light', 'dark', 'sandstone', 'midnight', 'coast', 'lilac', 'ember', 'aurora',
+  assert.deepEqual(palettes.slice(0, 16).map(p => p.id), ['light', 'dark', 'sandstone', 'midnight', 'coast', 'lilac', 'ember', 'aurora',
     'porcelain', 'rosewater', 'matcha', 'marigold', 'graphite', 'mulberry', 'fjord', 'espresso']);
+  assert.equal(palettes.length, 54);
+  assert.equal(lightPalettes.length, 27);
+  assert.equal(darkPalettes.length, 27);
+  assert.equal(new Set(palettes.map(p => p.id)).size, palettes.length);
+  assert.equal(new Set(palettes.map(p => p.name)).size, palettes.length);
   assert.equal(themePalette('light').tokens.bg, '#f8f9f6');
   assert.equal(themePalette('dark').tokens.bg, '#171c19');
-  assert.equal(new Set(palettes.map(p => p.tokens.bg)).size, 16);
-  assert.equal(new Set(palettes.map(p => p.tokens.accent)).size, 16);
+  assert.equal(new Set(palettes.map(p => p.tokens.bg)).size, palettes.length);
+  assert.equal(new Set(palettes.map(p => p.tokens.accent)).size, palettes.length);
   for (const old of [undefined, null, '', 'unknown', 'constructor', '<script>']) assert.equal(resolveTheme(old), 'light');
+});
+test('appearance groups retain mode order and compare all accents in hue order', () => {
+  for (const group of [lightPalettes, darkPalettes]) {
+    assert.ok(group.every(p => p.mode === group[0].mode));
+    for (let i = 1; i < group.length; i++) assert.ok(paletteHue(group[i - 1]) <= paletteHue(group[i]));
+    const hues = group.map(paletteHue);
+    const gaps = hues.map((hue, index) => (hues[(index + 1) % hues.length] - hue + 360) % 360);
+    assert.ok(Math.max(...gaps) < 40, `${group[0].mode} accent hues cover the full color wheel`);
+  }
 });
 test('every palette defines the same semantic tokens and generated CSS cannot drift', async () => {
   const keys = Object.keys(palettes[0].tokens).sort();

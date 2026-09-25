@@ -317,8 +317,9 @@ function pauseBootstrap() {
 try {
   await load();
   await text(sideValue(), "60%");
+  await page.getByRole("button", { name: "Chats", exact: true }).click();
   await page
-    .locator(".sessions button")
+    .locator(".nav-chat-select")
     .filter({ hasText: "Availability test chat" })
     .click();
   const draft = page.getByRole("textbox", { name: "Message", exact: true });
@@ -397,7 +398,7 @@ try {
     );
   }
   report(
-    "Light, Dark, Sandstone and Midnight: touching remaining/used portions, single endpoint, rendered contrast, no provider model dropdown, matching surfaces",
+    "saved palettes: touching remaining/used portions, single endpoint, rendered contrast, no provider model dropdown, matching surfaces",
   );
 
   await settings("Providers");
@@ -459,6 +460,7 @@ try {
     "preview isolation, failed-save rollback, extreme and identical saved colors, unsaved billing preserved, readable derived shades",
   );
 
+  await theme("midnight");
   await settings("Providers");
   pauseBootstrap();
   void refreshBootstrap();

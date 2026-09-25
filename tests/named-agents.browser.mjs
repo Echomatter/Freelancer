@@ -200,8 +200,8 @@ try {
   const receipt = await f.delegator.execute(args, ctx);
   assert.equal(receipt.status, "completed");
   assert.match(f.prompts.at(-1).body.system, /BROWSER_AGENT_SENTINEL/);
-  parent.parts[0].state = {
-    ...parent.parts[0].state,
+  parent.parts.at(-1).state = {
+    ...parent.parts.at(-1).state,
     status: "completed",
     output: JSON.stringify(receipt),
     metadata: completionMetadata(receipt, args),
@@ -210,7 +210,8 @@ try {
   parent.info.time.completed = Date.now();
   parent.info.finish = "stop";
   delete f.status[parentID];
-  await page.locator(".request-working > summary").last().click();
+  const work = page.locator(".request-working").last();
+  if (!(await work.evaluate((element) => element.open))) await work.locator("summary").click();
   const childButton = page.getByRole("button", {
     name: /Agent finished: Accessibility specialist/,
   });
@@ -219,6 +220,7 @@ try {
   await mkdir("artifacts/named-agents", { recursive: true });
   await page.screenshot({ path: "artifacts/named-agents/named-child.png" });
   await childButton.click();
+  await page.locator(".handoff-card > summary").last().click();
   await page
     .getByText("Simulated native result; no inference.", { exact: true })
     .waitFor();

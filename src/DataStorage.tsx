@@ -60,7 +60,7 @@ export function DataStorage({
     });
   return (
     <div className="data-storage">
-      <PageHeading title="Data & Storage" description="Find the data needed for recovery, export conversations, and organize projects." actions={<PageCloseButton onClick={onClose} />} />
+      <PageHeading title="Data & Storage" actions={<PageCloseButton onClick={onClose} />} />
       <Panel title="Make a local backup">
         <ol className="backup-steps">
           <li><strong>Stop active writers.</strong><span>Close Freelancer's server and OpenCode before copying live databases.</span></li>

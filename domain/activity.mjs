@@ -1,7 +1,7 @@
 // A completed model lookup is part of the matching handoff, not a second
 // helper stuck forever waiting for a selection. Keep unmatched lookups visible.
 export function visibleActivity(rows) {
-  return rows.filter(
+  const filtered = rows.filter(
     (row) =>
       row.phase !== "selection_required" ||
       !row.raw?.task_hash ||
@@ -16,6 +16,23 @@ export function visibleActivity(rows) {
           Date.parse(other.raw.created_at) >= Date.parse(row.raw.created_at),
       ),
   );
+  const byChild = new Map();
+  const visible = [];
+  for (const row of filtered) {
+    if (!row.child) { visible.push(row); continue; }
+    const previous = byChild.get(row.child);
+    if (!previous) { byChild.set(row.child, row); continue; }
+    const time = (value) => Date.parse(value.updatedAt ?? value.raw?.updated_at ?? value.raw?.created_at) || 0;
+    const newer = time(row) >= time(previous) ? row : previous;
+    const older = newer === row ? previous : row;
+    byChild.set(row.child, {
+      ...newer,
+      selected: newer.selected ?? older.selected,
+      observed: newer.observed ?? older.observed,
+      dispatched: newer.dispatched ?? older.dispatched,
+    });
+  }
+  return [...visible, ...byChild.values()];
 }
 export function activityLabel(phase) {
   return (

@@ -18,7 +18,7 @@ async function appearance() {
   const group = page.getByRole('button', { name: 'Application settings', exact: true });
   if (await group.getAttribute('aria-expanded') !== 'true') await group.click();
   await page.getByRole('button', { name: 'Appearance', exact: true }).click();
-  await page.getByRole('button', { name: 'Use Porcelain palette', exact: true }).waitFor();
+  await page.getByRole('button', { name: 'Use Glacier Cobalt palette', exact: true }).waitFor();
 }
 
 try {

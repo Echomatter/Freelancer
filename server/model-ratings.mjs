@@ -8,10 +8,12 @@ import { executionPrompt, policyVersion } from './execution.mjs';
 const active = job => job && ['starting', 'running'].includes(job.status);
 const batchSize = 6;
 export function createModelRatingService({ host, backendRoot, dataRoot, project, getCatalog, store,
-  localData = createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data')) }) {
+  localData }) {
+  const ownsLocalData = !localData;
+  const dataService = localData ?? createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data'));
   let timer, checking = false, starting = false, stopping = false;
   let decisions = { permissions: [], questions: [] };
-  const data = () => localData.get();
+  const data = () => dataService.get();
   const release = () => {};
   const publicJob = job => job && ({ ...job, progress: undefined,
     missing: job.progress?.missing?.length ?? 0, variant: job.progress?.variant ?? '', ...decisions });
@@ -210,6 +212,6 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
       timer = null;
       release();
     },
-    close() { clearInterval(timer); timer = null; },
+    close() { clearInterval(timer); timer = null; if (ownsLocalData) dataService.close(); },
   };
 }

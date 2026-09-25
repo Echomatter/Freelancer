@@ -5,10 +5,15 @@ import { createLocalDataService } from './data/store.mjs';
 const labels = { files: 'Refreshing file indexes', chats: 'Refreshing conversation indexes',
   prepare: 'Preparing project indexes', optimize: 'Optimizing SQLite search', check: 'Checking SQLite integrity', compact: 'Compacting SQLite database', reset: 'Resetting local search indexes' };
 export function createIndexJobs({ app, backendRoot, dataRoot,
-  localData = createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data')) }) {
+  localData }) {
+  const ownsLocalData = !localData;
+  const dataService = localData ?? (backendRoot || dataRoot
+    ? createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data'))
+    : null);
   let job = null, controller, work;
   const withData = fn => {
-    return fn(localData.get());
+    if (!dataService) throw Error('Local index state requires a data directory.');
+    return fn(dataService.get());
   };
   async function execute(current) {
     const signal = controller.signal;
@@ -85,6 +90,10 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       job = null;
       return null;
     },
-    async close() { controller?.abort(); await work; },
+    async close() {
+      controller?.abort();
+      await work;
+      if (ownsLocalData) dataService?.close();
+    },
   };
 }

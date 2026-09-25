@@ -8,6 +8,8 @@ const keyOf = (project, session) => JSON.stringify([project, session]);
 const pending = r => r.status === 'waiting';
 const active = r => ['waiting', 'sending', 'submitted'].includes(r.status);
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
+const isDelegateHandoff = message => message?.info?.role === 'user' &&
+  message.parts?.some(part => part.type === 'text' && /^\[Freelancer Delegate handoff [\w-]+\]\n/.test(part.text ?? ''));
 
 // This is a durable transport outbox, not another session/agent implementation.
 // The application send path retains native policy, auth and request receipts.
@@ -97,7 +99,8 @@ export function createSender(app, { file = app.store?.directory && path.join(app
     const user = chat.messages.findLast(m => m.info?.role === 'user' && m.info.model);
     const model = user?.info.model ?? last.model;
     if (!model?.providerID || !model.modelID) throw Error('The active parent model is not known yet. Try again after it starts.');
-    const original = chat.messages.find(m => m.info?.id === row.sourceMessageID) ?? user;
+    const original = chat.messages.find(m => m.info?.id === row.sourceMessageID) ??
+      chat.messages.findLast(m => m.info?.role === 'user' && !isDelegateHandoff(m));
     const text = clarifyPrompt(row.text, row.model, row.id, (original?.parts ?? []).filter(p => p.type === 'text').map(p => p.text).join('\n'));
     if (text.length > 200000) throw Error('This concern plus its original request is too long. Shorten the concern or use Queue.');
     return { text, model: `${model.providerID}/${model.modelID}`,
@@ -117,8 +120,8 @@ export function createSender(app, { file = app.store?.directory && path.join(app
       for (const row of group.filter(active)) delete row.notice;
       for (const row of group.filter(r => r.status === 'submitted')) {
         if (state.ready && chat.messages.some(m => m.info?.id === row.messageID)) {
-          row.status = state.failed ? 'failed' : 'delivered';
-          if (state.failed) row.error = 'The native turn ended with an error. Inspect the chat.';
+          row.status = state.failed || state.interrupted ? 'failed' : 'delivered';
+          if (row.status === 'failed') row.error = 'The native turn stopped before completion. Inspect the chat before continuing queued work.';
         }
       }
       const row = group.find(r => pending(r) && r.kind === 'clarify') ?? group.find(pending);
@@ -192,7 +195,9 @@ export function createSender(app, { file = app.store?.directory && path.join(app
         if (stopping.has(keyOf(project, session))) throw Error('The chat is stopping. Try again after it stops.');
         const chat = await app.chat(project, session);
         senderState(chat, session);
-        const row = { ...intent, project, session, fingerprint, sourceMessageID: chat.messages.findLast(m => m.info?.role === 'user')?.info.id, status: 'waiting', createdAt: Date.now() };
+        const row = { ...intent, project, session, fingerprint,
+          sourceMessageID: chat.messages.findLast(m => m.info?.role === 'user' && !isDelegateHandoff(m))?.info.id,
+          status: 'waiting', createdAt: Date.now() };
         await inputFor(row, chat); // Fail before clearing the user's draft.
         if (rows.filter(active).length >= 100) throw Error('The sender has 100 pending requests. Clear some before adding more.');
         rows.push(row);

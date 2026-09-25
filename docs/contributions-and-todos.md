@@ -42,10 +42,9 @@ uncertain until refreshed with the new `usageKnown` marker.
 ## Todo placement
 
 Docked above the composer is the default when no placement has been saved.
-Existing explicit `inline` choices are retained. Application settings > Appearance > Todo
-placement changes the choice, saves automatically, and provides saving/error
-feedback. A successful save updates the workspace immediately and invalidates
-older bootstrap responses. A failed save restores the prior selection.
+Appearance no longer offers the retired placement control. Existing explicit
+`inline` choices remain honored for compatibility; new workspaces use the docked
+behavior by default.
 
 In docked mode the task card stays with the sticky composer and is not duplicated
 in Details. It can collapse or dismiss, with Show tasks restoring it; changed

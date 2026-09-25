@@ -13,6 +13,8 @@ const types = {
   ".svg": "image/svg+xml",
   ".png": "image/png",
   ".ico": "image/x-icon",
+  ".webmanifest": "application/manifest+json",
+  ".json": "application/json",
 };
 export async function startServer({ application: app, assets, port = 0, readActivity, shutdownToken, onShutdown }) {
   const history = app.history;

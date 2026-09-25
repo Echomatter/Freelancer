@@ -19,7 +19,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, query, subscribe } from "./api";
-import { Button, Panel, Badge, Empty, PageCloseButton } from "./echoflex/Controls";
+import { Button, Panel, Badge, Empty, PageCloseButton, PageHeading } from "./echoflex/Controls";
 import { Chat } from "./Chat";
 const GitHubProject = lazy(() => import('./GitHubProject').then(module => ({ default: module.GitHubProject })));
 import { PanelResize, usePanelLayout } from "./PanelResize";
@@ -41,7 +41,6 @@ import { FolderPicker, ProjectImport } from './ProjectImport';
 import { useProjectActivity } from "./SessionActivity";
 import { UsageHero, UsageSidebar, UsageProviders } from "./AvailableUsage";
 import { useAvailability } from "./useAvailability";
-import { applyTodoLayout } from "../domain/appearance.mjs";
 import { ContributionRows } from "./Contributions";
 import { AppearanceContext, ProviderText, ProviderSelect, providerAttributes, type ColorPatch } from "./ProviderColors";
 import { mergeProviderColors } from "../domain/provider-colors.mjs";
@@ -232,11 +231,6 @@ export default function App() {
       setData({ ...next, selectionKey: key });
   };
   const availableUsage = useAvailability(data, refresh);
-  const appearanceSaved = (layout: string) => {
-    // A bootstrap started before this save must not restore the old selection.
-    bootstrapVersion.current++;
-    setData((current) => applyTodoLayout(current, layout));
-  };
   const colorsSaved = (patch: ColorPatch) => {
     bootstrapVersion.current++;
     setData(current => current ? ({ ...current, settings: { ...current.settings, appearance: {
@@ -779,12 +773,7 @@ export default function App() {
             }} />}
             {view === "overview" && (
               <div className="page overview">
-                 <div className="page-title">
-                   <div>
-                     <h1>Available Usage</h1>
-                   </div>
-                   <PageCloseButton onClick={closeSettings} />
-                 </div>
+                <PageHeading title="Available Usage" actions={<PageCloseButton onClick={closeSettings} />} />
                 <UsageHero view={availableUsage.view} state={availableUsage.state} onRefresh={availableUsage.refresh} />
                 <div className="overview-grid">
                   <Panel title="Your providers">
@@ -868,7 +857,6 @@ export default function App() {
                    onHistory={() => openHistory()}
                    onClose={closeSettings}
                    data={data}
-                  onAppearanceSaved={appearanceSaved}
                   onColorsSaved={colorsSaved}
                   onNavigate={setView}
                   tab={tab}
@@ -879,9 +867,7 @@ export default function App() {
             )}
             {view === "models" && (
               <div className="page">
-                  <div className="page-title">
-                    <h1>Models</h1>
-                    <>
+                <PageHeading title="Models" actions={<>
                       <Button disabled={modelRatings.pending} onClick={async () => {
                         if (['starting', 'running'].includes(modelRatings.job?.status)) { modelRatings.reveal(); return; }
                         if (!modelRatings.job || await modelRatings.dismiss()) setRatingDialog(true);
@@ -889,8 +875,7 @@ export default function App() {
                         Update Model Ratings
                       </Button>
                       <PageCloseButton onClick={closeSettings} />
-                    </>
-                  </div>
+                    </>} />
                  <div className="model-filters">
                    <FieldSearch value={modelQuery} onChange={setModelQuery} />
                   <ProviderSelect provider={modelProvider}

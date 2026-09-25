@@ -32,7 +32,8 @@ const shots = process.env.FREELANCER_QA_SHOTS;
 async function screenshot(name) { if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, name + '.png') }); } }
 try {
   await page.goto(f.url);
-  await page.locator('.sidebar .sessions').getByRole('button', { name: /Important conversation/ }).click();
+  await page.getByRole('button', { name: 'Chats', exact: true }).click();
+  await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
   await page.getByRole('textbox', { name: 'Message', exact: true }).waitFor();
   await page.getByRole('button', { name: 'Application settings', exact: true }).click();
   await page.getByRole('button', { name: 'Models', exact: true }).click();
@@ -54,11 +55,11 @@ try {
   await screenshot('subagent-priority');
   await worker.getByRole('button', { name: 'Continue', exact: true }).click();
   await picker.waitFor();
-  assert.equal(await picker.getByRole('combobox').inputValue(), 'opencode/free', 'covered content survives worker replies');
+  assert.equal(await picker.getByRole('combobox', { name: 'Configuration model' }).inputValue(), 'opencode/free', 'covered content survives worker replies');
   await picker.getByRole('button', { name: 'Cancel', exact: true }).click();
   assert.equal(await page.getByRole('button', { name: 'Update Model Ratings', exact: true }).evaluate(node => node === document.activeElement), true);
 
-  await page.locator('.sidebar .sessions').getByRole('button', { name: /Important conversation/ }).click();
+  await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
   f.state.questions = [question('question_parent', 'ses_history', 'Parent answer')];
   const parent = page.getByRole('dialog', { name: 'A quick question', exact: true });
   await parent.getByRole('textbox').fill('Preserve the parent draft');
@@ -75,8 +76,8 @@ try {
   await permission.waitFor({ state: 'hidden' });
   assert.equal(replies.find(row => row.route.includes('permission')).body.reply, 'reject');
 
-  await page.getByRole('button', { name: 'Project picker', exact: true }).click();
-  await page.getByRole('button', { name: 'Open a project…', exact: true }).click();
+  await page.locator('.project-navigation .nav-accordion-trigger').click();
+  await page.getByRole('button', { name: 'New project', exact: true }).click();
   const openProject = page.getByRole('dialog', { name: 'Open project', exact: true });
   await openProject.waitFor();
   assert.equal(await openProject.locator('.ef-dialog-body').getAttribute('data-layout'), 'split');

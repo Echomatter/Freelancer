@@ -5,6 +5,8 @@ import {
   summarizeRequestWork,
   purposeForTool,
   requestWorkLabel,
+  latestToolParts,
+  delegateModel,
 } from "../domain/chat-view.mjs";
 import { senderState } from "../domain/sender.mjs";
 
@@ -45,8 +47,15 @@ test("a terminal assistant error clears a stale native busy status", () => {
   assert.equal(state.failure, "provider disconnected");
 });
 
-test("an unanswered user turn with stale busy status is recoverable after restart", () => {
-  const state = senderState({ messages: [user("u1")], status: { chat: { type: "busy" } },
+test("a busy unanswered turn stays busy even when old; native idle permits recovery", () => {
+  const fresh = user("u1");
+  fresh.info.time = { created: Date.now() };
+  assert.equal(senderState({ messages: [fresh], status: { chat: { type: "busy" } },
+    permissions: [], questions: [], receipts: [] }, "chat").busy, true);
+  fresh.info.time.created -= 61000;
+  assert.equal(senderState({ messages: [fresh], status: { chat: { type: "busy" } },
+    permissions: [], questions: [], receipts: [] }, "chat").busy, true);
+  const state = senderState({ messages: [fresh], status: {},
     permissions: [], questions: [], receipts: [] }, "chat");
   assert.equal(state.interrupted, true);
   assert.equal(state.ready, true);
@@ -81,6 +90,9 @@ test("live tools, approvals, and unobserved accepted prompts remain busy", () =>
   const awaitingPrompt = senderState({ messages: [unanswered], status: { chat: { type: "busy" } },
     permissions: [], questions: [], receipts: [{ id: "accepted", status: "accepted" }] }, "chat");
   assert.equal(awaitingPrompt.busy, true);
+  const stoppedTool = senderState({ messages: [unanswered, { ...activeTool, info: { ...activeTool.info, parentID: 'u1' } }],
+    status: {}, permissions: [], questions: [], receipts: [] }, "chat");
+  assert.equal(stoppedTool.interrupted, true, "native idle after abort overrides an old running tool part");
 });
 
 test("a detached worker remains working after its parent dispatch tool completes", () => {
@@ -223,6 +235,29 @@ test("same part id updated from running to completed reflects the latest", () =>
   assert.equal(summary.toolCount, 1);
   assert.equal(summary.running, 0);
   assert.equal(summary.done, 1);
+});
+
+test("delegate callbacks for one child render as one current worker with its recorded model", () => {
+  const first = { id: "first", callID: "call-1", type: "tool", tool: "delegate", state: {
+    status: "completed", input: { agentID: "researcher" },
+    metadata: { sessionId: "child-1", agentName: "Researcher", selected_model: "opencode/free", freelancer_status: "running" },
+  } };
+  const callback = { id: "callback", callID: "call-2", type: "tool", tool: "delegate", state: {
+    status: "completed", input: { worker: "child-1" },
+    metadata: { sessionId: "child-1", agentName: "Researcher", freelancer_status: "completed" },
+    output: JSON.stringify({ attempts: [{ child_session: "child-1", selected_model: "opencode/free" }] }),
+  } };
+  const other = { id: "other", callID: "call-3", type: "tool", tool: "delegate", state: {
+    status: "completed", input: { agentID: "engineer" },
+    metadata: { sessionId: "child-2", selected_model: "provider/other", freelancer_status: "running" },
+  } };
+  const messages = [{ info: { id: "a1", role: "assistant" }, parts: [first, callback, other] }];
+  assert.deepEqual(latestToolParts(messages).map((part) => part.id), ["callback", "other"]);
+  assert.equal(delegateModel(callback), "opencode/free");
+  const summary = summarizeRequestWork(messages);
+  assert.equal(summary.workerCount, 2);
+  assert.equal(summary.workers.running, 1);
+  assert.equal(summary.workers.finished, 1);
 });
 
 

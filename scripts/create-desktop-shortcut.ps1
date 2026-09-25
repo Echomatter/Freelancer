@@ -11,24 +11,28 @@ foreach ($size in @(16, 24, 32, 48, 64, 128, 256)) {
     $bitmap = New-Object Drawing.Bitmap($size, $size)
     $g = [Drawing.Graphics]::FromImage($bitmap)
     $g.SmoothingMode = 'AntiAlias'
-    $g.ScaleTransform(($size / 256.0), ($size / 256.0))
+    $g.ScaleTransform(($size / 24.0), ($size / 24.0))
     $bg = New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml('#183D32'))
-    $gold = New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml('#E7C879'))
-    $light = New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml('#F5F1D8'))
-    $route = New-Object Drawing.Pen([Drawing.ColorTranslator]::FromHtml('#E7C879'), 15)
-    $ring = New-Object Drawing.Pen([Drawing.ColorTranslator]::FromHtml('#75A58A'), 5)
-    $g.FillEllipse($bg, 8, 8, 240, 240)
-    $g.DrawEllipse($ring, 22, 22, 212, 212)
-    # The route mark echoes Lucide's route icon: two endpoints connected by a
-    # winding path, a compact visual shorthand for Freelancer orchestration.
-    $g.DrawBezier($route, 70, 185, 138, 185, 106, 78, 182, 72)
-    $g.FillEllipse($light, 40, 155, 52, 52)
-    $g.FillEllipse($gold, 164, 48, 52, 52)
+    $route = New-Object Drawing.Pen([Drawing.ColorTranslator]::FromHtml('#F5F1D8'), 1.8)
+    $route.StartCap = 'Round'; $route.EndCap = 'Round'; $route.LineJoin = 'Round'
+    $tile = New-Object Drawing.Drawing2D.GraphicsPath
+    $tile.AddArc(0, 0, 12, 12, 180, 90); $tile.AddArc(12, 0, 12, 12, 270, 90)
+    $tile.AddArc(12, 12, 12, 12, 0, 90); $tile.AddArc(0, 12, 12, 12, 90, 90)
+    $tile.CloseFigure()
+    $g.FillPath($bg, $tile)
+    # Use the same Route geometry as the sidebar and public SVG.
+    $g.DrawEllipse($route, 3, 16, 6, 6)
+    $g.DrawLine($route, 9, 19, 17.5, 19)
+    $g.DrawArc($route, 14, 12, 7, 7, 90, -180)
+    $g.DrawLine($route, 17.5, 12, 6.5, 12)
+    $g.DrawArc($route, 3, 5, 7, 7, 90, 180)
+    $g.DrawLine($route, 6.5, 5, 15, 5)
+    $g.DrawEllipse($route, 15, 2, 6, 6)
     $stream = New-Object IO.MemoryStream
     $bitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png)
     $frames += ,@{ Size = $size; Bytes = $stream.ToArray() }
     if ($size -eq 256) { $bitmap.Save((Join-Path $assets 'freelancer.png'), [Drawing.Imaging.ImageFormat]::Png) }
-    $stream.Dispose(); $route.Dispose(); $ring.Dispose(); $bg.Dispose(); $gold.Dispose(); $light.Dispose(); $g.Dispose(); $bitmap.Dispose()
+    $stream.Dispose(); $tile.Dispose(); $route.Dispose(); $bg.Dispose(); $g.Dispose(); $bitmap.Dispose()
 }
 $iconPath = Join-Path $assets 'freelancer.ico'
 $output = [IO.File]::Create($iconPath)

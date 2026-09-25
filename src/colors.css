@@ -31,7 +31,11 @@ select option, select optgroup { color: var(--text); background: var(--paper); }
 .palette-picker { margin-top: 24px; }
 .palette-picker h3 { margin: 0; }
 .palette-intro { color: var(--muted); font-size: 12px; margin: 6px 0 16px; }
-.palette-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+.palette-group-heading { margin: 18px 0 10px; font-size: 13px; }
+.palette-group:first-of-type .palette-group-heading { margin-top: 0; }
+.palette-group-toggle { display: flex; width: 100%; align-items: center; justify-content: space-between; border: 1px solid var(--line); border-radius: 8px; background: var(--sidebar); color: var(--text); padding: 10px 12px; text-align: left; cursor: pointer; }
+.palette-group-toggle:hover { background: var(--hover); }
+.palette-options { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .palette-option { display: flex; flex-direction: column; gap: 10px; background: var(--paper); border: 1px solid var(--border-strong); border-radius: 12px; padding: 12px; text-align: left; min-width: 0; }
 .palette-option:hover:not(:disabled) { background: var(--hover); }
 .palette-option[aria-pressed=true] { outline: 2px solid var(--focus); outline-offset: -2px; }
@@ -66,6 +70,7 @@ select option, select optgroup { color: var(--text); background: var(--paper); }
 .provider-color-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 12px; }
 .provider-color-actions > span { color: var(--muted); font-size: 11px; }
 .color-validation { display: block; color: var(--danger); margin-top: 8px; }
+@media(max-width:760px) { .palette-options { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media(max-width:520px) { .palette-options { grid-template-columns: 1fr; } .provider-top { flex-wrap: wrap; } .provider-top > .button { margin-left: 0; } .provider-color-preview { width: 100%; } }
 @media(forced-colors:active) {
   .provider-identity, .provider-select[data-provider], .provider-color-preview { color: CanvasText; }

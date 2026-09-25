@@ -212,11 +212,9 @@ export async function usageFixture() {
     },
     async close() {
       release?.();
-      await runtime.sender.close();
-      runtime.server.closeAllConnections();
-      await new Promise((r) => runtime.server.close(r));
+      await runtime.close();
       await store.flush();
-      await rm(root, { recursive: true, force: true });
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },
   };
 }

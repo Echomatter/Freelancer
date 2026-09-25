@@ -79,7 +79,7 @@ async function screenshot(name) { await mkdir('artifacts/colors', { recursive: t
 try {
   await load(); await settings();
   await page.getByRole('button', { name: /^Use .* palette$/ }).first().waitFor();
-  assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), 8);
+  assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), 16);
   assert.equal(await page.locator('.palette-picker select').count(), 0);
   for (const p of palettes) {
     await chooseTheme(p.id);
@@ -94,7 +94,7 @@ try {
     await button.hover(); await readable(button, p.name + ' palette hover');
     await screenshot(p.id);
   }
-  report('eight saved palettes, live shell surfaces, selected and focused palette cards');
+  report('sixteen saved palettes, live shell surfaces, selected and focused palette cards');
   await chooseTheme('sandstone');
   fault = true;
   await page.getByRole('button', { name: 'Use Midnight palette' }).click();

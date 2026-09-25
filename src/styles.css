@@ -1737,7 +1737,7 @@ legend {
   white-space: nowrap;
 }
 .agent-card-copy small { color: var(--muted); }
-.agent-route-unavailable { align-items: flex-start; color: var(--warning, #d49327); }
+.agent-route-unavailable { align-items: flex-start; color: var(--warning); }
 .agent-route-unavailable > span { display: grid; gap: 4px; min-width: 0; }
 .agent-route-unavailable small { color: var(--muted); font-size: 11px; line-height: 1.45; white-space: normal; }
 .todo-dock {

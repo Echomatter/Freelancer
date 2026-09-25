@@ -21,11 +21,12 @@ async function fixture(t) {
 }
 
 test('palette registry keeps legacy identities and adds bespoke palettes', () => {
-  assert.deepEqual(palettes.map(p => p.id), ['light', 'dark', 'sandstone', 'midnight', 'coast', 'lilac', 'ember', 'aurora']);
+  assert.deepEqual(palettes.map(p => p.id), ['light', 'dark', 'sandstone', 'midnight', 'coast', 'lilac', 'ember', 'aurora',
+    'porcelain', 'rosewater', 'matcha', 'marigold', 'graphite', 'mulberry', 'fjord', 'espresso']);
   assert.equal(themePalette('light').tokens.bg, '#f8f9f6');
   assert.equal(themePalette('dark').tokens.bg, '#171c19');
-  assert.equal(new Set(palettes.map(p => p.tokens.bg)).size, 8);
-  assert.equal(new Set(palettes.map(p => p.tokens.accent)).size, 8);
+  assert.equal(new Set(palettes.map(p => p.tokens.bg)).size, 16);
+  assert.equal(new Set(palettes.map(p => p.tokens.accent)).size, 16);
   for (const old of [undefined, null, '', 'unknown', 'constructor', '<script>']) assert.equal(resolveTheme(old), 'light');
 });
 test('every palette defines the same semantic tokens and generated CSS cannot drift', async () => {

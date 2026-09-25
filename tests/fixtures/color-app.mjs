@@ -64,6 +64,14 @@ export async function colorFixture() {
   const runtime = await startServer({ application: app, assets: fileURLToPath(new URL('../../dist/', import.meta.url)), readActivity: createActivityReader({ project: app.project, host }) });
   return { ...runtime, store, setBusy(value) { busy = value; },
     setQuestion(value) { questions = value ? [{ id: 'que_colors', sessionID: 'ses_colors', questions: [{ header: 'Color review', question: 'Does this palette look readable?', options: [{ label: 'Yes', description: 'Keep the current palette.' }, { label: 'Review', description: 'Inspect the controls again.' }] }] }] : []; },
-    async close() { await runtime.sender.close(); runtime.server.closeAllConnections(); await new Promise(r => runtime.server.close(r)); await store.flush(); await rm(root, { recursive: true, force: true }); },
+    async close() {
+      await runtime.sender.close();
+      await app.indexJobs.close();
+      runtime.server.closeAllConnections();
+      await new Promise(r => runtime.server.close(r));
+      app.localData.close();
+      await store.flush();
+      await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
+    },
   };
 }

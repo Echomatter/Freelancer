@@ -19,6 +19,22 @@ const definitions = [
     bg: '#21151a', paper: '#2d1d24', sidebar: '#180f14', text: '#f2e3e5', muted: '#c3a4aa', line: '#4a3039', accent: '#ffad72', tint: '#4b2930', hover: '#39212a' },
   { id: 'aurora', name: 'Aurora', mode: 'dark', description: 'Deep evergreen with a luminous mint accent.',
     bg: '#15231f', paper: '#1e302c', sidebar: '#0d1715', text: '#e6f1ec', muted: '#a5c0b6', line: '#304942', accent: '#73d5c0', tint: '#21413a', hover: '#293b38' },
+  { id: 'porcelain', name: 'Porcelain', mode: 'light', description: 'Cool porcelain and tailored cobalt.',
+    bg: '#f2f5fa', paper: '#ffffff', sidebar: '#e4ebf6', text: '#202b43', muted: '#61718c', line: '#d8e1ef', accent: '#365caa', tint: '#dfe9fb', hover: '#eaf0f8' },
+  { id: 'rosewater', name: 'Rosewater', mode: 'light', description: 'Powdered blush with a garnet finish.',
+    bg: '#fbf5f4', paper: '#fffdfc', sidebar: '#f4e8e8', text: '#402b34', muted: '#806871', line: '#eadadc', accent: '#9b3d5b', tint: '#f7e3e9', hover: '#f4e9ea' },
+  { id: 'matcha', name: 'Matcha', mode: 'light', description: 'Creamy matcha and pressed olive.',
+    bg: '#f7f8ef', paper: '#fdfef8', sidebar: '#e9edda', text: '#2e3825', muted: '#6c7659', line: '#dce4ca', accent: '#526d2f', tint: '#e5efcf', hover: '#edf2e1' },
+  { id: 'marigold', name: 'Marigold', mode: 'light', description: 'Buttercream paper and golden ochre.',
+    bg: '#fff9e9', paper: '#fffdf6', sidebar: '#f9edcc', text: '#40331e', muted: '#78694a', line: '#e9ddb9', accent: '#91600d', tint: '#faedc4', hover: '#f8f0d9' },
+  { id: 'graphite', name: 'Graphite', mode: 'dark', description: 'Soft graphite with a coral spark.',
+    bg: '#191b20', paper: '#24272e', sidebar: '#121419', text: '#f0ede9', muted: '#adb0b6', line: '#3a3e46', accent: '#ff947e', tint: '#433033', hover: '#30333a' },
+  { id: 'mulberry', name: 'Mulberry', mode: 'dark', description: 'Velvet violet and orchid light.',
+    bg: '#201826', paper: '#2d2133', sidebar: '#170f1d', text: '#f2e8f4', muted: '#bca9c4', line: '#49364f', accent: '#dca0e4', tint: '#403048', hover: '#392b40' },
+  { id: 'fjord', name: 'Fjord', mode: 'dark', description: 'Slate-blue depths and glacial cyan.',
+    bg: '#14232a', paper: '#1d333a', sidebar: '#0d1a20', text: '#e5f2f3', muted: '#a5c2c7', line: '#32515a', accent: '#88d5df', tint: '#244850', hover: '#294047' },
+  { id: 'espresso', name: 'Espresso', mode: 'dark', description: 'Dark roast warmth with a soft brass glow.',
+    bg: '#241b17', paper: '#322721', sidebar: '#19130f', text: '#f5ede3', muted: '#c2ad9b', line: '#514036', accent: '#e8bb77', tint: '#493829', hover: '#3e3029' },
 ];
 function palette(definition) {
   const { id, name, mode, description, ...base } = definition;

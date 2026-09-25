@@ -29,7 +29,8 @@ select option, select optgroup { color: var(--text); background: var(--paper); }
 .provider-select[data-provider] { color: var(--provider-fg); border-inline-start: 3px solid var(--provider-border); }
 .provider-model-card { border-block-start: 3px solid var(--provider-border, var(--line)); }
 .palette-picker { margin-top: 24px; }
-.palette-picker > .field { max-width: 240px; }
+.palette-picker h3 { margin: 0; }
+.palette-intro { color: var(--muted); font-size: 12px; margin: 6px 0 16px; }
 .palette-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
 .palette-option { display: flex; flex-direction: column; gap: 10px; background: var(--paper); border: 1px solid var(--border-strong); border-radius: 12px; padding: 12px; text-align: left; min-width: 0; }
 .palette-option:hover:not(:disabled) { background: var(--hover); }

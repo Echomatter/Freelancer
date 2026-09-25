@@ -246,7 +246,7 @@ function Attachment({ file }: { file: any }) {
 }
 function CopyResponse({ messages }: { messages: any[] }) {
   const [copied, setCopied] = useState(false);
-  const text = messages.flatMap((message) => (message.parts ?? []).filter((part: any) => part.type === "text" && !message.info?.summary).map((part: any) => String(part.text ?? "").trim())).filter(Boolean).join("\n\n");
+  const text = messages.flatMap((message) => (message.parts ?? []).filter((part: any) => (part.type === "text" || part.type === "reasoning") && !message.info?.summary).map((part: any) => String(part.text ?? "").trim())).filter(Boolean).join("\n\n");
   if (!text) return null;
   return <button type="button" className="copy-response" aria-label={copied ? "Response copied" : "Copy response"} title={copied ? "Copied" : "Copy response"} onClick={async () => {
     try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); }
@@ -317,7 +317,7 @@ function RequestWorking({ summary, messages, onChild, live, changeCount = 0, onO
 }) {
   const recorded = messages.length > 0 && messages.every(message => message.info?.imported);
   live = live && !recorded;
-  if (!summary.hasWork && !changeCount && !live && !messages.some(m => m.info?.summary === true || m.parts?.some(p => p.type === "reasoning"))) return null;
+  if (!summary.hasWork && !changeCount && !live && !messages.some(m => m.info?.summary === true)) return null;
   const tools = messages.flatMap((message) => message.parts ?? []).filter((part) => part.type === "tool");
   const recentTools = [...tools].reverse();
   const active = recentTools.find((part) => part.state?.status === "running") ?? recentTools.find((part) => part.state?.status === "pending");
@@ -348,26 +348,13 @@ function GroupBody({ group, onChild, mode = "all" }: { group: { messages: any[] 
     for (const part of msg.parts ?? []) flat.push({ msg, part });
   const nodes: any[] = [];
   let textBuffer: { key: string; text: string }[] = [];
-  let thoughtBuffer: { key: string; text: string }[] = [];
   const flushTexts = () => {
     if (!textBuffer.length) return;
     const joined = textBuffer.map((t) => t.text.trim()).filter(Boolean).join("\n\n");
     if (joined) nodes.push(<Markdown key={textBuffer[0].key + "-joined"} text={joined} />);
     textBuffer = [];
   };
-  const flushThoughts = () => {
-    if (!thoughtBuffer.length) return;
-    nodes.push(
-      <div key={thoughtBuffer[0].key + "-group"} className="reasoning reasoning-text">
-        {thoughtBuffer.map(({ key, text }) => <Markdown key={key} text={text} />)}
-      </div>,
-    );
-    thoughtBuffer = [];
-  };
-  const flush = () => {
-    flushTexts();
-    flushThoughts();
-  };
+  const flush = flushTexts;
   // Same part id means the same item updated or replayed: render its latest
   // snapshot once so completed work never flips back to running and replays
   // never duplicate. Distinct ids with identical text are retained.
@@ -377,22 +364,20 @@ function GroupBody({ group, onChild, mode = "all" }: { group: { messages: any[] 
   });
   flat.forEach(({ msg, part }, index) => {
     if (part?.id && lastIndexByPartID.get(part.id) !== index) return;
-    const isWork = part.type === "tool" || part.type === "reasoning" || msg.info?.summary === true;
+    const isWork = part.type === "tool" || msg.info?.summary === true;
     if (mode === "work" && !isWork || mode === "prose" && isWork) return;
     const key = `${msg?.info?.id ?? index}/${part.id ?? index}`;
     if (part.type === "text" && msg.info?.summary === true) {
       flush();
       nodes.push(<details key={key} className="reasoning"><summary>Conversation recap</summary><Markdown text={part.text ?? ""} /></details>);
     } else if (part.type === "text") {
-      flushThoughts();
       const text = typeof part.text === "string" ? part.text : "";
       if (!text.trim()) return;
       textBuffer.push({ key, text });
     } else if (part.type === "reasoning") {
-      flushTexts();
       const text = typeof part.text === "string" ? part.text : "";
       if (!text.trim()) return;
-      thoughtBuffer.push({ key, text });
+      textBuffer.push({ key, text });
     } else if (part.type === "tool") {
       flush();
       nodes.push(<Tool key={key} part={part} onChild={onChild} />);
@@ -646,7 +631,7 @@ export function Chat({
             <button type="button" onClick={reviewDecisions}>Review decision</button>
           </div>
         )}
-        {responseGroups.filter((group) => group.messages.some((m) => m.info?.summary !== true && (m.info?.error || m.parts?.some((p) => p.type === "text" && p.text?.trim() || p.type === "file")))).map((group) => (
+        {responseGroups.filter((group) => group.messages.some((m) => m.info?.summary !== true && (m.info?.error || m.parts?.some((p) => (p.type === "text" || p.type === "reasoning") && p.text?.trim() || p.type === "file")))).map((group) => (
           <article key={group.key} className={`message ${group.role}`}>
             <div className="message-label"><GroupLabel role={group.role} models={group.role === "assistant" ? distinctGroupModels(group, data.models) : []} />{group.role === "assistant" && <CopyResponse messages={group.messages} />}</div>
             <div className="message-body">

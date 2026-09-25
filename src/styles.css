@@ -1076,12 +1076,6 @@ legend {
   max-height: 240px;
   overflow: auto;
 }
-.reasoning-text .markdown {
-  max-height: none;
-  overflow: visible;
-}
-.reasoning-text .markdown > :first-child { margin-top: 0; }
-.reasoning-text .markdown > :last-child { margin-bottom: 0; }
 .decision-banner {
   display: flex;
   align-items: center;

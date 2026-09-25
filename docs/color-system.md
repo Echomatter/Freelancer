@@ -2,7 +2,7 @@
 
 Freelancer uses shared EchoFlex styling. The application owns a small semantic token catalog, theme startup handling and provider color derivation.
 
-Keep Light and Dark, add Sandstone (warm light) and Midnight (blue dark). A palette choice must color the shell, EchoFlex controls, custom dialogs, status badges, code/diff surfaces and focus states consistently. Saved palettes apply before the first application paint and survive restarts without origin-specific browser storage.
+Keep Light and Dark, with Sandstone (warm light) and Midnight (blue dark) as established alternate palettes, and add Coast, Lilac, Ember, and Aurora as bespoke choices. A palette choice must color the shell, EchoFlex controls, custom dialogs, status badges, code/diff surfaces and focus states consistently. Saved palettes apply before the first application paint and survive restarts without origin-specific browser storage.
 
 Provider colors are appearance metadata, never routing, authentication or accounting policy. OpenCode Free defaults to green. Each provider offers preset colors, a custom hex color, a preview and a reset to its default on Application settings > Providers. Derive readable foreground, subtle tint and solid-marker variants from the selected color for each application palette. Preserve provider labels; never rely on color alone. Status/error colors and user-authored message content retain their own semantics.
 
@@ -12,7 +12,7 @@ Verification must cover token contrast, input validation, partial saves/reset, o
 
 ## Use
 
-Open **Application settings > Appearance** and choose **Light**, **Dark**, **Sandstone**, or **Midnight** from the Theme selector or preview cards. Sandstone is warm ivory with terracotta accents. Midnight is navy with blue accents. A checkmark and pressed state identify the selected palette independently of color.
+Open **Application settings > Appearance** and choose **Light**, **Dark**, **Sandstone**, **Midnight**, **Coast**, **Lilac**, **Ember**, or **Aurora** from the preview cards. Sandstone is warm ivory with terracotta accents. Midnight is navy with blue accents. Coast is sea-glass blue, Lilac is soft violet, Ember is smoked plum, and Aurora is deep evergreen. A checkmark and pressed state identify the selected palette independently of color.
 
 Open **Application settings > Providers** to set each provider's color. Choose a named swatch, the system color picker, or a three/six-digit hex value. The sample previews the choice without changing the rest of the app. **Save color** persists it; **Use default** removes only that provider's override. Color changes do not save unsaved billing fields or require authentication.
 

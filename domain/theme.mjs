@@ -11,6 +11,14 @@ const definitions = [
     bg: '#faf6ee', paper: '#fffdf8', sidebar: '#f1e9dc', text: '#352c26', muted: '#756758', line: '#e3d7c5', accent: '#9b4b32', tint: '#f3e3d5', hover: '#eee3d5' },
   { id: 'midnight', name: 'Midnight', mode: 'dark', description: 'Deep navy with clear blue highlights.',
     bg: '#101827', paper: '#172237', sidebar: '#0c1321', text: '#e4edf9', muted: '#a1b2cb', line: '#2c3e58', accent: '#85b9ff', tint: '#233854', hover: '#203149' },
+  { id: 'coast', name: 'Coast', mode: 'light', description: 'Sea-glass blue with a calm, clear accent.',
+    bg: '#f4f8f8', paper: '#ffffff', sidebar: '#e5f0f0', text: '#173238', muted: '#61777a', line: '#d5e3e4', accent: '#0d6975', tint: '#d9edef', hover: '#e7f2f2' },
+  { id: 'lilac', name: 'Lilac', mode: 'light', description: 'Soft lavender with a deep violet accent.',
+    bg: '#f8f6fc', paper: '#ffffff', sidebar: '#eeeafa', text: '#302943', muted: '#756b88', line: '#e3ddec', accent: '#6848a8', tint: '#ebe3f8', hover: '#f0ebf8' },
+  { id: 'ember', name: 'Ember', mode: 'dark', description: 'Smoked plum with a warm amber glow.',
+    bg: '#21151a', paper: '#2d1d24', sidebar: '#180f14', text: '#f2e3e5', muted: '#c3a4aa', line: '#4a3039', accent: '#ffad72', tint: '#4b2930', hover: '#39212a' },
+  { id: 'aurora', name: 'Aurora', mode: 'dark', description: 'Deep evergreen with a luminous mint accent.',
+    bg: '#15231f', paper: '#1e302c', sidebar: '#0d1715', text: '#e6f1ec', muted: '#a5c0b6', line: '#304942', accent: '#73d5c0', tint: '#21413a', hover: '#293b38' },
 ];
 function palette(definition) {
   const { id, name, mode, description, ...base } = definition;

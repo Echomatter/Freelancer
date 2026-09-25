@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { api } from './api';
-import { Field } from './echoflex/Controls';
 import { applyTheme, resolveTheme, palettes, themeStyle } from '../domain/theme.mjs';
 import type { ColorPatch } from './ProviderColors';
 export function ThemePicker({ theme, refresh, onSaved }: { theme?: string; refresh: () => Promise<any>; onSaved?: (patch: ColorPatch) => void }) {
@@ -22,11 +21,10 @@ export function ThemePicker({ theme, refresh, onSaved }: { theme?: string; refre
     } catch (e) { setError(e instanceof Error ? e.message : 'Theme could not be saved.'); }
     finally { saving.current = false; setPending(false); }
   }
-  return <section className="palette-picker" aria-label="Color palettes">
-    <Field label="Theme"><select value={value} disabled={pending} onChange={e => void save(e.target.value)}>
-      {palettes.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
-    </select></Field>
-    <div className="palette-options">
+  return <section className="palette-picker" aria-labelledby="theme-picker-heading">
+    <h3 id="theme-picker-heading">Theme</h3>
+    <p className="palette-intro">Choose a palette for your workspace.</p>
+    <div className="palette-options" role="group" aria-labelledby="theme-picker-heading">
       {palettes.map(p => <button type="button" key={p.id} disabled={pending} aria-label={`Use ${p.name} palette`} aria-pressed={value === p.id}
         className="palette-option" onClick={() => void save(p.id)}>
         <span className="palette-mini" style={themeStyle(p.id)} aria-hidden="true"><span className="palette-mini-nav" /><span className="palette-mini-main"><i /><i /><b /></span></span>

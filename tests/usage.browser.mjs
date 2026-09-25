@@ -282,11 +282,16 @@ async function noOverflow() {
 }
 async function theme(id) {
   await settings("Appearance");
-  await page.getByLabel("Theme", { exact: true }).selectOption(id);
+  const name = palettes.find((palette) => palette.id === id).name;
+  await page
+    .getByRole("button", { name: `Use ${name} palette`, exact: true })
+    .click();
   await page.waitForFunction(
     (id) =>
       document.documentElement.dataset.theme === id &&
-      !document.querySelector(".palette-picker select").disabled,
+      [...document.querySelectorAll(".palette-option")].every(
+        (button) => !button.disabled,
+      ),
     id,
   );
 }

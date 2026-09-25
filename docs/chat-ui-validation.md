@@ -7,8 +7,9 @@ Run `npm run build` followed by `npm run test:browser`.
 `polish.browser.mjs` checks the scrollbar and composer reach the window bottom,
 right-aligned content-sized user bubbles, retained reading position across
 navigation, shared task/delivery cards, dismissal/restoration, explicit queue
-cancellation and narrow layouts. `chat-tweaks.browser.mjs` checks reasoning and
-command presentation. `colors.browser.mjs` covers provider identities and themes.
+cancellation and narrow layouts. `chat-tweaks.browser.mjs` checks that assistant
+prose, including reasoning parts, stays in the chat while tool calls stay in the
+collapsed work card. `colors.browser.mjs` covers provider identities and themes.
 
 For interactive debugging, run `npm run dev -- --port 5199` and open
 `http://127.0.0.1:5199/tests/fixtures/chat-ui.html`, or run

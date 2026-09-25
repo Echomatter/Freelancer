@@ -67,8 +67,8 @@ test("work expands inline while prose stays outside the work block", async (t) =
   const proseStart = html.indexOf('class="message assistant"');
   assert.ok(workStart >= 0 && proseStart > workStart);
   assert.ok(html.indexOf('unique tool output') < proseStart);
-  assert.ok(html.indexOf('Inspect the worker output first.') < html.indexOf('unique tool output'));
-  assert.match(html, /class="reasoning reasoning-text"/);
+  assert.ok(html.indexOf('Inspect the worker output first.') > proseStart);
+  assert.doesNotMatch(html, /class="reasoning reasoning-text"/);
   assert.doesNotMatch(html, /Thought:|Thought process|<details class="reasoning"/);
   assert.ok(html.indexOf('Helpful explanation.') > proseStart);
   assert.equal(html.split('unique tool output').length - 1, 1);

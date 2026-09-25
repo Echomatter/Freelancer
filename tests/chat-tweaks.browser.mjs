@@ -30,7 +30,9 @@ try {
   await usage.getByRole('button', { name: /Show provider availability/ }).click();
   await usage.getByRole('button', { name: /Hide provider availability/ }).waitFor();
 
-  await page.locator('.sidebar .sessions').getByRole('button', { name: /Important conversation/ }).click();
+  const chats = page.locator('.chat-navigation');
+  await chats.getByRole('button', { name: 'Chats' }).click();
+  await chats.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
   await page.waitForFunction(() => {
     const input = document.querySelector('.composer textarea');
     return input && !input.disabled;
@@ -39,11 +41,12 @@ try {
   await page.getByRole('button', { name: /Agent finished: Engineer/ }).click();
   const work = page.locator('.request-working').last();
   await work.locator('summary').first().click();
-  const thought = work.locator('.reasoning-text');
-  await thought.getByText('Read the relevant file first.').waitFor();
+  const prose = page.locator('.message.assistant').last();
+  await prose.getByText('Read the relevant file first.').waitFor();
+  assert.equal(await work.getByText('Read the relevant file first.').count(), 0,
+    'reasoning prose stays with the assistant response');
   assert.equal(await work.locator('details.reasoning').count(), 0);
-  const thoughtBounds = await thought.boundingBox(), commandBounds = await work.locator('.tool-card').boundingBox();
-  assert.ok(thoughtBounds && commandBounds && thoughtBounds.y < commandBounds.y,
-    'worker thought is visible above its command card');
-  console.log('PASS usage below settings; worker thoughts visible before command cards');
+  assert.equal(await work.locator('.tool-card').count(), 1,
+    'the work card contains the tool call');
+  console.log('PASS usage below settings; reasoning prose stays in chat and tool calls stay in work card');
 } finally { await browser.close(); await f.close(); }

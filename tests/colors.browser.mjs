@@ -70,15 +70,17 @@ async function readable(locator, label) {
   assert.ok(contrast(hex(pair[0]), hex(pair[1])) >= 4.5, `${label}: ${pair.join(' on ')}`);
 }
 async function chooseTheme(id) {
-  await page.getByLabel('Theme', { exact: true }).selectOption(id);
+  const name = palettes.find(p => p.id === id).name;
+  await page.getByRole('button', { name: `Use ${name} palette`, exact: true }).click();
   await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, id);
-  await page.waitForFunction(() => !document.querySelector('.palette-picker select').disabled);
+  await page.waitForFunction(() => [...document.querySelectorAll('.palette-option')].every(button => !button.disabled));
 }
 async function screenshot(name) { await mkdir('artifacts/colors', { recursive: true }); await page.screenshot({ path: `artifacts/colors/${name}.png`, fullPage: true, animations: 'disabled' }); }
 try {
   await load(); await settings();
   await page.getByRole('button', { name: /^Use .* palette$/ }).first().waitFor();
-  assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), 4);
+  assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), 8);
+  assert.equal(await page.locator('.palette-picker select').count(), 0);
   for (const p of palettes) {
     await chooseTheme(p.id);
     assert.equal(await page.locator('html').evaluate(e => getComputedStyle(e).backgroundColor), rgb(p.tokens.bg));
@@ -88,12 +90,11 @@ try {
     assert.equal(await button.evaluate(e => getComputedStyle(e).outlineStyle), 'solid');
     assert.equal(await button.getAttribute('aria-pressed'), 'true');
     await readable(page.locator('.settings-drawer-links button.selected'), p.name + ' active navigation');
-    await readable(page.getByLabel('Theme', { exact: true }), p.name + ' select');
     await readable(page.locator('.topbar .badge.success'), p.name + ' success');
     await button.hover(); await readable(button, p.name + ' palette hover');
     await screenshot(p.id);
   }
-  report('four saved palettes, live shell surfaces, selected and focused palette controls');
+  report('eight saved palettes, live shell surfaces, selected and focused palette cards');
   await chooseTheme('sandstone');
   fault = true;
   await page.getByRole('button', { name: 'Use Midnight palette' }).click();

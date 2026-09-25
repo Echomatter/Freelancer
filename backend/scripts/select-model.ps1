@@ -8,6 +8,7 @@ param(
     [string]$ToolkitRoot = '',
     [string]$ExcludedModels = '',
     [string]$SelectedModel = '',
+    [string]$RuntimeModels = '',
     $HostAssessment = $false,
     [string]$DiversityModels = '',
     [string[]]$TaskType = @('bounded_feature'),
@@ -23,6 +24,7 @@ param(
     [string]$LaneHint = '',
     [ValidateSet('', 'build', 'plan', 'explore', 'review')][string]$WorkMode = '',
     [string]$PreferredCostClass = '',
+    [ValidateSet('', 'free-only', 'prefer-free', 'balanced', 'any', 'paid-only')][string]$CostPreference = '',
     $FreeOnly = $false,
     [ValidateSet('bounded','specialist')][string]$ReviewMode = 'bounded',
     [int]$ExpectedInputTokens = 0,
@@ -54,6 +56,7 @@ $bFreeOnly = To-Bool $FreeOnly
 $bHostAssessment = To-Bool $HostAssessment
 $modeNorm = ("$WorkMode").Trim().ToLower()
 $prefCost = ("$PreferredCostClass").Trim().ToLower()
+$costPreference = if ($CostPreference) { $CostPreference } elseif ($prefCost -eq 'free') { 'prefer-free' } else { 'balanced' }
 
 # Normalize task types: accept comma-separated single string as well.
 $tasks = @()
@@ -363,6 +366,29 @@ if ($diversityReferenceModel -ne '') {
     $excludeProvider = Get-ModelProvider $excludeEntry $diversityReferenceModel
 }
 
+$routeModels = @($roster.eligible_models)
+# A current Freelancer request captures the native connected model inventory.
+# The researched roster can lag behind it; add only captured, provider-qualified
+# subscription/free routes. Evidence remains unknown until researched.
+if ($RuntimeModels) {
+    $runtimeIds = @($RuntimeModels.Split(',') | Where-Object { $_ -match '^[\w.-]+/[^\s,]+$' } | Sort-Object -Unique)
+    $routeModels = @($routeModels | Where-Object { $runtimeIds -contains $_.id })
+    $known = @($routeModels | ForEach-Object { $_.id })
+    foreach ($id in $runtimeIds) {
+        if ($known -contains $id) { continue }
+        $provider = $id.Split('/')[0]
+        $surface = switch ($provider) {
+            'opencode' { 'opencode-free' }
+            'opencode-go' { 'opencode-go' }
+            'openai' { 'openai-oauth' }
+            'github-copilot' { 'github-copilot-oauth' }
+            default { '' }
+        }
+        if ($surface) {
+            $routeModels += [pscustomobject]@{ id=$id; surface=$surface; economics='subscription-quota'; observed=[pscustomobject]@{} }
+        }
+    }
+}
 $scored = @()
 $diversityIds = @($DiversityModels.Split(',') | Where-Object { $_ })
 if ($bNeedsDiversity) { $diversityIds += @($CurrentModel, $ExcludeModel) | Where-Object { $_ } }
@@ -467,13 +493,16 @@ if (Test-Path -LiteralPath $healthDir) {
     }
 }
 $excluded = @($ExcludedModels.Split(',') | Where-Object { $_ })
-foreach ($rm in @($roster.eligible_models)) {
+foreach ($rm in $routeModels) {
     $rid = [string]$rm.id
     $surface = [string]$rm.surface
     $assessmentNotes = @()
     $softEvidence = $bHostAssessment -and -not $isConsequential -and $ReviewMode -ne 'specialist'
     if ($bFreeOnly -and $surface -ne 'opencode-free') {
         $filtered += [pscustomobject]@{ id=$rid; reason='free_only: subscription surfaces excluded' }; continue
+    }
+    if ($costPreference -eq 'paid-only' -and $surface -eq 'opencode-free') {
+        $filtered += [pscustomobject]@{ id=$rid; reason='subscription_only: free surface excluded' }; continue
     }
     if (@($policy.allowed_surfaces) -notcontains $surface -or $excluded -contains $rid) {
         $filtered += [pscustomobject]@{ id=$rid; reason='route excluded by policy or failed attempt' }; continue
@@ -872,14 +901,24 @@ if ($scored.Count -eq 0) {
     $emptyResult | ConvertTo-Json -Depth 6
     return
 }
-$ranked = @($scored | Sort-Object -Property @{Expression='economic_class';Descending=$false}, @{Expression='expense';Descending=$false}, @{Expression='total';Descending=$true}, @{Expression='priority';Descending=$false}, @{Expression='id';Descending=$false})
+$ranked = if ($costPreference -in @('any', 'paid-only')) {
+    @($scored | Sort-Object -Property @{Expression='cap_avg';Descending=$true}, @{Expression='total';Descending=$true}, @{Expression='economic_class';Descending=$false}, @{Expression='expense';Descending=$false}, @{Expression='priority';Descending=$false}, @{Expression='id';Descending=$false})
+} elseif ($costPreference -eq 'balanced') {
+    @($scored | Sort-Object -Property @{Expression='total';Descending=$true}, @{Expression='economic_class';Descending=$false}, @{Expression='expense';Descending=$false}, @{Expression='priority';Descending=$false}, @{Expression='id';Descending=$false})
+} else {
+    @($scored | Sort-Object -Property @{Expression='economic_class';Descending=$false}, @{Expression='expense';Descending=$false}, @{Expression='total';Descending=$true}, @{Expression='priority';Descending=$false}, @{Expression='id';Descending=$false})
+}
 
 $top = $ranked[0]
-$economicReason = if ($top.surface -eq 'opencode-free') { 'free-first: an adequate free route wins ordinary bounded work' } else { 'escalation: no adequately proven free route survives task requirements and availability checks' }
+$economicReason = if ($costPreference -eq 'paid-only') { 'subscription-only: compare qualified paid routes by task fit' }
+    elseif ($costPreference -eq 'any') { 'capability-first: compare qualified task fit before capacity cost' }
+    elseif ($costPreference -eq 'balanced') { 'balanced: compare qualified task fit and capacity cost together' }
+    elseif ($top.surface -eq 'opencode-free') { 'free-first: an adequate free route wins ordinary bounded work' }
+    else { 'escalation: no adequately proven free route survives task requirements and availability checks' }
 # Difficult work may justify a documented capability advantage after qualification.
 $free = @($ranked | Where-Object { $_.surface -eq 'opencode-free' })
 $stronger = @($ranked | Where-Object { $_.surface -ne 'opencode-free' -and $_.cap_avg -ge ($top.cap_avg + 0.75) } | Sort-Object cap_avg -Descending)
-if ($isConsequential -and $free.Count -and $top.surface -eq 'opencode-free' -and $stronger.Count -and $prefCost -ne 'free') {
+if ($isConsequential -and $free.Count -and $top.surface -eq 'opencode-free' -and $stronger.Count -and $costPreference -eq 'prefer-free') {
     $top = $stronger[0]
     $economicReason = 'escalation: consequential task; proven task capability advantage of at least 0.75 over the qualified free route'
     $ranked = @($top) + @($ranked | Where-Object { $_.id -ne $top.id })
@@ -949,7 +988,10 @@ if ($stayPut) {
 $why = @()
 $why += $economicReason
 if ($bFreeOnly) { $why += 'free_only: only opencode-free routes may execute; no subscription fallback' }
-if ($reviewBasis -eq 'bounded_coding_evidence') { $why += 'bounded second opinion qualified by coding evidence; specialist review capability is not established' }
+if ($reviewBasis -eq 'bounded_coding_evidence') {
+    if ($top.assessment_notes.Count) { $why += 'bounded second opinion needs host assessment; this exact model has incomplete capability evidence' }
+    else { $why += 'bounded second opinion qualified by coding evidence; specialist review capability is not established' }
+}
 $why += ("task: " + ($tasks -join ' + ') + " | writes=$bNeedsWrites terminal=$bNeedsTerminal large_ctx=$NeedsLargeContextTokens deep=$bNeedsDeep diversity=$bNeedsDiversity consequence=$bHighConseq")
 if ($top.why_caps -ne '') { $why += ("capabilities: " + $top.why_caps) }
 if ($top.bench_notes -ne '') { $why += ("benchmarks (same-version only, harness-noted): " + $top.bench_notes) }

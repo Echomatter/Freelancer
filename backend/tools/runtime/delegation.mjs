@@ -502,7 +502,8 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         await beforeSelect({ signal: ctx.abort });
         const roster = await readJson(path.join(toolkitRoot, 'routing', 'model-roster.json'));
         const excludedByProvider = (roster?.eligible_models || []).filter(m => preferences.excludedProviders.includes(m.id.split('/')[0]) || (preferences.allowedModels.length && !preferences.allowedModels.includes(m.id))).map(m => m.id);
-        const selection = await select({ ...effectiveArgs, selectedModel: choice?.model || args.selectedModel,
+        const selection = await select({ ...effectiveArgs, runtimeModels: allowedModels, costPreference: preferences.costPreference,
+          selectedModel: choice?.model || args.selectedModel,
           hostAssessment: true, excludeModels, freeOnly, needsModelDiversity, needsWrites: !readOnly, currentModel: parentModel,
           rejected: [...rejected, ...preferences.excludedModels, ...excludedByProvider] }, ctx);
         const selected = selection?.selected_model;

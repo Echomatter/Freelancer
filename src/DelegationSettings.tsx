@@ -46,7 +46,7 @@ export function DelegationSettings({ project, sessionID = '', refresh }: {
     } finally { if (serial === generation.current) setSaving(false); }
   }
   if (!project) return <Panel><h3>Choose a project</h3><p>Open a project to set its delegation budget.</p></Panel>;
-  const subscription = draft?.costPreference === 'free-only' ? 'never' : 'automatic';
+  const workerModels = ['balanced', 'any'].includes(draft?.costPreference) ? 'all' : draft?.costPreference;
   return <Panel title="Delegation budget" className="delegation-settings">
     <p>The main agent decides whether to work directly or assemble a team. These settings limit resources and consequences, not which expertise it may ask for.</p>
     <Field label="Apply to"><select value={scope} disabled={saving} onChange={e => setScope(e.target.value)}>
@@ -61,21 +61,21 @@ export function DelegationSettings({ project, sessionID = '', refresh }: {
           <Field label="Delegation"><select value={draft.delegation === "ask" ? "automatic" : draft.delegation} onChange={e => change({ delegation: e.target.value })}>
             <option value="automatic">Agent decides</option><option value="manual">Work directly — no delegated agents</option>
           </select></Field>
-          <Field label="Subscription capacity"><select value={subscription} onChange={e => change({
-            costPreference: e.target.value === 'never' ? 'free-only' : draft.costPreference === 'free-only' ? 'prefer-free' : draft.costPreference,
-            subscriptionDelegation: e.target.value === 'automatic' ? 'automatic' : 'ask',
+          <Field label="Worker models"><select value={workerModels} onChange={e => change({
+            costPreference: e.target.value === 'all' ? 'any' : e.target.value,
+            subscriptionDelegation: e.target.value === 'free-only' ? 'ask' : 'automatic',
           })}>
-            <option value="never">Free models only</option><option value="automatic">Allow with native consent</option>
+            <option value="free-only">Free only</option>
+            <option value="prefer-free">Prefer free</option>
+            <option value="all">All available models</option>
+            <option value="paid-only">Paid subscription models only</option>
           </select></Field>
           <Field label="Simultaneous delegated agents"><input type="number" min="1" max="6" step="1" required value={draft.maxParallel}
             onChange={e => change({ maxParallel: Number(e.target.value) })} /></Field>
           <Field label="Maximum delegation depth"><input type="number" min="1" max="6" step="1" required value={draft.maxDepth ?? 2}
             onChange={e => change({ maxDepth: Number(e.target.value) })} /></Field>
-          <Field label="Free-model preference"><select value={draft.costPreference === 'free-only' ? 'prefer-free' : draft.costPreference} disabled={subscription === 'never'} onChange={e => change({ costPreference: e.target.value })}>
-            <option value="prefer-free">Prefer eligible free workers</option><option value="any">Prioritize capability within my budget</option><option value="balanced">Balance capability and capacity</option>
-          </select></Field>
         </div>
-        <p>OpenCode asks for paid-delegation permission when required and honors your saved native decisions. Separately metered API delegation is unavailable. The parallel limit is a ceiling, not a team-size target.</p>
+        <p>Paid subscription workers use OpenCode’s native permission. API-metered models are excluded. The parallel limit is a ceiling, not a team-size target.</p>
         <details><summary>Existing advanced limits</summary>
           <p>Allowed models: {draft.allowedModels.length ? draft.allowedModels.join(', ') : 'All eligible connected models'}.</p>
           {!!draft.allowedModels.length && <Button type="button" onClick={() => change({ allowedModels: [] })}>Clear model allowlist</Button>}

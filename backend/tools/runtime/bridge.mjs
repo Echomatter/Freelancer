@@ -37,9 +37,10 @@ export function selectorArguments(args, script) {
     if (args[arg]) result.push(`-${key}`, 'true');
   }
   for (const [arg, key] of Object.entries({ minimumContext: 'NeedsLargeContextTokens', currentModel: 'CurrentModel', excludeModel: 'ExcludeModel',
-    expectedInputTokens: 'ExpectedInputTokens', expectedOutputTokens: 'ExpectedOutputTokens', expectedCacheReadTokens: 'ExpectedCacheReadTokens', preferredCostClass: 'PreferredCostClass', reviewMode: 'ReviewMode', selectedModel: 'SelectedModel' })) {
+    expectedInputTokens: 'ExpectedInputTokens', expectedOutputTokens: 'ExpectedOutputTokens', expectedCacheReadTokens: 'ExpectedCacheReadTokens', preferredCostClass: 'PreferredCostClass', costPreference: 'CostPreference', reviewMode: 'ReviewMode', selectedModel: 'SelectedModel' })) {
     if (args[arg] !== undefined && args[arg] !== '') result.push(`-${key}`, String(args[arg]));
   }
+  if (args.runtimeModels?.length) result.push('-RuntimeModels', args.runtimeModels.join(','));
   if (args.rejected?.length) result.push('-ExcludedModels', args.rejected.join(','));
   if (args.excludeModels?.length) result.push('-DiversityModels', args.excludeModels.join(','));
   return result;

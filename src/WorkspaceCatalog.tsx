@@ -12,7 +12,7 @@ import {
   X,
   Trash2,
 } from "lucide-react";
-import { Button, PageHeading, Panel, Field, Badge } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Panel, Field, Badge } from "./echoflex/Controls";
 import { api } from "./api";
 import {
   agentDefaults,
@@ -32,12 +32,14 @@ export function WorkspaceCatalog({
   run,
   refresh,
   onUse,
+  onClose,
 }: {
   kind: "agents" | "workflows";
   data: any;
   run: (fn: () => Promise<any>) => Promise<void>;
   refresh: () => Promise<void>;
   onUse: (item: any) => void;
+  onClose: () => void;
 }) {
   const isAgent = kind === "agents";
   const [edit, setEdit] = useState<any>(null),
@@ -118,35 +120,38 @@ export function WorkspaceCatalog({
       {!edit && <>
       <PageHeading title={isAgent ? "Agents" : "Workflows"}
         description={isAgent ? "One catalog for main chats and delegated work. Changes apply to the next main request; active assignments keep their saved definition." : "Choose the method and agent for a task. Changes apply to future requests."}
-        actions={<Button
-          variant="primary"
-          onClick={() =>
-            setEdit(
-              isAgent
-                ? {
-                    name: "",
-                    prompt: "",
-                    response: "balanced",
-                    approach: "practical",
-                    model: agentModelID(),
-                    variant: "inherit",
-                  }
-                : {
-                    name: "",
-                    prompt: "",
-                    mode: "build",
-                    agentID: "engineer",
-                    category: "connected",
-                    models: [],
-                    parallel: true,
-                    variant: "inherit",
-                  },
-            )
-          }
-        >
-          <Plus size={17} />
-          {isAgent ? "Add agent" : "Add workflow"}
-        </Button>} />
+        actions={<>
+          <Button
+            variant="primary"
+            onClick={() =>
+              setEdit(
+                isAgent
+                  ? {
+                      name: "",
+                      prompt: "",
+                      response: "balanced",
+                      approach: "practical",
+                      model: agentModelID(),
+                      variant: "inherit",
+                    }
+                  : {
+                      name: "",
+                      prompt: "",
+                      mode: "build",
+                      agentID: "engineer",
+                      category: "connected",
+                      models: [],
+                      parallel: true,
+                      variant: "inherit",
+                    },
+              )
+            }
+          >
+            <Plus size={17} />
+            {isAgent ? "Add agent" : "Add workflow"}
+          </Button>
+          <PageCloseButton onClick={onClose} />
+        </>} />
       <label className="search catalog-search">
         <Search size={16} />
         <input

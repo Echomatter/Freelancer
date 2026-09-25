@@ -11,7 +11,7 @@ import {
   Activity,
 } from "lucide-react";
 import { api, query } from "./api";
-import { Button, Panel, Field, Badge, Empty } from "./echoflex/Controls";
+import { Button, PageCloseButton, Panel, Field, Badge, Empty } from "./echoflex/Controls";
 import { visibleActivity, activityLabel } from "../domain/activity.mjs";
 import { ChatContributions } from "./Contributions";
 import { resolveTodoLayout } from "../domain/appearance.mjs";
@@ -207,7 +207,7 @@ export function Details({
   );
 }
 
-export function Files({ project, run }: { project: string; run: any }) {
+export function Files({ project, run, onClose }: { project: string; run: any; onClose: () => void }) {
   const [folder, setFolder] = useState(""),
     [loading, setLoading] = useState(true),
     [nodes, setNodes] = useState<any[]>([]),
@@ -250,18 +250,21 @@ export function Files({ project, run }: { project: string; run: any }) {
           <h1>Project files</h1>
           <p>{file?.path || folder || "Your project"}</p>
         </div>
-        {(folder || file) && (
-          <Button
-            onClick={() =>
-              file
-                ? setFile(null)
-                : setFolder(folder.replace(/\/?[^/]+\/?$/, ""))
-            }
-          >
-            <ArrowLeft size={15} />
-            Back
-          </Button>
-        )}
+        <>
+          {(folder || file) && (
+            <Button
+              onClick={() =>
+                file
+                  ? setFile(null)
+                  : setFolder(folder.replace(/\/?[^/]+\/?$/, ""))
+              }
+            >
+              <ArrowLeft size={15} />
+              Back
+            </Button>
+          )}
+          <PageCloseButton onClick={onClose} />
+        </>
       </div>
       {file ? (
         <Panel>

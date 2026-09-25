@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { GitBranch } from "lucide-react";
 import { gitPresets } from "../domain/git-project.mjs";
 import { api } from "./api";
-import { Button, PageHeading, Panel } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Panel } from "./echoflex/Controls";
 
-export function GitDefaults({ preset = "review", refresh }: { preset?: string; refresh: () => Promise<void> }) {
+export function GitDefaults({ preset = "review", onClose, refresh }: { preset?: string; onClose: () => void; refresh: () => Promise<void> }) {
   const [choice, setChoice] = useState(preset), [pending, setPending] = useState(false);
   const [error, setError] = useState(""), [saved, setSaved] = useState(false);
   useEffect(() => setChoice(preset), [preset]);
@@ -18,7 +18,7 @@ export function GitDefaults({ preset = "review", refresh }: { preset?: string; r
     finally { setPending(false); }
   };
   return <>
-    <PageHeading title="Git defaults" description="Choose the starting working style for newly configured projects. Each project keeps its own saved agreement." />
+    <PageHeading title="Git defaults" description="Choose the starting working style for newly configured projects. Each project keeps its own saved agreement." actions={<PageCloseButton onClick={onClose} />} />
     <Panel title="New project working style">
       <label className="field"><span>Working style</span>
         <select value={choice} disabled={pending} onChange={(e) => setChoice(e.target.value)}>

@@ -19,7 +19,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, query, subscribe } from "./api";
-import { Button, Panel, Badge, Empty } from "./echoflex/Controls";
+import { Button, Panel, Badge, Empty, PageCloseButton } from "./echoflex/Controls";
 import { Chat } from "./Chat";
 const GitHubProject = lazy(() => import('./GitHubProject').then(module => ({ default: module.GitHubProject })));
 import { PanelResize, usePanelLayout } from "./PanelResize";
@@ -113,15 +113,16 @@ export default function App() {
   const historyOpen = view === "history";
   const setView = (next: React.SetStateAction<string>) => startTransition(() => setViewState(next));
   const openHistory = (id?: string) => { setHistorySelection(id); setExpandedSettings("application"); setView("history"); };
+  const closeSettings = () => { setExpandedSettings(null); setHistorySelection(undefined); setView("chat"); };
   const openSettings = (scope: SettingsScope, item: string) => {
     if (item === "history") { openHistory(); return; }
     setSettingsScope(scope);
     setExpandedSettings(scope);
     setTab(item);
-    setView(({ workspace: "chat", github: "github", models: "models", usage: "overview", agents: "agents", workflows: "workflows", files: "files" } as Record<string, string>)[item] ?? "settings");
+    setView(({ github: "github", models: "models", usage: "overview", agents: "agents", workflows: "workflows", files: "files" } as Record<string, string>)[item] ?? "settings");
   };
   const navigationScope: SettingsScope = historyOpen ? "application" : view === "settings" ? settingsScope : view === "models" || view === "overview" ? "application" : "project";
-  const navigationTab = historyOpen ? "history" : view === "settings" ? tab : view === "chat" ? "workspace" : view === "overview" ? "usage" : view;
+  const navigationTab = historyOpen ? "history" : view === "settings" ? tab : view === "chat" ? "" : view === "overview" ? "usage" : view;
   const [details, setDetails] = useState(false),
     [detailsSel, setDetailsSel] = useState({ tab: "activity", n: 0 }),
     [agentID, setAgentID] = useState("inherit"),
@@ -201,6 +202,7 @@ export default function App() {
     timer = useRef<ReturnType<typeof setTimeout>>();
   const navigation = useRef("");
   const draftMemory = useDrafts(project, session, !!data && compatibleApplication(data));
+  const draftSaving = draftMemory.status === "Saving draft…";
   const draft = draftMemory.text, setDraft = draftMemory.setText;
   navigation.current = query(project, session);
   const refresh = async (signal?: AbortSignal) => {
@@ -614,11 +616,13 @@ export default function App() {
                     : "Connected"}
             </Badge>
             <button
-              aria-label="Refresh"
+              aria-label={draftSaving ? "Saving draft" : "Refresh"}
+              title={draftSaving ? "Saving draft" : "Refresh"}
+              aria-busy={draftSaving || undefined}
               className="icon-button"
               onClick={() => run(() => Promise.all([refresh(), refreshChat()]))}
             >
-              <RefreshCw size={17} className={working ? "spin" : ""} />
+              <RefreshCw size={17} className={working || draftSaving ? "spin" : ""} />
             </button>
           </div>
         </header>
@@ -673,7 +677,7 @@ export default function App() {
                   })}>Continue in Freelancer</Button></div>}
                 {chat.continuation && <div className="imported-chat-notice" role="status"><span>{(sending && !chat.receipts?.length) || (busy && chat.receipts?.at(-1)?.orienting) ? 'Orienting…' : 'Continued from a ChatGPT / Codex snapshot. Saved history provides the starting context.'}</span></div>}
                 {(current?.organization?.archived || data.project?.organization?.archivedAt) && <div className="archive-banner" role="status">This work is archived{current?.organization?.archiveScope === 'freelancer' ? ' in Freelancer only' : ''}. Restore it before sending. <Button onClick={() => { if (data.project?.organization?.archivedAt) openSettings('application', 'storage'); else openHistory(current?.parentID ?? current?.id); }}>Manage archive</Button></div>}
-                {(draftMemory.status || draftMemory.error) && <div className="draft-status" role={draftMemory.error ? 'alert' : 'status'}>{draftMemory.error || draftMemory.status}{draftMemory.error && <><Button onClick={() => run(draftMemory.retry)}>Retry save</Button><Button title="Replace this box with the saved draft. Copy current text first." onClick={async () => { if (await confirmation.ask({ title: 'Load the saved draft?', description: 'Copy your current text first; this replaces the text in the box.', confirmLabel: 'Load saved draft' })) void run(draftMemory.reload); }}>Load saved draft</Button></>}</div>}
+                {draftMemory.error ? <div className="draft-status" role="alert">{draftMemory.error}<><Button onClick={() => run(draftMemory.retry)}>Retry save</Button><Button title="Replace this box with the saved draft. Copy current text first." onClick={async () => { if (await confirmation.ask({ title: 'Load the saved draft?', description: 'Copy your current text first; this replaces the text in the box.', confirmLabel: 'Load saved draft' })) void run(draftMemory.reload); }}>Load saved draft</Button></></div> : null}
                 <div className="requests" ref={decisions} tabIndex={-1} aria-label="Pending decisions">
                   <Permissions key={`permissions-${query(project, session)}`} requests={chat.permissions}
                     suspended={view !== 'chat' || folderOpen || !!projectLoading}
@@ -750,16 +754,17 @@ export default function App() {
                   )}
                 </div>
               </div>
-            {view === "github" && <GitHubProject key={project} project={project} onUseSync={() => {
+            {view === "github" && <GitHubProject key={project} project={project} onClose={closeSettings} onUseSync={() => {
               setAgentID("git"); setWorkflowID("sync"); setModel("inherit"); setVariant("inherit"); setView("chat");
             }} />}
             {view === "overview" && (
               <div className="page overview">
-                <div className="page-title">
-                  <div>
-                    <h1>Available Usage</h1>
-                  </div>
-                </div>
+                 <div className="page-title">
+                   <div>
+                     <h1>Available Usage</h1>
+                   </div>
+                   <PageCloseButton onClick={closeSettings} />
+                 </div>
                 <UsageHero view={availableUsage.view} state={availableUsage.state} onRefresh={availableUsage.refresh} />
                 <div className="overview-grid">
                   <Panel title="Your providers">
@@ -807,9 +812,9 @@ export default function App() {
               </div>
             )}
             {view === "files" && project && (
-              <Files project={project} run={run} />
+              <Files project={project} run={run} onClose={closeSettings} />
             )}
-            {view === "history" && project && <HistoryPage key={historySelection ?? "all"} data={data} project={project} activity={sessionActivity} initialSession={historySelection} onClose={() => setView("chat")} onChange={refresh} onOpen={async (projectID, id) => {
+            {view === "history" && project && <HistoryPage key={historySelection ?? "all"} data={data} project={project} activity={sessionActivity} initialSession={historySelection} onClose={closeSettings} onChange={refresh} onOpen={async (projectID, id) => {
               if (projectID !== project) {
                 const selected = data.settings.projects.find(p => p.id === projectID);
                 if (!selected) return;
@@ -822,10 +827,11 @@ export default function App() {
               <WorkspaceCatalog
                 key={view}
                 kind={view}
-                data={data}
-                run={run}
-                refresh={refresh}
-                onUse={(item) => {
+                 data={data}
+                 run={run}
+                 refresh={refresh}
+                 onClose={closeSettings}
+                 onUse={(item) => {
                   setVariant("inherit");
                   if (view === "agents") {
                     setAgentID(item.id);
@@ -838,9 +844,10 @@ export default function App() {
             {view === "settings" && (
               <div className="page">
                 <Settings
-                  sessionID={session}
-                  onHistory={() => openHistory()}
-                  data={data}
+                   sessionID={session}
+                   onHistory={() => openHistory()}
+                   onClose={closeSettings}
+                   data={data}
                   onAppearanceSaved={appearanceSaved}
                   onColorsSaved={colorsSaved}
                   onNavigate={setView}
@@ -852,15 +859,18 @@ export default function App() {
             )}
             {view === "models" && (
               <div className="page">
-                 <div className="page-title">
-                   <h1>Models</h1>
-                   <Button disabled={modelRatings.pending} onClick={async () => {
-                     if (['starting', 'running'].includes(modelRatings.job?.status)) { modelRatings.reveal(); return; }
-                     if (!modelRatings.job || await modelRatings.dismiss()) setRatingDialog(true);
-                   }}>
-                     Update Model Ratings
-                   </Button>
-                 </div>
+                  <div className="page-title">
+                    <h1>Models</h1>
+                    <>
+                      <Button disabled={modelRatings.pending} onClick={async () => {
+                        if (['starting', 'running'].includes(modelRatings.job?.status)) { modelRatings.reveal(); return; }
+                        if (!modelRatings.job || await modelRatings.dismiss()) setRatingDialog(true);
+                      }}>
+                        Update Model Ratings
+                      </Button>
+                      <PageCloseButton onClick={closeSettings} />
+                    </>
+                  </div>
                  <div className="model-filters">
                    <FieldSearch value={modelQuery} onChange={setModelQuery} />
                   <ProviderSelect provider={modelProvider}

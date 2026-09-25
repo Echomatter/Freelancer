@@ -32,9 +32,12 @@ export function normalizePreferences(value = {}) {
   if (p.parentModel !== 'auto' && (typeof p.parentModel !== 'string' || !/^[\w.:-]+\/[\w./:-]+$/.test(p.parentModel))) throw new Error('Invalid parent model');
   for (const key of ['reasoningVariant', 'childVariant']) if (typeof p[key] !== 'string' || !/^[\w-]{0,80}$/.test(p[key])) throw new Error(`Invalid ${key}`);
   if (p.schemaVersion !== 2 || !presets[p.strategy]) throw new Error('Unsupported preferences schema or strategy');
-  for (const [key, choices] of Object.entries({ delegation: ['automatic','ask','manual'], subscriptionDelegation: ['ask','automatic'], costPreference: ['free-only','prefer-free','balanced','any'], contextPolicy: ['compact','standard','large','max'] })) {
+  for (const [key, choices] of Object.entries({ delegation: ['automatic','ask','manual'], subscriptionDelegation: ['ask','automatic'], costPreference: ['free-only','prefer-free','balanced','any','paid-only'], contextPolicy: ['compact','standard','large','max'] })) {
     if (!choices.includes(p[key])) throw new Error(`Invalid ${key}`);
   }
+  // The old Balance choice is the new All available choice. Keep old files
+  // readable while making the visible choice and routing behavior identical.
+  if (p.costPreference === 'balanced') p.costPreference = 'any';
   for (const [key, min, max] of [['maxParallel',1,6],['maxDepth',1,6],['childTimeoutSeconds',30,1800],['minimumContext',0,2000000],['contextWarning',10,100],['panelWidth',24,60]]) {
     if (!Number.isInteger(p[key]) || p[key] < min || p[key] > max) throw new Error(`Invalid ${key}: expected ${min}–${max}`);
   }

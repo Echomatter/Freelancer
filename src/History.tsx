@@ -4,13 +4,12 @@ import {
   ArchiveRestore,
   Download,
   Pin,
-  X,
   LoaderCircle,
   Search,
 } from "lucide-react";
 import { api } from "./api";
 import { SessionActivity, useProjectActivity } from "./SessionActivity";
-import { Button, PageHeading } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading } from "./echoflex/Controls";
 import { ConfirmDialog } from './echoflex/Dialog';
 import "./history.css";
 
@@ -296,9 +295,7 @@ export function HistoryPage({
     <div
       className="page history-page"
     >
-      <PageHeading title="Your history" description="Keep important work close. Put finished conversations away without deleting them." actions={<Button aria-label="Close history" disabled={pending} onClick={onClose}>
-          <X size={18} />
-        </Button>} />
+      <PageHeading title="Your history" description="Keep important work close. Put finished conversations away without deleting them." actions={<PageCloseButton label="Close history" disabled={pending} onClick={onClose} />} />
       <section className="chat-search-panel" aria-label="Search conversations">
         <div className="chat-search-filters">
           <label><span><Search size={16} /> Search conversations</span><input autoFocus aria-label="Search conversation content" value={chatQuery} maxLength={200}

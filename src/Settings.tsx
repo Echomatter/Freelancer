@@ -7,7 +7,7 @@ import { GitDefaults } from "./GitDefaults";
 import { ThemePicker } from "./ThemePicker";
 import { useEffect, useState } from "react";
 import { Check, Link2 } from "lucide-react";
-import { Button, Panel, Field, Badge, PageHeading } from "./echoflex/Controls";
+import { Button, Panel, Field, Badge, PageCloseButton, PageHeading } from "./echoflex/Controls";
 import { api } from "./api";
 import { ProviderConnection } from "./ProviderConnection";
 import { SessionDefaults } from "./SessionDefaults";
@@ -29,10 +29,12 @@ export function Settings({
   onAppearanceSaved,
   onColorsSaved,
   onHistory,
+  onClose,
 }: {
   data: any;
   sessionID?: string;
   onHistory?: () => void;
+  onClose: () => void;
   onAppearanceSaved?: (layout: string) => void;
   onColorsSaved: (patch: ColorPatch) => void;
   onNavigate: (view: string) => void;
@@ -57,16 +59,17 @@ export function Settings({
     setMethods(all);
     setAuth({ provider: id });
   }
+  const closeAction = <PageCloseButton onClick={onClose} />;
   return (
     <div className="settings-layout">
       <div className="settings-content">
-        {tab === "delegation" && <><PageHeading title="Delegation" description="Set the project’s delegation budget and limits." /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
-        {tab === "storage" && <DataStorage onHistory={() => onHistory?.()} onChange={refresh} />}
-        {tab === "index" && <ContentIndex />}
-        {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} refresh={refresh} />}
+        {tab === "delegation" && <><PageHeading title="Delegation" description="Set the project’s delegation budget and limits." actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
+        {tab === "storage" && <DataStorage onHistory={() => onHistory?.()} onClose={onClose} onChange={refresh} />}
+        {tab === "index" && <ContentIndex onClose={onClose} />}
+        {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} onClose={onClose} refresh={refresh} />}
         {tab === "providers" && (
           <>
-            <PageHeading title="Providers" description="Manage connections, billing preferences, and provider colors." />
+            <PageHeading title="Providers" description="Manage connections, billing preferences, and provider colors." actions={closeAction} />
             <div className="provider-list">
               {providers.map(([id, name]) => (
                 <Panel key={id} className="provider-card" aria-label={`${name} settings`} {...providerAttributes(id, data.settings.appearance ?? {})}>
@@ -176,11 +179,12 @@ export function Settings({
             data={data}
             refresh={refresh}
             onNavigate={onNavigate}
+            onClose={onClose}
           />
         )}
         {tab === "appearance" && (
           <>
-            <PageHeading title="Appearance" description="Choose how Freelancer looks and arranges your workspace." />
+            <PageHeading title="Appearance" description="Choose how Freelancer looks and arranges your workspace." actions={closeAction} />
               <Panel>
                 <TodoPlacement
                   appearance={data.settings.appearance}

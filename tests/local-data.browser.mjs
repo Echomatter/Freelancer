@@ -114,10 +114,10 @@ const box = page.locator(".composer textarea");
 const history = page.locator(".history-page");
 const report = (text) => console.log("PASS " + text);
 async function openChat(name = "Important conversation") {
-  await page
-    .locator(".sidebar")
-    .getByRole("button", { name: new RegExp(name) })
-    .click();
+  const chats = page.locator(".chat-navigation");
+  const trigger = chats.getByRole("button", { name: "Chats", exact: true });
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+  await chats.locator(".nav-chat-select").filter({ hasText: name }).click();
   await page.waitForFunction(() => {
     const e = document.querySelector(".composer textarea");
     return e && !e.disabled;
@@ -138,15 +138,16 @@ async function openApplicationTab(tab) {
   await page.getByRole("button", { name: tab, exact: true }).click();
 }
 async function assertSaved(text) {
-  await page.waitForFunction(() =>
-    document
-      .querySelector(".draft-status")
-      ?.textContent.includes("Draft saved on this computer"),
-  );
-  assert.equal(
-    (await f.api("drafts?project=history_project&session=ses_history")).text,
-    text,
-  );
+  for (let attempt = 0; attempt < 200; attempt++) {
+    const saved = (
+      await f.api("drafts?project=history_project&session=ses_history")
+    ).text;
+    if (saved === text) break;
+    if (attempt === 199) assert.equal(saved, text);
+    await delay(50);
+  }
+  assert.equal(await page.locator(".draft-status").count(), 0);
+  await page.waitForFunction(() => !document.querySelector('.topbar-right [aria-label="Saving draft"]'));
 }
 try {
   await load();

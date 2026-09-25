@@ -23,6 +23,7 @@ async function workflow(f, id, patch) {
 
 test('coordination instructions do not prescribe a team from a legacy strategy preset', () => {
   const p = normalizePreferences({ strategy: 'research-heavy' });
+  assert.equal(normalizePreferences({ costPreference: 'balanced' }).costPreference, 'any');
   assert.equal(p.subscriptionDelegation, 'ask', 'no silent spending-policy migration');
   assert.match(strategyGuidance(p), /No helper or team shape is mandatory/);
   assert.doesNotMatch(strategyGuidance(p), /Use Researcher for evidence/);
@@ -38,6 +39,7 @@ test('the root budget honors user limits independently of workflow labels and ex
   const connected = ['opencode', 'opencode-go', 'openai'];
   assert.deepEqual(delegationPool(normalizePreferences(), { category: 'connected' }, models, connected), ['opencode/free', 'opencode-go/paid']);
   assert.deepEqual(delegationPool(normalizePreferences({ costPreference: 'free-only' }), { category: 'subscriptions' }, models, connected), ['opencode/free']);
+  assert.deepEqual(delegationPool(normalizePreferences({ costPreference: 'paid-only' }), { category: 'connected' }, models, connected), ['opencode-go/paid']);
   assert.deepEqual(delegationPool(normalizePreferences({ excludedModels: ['opencode/free'] }), { category: 'connected' }, models, connected, 'high'), []);
 });
 
@@ -49,6 +51,7 @@ test('changing a budget cannot expand an active request, but current limits can 
   assert.equal(p.delegation, 'ask');
   assert.equal(p.costPreference, 'free-only');
   assert.equal(p.maxParallel, 2);
+  assert.equal(effectiveDelegationPreferences(normalizePreferences({ costPreference: 'paid-only' }), captured).costPreference, 'free-only', 'incompatible captured and current limits cannot silently open either pool');
 });
 
 test('empty delegation capacity does not prevent a valid parent chat or silently open the pool', async t => {
@@ -143,6 +146,7 @@ test('paid subscriptions keep the native paid permission without a free-child as
   assert.deepEqual(f.permissions.map(p => p.permission), ['paid_delegate']);
   assert.equal(r.model_selection.source, 'host');
   assert.equal(r.parent_model, 'opencode/free-a');
+  assert.ok(f.selections.at(-1).runtimeModels.includes('opencode-go/paid'), 'selector receives the captured native model pool');
 });
 
 test('paid-model denial remains authoritative while legacy ask-each-assignment is advisory in v5', async t => {

@@ -784,7 +784,7 @@ legend {
   flex-direction: column;
   padding: 0;
 }
-.chat-transcript { flex: 1 0 auto; padding: 20px max(28px, calc((100% - 840px) / 2)) 30px; }
+.chat-transcript { flex: 1 0 auto; padding: 20px 28px 30px; }
 .chat-welcome {
   min-height: 48vh;
   display: flex;
@@ -1107,7 +1107,7 @@ legend {
   position: sticky;
   bottom: 0;
   z-index: 2;
-  padding: 10px max(28px, calc((100% - 840px) / 2)) 12px;
+  padding: 10px 28px 12px;
   background: linear-gradient(transparent, var(--bg) 10px);
   flex-shrink: 0;
 }
@@ -1117,15 +1117,17 @@ legend {
 }
 .composer-loading {
   position: absolute;
-  inset: 0 max(28px, calc((100% - 840px) / 2)) 18px;
+  inset: 0 28px 0;
   z-index: 1;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
   border: 1px solid var(--line);
-  border-radius: 14px;
+  border-bottom: 0;
+  border-radius: 14px 14px 0 0;
   background: var(--paper);
+  box-shadow: 0 -8px 24px var(--shadow-soft);
   color: var(--muted);
   font-size: 13px;
 }
@@ -1956,12 +1958,6 @@ legend {
   .with-details .composer-selects {
     flex-wrap: wrap;
   }
-  .with-details .chat-scroll {
-    padding: 20px;
-  }
-.with-details .composer-wrap {
-    padding: 0 18px 16px;
-  }
 }
 @media (max-width: 920px) {
   .composer-actions, .with-details .composer-actions { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
@@ -2193,5 +2189,3 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .composer-wrap, .with-details .composer-wrap { padding-bottom: 0; } .composer { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .main { position: relative; }
 .draft-status { padding: 7px 28px; font-size: 12px; color: var(--muted); background: var(--paper); }
-.draft-status:not([role="alert"]) { position: absolute; top: 53px; right: 22px; z-index: 4; padding: 2px 8px; border-radius: 5px; background: var(--bg); font-size: 10px; pointer-events: none; }
-@media (max-width: 760px) { .draft-status:not([role="alert"]) { top: 44px; right: 12px; } }

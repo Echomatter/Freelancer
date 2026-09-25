@@ -9,6 +9,7 @@ export function delegationPool(preferences, _workflow, models, connected, varian
     !preferences.excludedModels.includes(model.id) &&
     !preferences.excludedProviders.includes(model.provider) &&
     (preferences.costPreference !== 'free-only' || model.costClass === 'free') &&
+    (preferences.costPreference !== 'paid-only' || model.costClass === 'subscription') &&
     // Separately metered inference is not an authorized delegation surface.
     model.costClass !== 'metered' &&
     (!variant || model.variants?.includes(variant)),
@@ -28,6 +29,7 @@ export function capturedDelegationPool(execution, current, effective, variant = 
     !effective.excludedModels.includes(model.id) &&
     !effective.excludedProviders.includes(model.provider) &&
     (effective.costPreference !== 'free-only' || model.costClass === 'free') &&
+    (effective.costPreference !== 'paid-only' || model.costClass === 'subscription') &&
     model.costClass !== 'metered' && (!variant || model.variants?.includes(variant)),
   ).map(model => model.id);
 }
@@ -42,7 +44,8 @@ export function effectiveDelegationPreferences(current, captured = current) {
       : [current.delegation, captured.delegation].includes('ask') ? 'ask' : 'automatic',
     subscriptionDelegation: current.subscriptionDelegation === 'automatic' && captured.subscriptionDelegation === 'automatic'
       ? 'automatic' : 'ask',
-    costPreference: [current.costPreference, captured.costPreference].includes('free-only') ? 'free-only' : current.costPreference,
+    costPreference: [current.costPreference, captured.costPreference].includes('free-only') ? 'free-only'
+      : [current.costPreference, captured.costPreference].includes('paid-only') ? 'paid-only' : current.costPreference,
     maxParallel: Math.min(current.maxParallel, captured.maxParallel),
     maxDepth: Math.min(current.maxDepth ?? 2, captured.maxDepth ?? 2),
     childTimeoutSeconds: Math.min(current.childTimeoutSeconds, captured.childTimeoutSeconds),
@@ -59,6 +62,8 @@ export function delegationGuidance(preferences, allowedModels) {
     `Up to ${preferences.maxParallel} simultaneous delegated assignments. This is a ceiling, not a target.`,
     preferences.costPreference === 'free-only'
       ? 'Only free models may run delegated assignments.'
+      : preferences.costPreference === 'paid-only'
+        ? 'Only connected subscription models may run delegated assignments, subject to native paid_delegate permission.'
       : preferences.subscriptionDelegation === 'automatic'
         ? 'Connected subscription capacity may be selected without a separate model-choice question; native paid_delegate permission still applies.'
         : 'Subscription assignments require native paid_delegate consent. Do not add a separate model-choice question before the native permission.',

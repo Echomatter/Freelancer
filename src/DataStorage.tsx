@@ -1,15 +1,17 @@
 import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, FolderOpen } from "lucide-react";
-import { Button, PageHeading, Panel } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Panel } from "./echoflex/Controls";
 import { ConfirmDialog } from './echoflex/Dialog';
 import { api } from "./api";
 import "./history.css";
 
 export function DataStorage({
   onHistory,
+  onClose,
   onChange,
 }: {
   onHistory: () => void;
+  onClose: () => void;
   onChange: () => Promise<void>;
 }) {
   const [data, setData] = useState<any>(null),
@@ -58,7 +60,7 @@ export function DataStorage({
     });
   return (
     <div className="data-storage">
-      <PageHeading title="Data & Storage" description="Find the data needed for recovery, export conversations, and organize projects." />
+      <PageHeading title="Data & Storage" description="Find the data needed for recovery, export conversations, and organize projects." actions={<PageCloseButton onClick={onClose} />} />
       <Panel title="Make a local backup">
         <ol className="backup-steps">
           <li><strong>Stop active writers.</strong><span>Close Freelancer's server and OpenCode before copying live databases.</span></li>

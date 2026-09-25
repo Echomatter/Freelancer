@@ -249,13 +249,14 @@ try {
   const budgetHeading = page.getByRole("heading", { name: "Delegation budget", exact: true });
   await budgetHeading.waitFor();
   await page.getByRole("main").getByLabel("Delegation", { exact: true }).selectOption("automatic");
-  await page.getByLabel("Subscription capacity", { exact: true }).selectOption("automatic");
+  await page.getByLabel("Worker models", { exact: true }).selectOption("all");
   await page.getByLabel("Simultaneous delegated agents", { exact: true }).fill("4");
   await page.getByRole("button", { name: "Save delegation budget", exact: true }).click();
   await page.getByText("Delegation budget saved.", { exact: true }).waitFor();
   const savedBudget = await f.app.readPreferences(f.project.id);
   assert.equal(savedBudget.defaults.maxParallel, 4);
   assert.equal(savedBudget.defaults.subscriptionDelegation, "automatic");
+  assert.equal(savedBudget.defaults.costPreference, "any");
   const originalSave = f.app.savePreferences;
   f.app.savePreferences = async () => { throw Error("Simulated save unavailable"); };
   await page.getByLabel("Simultaneous delegated agents", { exact: true }).fill("2");
@@ -271,7 +272,7 @@ try {
   await openProjectTab("Delegation");
   await page.getByLabel("Simultaneous delegated agents", { exact: true }).waitFor();
   assert.equal(await page.getByLabel("Simultaneous delegated agents", { exact: true }).inputValue(), "2");
-  assert.equal(await page.getByLabel("Subscription capacity", { exact: true }).inputValue(), "automatic");
+  assert.equal(await page.getByLabel("Worker models", { exact: true }).inputValue(), "all");
   await page.setViewportSize({ width: 620, height: 1000 });
   await page.getByRole("main").getByLabel("Delegation", { exact: true }).selectOption("manual");
   await page.getByRole("button", { name: "Save delegation budget", exact: true }).click();

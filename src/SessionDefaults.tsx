@@ -1,7 +1,7 @@
 import { ProviderText } from "./ProviderColors";
 import { useEffect, useState } from "react";
 import { ArrowUpRight, Check } from "lucide-react";
-import { Button, PageHeading, Panel, Field } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Panel, Field } from "./echoflex/Controls";
 import { ParentModelFields } from "./ModelSetup";
 import { modelVariant } from "../domain/workspace.mjs";
 import { api } from "./api";
@@ -10,10 +10,12 @@ export function SessionDefaults({
   data,
   refresh,
   onNavigate,
+  onClose,
 }: {
   data: any;
   refresh: () => Promise<void>;
   onNavigate: (view: string) => void;
+  onClose: () => void;
 }) {
   const [draft, setDraft] = useState(data.sessionDefaults);
   const [saving, setSaving] = useState(false),
@@ -81,7 +83,7 @@ export function SessionDefaults({
             {data.project.name ?? data.project.directory.split(/[\\/]/).pop()}
           </strong>{" "}
           start here. Existing chats keep their choices.
-        </>} />
+        </>} actions={<PageCloseButton onClick={onClose} />} />
       <form onSubmit={save}>
         <Panel className="session-start">
           <h3>Start a new chat</h3>

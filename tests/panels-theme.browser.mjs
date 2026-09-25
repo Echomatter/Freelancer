@@ -54,6 +54,11 @@ async function drag(handle, dx) {
   await page.mouse.move(b.x + 5 + dx, b.y + 120, { steps: 10 }); await page.mouse.up(); await settled();
 }
 const report = (s) => console.log("PASS " + s);
+async function openResizeChat() {
+  const chats = page.getByRole('button', { name: 'Chats', exact: true });
+  if (await chats.getAttribute('aria-expanded') !== 'true') await chats.click();
+  await page.locator('.nav-chat-select').filter({ hasText: 'Resize test chat' }).click();
+}
 try {
   if (!offline) {
     const context = await browser.newContext({ javaScriptEnabled: false });
@@ -63,7 +68,7 @@ try {
     await context.close();
   }
   await load();
-  await page.locator(".sessions button").filter({ hasText: "Resize test chat" }).click();
+  await openResizeChat();
   await page.getByRole("button", { name: "Details", exact: true }).click(); await settled();
   await page.locator(".details-chat-title").filter({ hasText: "Resize test chat" }).waitFor();
   assert.equal(await width(".sidebar"), 244); assert.equal(await width(".work-details"), 330);
@@ -71,7 +76,7 @@ try {
   const workerCard = page.locator(".activity-summary-button").first();
   assert.match(await workerCard.getAttribute("aria-label"), /Engineer.*opencode\/free.*Working.*1 actions.*Open conversation/);
   assert.equal(await workerCard.getAttribute("aria-expanded"), null);
-  assert.match(await workerCard.innerText(), /Researcher/);
+  assert.match(await workerCard.innerText(), /Engineer/);
   assert.match(await workerCard.innerText(), /Working/);
   assert.match(await workerCard.innerText(), /1 actions/);
   assert.equal(await page.getByText("Browser worker job", { exact: true }).count(), 0);
@@ -87,7 +92,7 @@ try {
   assert.equal(await page.locator(".composer textarea").inputValue(), "Keep my draft");
   report("independent drag directions and one save per release; composer preserved");
   await page.waitForTimeout(1200); assert.equal(await width(".sidebar"), 324);
-  await load(); await page.locator(".sessions button").filter({ hasText: "Resize test chat" }).click();
+  await load(); await openResizeChat();
   await page.getByRole("button", { name: "Details", exact: true }).click(); await settled();
   assert.equal(await width(".sidebar"), 324); assert.equal(await width(".work-details"), 430);
   report("reload and bootstrap updates retain saved widths");

@@ -1,5 +1,6 @@
 // Adapted from EM Preset Studio's Echoflex controls. Kept independent of its
 // audio/module runtime; native HTML behavior and accessibility are preserved.
+import { X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cloneElement, isValidElement, useId, type ReactElement } from "react";
 export function Button({
@@ -11,6 +12,14 @@ export function Button({
 }) {
   return <button className={`button ${variant} ${className}`} {...props} />;
 }
+export function PageCloseButton({ onClick, label = "Close settings", disabled = false }: {
+  onClick: () => void;
+  label?: string;
+  disabled?: boolean;
+}) {
+  return <Button aria-label={label} disabled={disabled} onClick={onClick}><X size={18} /></Button>;
+}
+
 export function Panel({
   title,
   children,

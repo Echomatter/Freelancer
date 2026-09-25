@@ -13,13 +13,13 @@ import {
   History,
   X,
 } from "lucide-react";
-import { Button, Badge, Empty, Panel } from "./echoflex/Controls";
+import { Button, PageCloseButton, Badge, Empty, Panel } from "./echoflex/Controls";
 import { api, query } from "./api";
 import { gitPresets, agreementText } from "../domain/git-project.mjs";
 import "./git-project.css";
 
-type Props = { project: string; onUseSync: () => void };
-export function GitHubProject({ project, onUseSync }: Props) {
+type Props = { project: string; onClose: () => void; onUseSync: () => void };
+export function GitHubProject({ project, onClose, onUseSync }: Props) {
   const [data, setData] = useState<any>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -231,13 +231,16 @@ export function GitHubProject({ project, onUseSync }: Props) {
             checkpoints you choose to upload online.
           </p>
         </div>
-        <Button
-          aria-label="Refresh Git status"
-          disabled={pending}
-          onClick={() => void act(() => refresh())}
-        >
-          <RefreshCw size={17} className={pending ? "spin" : ""} />
-        </Button>
+        <>
+          <Button
+            aria-label="Refresh Git status"
+            disabled={pending}
+            onClick={() => void act(() => refresh())}
+          >
+            <RefreshCw size={17} className={pending ? "spin" : ""} />
+          </Button>
+          <PageCloseButton onClick={onClose} />
+        </>
       </div>
       {error && !confirmation && (
         <div className="notice error" role="alert">

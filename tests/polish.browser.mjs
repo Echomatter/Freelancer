@@ -17,7 +17,10 @@ const page = await browser.newPage({viewport:{width:1440,height:960}});
 const errors=[];page.on('pageerror', e=>errors.push(e.message));page.setDefaultTimeout(15000);
 try {
   await page.goto(f.url);
-  await page.locator('.sidebar .sessions').getByRole('button',{name:/Important conversation/}).click();
+  const chats = page.locator('.chat-navigation');
+  const chatsTrigger = chats.getByRole('button', { name: 'Chats', exact: true });
+  if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
+  await chats.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
   await page.getByRole('button',{name:'Dismiss task list until it changes'}).waitFor();
   const scroll=page.locator('.chat-scroll'), composer=page.locator('.composer');
   const bounds=await scroll.boundingBox(), input=await composer.boundingBox();
@@ -29,14 +32,31 @@ try {
   assert.ok(Math.abs(bubble.x+bubble.width-row.x-row.width)<2,'user messages align with the conversation right edge');
   assert.ok(bubble.width<row.width/2,'short messages fit their text instead of leaving a wide color block');
   const longBubble = await page.locator('.message.user').first().boundingBox();
-  assert.ok(longBubble.width>row.width*.6 && longBubble.width<row.width*.9,'long messages have a comfortable bounded width');
+  assert.ok(longBubble.width>320 && longBubble.width<row.width*.9,'long user messages remain readable as the chat pane expands');
+  const transcriptWidth = () => page.locator('.chat-transcript').evaluate(e => {
+    const style = getComputedStyle(e);
+    const available = e.closest('.chat-view').clientWidth;
+    return { inset: parseFloat(style.paddingLeft), content: e.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), available };
+  });
+  const withoutDetails = await transcriptWidth();
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  const withDetails = await transcriptWidth();
+  assert.equal(withoutDetails.inset, withDetails.inset, 'Details does not change chat edge padding');
+  assert.ok([withoutDetails, withDetails].every(m => m.content / m.available > .85), 'chat fills the available pane in both states');
+  await page.getByRole('button', { name: 'Details', exact: true }).click();
   await scroll.evaluate(e=>{e.scrollTop=300;});
   const before=await scroll.evaluate(e=>e.scrollTop);
   await page.getByRole('button',{name:'Application settings',exact:true}).click();
   await page.getByRole('button',{name:'Models',exact:true}).click();
   await page.getByRole('heading',{name:'Models',exact:true}).waitFor();
+  assert.equal(await page.locator('.page-title').getByRole('button',{name:'Close settings'}).count(),1,'Models close button stays in the page heading');
+  assert.equal(await page.locator('.topbar').getByRole('button',{name:'Close settings'}).count(),0,'settings close button stays out of the top bar');
   await page.getByRole('button',{name:'Project settings',exact:true}).click();
-  await page.getByRole('button',{name:'Workspace',exact:true}).click();
+  assert.equal(await page.getByRole('button',{name:'Workspace',exact:true}).count(),0);
+  await page.getByRole('button',{name:'Files',exact:true}).click();
+  await page.getByRole('heading',{name:'Project files',exact:true}).waitFor();
+  assert.equal(await page.locator('.page-title').getByRole('button',{name:'Close settings'}).count(),1,'Files close button stays in the page heading');
+  await page.getByRole('button',{name:'Close settings',exact:true}).click();
   await composer.waitFor();
   assert.ok(Math.abs((await scroll.evaluate(e=>e.scrollTop))-before)<3,'navigation preserves reading position');
   await page.getByRole('button',{name:'Dismiss task list until it changes'}).click();
@@ -48,6 +68,13 @@ try {
   await mkdir('artifacts/polish',{recursive:true});
   await page.screenshot({path:'artifacts/polish/workspace-desktop.png'});
   f.state.status.ses_history={type:'busy'};
+  f.state.messages.ses_history.push(
+    { info: { id: 'u-live', role: 'user', time: { created: 100 } }, parts: [{ id: 'up-live', type: 'text', text: 'Continue the layout check.' }] },
+    { info: { id: 'a-live', parentID: 'u-live', role: 'assistant', providerID: 'opencode', modelID: 'free', time: { created: 101 } }, parts: [{ id: 'tool-live', type: 'tool', tool: 'read', state: { status: 'running', input: { filePath: 'layout.css' } } }] },
+  );
+  await page.reload();
+  if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
+  await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
   await page.locator('.composer textarea').fill('Check the navigation while the current work continues.');
   await page.getByRole('button',{name:'Queue or delegate message',exact:true}).click();
   const dialog=page.getByRole('dialog',{name:'Queue or Delegate?'});

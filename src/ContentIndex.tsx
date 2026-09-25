@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { CheckCircle2, Database, HardDriveDownload, RefreshCw, SearchCheck, ShieldCheck } from "lucide-react";
 import { api } from "./api";
-import { Button, PageHeading, Panel } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Panel } from "./echoflex/Controls";
 import "./content-index.css";
 import { useIndexJobContext } from './IndexJobs';
 import { ConfirmDialog } from './echoflex/Dialog';
@@ -12,7 +12,7 @@ const count = (value: number) => Number(value || 0).toLocaleString();
 const size = (bytes: number) => bytes < 1024 ? `${bytes} B` : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB` : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 const date = (value?: string | number) => value ? new Date(value).toLocaleString() : "Not indexed";
 
-export function ContentIndex() {
+export function ContentIndex({ onClose }: { onClose: () => void }) {
   const jobs = useIndexJobContext();
   const [stats, setStats] = useState<Stats | null>(null);
   const [starting, setPending] = useState("");
@@ -42,7 +42,7 @@ export function ContentIndex() {
   const chats = stats?.projects.reduce((total, item) => total + (item.chats?.conversations ?? 0), 0) ?? 0;
   return <div className="content-index-page">
     <PageHeading title="Content index" description="Search files throughout every registered project and conversations across your OpenCode history. These indexes are local copies; files and native chats remain the originals."
-      actions={<Button type="button" disabled={!!pending} onClick={() => void refresh().catch((failure) => setError(failure.message))}><RefreshCw size={16} />Refresh stats</Button>} />
+      actions={<><Button type="button" disabled={!!pending} onClick={() => void refresh().catch((failure) => setError(failure.message))}><RefreshCw size={16} />Refresh stats</Button><PageCloseButton onClick={onClose} /></>} />
     {error && <p className="notice error" role="alert">{error}</p>}
     {!stats ? <p>Loading index stats…</p> : <>
       <div className="index-metrics">

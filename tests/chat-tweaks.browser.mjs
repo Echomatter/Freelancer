@@ -17,10 +17,13 @@ f.state.messages.ses_worker = [
 ];
 const browser = await chromium.launch({ headless: true,
   ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
+let releaseChat;
 try {
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   page.setDefaultTimeout(12000);
+  const chatGate = new Promise(resolve => { releaseChat = resolve; });
   await page.goto(f.url);
+  await page.route('**/api/chat**', async route => { await chatGate; await route.continue(); });
   const settings = page.locator('.usage-dock .settings-drawers');
   const usage = page.locator('.usage-dock .usage-sidebar');
   await settings.waitFor(); await usage.waitFor();
@@ -33,6 +36,14 @@ try {
   const chats = page.locator('.chat-navigation');
   await chats.getByRole('button', { name: 'Chats' }).click();
   await chats.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
+  const cover = page.locator('.composer-loading');
+  await cover.waitFor({ state: 'visible' });
+  const coverBox = await cover.boundingBox(), wrapBox = await page.locator('.composer-wrap').boundingBox();
+  assert.ok(coverBox && wrapBox && Math.abs(coverBox.y + coverBox.height - wrapBox.y - wrapBox.height) < 2,
+    'loading cover reaches the composer bottom');
+  assert.equal(await cover.evaluate(e => getComputedStyle(e).borderBottomLeftRadius), '0px');
+  releaseChat();
+  await cover.waitFor({ state: 'hidden' });
   await page.waitForFunction(() => {
     const input = document.querySelector('.composer textarea');
     return input && !input.disabled;
@@ -49,4 +60,4 @@ try {
   assert.equal(await work.locator('.tool-card').count(), 1,
     'the work card contains the tool call');
   console.log('PASS usage below settings; reasoning prose stays in chat and tool calls stay in work card');
-} finally { await browser.close(); await f.close(); }
+} finally { releaseChat?.(); await browser.close(); await f.close(); }

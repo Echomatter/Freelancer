@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, ChevronDown, Download, FolderKanban, FolderPlus, MoreHorizontal, Pin, Plus, MessageSquareText, WandSparkles } from "lucide-react";
+import { Archive, ChevronDown, Download, FolderKanban, FolderPlus, Pin, Plus, MessageSquareText, WandSparkles } from "lucide-react";
 import { SessionActivity } from "./SessionActivity";
 import "./navigation-menus.css";
 
@@ -64,7 +64,7 @@ export function ChatNavigation({ sessions, selected, disabled, creating, onNew, 
             {session.organization?.pinnedAt && <Pin className="nav-chat-pinned" size={13} aria-label="Pinned" />}
           </button>
           <button type="button" className="nav-chat-manage-trigger" aria-label={`Manage ${session.title || "New chat"}`} aria-expanded={menu === session.id} disabled={disabled}
-            onClick={() => setMenu((value) => value === session.id ? "" : session.id)}><MoreHorizontal size={15} />Manage</button>
+            onClick={() => setMenu((value) => value === session.id ? "" : session.id)}>Manage</button>
           {menu === session.id && <div className="nav-chat-menu" role="group" aria-label={`Manage ${session.title || "New chat"}`}>
             <button type="button" disabled={disabled} onClick={() => { setMenu(""); onContinue(session); }}><WandSparkles size={14} />Continue in new chat</button>
             <button type="button" disabled={disabled || !!session.organization?.archived} onClick={() => { setMenu(""); onArchive(session); }}><Archive size={14} />Archive</button>

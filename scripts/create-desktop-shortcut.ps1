@@ -5,7 +5,7 @@ $appRoot = Split-Path -Parent $PSScriptRoot
 $assets = Join-Path $appRoot 'backend\.state\launcher'
 New-Item -ItemType Directory -Force -Path $assets | Out-Null
 Add-Type -AssemblyName System.Drawing
-# Draw at each native icon size so the Freelancer route mark stays crisp.
+# Draw at each native icon size so the Freelancer F mark stays crisp.
 $frames = @()
 foreach ($size in @(16, 24, 32, 48, 64, 128, 256)) {
     $bitmap = New-Object Drawing.Bitmap($size, $size)
@@ -20,13 +20,13 @@ foreach ($size in @(16, 24, 32, 48, 64, 128, 256)) {
     $tile.AddArc(12, 12, 12, 12, 0, 90); $tile.AddArc(0, 12, 12, 12, 90, 90)
     $tile.CloseFigure()
     $g.FillPath($bg, $tile)
-    # Use the same Route geometry as the sidebar and public SVG.
-    $g.DrawEllipse($route, 3, 16, 6, 6)
-    $g.DrawLine($route, 9, 19, 17.5, 19)
-    $g.DrawArc($route, 14, 12, 7, 7, 90, -180)
-    $g.DrawLine($route, 17.5, 12, 6.5, 12)
-    $g.DrawArc($route, 3, 5, 7, 7, 90, 180)
-    $g.DrawLine($route, 6.5, 5, 15, 5)
+    # Use the same F geometry as the sidebar and public SVG.
+    $g.DrawLine($route, 6, 17.5, 6, 5)
+    $g.DrawLine($route, 6, 5, 16.5, 5)
+    $g.DrawLine($route, 6, 12, 14.5, 12)
+    $g.DrawEllipse($route, 16.5, 3, 4, 4)
+    $g.DrawEllipse($route, 14.5, 10, 4, 4)
+    $g.DrawEllipse($route, 4, 17.5, 4, 4)
     $g.DrawEllipse($route, 15, 2, 6, 6)
     $stream = New-Object IO.MemoryStream
     $bitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png)

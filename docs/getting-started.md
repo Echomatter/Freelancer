@@ -67,7 +67,7 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-desktop-s
 
 This creates `Freelancer.lnk` on the desktop. It starts or reuses the verified server for this checkout, opens the current URL in a **Chrome app window**, and keeps a controller in the Windows system tray. Closing Chrome leaves the server running. Use the tray icon's **Exit Freelancer** command to close the server cleanly. The execution-policy flag applies to this invocation, not a persistent machine-policy change.
 
-The favicon, desktop link, and installable-page manifest use the same Route mark as the application corner. A plain `chrome.exe --app` launch still groups under Chrome on the Windows taskbar because the running executable is Chrome; that part cannot be overridden from this checkout. Chrome's **Install page as app** can create a separately grouped taskbar entry, but it remembers the current loopback port, which may change on restart. Use the provided `Freelancer.lnk` for a reliable fresh-URL launch.
+The favicon, desktop link, and installable-page manifest use the same F mark as the application corner. A plain `chrome.exe --app` launch still groups under Chrome on the Windows taskbar because the running executable is Chrome; that part cannot be overridden from this checkout. Chrome's **Install page as app** can create a separately grouped taskbar entry, but it remembers the current loopback port, which may change on restart. Use the provided `Freelancer.lnk` for a reliable fresh-URL launch.
 
 The launcher verifies the source root, process, lock, and live page before reusing a server. A stale remembered port is not used. Its diagnostic output is under `backend/.state/webpage/server.stdout.log` and `server.stderr.log`.
 

@@ -5,7 +5,6 @@ import { ProgressStatus } from './echoflex/ProgressStatus';
 import { useDrafts } from "./useDrafts";
 import { lazy, Suspense, startTransition, useEffect, useRef, useState } from "react";
 import {
-  Route,
   Plus,
   FolderOpen,
   ChevronDown,
@@ -546,7 +545,12 @@ export default function App() {
       <aside className="sidebar" id="workspace-navigation">
         <div className="brand">
           <span>
-            <Route size={21} />
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M6 17.5V5h10.5M6 12h8.5" />
+              <circle cx="18.5" cy="5" r="2" />
+              <circle cx="16.5" cy="12" r="2" />
+              <circle cx="6" cy="19.5" r="2" />
+            </svg>
           </span>
           Freelancer
         </div>

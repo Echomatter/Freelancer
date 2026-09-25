@@ -36,12 +36,13 @@ try {
   const chats = page.locator('.chat-navigation');
   await chats.getByRole('button', { name: 'Chats' }).click();
   await chats.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
-  const cover = page.locator('.composer-loading');
+  const cover = page.locator('.chat-loading-stage');
   await cover.waitFor({ state: 'visible' });
-  const coverBox = await cover.boundingBox(), wrapBox = await page.locator('.composer-wrap').boundingBox();
-  assert.ok(coverBox && wrapBox && Math.abs(coverBox.y + coverBox.height - wrapBox.y - wrapBox.height) < 2,
-    'loading cover reaches the composer bottom');
-  assert.equal(await cover.evaluate(e => getComputedStyle(e).borderBottomLeftRadius), '0px');
+  const coverBox = await cover.boundingBox(), layoutBox = await page.locator('.conversation-layout').boundingBox();
+  assert.ok(coverBox && layoutBox && Math.abs(coverBox.x - layoutBox.x) < 2 &&
+    Math.abs(coverBox.width - layoutBox.width) < 2 && Math.abs(coverBox.height - layoutBox.height) < 2,
+  'one loading stage fills the conversation and Details area');
+  assert.equal(await page.locator('.composer').count(), 0, 'composer is absent during loading');
   releaseChat();
   await cover.waitFor({ state: 'hidden' });
   await page.waitForFunction(() => {

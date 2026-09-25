@@ -30,6 +30,7 @@ export async function colorFixture() {
     { info: { id: 'msg_a', parentID: 'msg_u', role: 'assistant', sessionID: id, providerID: 'openai', modelID: 'atlas', agent: 'build', time: { created: now, completed: now }, finish: 'stop', tokens: { input: 2, output: 2, cache: { read: 0, write: 0 } } }, parts: [
       { id: 'prt_a', type: 'text', text: 'Normal message text stays neutral.\n\n```js\nconst palette = "midnight";\n```\n\n[Example link](https://example.com)' },
       { id: 'prt_tool', type: 'tool', tool: 'task', state: { status: 'completed', input: { role: 'worker' }, metadata: { selected_model: 'opencode/free', sessionId: 'ses_child', freelancer_activity: { schema_version: 1, role: 'worker', phase: 'completed', selected_model: 'opencode/free', dispatched_model: 'opencode/free', observed_model: 'opencode/free', child_session: 'ses_child', subject: 'Check provider shades', completed_tools: 2, updated_at: new Date(now).toISOString() } } } },
+      ...(busy ? [{ id: 'prt_live', type: 'tool', tool: 'read', state: { status: 'running', input: { filePath: 'palette.css' } } }] : []),
     ] },
   ];
   const host = {

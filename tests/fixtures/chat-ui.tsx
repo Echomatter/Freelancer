@@ -24,7 +24,7 @@ function Fixture() {
       <span role="status">{child ? `Opened ${child}` : 'Presentation fixture · no model inference'}</span>
     </nav>
     <div className="conversation-layout with-details">
-      <Chat data={data} messages={messages} todos={[]} session={{id:session}} busy={busy} draft={draft} setDraft={setDraft} model="" setModel={() => {}} onSend={() => {}} onStop={() => setBusy(false)} onChild={setChild} onWorkflow={() => {}} agentID="engineer" setAgentID={() => {}} workflowID="build" loading={false} onOpenDetails={setDetails} />
+      <Chat data={data} messages={messages} todos={[]} session={{id:session}} busy={busy} draft={draft} setDraft={setDraft} model="" setModel={() => {}} onSend={() => {}} onStop={() => setBusy(false)} onChild={setChild} onWorkflow={() => {}} agentID="engineer" setAgentID={() => {}} workflowID="build" onOpenDetails={setDetails} />
       <Details chat={{title:'Chat presentation fixture',diff:[{file:'src/example.ts',scope:'workspace',additions:3,deletions:1,status:'modified'}]}} requestTab={details} onChild={setChild} />
     </div>
   </main>;

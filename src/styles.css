@@ -1115,22 +1115,6 @@ legend {
   content-visibility: auto;
   contain-intrinsic-size: auto 480px;
 }
-.composer-loading {
-  position: absolute;
-  inset: 0 28px 0;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-bottom: 0;
-  border-radius: 14px 14px 0 0;
-  background: var(--paper);
-  box-shadow: 0 -8px 24px var(--shadow-soft);
-  color: var(--muted);
-  font-size: 13px;
-}
 .composer {
   background: var(--paper);
   border: 1px solid var(--line);
@@ -1607,6 +1591,42 @@ legend {
   flex: 1;
   min-width: 0;
 }
+.chat-loading-stage {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  background: radial-gradient(ellipse at center, var(--tint), transparent 52%);
+}
+.chat-loading-content {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 28px;
+  text-align: center;
+  animation: appear .25s ease-out both;
+}
+.chat-loading-content strong { font-size: 16px; font-weight: 650; }
+.chat-loading-content > span { color: var(--muted); font-size: 12px; }
+.chat-loading-halo {
+  width: 76px;
+  height: 76px;
+  display: grid;
+  place-items: center;
+  margin-bottom: 8px;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+  background: var(--paper);
+  color: var(--accent);
+  box-shadow: 0 12px 36px var(--shadow-soft);
+  animation: chat-loading-breathe 2.4s ease-in-out infinite;
+}
+.chat-loading-halo svg { animation: spin 1.5s linear infinite; }
+@keyframes chat-loading-breathe {
+  50% { transform: scale(1.06); box-shadow: 0 16px 42px var(--shadow-soft); }
+}
 .work-details {
   width: 330px;
   flex-shrink: 0;
@@ -1965,7 +1985,6 @@ legend {
   .composer-attach { grid-column: 1; grid-row: 2; justify-self: start; }
   .sender-controls { grid-column: 2; grid-row: 2; }
   .composer select { max-width: min(220px, 44vw); }
-  .composer-loading { left: 18px; right: 18px; }
 }
 @media (max-width: 520px) {
   .composer-attach span { display: none; }
@@ -1974,7 +1993,6 @@ legend {
   .composer-choice > span { font-size: 9px; }
   .composer select { max-width: 42vw; }
   .request-working-meta { display: none; }
-  .composer-loading { left: 16px; right: 16px; }
 }
 @media (max-width: 800px) {
   .with-details {

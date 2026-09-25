@@ -46,6 +46,7 @@ import { ContributionRows } from "./Contributions";
 import { AppearanceContext, ProviderText, ProviderSelect, providerAttributes, type ColorPatch } from "./ProviderColors";
 import { mergeProviderColors } from "../domain/provider-colors.mjs";
 import { senderState } from "../domain/sender.mjs";
+import { RecentChats } from "./recent-chats.mjs";
 
 const EMPTY_TODOS: any[] = [];
 
@@ -60,6 +61,16 @@ function modelQuantity(value: number) {
   return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
 }
 
+function ChatLoading({ label }: { label: string }) {
+  return <div className="chat-loading-stage" role="status" aria-live="polite" aria-label={label}>
+    <div className="chat-loading-content">
+      <div className="chat-loading-halo" aria-hidden="true"><LoaderCircle size={34} strokeWidth={1.6} /></div>
+      <strong>Opening your chat</strong>
+      <span>{label}</span>
+    </div>
+  </div>;
+}
+
 export default function App() {
   const confirmation = useConfirmation();
   const [folderPicker, setFolderPicker] = useState(false), [importPreview, setImportPreview] = useState<any>(null);
@@ -67,7 +78,7 @@ export default function App() {
   const [data, setData] = useState<any>(null),
     [project, setProject] = useState(""),
     [session, setSession] = useState(""),
-    [chat, setChat] = useState<any>({
+    [chatState, setChat] = useState<any>({
       messages: [],
       status: {},
       permissions: [],
@@ -108,6 +119,7 @@ export default function App() {
   const attachmentStore = useRef(new Map<string, any[]>());
   const [creatingChat, setCreatingChat] = useState(false);
   const [startingSession, setStartingSession] = useState("");
+  const recentChats = useRef(new RecentChats());
   const [choicesKey, setChoicesKey] = useState("");
   const [historySelection, setHistorySelection] = useState<string | undefined>();
   const historyOpen = view === "history";
@@ -138,11 +150,8 @@ export default function App() {
     const restorationKey = session
       ? key
       : `${key}:${data?.sessionDefaults?.revision ?? 0}`;
-    if (
-      data?.selectionKey !== key ||
-      data?.project?.id !== project ||
-      restoredChoices.current === restorationKey
-    )
+    if (data?.project?.id !== project || (!session && data.selectionKey !== key) ||
+      restoredChoices.current === restorationKey)
       return;
     restoredChoices.current = restorationKey;
     const choice = session
@@ -241,6 +250,7 @@ export default function App() {
       const key = query(targetProject, targetSession),
         id = ++chatVersion.current,
         next = await api("chat?" + key);
+      recentChats.current.put(targetProject, targetSession, next, id);
       if (id === chatVersion.current && (navigation.current === key || navigation.current === originKey)) {
         setChat({ ...next, loaded: true, selectionKey: key });
       }
@@ -277,6 +287,7 @@ export default function App() {
     if (theme) applyTheme(theme);
   }, [data?.settings.appearance?.theme]);
   useEffect(() => {
+    chatVersion.current++;
     setChat({ messages: [], status: {}, permissions: [], questions: [] });
     if (project && session) void run(refreshChat);
   }, [project, session]);
@@ -325,10 +336,15 @@ export default function App() {
       timer.current = undefined;
     };
   }, [project]);
+  const selectedKey = query(project, session);
+  const liveChatReady = !session || (chatState.selectionKey === selectedKey && chatState.loaded);
+  const cachedChat = project && session ? recentChats.current.get(project, session) : null;
+  const chat = chatState.selectionKey === selectedKey ? chatState : cachedChat ?? {
+    messages: [], status: {}, permissions: [], questions: [],
+  };
   const current = data?.sessions.find((s) => s.id === session),
     turnState = session ? senderState(chat, session) : { busy: false },
     busy = sending || turnState.busy;
-  const selectedKey = query(project, session);
   const selectedChoicesKey = session
     ? selectedKey
     : `${selectedKey}:${data?.sessionDefaults?.revision ?? 0}`;
@@ -336,8 +352,9 @@ export default function App() {
     (Boolean(session) &&
       (chat.selectionKey !== selectedKey || !chat.loaded || startingSession === session)) ||
     startingSession === "__new__" ||
-    data?.selectionKey !== selectedKey ||
-    choicesKey !== selectedChoicesKey;
+    (!cachedChat && (data?.selectionKey !== selectedKey || choicesKey !== selectedChoicesKey));
+  const chatSyncing = !chatLoading && !!session &&
+    (!liveChatReady || data?.selectionKey !== selectedKey || choicesKey !== selectedChoicesKey);
   async function createChat() {
     if (!project) {
       setFolderOpen(true);
@@ -483,6 +500,7 @@ export default function App() {
   async function removeProject(item: any) {
     if (!await confirmation.ask({ title: `Remove “${item.name}”?`, description: 'Its folder, files, native chats, and history will remain on disk.', confirmLabel: 'Remove from Freelancer', danger: true })) return;
     await api("projects", { project: item.id }, "DELETE");
+    recentChats.current.deleteProject(item.id);
     const remaining = data.settings.projects.filter((p) => p.id !== item.id);
       setData((current) => ({ ...current, settings: { ...current.settings, projects: remaining }, project: item.id === project ? null : current.project }));
     if (item.id === project) {
@@ -505,6 +523,7 @@ export default function App() {
     await run(async () => {
       await api("history/archive", { project, session: sessionRow.id, archived: true,
         revision: sessionRow.organization?.revision ?? 0 }, "PUT");
+      recentChats.current.delete(project, sessionRow.id);
       if (session === sessionRow.id) setSession("");
       await refresh();
     });
@@ -700,10 +719,10 @@ export default function App() {
                 <div
                   className={`conversation-layout ${details ? "with-details" : ""}`}
                 >
+                  {chatLoading ? <ChatLoading label={startingSession === "__new__" || startingSession === session && !!session ? "Sending your first message…" : "Loading recent conversation…"} /> : <>
                   <Chat
                     data={data}
-                    loading={chatLoading}
-                    loadingLabel={startingSession === "__new__" || startingSession === session && !!session ? "Sending your first message…" : "Opening chat and choices…"}
+                    syncing={chatSyncing}
                     messages={chat.messages}
                     todos={chat.todos ?? EMPTY_TODOS}
                     session={current}
@@ -752,6 +771,7 @@ export default function App() {
                       onChild={setSession}
                     />
                   )}
+                  </>}
                 </div>
               </div>
             {view === "github" && <GitHubProject key={project} project={project} onClose={closeSettings} onUseSync={() => {

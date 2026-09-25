@@ -147,7 +147,9 @@ try {
   await colorOf(page.locator('.provider-model-card[data-provider="openai"] h3 .provider-identity'), rose);
   assert.equal(await page.locator('.provider-model-card').count(), 4);
   report('invalid and failed custom colors never apply; model cards use confirmed provider shades');
-  await page.locator('.sessions button').filter({ hasText: 'Color test chat' }).click();
+  const chats = page.locator('.chat-navigation');
+  await chats.getByRole('button', { name: 'Chats', exact: true }).click();
+  await chats.locator('.nav-chat-select').filter({ hasText: 'Color test chat' }).click();
   await colorOf(page.locator('.message.assistant .message-label .provider-identity'), rose);
   const neutral = await page.locator('.message.assistant .markdown p').first().evaluate(e => getComputedStyle(e).color);
   assert.equal(neutral, rgb(palettes.find(p => p.id === 'midnight').tokens.text));

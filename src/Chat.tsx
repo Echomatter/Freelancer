@@ -410,8 +410,7 @@ export function Chat({
   agentID,
   setAgentID,
   workflowID,
-  loading,
-  loadingLabel = "Opening chat…",
+  syncing = false,
   draftLoading = false,
   captureDraft,
   acceptDraft,
@@ -439,8 +438,7 @@ export function Chat({
   agentID: string;
   setAgentID: (id: string) => void;
   workflowID: string;
-  loading: boolean;
-  loadingLabel?: string;
+  syncing?: boolean;
   draftLoading?: boolean;
   captureDraft?: () => any;
   acceptDraft?: (token: any) => void;
@@ -511,9 +509,8 @@ export function Chat({
     followLatest();
   }, [session?.id]);
   useLayoutEffect(() => {
-    if (loading) return;
     followLatest();
-  }, [messages, busy, loading]);
+  }, [messages, busy]);
   useEffect(() => {
     const scroll = area.current;
     const content = scroll?.firstElementChild;
@@ -576,7 +573,7 @@ export function Chat({
     data,
     session,
     busy,
-    loading,
+    loading: syncing,
     draft,
     setDraft,
     parentModel: selectedModel,
@@ -598,7 +595,7 @@ export function Chat({
       });
     },
     hasAttachments: attachments.length > 0,
-    disabled: readOnly || draftLoading || readingAttachments,
+    disabled: readOnly || syncing || draftLoading || readingAttachments,
     captureDraft,
     acceptDraft,
   });
@@ -646,7 +643,7 @@ export function Chat({
     );
   }), [messages, todos, busy, changeCount, pendingDecisions, data.models, openChild, openDetails, reviewDecisions]);
   return (
-    <div className="chat-view" aria-busy={loading}>
+    <div className="chat-view" aria-busy={syncing}>
       <div
         className="chat-scroll"
         ref={area}
@@ -657,9 +654,7 @@ export function Chat({
         }}
       >
         <div className="chat-transcript">
-        {loading ? (
-          <Empty icon={LoaderCircle} title={loadingLabel} />
-        ) : !messages.length && busy ? (
+        {!messages.length && busy ? (
           <Empty icon={LoaderCircle} title="Starting your conversation…" />
         ) : !messages.length ? (
           <div className="chat-welcome">
@@ -681,7 +676,7 @@ export function Chat({
         )}
         <div ref={end} />
         </div>
-      {showNewActivity && !loading && messages.length > 0 && (
+      {showNewActivity && messages.length > 0 && (
         <div className="new-activity-row">
           <button type="button" className="new-activity" onClick={jumpToLatest}>
             Jump to latest
@@ -709,9 +704,9 @@ export function Chat({
         </div>
         <form
           className={dragging ? "composer dragging" : "composer"}
-          onDragOver={(event) => { if (!loading && !readOnly && !draftLoading && Array.from(event.dataTransfer.types).includes("Files")) { event.preventDefault(); setDragging(true); } }}
+          onDragOver={(event) => { if (!syncing && !readOnly && !draftLoading && Array.from(event.dataTransfer.types).includes("Files")) { event.preventDefault(); setDragging(true); } }}
           onDragLeave={(event) => { if (!event.currentTarget.contains(event.relatedTarget as Node)) setDragging(false); }}
-          onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); setDragging(false); if (!loading && !readOnly && !draftLoading) void addAttachments(event.dataTransfer.files); } }}
+          onDrop={(event) => { if (event.dataTransfer.files.length) { event.preventDefault(); setDragging(false); if (!syncing && !readOnly && !draftLoading) void addAttachments(event.dataTransfer.files); } }}
           onSubmit={(e) => {
             e.preventDefault();
             sender.submit();
@@ -725,10 +720,10 @@ export function Chat({
                 : "Open a project to get started…"
             }
             value={draft}
-            disabled={!data?.project || loading || draftLoading}
+            disabled={!data?.project || syncing || draftLoading}
             readOnly={readOnly}
             onChange={(e) => setDraft(e.target.value)}
-            onPaste={(event) => { if (event.clipboardData.files.length && !loading && !readOnly && !draftLoading) { event.preventDefault(); void addAttachments(event.clipboardData.files); } }}
+            onPaste={(event) => { if (event.clipboardData.files.length && !syncing && !readOnly && !draftLoading) { event.preventDefault(); void addAttachments(event.clipboardData.files); } }}
             onKeyDown={(e) => {
               if (
                 e.key === "Enter" &&
@@ -747,13 +742,13 @@ export function Chat({
           {attachmentError && <p className="composer-attachment-error" role="alert">{attachmentError}</p>}
           {busy && attachments.length > 0 && <p className="composer-attachment-note" role="status">Queue and Delegate send text only; these files stay attached for your next send.</p>}
           <div className="composer-actions">
-            <button type="button" className="composer-attach" aria-label="Attach files" title="Attach files from this computer" disabled={loading || readOnly || draftLoading} onClick={() => attachmentInput.current?.click()}><Paperclip size={17} /><span>Attach</span></button>
+            <button type="button" className="composer-attach" aria-label="Attach files" title="Attach files from this computer" disabled={syncing || readOnly || draftLoading} onClick={() => attachmentInput.current?.click()}><Paperclip size={17} /><span>Attach</span></button>
             <div className="composer-selects">
               <label className="composer-choice">
                 <span>Workflow</span>
                 <select
                   aria-label="Workflow"
-                  disabled={loading}
+                  disabled={syncing}
                   value={workflow.id}
                   onChange={(e) =>
                     onWorkflow(
@@ -774,7 +769,7 @@ export function Chat({
                 <span>Agent</span>
                 <select
                   aria-label="Agent"
-                  disabled={loading}
+                  disabled={syncing}
                   value={agentID}
                   onChange={(e) => {
                     setAgentID(e.target.value);
@@ -805,7 +800,7 @@ export function Chat({
                   <ProviderSelect
                     provider={selectedModel}
                     aria-label="Parent model"
-                    disabled={loading}
+                    disabled={syncing}
                     value={selectedModel}
                     onChange={(e) => {
                       setModel(e.target.value);
@@ -845,7 +840,7 @@ export function Chat({
                 </label>
                 <ModelIntelligence
                   compact
-                  disabled={loading}
+                  disabled={syncing}
                   variants={currentModel?.variants}
                   value={intelligence}
                   onChange={(v) => setVariant?.(v)}
@@ -856,11 +851,10 @@ export function Chat({
               sender={sender}
               busy={busy}
               onStop={onStop}
-              disabled={!selectedModel || !data?.project || loading || readOnly || draftLoading}
+              disabled={!selectedModel || !data?.project || syncing || readOnly || draftLoading}
             />
           </div>
         </form>
-        {loading && <div className="composer-loading" role="status"><LoaderCircle size={18} className="spin" />{loadingLabel}</div>}
       </div>
       </div>
     </div>

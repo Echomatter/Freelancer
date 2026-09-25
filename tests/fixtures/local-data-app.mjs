@@ -264,10 +264,12 @@ export async function localDataFixture() {
     api,
     async close() {
       await runtime.sender.close();
+      await app.indexJobs.close();
       runtime.server.closeAllConnections();
       await new Promise((resolve) => runtime.server.close(resolve));
       app.history.close();
       app.modelRatings.close();
+      app.localData.close();
       await store.flush();
       await rm(root, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 });
     },

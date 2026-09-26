@@ -18,9 +18,19 @@ const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
 page.setDefaultTimeout(15000);
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
+let releaseInitialListing;
+const initialListing = new Promise(resolve => { releaseInitialListing = resolve; });
+let heldInitialListing = false;
 const shots = process.env.FREELANCER_QA_SHOTS;
 async function shot(name) { if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, name + '.png') }); } }
 try {
+  await page.route('**/api/projects/folders?**', async route => {
+    if (!heldInitialListing && new URL(route.request().url()).searchParams.get('directory') === '') {
+      heldInitialListing = true;
+      await initialListing;
+    }
+    await route.continue();
+  });
   await page.goto(f.url);
   await page.locator('.project-navigation .nav-accordion-trigger').click();
   await page.getByRole('button', { name: 'New project', exact: true }).click();
@@ -28,7 +38,15 @@ try {
   await project.getByRole('button', { name: 'Browse folders…' }).click();
   const picker = page.getByRole('dialog', { name: 'Choose project folder', exact: true });
   await picker.getByRole('textbox', { name: 'Folder path' }).fill(f.root);
+  releaseInitialListing();
+  await page.waitForFunction(() => [...document.querySelectorAll('button')].some(button =>
+    button.textContent === 'Go to folder' && !button.disabled));
+  assert.equal(await picker.getByRole('textbox', { name: 'Folder path' }).inputValue(), f.root,
+    'the initial listing must preserve a path typed while it was loading');
+  assert.equal(await picker.getByRole('button', { name: 'Use this folder', exact: true }).isDisabled(), true,
+    'an unvisited typed path cannot accidentally select the previous listing');
   await picker.getByRole('button', { name: 'Go to folder', exact: true }).click();
+  await picker.getByRole('status').getByText(f.root, { exact: true }).waitFor();
   await picker.getByRole('button', { name: 'project', exact: true }).click();
   await picker.getByRole('status').getByText(f.directory, { exact: true }).waitFor();
   await shot('folder-picker');
@@ -67,4 +85,4 @@ try {
   assert.deepEqual(errors, []);
   console.log('PASS folder picker, optional exact-repo import before indexing, shared transcript view, read-only snapshot and native orientation');
 } catch (error) { console.error('Page errors:', errors); console.error(await page.locator('body').innerText()); await shot('failure'); throw error; }
-finally { await browser.close(); await f.close(); }
+finally { releaseInitialListing(); await browser.close(); await f.close(); }

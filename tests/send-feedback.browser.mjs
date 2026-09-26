@@ -8,19 +8,24 @@ page.setDefaultTimeout(12000);
 const errors = [];
 page.on("pageerror", (e) => errors.push(e.message));
 let releaseCreate, releaseSend, releaseAcknowledgement;
+let notifyCreate, notifySend;
 const createGate = new Promise((resolve) => (releaseCreate = resolve));
 const sendGate = new Promise((resolve) => (releaseSend = resolve));
 const acknowledgementGate = new Promise((resolve) => (releaseAcknowledgement = resolve));
+const creationStarted = new Promise((resolve) => (notifyCreate = resolve));
+const dispatchStarted = new Promise((resolve) => (notifySend = resolve));
 let createCalls = 0,
   sendCalls = 0;
 try {
   await page.route("**/api/chats", async (route) => {
     createCalls++;
+    notifyCreate();
     await createGate;
     await route.continue();
   });
   await page.route("**/api/send", async (route) => {
     sendCalls++;
+    notifySend();
     await sendGate;
     const response = await route.fetch();
     await acknowledgementGate;
@@ -39,6 +44,8 @@ try {
       exact: true,
     })
     .waitFor({ timeout: 1000 });
+  // Showing the preview does not depend on draft flushing reaching HTTP yet.
+  await creationStarted;
   assert.equal(createCalls, 1);
   assert.equal(sendCalls, 0);
   assert.equal(await page.locator('.pending-message').getByText('brief.txt', { exact: true }).count(), 1);
@@ -48,9 +55,8 @@ try {
     animations: "disabled",
   });
   releaseCreate();
-  await page.waitForFunction(() => document.querySelector(".pending-message"));
+  await dispatchStarted;
   // Creation completes but native dispatch stays held. No empty/loading flash.
-  await new Promise((resolve) => setTimeout(resolve, 800));
   assert.equal(await page.locator(".pending-message").count(), 1);
   releaseSend();
   // Native events can win the race with the send response. Keep the real

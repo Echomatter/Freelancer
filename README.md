@@ -1,20 +1,42 @@
-# Freelancer for OpenCode
+# Freelancer
 
-Freelancer is a relaxed, user-directed multi-model coding harness. Work with one primary coding model and bring in independent specialists when useful, while keeping projects, workers, model availability, permissions and Git history under your control.
+Freelancer is a local workspace for working on projects with AI. Open a folder, describe what you want done, and follow the work in a chat. You can choose a model, ask for a plan or a code change, and bring in another specialist to review the result. Freelancer runs on your Windows computer in a browser or Chrome app window, with [OpenCode](https://opencode.ai/) doing the AI work behind the scenes.
 
-![Freelancer](assets/freelancer-banner.svg)
+![Freelancer application banner](assets/freelancer-banner.svg)
 
-Choose a project → choose a model if desired → ask for work → watch it happen.
+## Quick start (Windows)
 
-## Run on Windows
+1. Download the source ZIP from [the Freelancer repository](https://github.com/Echomatter/Freelancer) and extract it, or clone `https://github.com/Echomatter/Freelancer.git` with Git. Open **PowerShell** in the resulting folder.
+2. Run the setup:
 
-On a fresh Windows computer, download and extract this repository's source ZIP. If Git is already installed, you can clone it instead. Open PowerShell in the extracted or cloned folder and run:
+   ```powershell
+   powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1
+   ```
 
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install.ps1
-```
+3. When setup finishes, Freelancer opens in a Chrome app window. The installer also creates desktop shortcuts for starting and restarting it.
+4. In Freelancer, add your project folder, connect a model provider under **Application settings → Providers**, and start a chat. Try: “Look through this project and explain how to run it.”
 
-The setup checks Node.js 22.13+, Git, GitHub CLI, Chrome, and native OpenCode, installs missing prerequisites through WinGet or npm, builds from the lockfile, checks native startup, and creates the desktop links. GitHub access still requires your own sign-in; the script does not copy credentials. To run without creating links, pass `-NoShortcuts -NoLaunch`. For manual setup, install Node.js 22.13 or newer, the native OpenCode executable, and Git. Then, in this source folder:
+Setup installs or checks Node.js, Git, GitHub CLI and OpenCode, plus Chrome for the desktop shortcuts, then builds and starts the app. You will still need to sign in to any model provider you want to use. For a browser-only setup without desktop shortcuts, add `-NoShortcuts -NoLaunch` to the setup command, then [start it in a browser](docs/getting-started.md#start-in-a-browser). See [getting started](docs/getting-started.md) for requirements, manual installation and troubleshooting.
+
+## What can you do with it?
+
+- **Work on a folder:** Ask questions about your project, request changes, attach context and return to past chats.
+- **Choose how to work:** Pick an agent and a workflow, such as Engineer + Build for implementation or Researcher + Explore for investigation. These are starting points, not commands you have to memorize.
+- **Get another perspective:** Ask the assistant to give a focused task to another model, such as researching an issue or reviewing a change. Follow its progress and inspect its conversation.
+- **Stay in control:** Review questions and permission requests, see task progress, and decide when to save or share changes. GitHub is optional; connecting an account does not automatically upload your project.
+- **Make the space yours:** Adjust the layout and appearance, browse available models, and search project files and conversations.
+
+Closing the browser window does not stop the local server or work already running. If you used the desktop shortcut, use the tray icon’s **Exit Freelancer** command to stop it. If you started the server with `npm.cmd start`, keep that PowerShell window open and press **Ctrl+C** to stop it.
+
+### For everyday use
+
+Start with [your first project and chat](docs/getting-started.md#first-use). The [handbook](docs/README.md) has guides for project history, usage estimates, saved data, workers and more. Your project files stay in their folders; Freelancer stores its own organization and search data locally, while OpenCode keeps its conversations and provider sign-ins. See [where data lives](docs/local-data.md).
+
+## For contributors and technical readers
+
+This is a source-run React interface served by a local Node.js server. Native OpenCode handles conversations, models, authentication, tools and permissions. Freelancer adds the project UI, saved organization, search, worker coordination and managed Git actions. There is no hosted Freelancer service or packaged installer. The [architecture guide](docs/ARCHITECTURE.md) maps ownership and source entry points; [repository instructions](AGENTS.md) cover changes to this codebase.
+
+To run an already installed checkout manually, use Node.js **22.13 or newer** and the native OpenCode executable (`opencode-ai@1.18.31` is the [documented baseline](docs/getting-started.md#prerequisites)). From the repository root:
 
 ```powershell
 npm.cmd ci
@@ -22,57 +44,12 @@ npm.cmd run build
 npm.cmd start
 ```
 
-Open the loopback URL printed by the server. For a Chrome app window:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/launch-web.ps1 -ChromeApp
-```
-
-Optional desktop links are created by `scripts/create-desktop-shortcut.ps1` and `scripts/create-restart-shortcut.ps1`. Closing the browser does not stop the independent server or cancel work. After source updates, rebuild and restart that checkout's server.
-
-[Setup and troubleshooting](docs/getting-started.md) · [Architecture](docs/ARCHITECTURE.md) · [Handbook](docs/README.md)
-
-## Work naturally
-
-- **Chat:** project conversations, recoverable drafts, attachments, native questions and permissions. The selected parent model stays yours.
-- **Workers:** one-call eligible free delegation, optional nested specialists, same-worker follow-up, visible progress and compact results. Simple work stays with the parent.
-- **Queue / Delegate:** schedule another parent request or hand it a bounded concern while work continues. Dismissing a card hides it; canceling a queued message is a separate action.
-- **Managed Git:** save locally, synchronize or put changes up for review through the saved project agreement. A local checkpoint is not an upload. GitHub is optional.
-- **Models and Available Usage:** browse connected models and estimated capacity. Share of Work measures participation, not correctness or quality.
-- **Appearance:** consistent provider colors, selectable palettes, resizable panels, compact dismissible task cards and reduced-motion support.
-
-| Term | Meaning |
-| --- | --- |
-| Agent | Reusable expertise or working style; Engineer, Researcher, Designer, Git or your own. |
-| Workflow | Conversational guidance: Build, Plan, Explore, Review or Sync. |
-| Worker | A running assignment using an agent and model. |
-| Model | The provider-qualified inference route. |
-| Skill | Reusable operating knowledge. |
-
-Agents, workflows and skills guide work; they do not grant tool authority. The normal worker call is `delegate({agent, task, workflow?, model?})`. Catalog discovery is optional. Omit the model for runtime routing or name an exact route. Eligible free work starts without a second model-selection call. Subscription work goes through native paid-delegation consent without a duplicate model-choice menu. Separately metered worker capacity is unavailable.
-
-Project/chat worker settings control automatic workers, free preference, paid capacity, simultaneous workers and depth. Native permissions, explicit user constraints and the project agreement remain authoritative. Worker results label structured completion, fallback or partial output; execution completion never proves task correctness. Follow up with `delegate({worker, task})` to keep the same specialist and context.
-
-## OpenCode relationship and data
-
-Freelancer is a React browser interface and local Node server around native OpenCode. OpenCode owns conversations, inference, provider authentication, tools, permissions, todos and child sessions. Freelancer owns organization, drafts, search, worker coordination, usage presentation and managed Git. It never edits OpenCode's database or copies credentials.
-
-Private JSON lives under ignored `backend/.state/`. Organization, drafts and retrieval data use `%LOCALAPPDATA%\Freelancer\freelancer.sqlite`; an absolute `FREELANCER_DATA_HOME` overrides that folder. Native OpenCode data remains in its existing location. This fresh tree imports no old application history, registrations, databases, receipts or caches. [Data ownership](docs/local-data.md)
-
-This is a Windows-oriented source-run application, with no hosted service or packaged binary. Provider observations can be missing or stale. Native permissions are not a filesystem sandbox, and independent writers must use disjoint scope. Native questions are answered in their worker's own session. No real provider inference or authentication is implied by fixture tests.
-
-## Development
+Open the local URL printed by the server. For frontend development, see [development setup](docs/getting-started.md#development-and-checks). Useful checks are:
 
 ```powershell
 npm.cmd run test:fast
 npm.cmd run test:git
-npm.cmd test
 npm.cmd run build
-node scripts/palette-css.mjs --check
-npm.cmd run test:browser
-npm.cmd run smoke:runtime
 ```
 
-Browser journeys run against production assets and simulated native services. Runtime smoke separately starts installed OpenCode without inference. See [the architecture](docs/ARCHITECTURE.md) for ownership, safeguards and code entry points.
-
-[Consolidation verification](docs/consolidation-verification.md) records the exercised checks and their limits.
+The full suite is `npm.cmd test`; after a build, `npm.cmd run test:browser` exercises browser journeys with simulated services. `npm.cmd run smoke:runtime` checks installed OpenCode startup without making a model request. Tests do not establish that your own provider sign-in or model inference works.

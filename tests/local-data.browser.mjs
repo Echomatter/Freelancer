@@ -146,6 +146,9 @@ async function assertSaved(text) {
     if (attempt === 199) assert.equal(saved, text);
     await delay(50);
   }
+  // SQLite commits before the browser receives the save acknowledgement. Wait
+  // for the actual UI recovery too; an immediate count races that response.
+  await page.locator(".draft-status").waitFor({ state: "detached" });
   assert.equal(await page.locator(".draft-status").count(), 0);
   await page.waitForFunction(() => !document.querySelector('.topbar-right [aria-label="Saving draft"]'));
 }

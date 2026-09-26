@@ -23,9 +23,9 @@ async function fixture(t) {
 test('palette registry keeps legacy identities and adds bespoke palettes', () => {
   assert.deepEqual(palettes.slice(0, 16).map(p => p.id), ['light', 'dark', 'sandstone', 'midnight', 'coast', 'lilac', 'ember', 'aurora',
     'porcelain', 'rosewater', 'matcha', 'marigold', 'graphite', 'mulberry', 'fjord', 'espresso']);
-  assert.equal(palettes.length, 54);
-  assert.equal(lightPalettes.length, 27);
-  assert.equal(darkPalettes.length, 27);
+  assert.equal(palettes.length, 120);
+  assert.equal(lightPalettes.length, 60);
+  assert.equal(darkPalettes.length, 60);
   assert.equal(new Set(palettes.map(p => p.id)).size, palettes.length);
   assert.equal(new Set(palettes.map(p => p.name)).size, palettes.length);
   assert.equal(themePalette('light').tokens.bg, '#f8f9f6');

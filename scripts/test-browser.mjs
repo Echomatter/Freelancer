@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import path from "node:path";
+import { palettes } from "../domain/theme.mjs";
 
 // Each journey starts and closes its own loopback fixture. Keep them sequential
 // to avoid port and browser-process contention on developer machines. A failed
@@ -18,6 +19,7 @@ export const journeys = [
   "chat-tweaks",
   "chat-dock",
   "chat-loading-cache",
+  "send-feedback",
   "unfinished-work",
   "history-search",
   "model-ratings",
@@ -34,7 +36,7 @@ export function runJourneys({ names = journeys, run = spawnSync, log = console.l
     const started = Date.now();
     let result;
     try {
-      result = run(process.execPath, [file], { stdio: "inherit", timeout: 180000 });
+      result = run(process.execPath, [file], { stdio: "inherit", timeout: ["colors", "usage"].includes(name) ? 180000 + palettes.length * 2000 : 180000 });
     } catch (error) {
       result = { status: null, error };
     }

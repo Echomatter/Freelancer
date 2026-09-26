@@ -75,7 +75,7 @@ async function chooseTheme(id) {
   await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, id);
   await page.waitForFunction(() => [...document.querySelectorAll('.palette-option')].every(button => !button.disabled));
 }
-async function screenshot(name) { await mkdir('artifacts/colors', { recursive: true }); await page.screenshot({ path: `artifacts/colors/${name}.png`, fullPage: true, animations: 'disabled' }); }
+async function screenshot(name) { await mkdir('artifacts/colors', { recursive: true }); await page.screenshot({ path: `artifacts/colors/${name}.png`, fullPage: false, animations: 'disabled' }); }
 try {
   await load(); await settings();
   await page.getByRole('button', { name: /^Use .* palette$/ }).first().waitFor();

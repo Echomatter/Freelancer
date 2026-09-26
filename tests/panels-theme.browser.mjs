@@ -134,7 +134,7 @@ try {
   assert.equal(await page.locator(".palette-picker select").count(), 0);
   const lightPalette = page.getByRole("button", { name: "Use Sage Daybreak palette", exact: true });
   const darkPalette = page.getByRole("button", { name: "Use Forest Night palette", exact: true });
-  const darkCategory = page.getByRole("button", { name: "Dark themes (27)" });
+  const darkCategory = page.getByRole("button", { name: "Dark themes (60)" });
   assert.equal(await darkCategory.getAttribute("aria-expanded"), "true");
   await darkCategory.click(); assert.equal(await darkCategory.getAttribute("aria-expanded"), "false");
   assert.equal(await darkPalette.count(), 0); await darkCategory.click();

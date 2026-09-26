@@ -114,6 +114,11 @@ export default function App() {
     [modelSort, setModelSort] = useState("cost"),
     [freeOnly, setFreeOnly] = useState(false);
   const [sending, setSending] = useState(false);
+  const sendFlight = useRef(false);
+  const [pendingSend, setPendingSend] = useState<{
+    key: string; text: string; attachments: { filename: string; mime: string; url: string }[];
+    previousIDs: string[]; state: 'sending' | 'accepted' | 'unconfirmed';
+  } | null>(null);
   const attachmentStore = useRef(new Map<string, any[]>());
   const [creatingChat, setCreatingChat] = useState(false);
   const [startingSession, setStartingSession] = useState("");
@@ -348,6 +353,14 @@ export default function App() {
     (!cachedChat && (data?.selectionKey !== selectedKey || choicesKey !== selectedChoicesKey));
   const chatSyncing = !chatLoading && !!session &&
     (!liveChatReady || data?.selectionKey !== selectedKey || choicesKey !== selectedChoicesKey);
+  const visibleSend = pendingSend?.key === selectedKey ? pendingSend : null;
+  const sendObserved = !!visibleSend && chat.messages.some(message =>
+    message.info?.role === 'user' && !visibleSend.previousIDs.includes(message.info.id) &&
+    (message.parts ?? []).filter(part => part.type === 'text' && !part.synthetic).map(part => part.text).join('') === visibleSend.text &&
+    visibleSend.attachments.every(file => (message.parts ?? []).some(part => part.type === 'file' && part.filename === file.filename)));
+  // Native events may arrive before the POST acknowledgement or bootstrap.
+  // Keep the display bridge until the real chat can stay mounted on its own.
+  useEffect(() => { if (sendObserved && !chatLoading) setPendingSend(null); }, [sendObserved, chatLoading]);
   async function createChat() {
     if (!project) {
       setFolderOpen(true);
@@ -363,11 +376,13 @@ export default function App() {
     }
   }
   async function send(intelligence: string, attachments: { filename: string; mime: string; url: string }[] = []) {
-    if (!model || !project || (!draft.trim() && !attachments.length) || busy || draftMemory.loading || current?.organization?.archived || data.project?.organization?.archivedAt) return { accepted: false, sessionID: session };
+    if (sendFlight.current || !model || !project || (!draft.trim() && !attachments.length) || busy || draftMemory.loading || current?.organization?.archived || data.project?.organization?.archivedAt) return { accepted: false, sessionID: session };
     let captured = draftMemory.capture();
     const capturedDraft = captured.text;
     const origin = query(project, session);
+    sendFlight.current = true;
     setSending(true);
+    setPendingSend({ key: origin, text: capturedDraft, attachments, previousIDs: chat.messages.map(message => message.info?.id), state: 'sending' });
     if (!session) setStartingSession("__new__");
     let createdSession = "";
     let accepted = false;
@@ -383,7 +398,8 @@ export default function App() {
           setChoicesKey(restoredChoices.current);
           createdSession = id;
           setStartingSession(id);
-          setSession(id);
+          setPendingSend(value => value?.key === origin ? { ...value, key: query(project, id) } : value);
+          if (navigation.current === origin) setSession(id);
         }
         await api("send", {
           project,
@@ -396,6 +412,7 @@ export default function App() {
           attachments,
         });
         accepted = true;
+        setPendingSend(value => value ? { ...value, state: 'accepted' } : value);
         draftMemory.controller.accept(captured);
         if (
           navigation.current === query(project, id) ||
@@ -406,9 +423,11 @@ export default function App() {
             status: { ...c.status, [id]: { type: "busy" } },
           }));
         }
-        if (createdSession) await refreshChat(project, createdSession, origin);
+        await refreshChat(project, id, origin);
       });
     } finally {
+      if (!accepted) setPendingSend(value => value ? { ...value, state: 'unconfirmed' } : value);
+      sendFlight.current = false;
       setStartingSession("");
       setSending(false);
     }
@@ -717,13 +736,14 @@ export default function App() {
                 <div
                   className={`conversation-layout ${details ? "with-details" : ""}`}
                 >
-                  {chatLoading ? <ChatLoading label={startingSession === "__new__" || startingSession === session && !!session ? "Sending your first message…" : "Loading recent conversation…"} /> : <>
+                  {chatLoading && !visibleSend ? <ChatLoading label={startingSession === "__new__" || startingSession === session && !!session ? "Sending your first message…" : "Loading recent conversation…"} /> : <>
                   <Chat
                     data={data}
-                    syncing={chatSyncing}
+                    syncing={chatSyncing || chatLoading}
+                    pendingSend={sendObserved ? null : visibleSend}
                     messages={chat.messages}
                     todos={chat.todos ?? EMPTY_TODOS}
-                    session={current}
+                    session={current ?? (session ? { id: session } : undefined)}
                     busy={busy}
                     draft={draft}
                     setDraft={setDraft}

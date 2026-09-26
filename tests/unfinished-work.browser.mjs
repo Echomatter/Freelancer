@@ -25,11 +25,11 @@ try {
   await page.getByRole('button', { name: 'Chats', exact: true }).click();
   await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
   await page.getByText('Response ended with unfinished tasks. Send a follow-up to continue.', { exact: true }).waitFor();
-  await page.getByText(/Response ended · 1 tool failed/).waitFor();
+  await page.locator('.request-dock').getByText(/Response ended · 1 tool failed/).waitFor();
   assert.equal(await page.locator('.todo-dock-list .spin').count(), 0);
   assert.equal(await page.locator('.todo-dock-list').getByText('unfinished', { exact: true }).count(), 1);
-  await page.locator('.request-working > summary').click();
-  await page.locator('.tool-card.error').getByText('Failed', { exact: true }).waitFor();
+  await page.locator('.request-dock .request-working > summary').click();
+  await page.locator('.request-dock .tool-card.error').getByText('Failed', { exact: true }).waitFor();
   assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).isEnabled(), false);
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Continue the unfinished tasks');
   assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).isEnabled(), true);
@@ -45,7 +45,7 @@ try {
   f.state.messages.ses_history[1].info.time.completed = Date.now();
   f.state.messages.ses_history[1].parts[0].state.metadata.exit = 0;
   await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-  await page.getByText(/Response ended · Tasks unfinished/).waitFor();
+  await page.locator('.request-dock').getByText(/Response ended · Tasks unfinished/).waitFor();
   assert.deepEqual(f.state.todos.ses_history, todos, 'presentation never rewrites native task records');
 
   await f.store.update('settings', s => ({ ...s, appearance: { ...s.appearance, todoLayout: 'inline' } }));

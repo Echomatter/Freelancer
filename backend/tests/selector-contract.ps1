@@ -138,10 +138,11 @@ try {
     Json 'routing\model-evidence.json' @{models=$models;alias_index=$aliases}
     $roster.eligible_models=@(@{id='opencode/free';surface='opencode-free'},@{id='openai/other';surface='openai-oauth'})
     Json 'routing\model-roster.json' $roster
-    $ordinary=Run-Selection @{TaskType='simple_edit'}
-    $consequential=Run-Selection @{TaskType='architecture'}
+    # This contract targets the prefer-free policy; the app default is balanced.
+    $ordinary=Run-Selection @{TaskType='simple_edit';CostPreference='prefer-free'}
+    $consequential=Run-Selection @{TaskType='architecture';CostPreference='prefer-free'}
     Check ($ordinary.selected_model-eq'opencode/free'-and$consequential.selected_model-eq'openai/other'-and($consequential.reason_codes-join' ')-match'capability advantage') 'stronger subscription wins only when a consequential task warrants the measured advantage'
-    $hardFree=Run-Selection @{TaskType='architecture';FreeOnly='true'}
+    $hardFree=Run-Selection @{TaskType='architecture';FreeOnly='true';CostPreference='prefer-free'}
     Check ($hardFree.selected_model-eq'opencode/free'-and$hardFree.free_only-and@($hardFree.ranking|Where-Object {$_.id-ne'opencode/free'}).Count-eq 0) 'FreeOnly survives consequential escalation and filters all subscription candidates'
     $roster.eligible_models=@(@{id='opencode-go/cheap';surface='opencode-go'},@{id='github-copilot/example';surface='github-copilot-oauth'})
     Json 'routing\model-roster.json' $roster

@@ -417,6 +417,7 @@ function GroupBody({ group, onChild, mode = "all", childReport = false }: { grou
 export function Chat({
   data,
   messages,
+  pendingSend,
   todos = EMPTY_TODOS,
   session,
   busy,
@@ -445,6 +446,7 @@ export function Chat({
 }: {
   data: any;
   messages: any[];
+  pendingSend?: { text: string; attachments: { filename: string; mime: string; url: string }[]; state: 'sending' | 'accepted' | 'unconfirmed' } | null;
   todos?: any[];
   session: any;
   busy: boolean;
@@ -582,7 +584,7 @@ export function Chat({
   useLayoutEffect(() => {
     followLatest();
     updateDock();
-  }, [messages, busy]);
+  }, [messages, busy, pendingSend]);
   useEffect(() => () => { if (rollTimer.current) clearTimeout(rollTimer.current); }, []);
   useEffect(() => {
     const scroll = area.current;
@@ -752,9 +754,9 @@ export function Chat({
         }}
       >
         <div className="chat-transcript">
-        {!messages.length && busy ? (
+        {!messages.length && !pendingSend && busy ? (
           <Empty icon={LoaderCircle} title="Starting your conversation…" />
-        ) : !messages.length ? (
+        ) : !messages.length && !pendingSend ? (
           <div className="chat-welcome">
             <h1>What shall we make?</h1>
             <div className="suggestions">
@@ -767,7 +769,15 @@ export function Chat({
             </div>
           </div>
         ) : requestContent}
-        {busy && !messages.length && (
+        {pendingSend && <div className="message user pending-message" aria-label="Submitted message">
+          <div className="message-label">You</div>
+          <div className="message-body">
+            {pendingSend.text && <Markdown text={pendingSend.text} />}
+            {pendingSend.attachments.map((file, index) => <Attachment key={index} file={file} />)}
+            <small role="status">{pendingSend.state === 'sending' ? 'Sending…' : pendingSend.state === 'accepted' ? 'Sent · Waiting for conversation…' : 'Delivery unconfirmed · Check the conversation before sending again.'}</small>
+          </div>
+        </div>}
+        {busy && !messages.length && !pendingSend && (
           <div className="working" aria-live="polite">
             <LoaderCircle size={16} className="spin" /> Working on it
           </div>

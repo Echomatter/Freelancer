@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { runJourneys, journeys } from '../scripts/test-browser.mjs';
 
 test('browser runner preserves the full catalog and continues after a failed journey without retrying it', () => {
-  assert.equal(journeys.length, 17);
+  assert.equal(journeys.length, 18);
   assert.equal(new Set(journeys).size, journeys.length);
   const calls = [], snapshots = [];
   const results = runJourneys({ names: ['first', 'second', 'third'], log: () => {}, record: report => snapshots.push(structuredClone(report)),

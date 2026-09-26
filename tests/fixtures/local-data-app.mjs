@@ -1,5 +1,5 @@
 import { checkedCatalog } from '../../backend/tools/runtime/agent-catalog.mjs';
-import { mkdtemp, mkdir, writeFile, rm } from "node:fs/promises";
+import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import os from "node:os";
@@ -11,7 +11,7 @@ import { createActivityReader } from "../../server/activity.mjs";
 import { defaults } from "../../shared/strategy.mjs";
 
 export async function localDataFixture() {
-  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-history-"));
+  const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "freelancer-history-")));
   const directory = path.join(root, "project");
   await mkdir(directory);
   await writeFile(

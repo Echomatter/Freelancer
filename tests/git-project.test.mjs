@@ -603,11 +603,23 @@ test("linked files fail closed and paths with spaces remain supported", async (t
     "completed",
   );
   if (process.platform !== "win32") {
-    await symlink(
-      path.join(f.root, "elsewhere"),
-      path.join(f.directory, "link"),
-    );
-    await assert.rejects(f.save(["link"]), /Linked files/);
+    const head = await f.runGit("rev-parse", "HEAD");
+    const index = await f.runGit("ls-files", "--stage");
+    const outside = path.join(f.root, "outside.txt");
+    await writeFile(outside, "Outside sentinel");
+    for (const [name, target] of [
+      ["dangling-link", path.join(f.root, "missing.txt")],
+      ["linked-file", outside],
+    ]) {
+      await symlink(target, path.join(f.directory, name));
+      // Rejection and preserved state are the contract, not UI error wording.
+      await assert.rejects(f.save([name]));
+      assert.equal(await f.runGit("rev-parse", "HEAD"), head);
+      assert.equal(await f.runGit("ls-files", "--stage"), index);
+      assert.equal(f.pushes, 0);
+    }
+    assert.equal(await readFile(outside, "utf8"), "Outside sentinel");
+    assert.equal(await readFile(path.join(f.directory, "file with spaces.txt"), "utf8"), "data");
   }
 });
 

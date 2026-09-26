@@ -4,11 +4,12 @@ import path from 'node:path';
 import os from 'node:os';
 import { createHash, randomUUID } from 'node:crypto';
 import { createLocalDataService } from './data/store.mjs';
+import { cleanWindowsPath, pathIdentity } from './path-identity.mjs';
 
 export const importedChatID = id => /^ses_chatgpt_[a-f0-9]{32}$/.test(id ?? '');
-const cleanPath = value => String(value).replace(/^\\\\\?\\/, '');
-const pathKey = value => process.platform === 'win32' ? path.resolve(cleanPath(value)).toLowerCase() : path.resolve(value);
-const same = (a, b) => pathKey(a) === pathKey(b);
+const cleanPath = cleanWindowsPath;
+const pathKey = pathIdentity.key;
+const same = pathIdentity.same;
 const inside = (root, file) => { const relative = path.relative(root, file); return relative && relative !== '..' && !relative.startsWith('..' + path.sep) && !path.isAbsolute(relative); };
 const timestamp = value => Number.isFinite(Date.parse(value)) ? Date.parse(value) : 0;
 const MAX_BYTES = 64 * 1024 * 1024;
@@ -168,7 +169,9 @@ export function createChatGPTImport({ app, backendRoot, dataRoot,
         const chats = [];
         for (const source of rows) {
           // Snapshot the previewed length; later appends are intentionally not synced.
-          if (!same(await realpath(source.filename), source.filename)) throw Error('The transcript location changed. Review the import again.');
+          // Compare the captured resolved location lexically; resolving both sides
+          // here would silently follow a link retargeted after preview.
+          if (pathIdentity.lexicalKey(await realpath(source.filename)) !== pathIdentity.lexicalKey(source.filename)) throw Error('The transcript location changed. Review the import again.');
           const file = await open(source.filename, 'r');
           try {
             const info = await file.stat();

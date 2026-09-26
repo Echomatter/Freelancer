@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   application:
+    # Retain the existing check names for repositories that already require them.
     name: Application (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
@@ -31,39 +32,81 @@ jobs:
           node-version: 22
           package-manager-cache: false
       - run: npm ci
+        id: dependencies
       - name: JavaScript contracts and real Git fixtures
+        id: javascript
         run: npm test
       - name: Python content-index and evidence contracts
+        id: python
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: python -m unittest discover -s backend/tests -p '*_test.py'
       - name: Native plugin typecheck
+        id: plugin
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: npx tsc --noEmit --target ES2022 --moduleResolution bundler --module esnext --skipLibCheck backend/opencode/plugins/delegation.ts backend/opencode/plugins/git-project.ts
       - name: Palette contract
+        id: palette
+        if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}
         run: node scripts/palette-css.mjs --check
-      - name: Typecheck and build production UI
-        run: npm run build
-      - name: Install Chromium
-        run: npx playwright install chromium
-      - name: Production browser journeys
-        run: npm run test:browser
       - name: PowerShell selector and outcome contracts
-        if: runner.os == 'Windows'
+        id: powershell
+        if: ${{ !cancelled() && runner.os == 'Windows' && steps.dependencies.outcome == 'success' }}
         shell: powershell
         run: |
           & backend/tests/selector-contract.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           & backend/tests/outcome-contract.ps1
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Install native compatibility baseline
-        if: runner.os == 'Windows'
-        shell: powershell
-        run: npm install --global --prefix "$env:APPDATA\npm" opencode-ai@1.18.31
-      - name: Native startup smoke (no inference)
-        if: runner.os == 'Windows'
-        shell: powershell
+      - name: Record exact-checkout evidence
+        if: always()
         env:
-          XDG_DATA_HOME: ${{ runner.temp }}/freelancer-native-data
-          FREELANCER_DATA_HOME: ${{ runner.temp }}/freelancer-library
-        run: npm run smoke:runtime
+          VERIFICATION_STEPS: ${{ toJSON(steps) }}
+          VERIFICATION_JOB: application
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verification-evidence.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: contracts-${{ matrix.os }}
+          path: artifacts/verification/
+          if-no-files-found: warn
+          retention-days: 7
+
+  browser:
+    # Deliberately independent: a contract failure must not hide UI evidence.
+    name: Browser (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+        id: dependencies
+      - name: Typecheck and build production UI
+        id: build
+        run: npm run build
+      - name: Install Chromium
+        id: chromium
+        run: npx playwright install chromium
+      - name: Production browser journeys (simulated services)
+        id: browser
+        run: npm run test:browser
+      - name: Record exact-checkout evidence
+        if: always()
+        env:
+          VERIFICATION_STEPS: ${{ toJSON(steps) }}
+          VERIFICATION_JOB: browser
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verification-evidence.mjs
       - uses: actions/upload-artifact@v7
         if: always()
         with:
@@ -71,5 +114,70 @@ jobs:
           path: |
             artifacts/
             test-results/
-          if-no-files-found: ignore
+          if-no-files-found: warn
           retention-days: 7
+
+  native:
+    name: Native startup (Windows, no inference)
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+        id: dependencies
+      - name: Build runtime assets
+        id: build
+        run: npm run build
+      - name: Install native compatibility baseline
+        id: native_install
+        shell: powershell
+        run: npm install --global --prefix "$env:APPDATA\npm" opencode-ai@1.18.31
+      - name: Native startup smoke (no inference)
+        id: native_smoke
+        shell: powershell
+        env:
+          XDG_DATA_HOME: ${{ runner.temp }}/freelancer-native-data
+          FREELANCER_DATA_HOME: ${{ runner.temp }}/freelancer-library
+        run: npm run smoke:runtime
+      - name: Record exact-checkout evidence
+        if: always()
+        env:
+          VERIFICATION_STEPS: ${{ toJSON(steps) }}
+          VERIFICATION_JOB: native-startup
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: node scripts/verification-evidence.mjs
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: native-startup-windows
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 7
+
+  verification:
+    name: Verify
+    if: always()
+    needs: [application, browser, native]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Require every verification job
+        env:
+          CHECK_RESULTS: ${{ toJSON(needs) }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          const checks = JSON.parse(process.env.CHECK_RESULTS);
+          const required = ['application', 'browser', 'native'];
+          const rows = required.map(name => [name, checks[name]?.result ?? 'missing']);
+          appendFileSync(process.env.GITHUB_STEP_SUMMARY,
+            '## Verification results\n\n' + rows.map(([name, result]) => `- ${name}: ${result}`).join('\n') +
+            '\n\nLive provider inference was not run. See docs/release-acceptance.md before claiming release readiness.\n');
+          if (rows.some(([, result]) => result !== 'success')) process.exitCode = 1;
+          NODE

@@ -64,7 +64,7 @@ test('Node indexer skips an unreadable extraction and keeps searchable sources',
 });
 
 test('Node indexer extracts DOCX, XLSX, ZIP virtual sources and stores structured facts', async t => {
-  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-node-index-formats-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-Node-Index-Formats-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createLocalDataStore(data);store.close();
   const docx=zip({'word/document.xml':'<w:document xmlns:w="w"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Voyager dossier</w:t></w:r></w:p><w:p><w:r><w:t>Speed: 9 km per second</w:t></w:r></w:p><w:p><w:r><w:t>Mission: Jupiter exploration</w:t></w:r></w:p></w:body></w:document>'});
   const xlsx=zip({'xl/workbook.xml':'<workbook xmlns:r="r"><sheets><sheet name="Ships" r:id="rId1"/></sheets></workbook>','xl/_rels/workbook.xml.rels':'<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>','xl/sharedStrings.xml':'<sst><si><t>Name</t></si><si><t>Speed</t></si><si><t>Enterprise</t></si><si><t>Warp 9</t></si></sst>','xl/worksheets/sheet1.xml':'<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c></row></sheetData></worksheet>'});
@@ -72,7 +72,17 @@ test('Node indexer extracts DOCX, XLSX, ZIP virtual sources and stores structure
   const indexer=path.resolve('backend/tools/project-content-indexer.mjs'),db=path.join(data,'freelancer.sqlite'),invoke=(...args)=>spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,...args],{cwd:project,encoding:'utf8'});
   const build=invoke('rebuild','--root',project,'--facts','general');assert.equal(build.status,0,build.stderr);const summary=JSON.parse(build.stdout);assert.equal(summary.extraction_failures.length,0,build.stderr);assert.ok(summary.facts>0,JSON.stringify(summary));
   assert.match(invoke('search','Jupiter').stdout,/voyager\.docx/);assert.match(invoke('search','Warp').stdout,/ships\.xlsx/);assert.match(invoke('search','nebula').stdout,/archive\.zip!manual\.txt/);
-  const query=new DatabaseSync(db,{readOnly:true});assert.ok(query.prepare("SELECT COUNT(*) n FROM content_facts f JOIN content_sources s ON s.source_id=f.source_id WHERE s.project_key=?").get(project.toLowerCase()).n>0,JSON.stringify(query.prepare('SELECT * FROM content_meta WHERE project_key=?').all(project.toLowerCase())));query.close();
+  // The production key is case-folded only on Windows. Mixed case in the
+  // fixture prefix makes a POSIX regression deterministic, not seed-dependent.
+  const key = process.platform === 'win32' ? project.toLowerCase() : project;
+  const query = new DatabaseSync(db, { readOnly: true });
+  try {
+    assert.ok(query.prepare('SELECT COUNT(*) n FROM content_facts f JOIN content_sources s ON s.source_id=f.source_id WHERE s.project_key=?').get(key).n > 0,
+      JSON.stringify(query.prepare('SELECT * FROM content_meta WHERE project_key=?').all(key)));
+    if (process.platform !== 'win32') {
+      assert.equal(query.prepare('SELECT COUNT(*) n FROM content_sources WHERE project_key=?').get(project.toLowerCase()).n, 0);
+    }
+  } finally { query.close(); }
 });
 
 test('Node indexer honors special fact rules and exposes aggregate fact statistics', async t => {

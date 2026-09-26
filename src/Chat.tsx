@@ -682,6 +682,7 @@ export function Chat({
   const requestGroups = useMemo(() => buildRequestGroups(messages), [messages]);
   const requestContent = useMemo(() => requestGroups.map((request, requestIndex, all) => {
     const isLast = requestIndex === all.length - 1;
+    const firstRequestHasTool = requestIndex === 0 && request.responseMessages.some((message) => message.parts?.some((part) => part.type === "tool"));
     if (isLast) taskHistory.current.set(request.key, todos);
     const requestTodos = isLast ? todos : (taskHistory.current.get(request.key) ?? EMPTY_TODOS);
     const summary = summarizeRequestWork(request.allMessages, requestTodos);
@@ -689,16 +690,24 @@ export function Chat({
     const responseGroups = groupMessages(request.responseMessages);
     return (
       <section key={request.key} className="request-group" aria-label={`Request ${requestIndex + 1}`}>
+        {firstRequestHasTool && (
+          <RequestWorking summary={summary} changeCount={isLast ? changeCount : 0}
+            live={isLast && busy} messages={request.responseMessages}
+            requestKey={request.key} expanded={expandedWork === request.key && dock?.key !== request.key}
+            onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
+        )}
         {userGroups.map((group) => (
           <article key={group.key} className={`message ${group.role}`}>
             <div className="message-label"><GroupLabel role={group.role} models={[]} /></div>
             <div className="message-body"><GroupBody group={group} onChild={openChild} /></div>
           </article>
         ))}
-        <RequestWorking summary={summary} changeCount={isLast ? changeCount : 0}
-          live={isLast && busy} messages={request.responseMessages}
-          requestKey={request.key} expanded={expandedWork === request.key && dock?.key !== request.key}
-          onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
+        {!firstRequestHasTool && (
+          <RequestWorking summary={summary} changeCount={isLast ? changeCount : 0}
+            live={isLast && busy} messages={request.responseMessages}
+            requestKey={request.key} expanded={expandedWork === request.key && dock?.key !== request.key}
+            onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
+        )}
         {isLast && pendingDecisions > 0 && (
           <div className="decision-banner" role="status">
             <span>Needs your decision · {pendingDecisions} pending — review to continue.</span>

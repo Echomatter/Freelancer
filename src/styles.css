@@ -2185,6 +2185,8 @@ select optgroup {
 /* Work stays together; prose retains the normal reading rhythm. */
 .chat-scroll { min-height: 0; overflow-anchor: none; overscroll-behavior: contain; }
 .chat-transcript { display: flow-root; }
+.chat-transcript > .request-group:first-child:has(> .request-working:first-child) { padding-top: 0; }
+.chat-transcript > .request-group:first-child:has(> .request-working:first-child) > .request-working:first-child { margin-top: -20px; }
 /* Precise card positions are needed for handoff in either scroll direction. */
 .request-group:not(:last-child) { content-visibility: visible; contain-intrinsic-size: none; }
 .request-working { display: block; padding: 0; overflow: hidden; }

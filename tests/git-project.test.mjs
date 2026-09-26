@@ -405,6 +405,16 @@ test("GitHub binding never uploads or changes an unrelated origin", async (t) =>
     "https://github.com/other/project.git",
   );
 });
+test("reconfirming the same GitHub link refreshes saved visibility without uploading", async (t) => {
+  const f = await fixture(t);
+  await f.initialize();
+  await f.bind();
+  assert.equal((await f.service.policy(f.p.id)).repository.private, true);
+  f.visibility(false);
+  await f.bind();
+  assert.equal((await f.service.policy(f.p.id)).repository.private, false);
+  assert.equal(f.pushes, 0);
+});
 test("insecure/unknown credential storage cannot be used for publishing", async (t) => {
   const f = await fixture(t);
   await f.initialize();

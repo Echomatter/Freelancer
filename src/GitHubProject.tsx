@@ -527,6 +527,21 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
                       ? "Uploads follow your agreement below."
                       : "Uploads are off."}
                   </small>
+                  {data.auth.connected && policy.tracking && (
+                    <Button
+                      variant="quiet"
+                      disabled={disabled}
+                      onClick={() =>
+                        ask(
+                          "bind",
+                          "Refresh linked project details?",
+                          `Recheck ${repo.name} and update the saved account, destination, and visibility if they changed. This does not change GitHub settings or upload files.`,
+                        )
+                      }
+                    >
+                      Refresh linked project details
+                    </Button>
+                  )}
                 </div>
               )}
               {data.auth.connected && !repo && !policy.tracking && (

@@ -17,6 +17,19 @@ try {
   await page.goto(url);
   const scroll = page.locator('.chat-scroll');
   const dock = page.locator('.request-dock');
+  await page.getByRole('button', { name: 'Show first tool' }).click();
+  const firstCard = page.locator('.request-group .request-working[data-request-work-key]').first();
+  await firstCard.waitFor();
+  await page.waitForTimeout(100);
+  const firstCardPosition = await firstCard.evaluate((element) => ({
+    card: element.getBoundingClientRect().top,
+    scroll: document.querySelector('.chat-scroll').getBoundingClientRect().top,
+    scrollTop: document.querySelector('.chat-scroll').scrollTop,
+  }));
+  assert.ok(Math.abs(firstCardPosition.card - firstCardPosition.scroll) < 4,
+    `the first work card moves to the top as soon as it appears (${JSON.stringify(firstCardPosition)})`);
+  await page.getByRole('button', { name: 'Switch chat' }).click();
+  await page.waitForTimeout(80);
   const positionCard = async (index, offset = 0) => {
     await scroll.evaluate((element, { index, offset }) => {
       const card = element.querySelectorAll('.request-working[data-request-work-key]')[index];

@@ -27,6 +27,7 @@ function Fixture() {
   return <main style={{height:'100vh', display:'flex', flexDirection:'column'}}>
     <nav style={{padding:12,display:'flex',gap:12}} aria-label="Fixture controls">
       <button onClick={add}>Append response</button>
+      <button onClick={() => { setMessages([{ info: { id: 'first-user', role: 'user' }, parts: [{ type: 'text', text: 'Start a new conversation.' }] }, { info: { id: 'first-tool', role: 'assistant' }, parts: [{ id: 'first-read', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: 'src/first.ts' }, output: 'First tool output.' } }] }]); }}>Show first tool</button>
       <button onClick={() => { setBusy(true); setMessages(rows => [...rows, { info: { id: `live-${rows.length}`, role: 'assistant' }, parts: [{ id: `live-tool-${rows.length}`, type: 'tool', tool: 'read', state: { status: 'running', input: { filePath: 'src/live-update.ts' } } }] }]); }}>Append tool</button>
       <button onClick={() => { setSession(session === 'one' ? 'two' : 'one'); setMessages(initial); setBusy(false); }}>Switch chat</button>
       <button onClick={() => setMessages(rows => [...rows, {info:{id:'helper',role:'assistant'},parts:[{id:'delegate',type:'tool',tool:'delegate',state:{status:'completed',input:{agentID:'researcher'},metadata:{agentName:'Researcher',selected_model:'opencode/free',sessionId:'child-fixture'}}}]}])}>Add helper</button>

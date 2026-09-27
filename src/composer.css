@@ -1,0 +1,77 @@
+/* One outline language for tools, support cards, and top-level navigation. */
+.work-icon {
+  display: inline-flex; align-items: center; justify-content: center; flex: 0 0 auto;
+  box-sizing: border-box; width: 30px; height: 30px; border: 1px solid var(--accent);
+  border-radius: 9px; background: var(--tint); color: var(--accent);
+}
+.work-icon > svg { flex: 0 0 auto; }
+.chat-view .request-dock { position: relative; inset: auto; z-index: 5; flex: 0 0 auto; margin: 0 20px; padding: 8px 0; pointer-events: auto; will-change: auto; background: var(--bg); }
+.request-dock-context { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 3px 6px; font-size: 10px; color: var(--muted); }
+.request-dock-context button { display: inline-flex; gap: 4px; align-items: center; padding: 0; border: 0; background: none; color: var(--accent); font-size: 11px; }
+.chat-view .request-dock .request-working { border: 1px solid var(--accent); border-radius: 12px; box-shadow: none; overflow: hidden; }
+.chat-view .request-working-head { padding: 8px 10px; min-height: 46px; gap: 10px; }
+.chat-view .request-working.is-docked > .request-working-body { position: relative; inset: auto; max-height: min(36dvh, 340px); border: 0; border-top: 1px solid var(--line); border-radius: 0; box-shadow: none; padding: 10px; }
+.chat-view .request-marker { display: flex; align-items: center; gap: 8px; width: fit-content; max-width: 100%; min-height: 36px; margin: 10px 0 16px; padding: 3px 8px 3px 3px; border: 1px solid var(--border-strong); border-radius: 10px; background: var(--paper); color: var(--text); font-size: 11px; text-align: left; }
+.request-marker .work-icon { width: 26px; height: 26px; border-radius: 7px; }
+.request-marker small { color: var(--muted); font-size: 10px; }
+.request-marker:hover, .request-marker[aria-expanded=true] { border-color: var(--accent); background: var(--tint); }
+.request-marker > svg { color: var(--accent); margin-left: auto; flex: 0 0 auto; }
+.chat-view .composer-wrap { padding-top: 8px; z-index: 6; }
+.chat-view .composer { position: relative; padding: 10px; border: 1px solid var(--border-strong); border-bottom: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -4px 20px var(--shadow-soft); }
+.chat-view .composer:focus-within, .chat-view .composer.dragging { border-color: var(--accent); }
+.composer-entry { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: end; gap: 10px; }
+.composer .composer-entry textarea { min-height: 44px; max-height: 160px; padding: 11px 0; line-height: 22px; overflow-y: auto; resize: none; font-size: 14px; }
+.composer-entry .sender-controls { grid-column: auto; grid-row: auto; }
+.composer-entry .sender-main, .composer-menu-trigger { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; flex-shrink: 0; }
+.composer-entry .sender-main.handoff { box-shadow: none; }
+.composer-menu-trigger { border: 1px solid var(--border-strong); background: var(--tint); color: var(--accent); cursor: pointer; }
+.composer-menu-trigger[aria-expanded=true], .composer-menu-trigger:hover { border-color: var(--accent); background: var(--hover); }
+.composer-context { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 54px 2px; color: var(--muted); font-size: 10px; min-width: 0; }
+.composer-context > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.composer-context > span:last-child { text-align: right; }
+.composer-menu { position: static; }
+.composer-menu-panel { position: fixed; bottom: calc(100% + 6px); left: 0; width: min(440px, 100%); max-height: min(60dvh, 520px); overflow-y: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--accent); border-radius: 16px; background: var(--paper); color: var(--text); box-shadow: 0 -8px 28px var(--shadow); z-index: 40; }
+.composer-menu-panel[hidden] { display: none; }
+.composer-menu-panel > header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; font-size: 13px; }
+.composer-menu-panel > header button { display: grid; place-items: center; width: 30px; height: 30px; border: 0; border-radius: 8px; background: var(--bg); color: var(--muted); }
+.composer-menu-attach { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); color: var(--text); text-align: left; }
+.composer-menu-attach > span:last-child { display: grid; gap: 4px; }
+.composer-menu-attach strong { font-size: 12px; }
+.composer-menu-attach small, .composer-menu-panel > p { font-size: 11px; color: var(--muted); line-height: 1.5; }
+.composer-menu-panel > p { margin: 12px 0 0; }
+.composer-menu-panel .composer-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.composer-menu-panel .composer-model-pair { grid-column: 1 / -1; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; }
+.composer-menu-panel select { width: 100%; max-width: 100%; min-height: 40px; padding: 8px 9px; border: 1px solid var(--line); border-radius: 9px; background: var(--bg); color: var(--text); font-size: 12px; }
+.composer-menu-panel .composer-choice > span { padding-left: 0; font-size: 11px; }
+.composer-menu-panel button:hover:not(:disabled) { border-color: var(--accent); }
+.composer-menu-trigger:focus-visible, .request-marker:focus-visible { outline: 2px solid var(--focus); outline-offset: 3px; }
+.composer-cards .work-card { border: 1px solid var(--border-strong); border-radius: 12px; }
+.composer-cards { max-height: min(32dvh, 260px); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; gap: 5px; margin-bottom: 6px; }
+.work-card .work-card-heading { padding: 4px 7px; }
+.work-card .work-card-toggle { padding: 3px; gap: 9px; }
+.work-card-label { flex: 1; min-width: 0; display: grid; gap: 3px; }
+.work-card-label small { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: var(--muted); font-size: 11px; }
+.work-card .work-card-body { padding: 0 13px 9px; }
+.work-card.needs-attention { border-color: var(--warning); }
+.work-card .composer-attachments { margin: 4px 0; }
+.work-card .composer-attachment { flex: 1 1 150px; max-width: 100%; min-height: 36px; }
+.work-card .composer-attachment button { width: 30px; height: 30px; }
+.work-card .composer-attachment > span { flex: 1; }
+.sender-options { gap: 8px; }
+.sender-options button { padding: 13px; border-radius: 12px; }
+.sender-options strong { font-size: 14px; }
+.sender-options span { font-size: 12px; }
+.sender-preview { padding: 10px 12px; margin: 4px 0 12px; max-height: 90px; font-size: 13px; }
+@media(max-width: 760px) {
+  .chat-view .request-dock { margin-inline: 12px; }
+}
+@media(max-width: 520px) {
+  .chat-view .request-dock { margin-inline: 10px; }
+  .composer-entry { gap: 8px; }
+  .composer-context { padding-inline: 2px; font-size: 10px; }
+  .composer-menu-panel { padding: 12px; }
+  .composer-menu-panel .composer-selects { gap: 10px; }
+  .composer-menu-panel .composer-model-pair { grid-template-columns: minmax(0, 1fr); }
+  .request-marker small { max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-view .request-working.is-docked > .request-working-body { max-height: 30dvh; }
+}

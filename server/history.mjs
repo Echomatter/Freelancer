@@ -216,9 +216,11 @@ export function createHistoryService({
               idPattern.test(session.id || "") && sameDirectory(session.directory, project.directory) && !systemSessions.has(session.id));
             const imported = app.chatgpt?.list(project.id) ?? [];
             const seen = new Set([...valid, ...imported].map((session) => session.id));
+            let current = 0;
             for (const session of valid) {
+              current++;
               signal?.throwIfAborted();
-              onProgress(`Indexing conversations · ${project.name} (${valid.indexOf(session) + 1}/${valid.length})`);
+              onProgress(`Indexing conversations · ${project.name} (${current}/${valid.length})`);
               try {
                 const messages = await request(project, `/session/${encodeURIComponent(session.id)}/message`);
                 if (!Array.isArray(messages)) throw Error("OpenCode did not return messages.");

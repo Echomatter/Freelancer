@@ -32,14 +32,9 @@ export async function delegatedGitGroup({
     child,
     childMessage,
   );
-  const legacyWorkflowGate =
-    assignment?.policyVersion < 5 &&
-    (assignment.readOnly ||
-      assignment.workflow?.mode !== "build" ||
-      assignment.workflow?.id !== "sync");
   if (
     !assignment?.taskID ||
-    legacyWorkflowGate ||
+    assignment.readOnly ||
     !assignment.delegateCallID ||
     !assignment.parentAssistantID
   )

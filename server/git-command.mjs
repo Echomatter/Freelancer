@@ -71,6 +71,7 @@ export function command(
     timeout = 30000,
     maxBytes = 8 * 1024 * 1024,
     onOutput,
+    output = "text",
     signal,
   } = {},
 ) {
@@ -128,7 +129,10 @@ export function command(
       clearTimeout(timer);
       resolve({
         code,
-        stdout: Buffer.concat(stdout).toString("utf8"),
+        stdout:
+          output === "buffer"
+            ? Buffer.concat(stdout)
+            : Buffer.concat(stdout).toString("utf8"),
         stderr: Buffer.concat(stderr).toString("utf8"),
       });
     });

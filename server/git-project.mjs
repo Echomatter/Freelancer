@@ -1,4 +1,5 @@
 import { delegatedGitGroup } from "./git-delegation.mjs";
+import { createGitRequests } from "./git-request.mjs";
 import path from "node:path";
 import os from "node:os";
 import {
@@ -493,10 +494,10 @@ export function createGitProjects({
     }
     return repo;
   }
-  async function updatePolicy(id, input) {
-    return locked(id, async () => {
+  async function updatePolicy(id, input, actor = {}, withinLock = false) {
+    const apply = async () => {
       const p = await project(id);
-      await idle(p);
+      await idle(p, actor);
       const current = await policy(id);
       if (input.revision !== current.revision)
         throw Error("These settings changed elsewhere. Reload before saving.");
@@ -527,7 +528,8 @@ export function createGitProjects({
         return s;
       });
       return next;
-    });
+    };
+    return withinLock ? apply() : locked(id, apply);
   }
   async function updateDefaults(input) {
     const preset = projectAgreement({ preset: input.preset }).preset;
@@ -916,6 +918,50 @@ export function createGitProjects({
       throw Error("GitHub returned an unexpected branch.");
     return oid;
   }
+  function parseBatchCheck(raw) {
+    return raw
+      .trim()
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => {
+        const [oid, type, sizeText, extra] = line.split(" ");
+        if (
+          extra !== undefined ||
+          !/^[a-f0-9]{40,64}$/.test(oid) ||
+          !type ||
+          !/^\d+$/.test(sizeText)
+        )
+          throw Error("Cannot inspect outgoing history.");
+        return { oid, type, size: Number(sizeText) };
+      });
+  }
+  function parseBatchBlobs(buffer, expected) {
+    const blobs = [];
+    let offset = 0;
+    for (const want of expected) {
+      const headerEnd = buffer.indexOf(10, offset);
+      if (headerEnd < 0) throw Error("Cannot inspect outgoing history.");
+      const header = buffer.toString("utf8", offset, headerEnd),
+        [oid, type, sizeText, extra] = header.split(" "),
+        size = Number(sizeText),
+        start = headerEnd + 1,
+        end = start + size;
+      if (
+        extra !== undefined ||
+        oid !== want.oid ||
+        type !== "blob" ||
+        !Number.isSafeInteger(size) ||
+        size !== want.size ||
+        end >= buffer.length ||
+        buffer[end] !== 10
+      )
+        throw Error("Cannot inspect outgoing history.");
+      blobs.push(buffer.subarray(start, end));
+      offset = end + 1;
+    }
+    if (offset !== buffer.length) throw Error("Cannot inspect outgoing history.");
+    return blobs;
+  }
   async function inspectOutgoing(p, head, remote) {
     if (!head) return { commits: [], count: 0 };
     if (
@@ -945,7 +991,8 @@ export function createGitProjects({
       throw Error(
         "This upload is too large to inspect automatically. Review/import it separately first.",
       );
-    let bytes = 0;
+    if (!objects.length) return { commits, count: commits.length };
+    const pathsByOid = new Map();
     for (const entry of objects) {
       const [oid, ...rest] = entry.split(" "),
         file = rest.join(" ");
@@ -955,23 +1002,45 @@ export function createGitProjects({
         throw Error(
           `Outgoing history includes ${file}, even if it was later deleted. Remove private/generated history manually before uploading.`,
         );
-      const type = (
-        await git(p.directory, ["cat-file", "-t", oid])
-      ).stdout.trim();
-      if (type !== "blob") continue;
-      const size = Number(
-        (await git(p.directory, ["cat-file", "-s", oid])).stdout.trim(),
-      );
+      pathsByOid.set(oid, file);
+    }
+    const checked = parseBatchCheck(
+      (
+        await git(p.directory, ["cat-file", "--batch-check"], {
+          input: [...pathsByOid.keys()].join("\n") + "\n",
+          maxBytes: 2 * 1024 * 1024,
+        })
+      ).stdout,
+    );
+    if (checked.length !== pathsByOid.size)
+      throw Error("Cannot inspect outgoing history.");
+    const blobs = [];
+    let bytes = 0;
+    const expectedOids = [...pathsByOid.keys()];
+    for (const [index, object] of checked.entries()) {
+      if (object.oid !== expectedOids[index]) throw Error("Cannot inspect outgoing history.");
+      if (object.type !== "blob") continue;
+      const size = object.size;
       bytes += size;
       if (!Number.isFinite(size) || size > maxFile || bytes > 30 * 1024 * 1024)
         throw Error(
           "Outgoing history exceeds the safe content-inspection limit. Review it separately.",
         );
-      if (
-        containsCredential(
-          (await git(p.directory, ["cat-file", "blob", oid])).stdout,
-        )
-      )
+      blobs.push(object);
+    }
+    for (let i = 0; i < blobs.length; i += 64) {
+      const chunk = blobs.slice(i, i + 64),
+        contents = parseBatchBlobs(
+          (
+            await git(p.directory, ["cat-file", "--batch"], {
+              input: chunk.map((o) => o.oid).join("\n") + "\n",
+              maxBytes: chunk.reduce((sum, o) => sum + o.size, 0) + chunk.length * 120,
+              output: "buffer",
+            })
+          ).stdout,
+          chunk,
+        );
+      if (contents.some((content) => containsCredential(content)))
         throw Error(
           "A possible credential exists in outgoing history. Removing it from the current file is not enough. Nothing was uploaded.",
         );
@@ -1609,10 +1678,8 @@ export function createGitProjects({
       return publicOperation(r);
     });
   }
-  async function beforeBuild(id, session, workflow) {
-    // Inspection and managed Sync work on the checked-out branch. Only an
-    // implementation request may prepare/switch a task branch.
-    if (workflow?.mode !== "build" || workflow?.id === "sync") return;
+  async function prepareTask(id, session) {
+    // Explicit tool action; agent/workflow names never trigger checkout changes.
     const agreement = await policy(id);
     if (!agreement.tracking) return;
     if (agreement.preset === "inspect") return;
@@ -1664,7 +1731,10 @@ export function createGitProjects({
         leases.set(id, { sessionID: session, messageID: null });
     }, true);
   }
+  const requests = createGitRequests({ store, project, policy, idle, repository, local, git, gh, transport, remoteMetadata, inspectOutgoing, updatePolicy: (id, input, actor) => updatePolicy(id, input, actor, true), now });
   return {
+    requestPreview: (id, input, actor = {}) => locked(id, () => requests.preview(id, input, actor)),
+    requestExecute: (id, input, actor = {}) => locked(id, () => requests.execute(id, input, actor)),
     inspect,
     async changedFiles(id) {
       const p = await project(id);
@@ -1687,7 +1757,7 @@ export function createGitProjects({
     execute,
     stageInitialSource,
     merge,
-    beforeBuild,
+    prepareTask,
     finishDispatch(id, session, messageID) {
       const lease = leases.get(id);
       if (!lease || lease.sessionID !== session) return;

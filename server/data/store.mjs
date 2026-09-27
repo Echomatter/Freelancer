@@ -268,7 +268,11 @@ export function createLocalDataStore(directory) {
       }));
     },
     chatGPTChat(project, id) {
-      const chat = this.chatGPTChats(project).find(chat => chat.id === id);
+      const row = db.prepare('SELECT * FROM chatgpt_chats WHERE project_id=? AND id=?').get(project, id);
+      const chat = row && {
+        id: row.id, title: row.title, directory: row.directory, imported: true, sourceID: row.source_id,
+        time: { created: row.created_at, updated: row.updated_at }, source: JSON.parse(row.source_json),
+      };
       if (!chat) return null;
       return { ...chat, messages: db.prepare('SELECT message_json FROM chatgpt_messages WHERE project_id=? AND chat_id=? ORDER BY ordinal')
         .all(project, id).map(row => JSON.parse(row.message_json)) };

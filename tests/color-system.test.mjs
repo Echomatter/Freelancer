@@ -23,9 +23,9 @@ async function fixture(t) {
 test('palette registry keeps legacy identities and adds bespoke palettes', () => {
   assert.deepEqual(palettes.slice(0, 16).map(p => p.id), ['light', 'dark', 'sandstone', 'midnight', 'coast', 'lilac', 'ember', 'aurora',
     'porcelain', 'rosewater', 'matcha', 'marigold', 'graphite', 'mulberry', 'fjord', 'espresso']);
-  assert.equal(palettes.length, 120);
-  assert.equal(lightPalettes.length, 60);
-  assert.equal(darkPalettes.length, 60);
+  assert.equal(palettes.length, 180);
+  assert.equal(lightPalettes.length, 90);
+  assert.equal(darkPalettes.length, 90);
   assert.equal(new Set(palettes.map(p => p.id)).size, palettes.length);
   assert.equal(new Set(palettes.map(p => p.name)).size, palettes.length);
   assert.equal(themePalette('light').tokens.bg, '#f8f9f6');
@@ -53,34 +53,36 @@ test('every palette defines the same semantic tokens and generated CSS cannot dr
     assert.doesNotMatch(css, /#[a-f\d]{3,8}\b|rgba?\(|hsla?\(/i, `${filename} must use tokens for application colors`);
   }
 });
-for (const p of palettes) {
-  test(`${p.name}: normal text, state text, primary buttons and focus have tested contrast`, () => {
+test('All palettes meet semantic text, state, button and focus contrast', () => {
+  for (const p of palettes) {
     const t = p.tokens, surfaces = [t.bg, t.paper, t.sidebar, t.tint, t.hover];
     for (const surface of surfaces) {
       for (const role of ['text', 'muted', 'accent', 'link']) assert.ok(contrast(t[role], surface) >= 4.5, `${p.id} ${role} on ${surface}`);
       assert.ok(contrast(t.focus, surface) >= 3, `${p.id} focus on ${surface}`);
     }
-    for (const surface of [t.bg, t.paper, t.sidebar]) assert.ok(contrast(t['border-strong'], surface) >= 3);
+    for (const surface of [t.bg, t.paper, t.sidebar]) assert.ok(contrast(t['border-strong'], surface) >= 3, `${p.id}: border on ${surface}`);
     for (const role of ['success', 'danger', 'warning', 'info']) {
-      assert.ok(contrast(t[role], t[role + '-tint']) >= 4.5, `${role} status`);
-      assert.ok(contrast(t.text, t[role + '-tint']) >= 4.5, `${role} body`);
+      assert.ok(contrast(t[role], t[role + '-tint']) >= 4.5, `${p.id}: ${role} status`);
+      assert.ok(contrast(t.text, t[role + '-tint']) >= 4.5, `${p.id}: ${role} body`);
     }
-    for (const bg of [t.accent, t['accent-hover']]) assert.ok(contrast(bg, t['accent-contrast']) >= 4.5, `primary ${bg}`);
-  });
-  test(`${p.name}: provider shades stay readable, including hostile edge-case swatches`, () => {
+    for (const bg of [t.accent, t['accent-hover']]) assert.ok(contrast(bg, t['accent-contrast']) >= 4.5, `${p.id}: primary ${bg}`);
+  }
+});
+test('All palettes keep provider shades readable, including hostile custom colors', () => {
+  for (const p of palettes) {
     const candidates = [...Object.values(providerDefaults), ...providerColorPresets.map(p => p.color), '#ffffff', '#000000', '#ffff00', '#777777', '#00ffff', '#ff00ff'];
     // Deterministic hue sampling also exercises non-preset custom choices.
     for (let i = 0; i < 96; i++) candidates.push('#' + ((i * 104729 + 7919) % 16777216).toString(16).padStart(6, '0'));
     for (const color of candidates) {
       const t = providerTokens('openai', { theme: p.id, providerColors: { openai: color } });
       for (const surface of [p.tokens.bg, p.tokens.paper, p.tokens.sidebar, p.tokens.hover, p.tokens.tint, t['--provider-tint']]) {
-        assert.ok(contrast(t['--provider-fg'], surface) >= 4.5, `${color} on ${surface}`);
-        assert.ok(contrast(t['--provider-border'], surface) >= 3);
+        assert.ok(contrast(t['--provider-fg'], surface) >= 4.5, `${p.id}: ${color} on ${surface}`);
+        assert.ok(contrast(t['--provider-border'], surface) >= 3, `${p.id}: ${color} border on ${surface}`);
       }
-      assert.ok(contrast(t['--provider-solid'], t['--provider-on-solid']) >= 4.5);
+      assert.ok(contrast(t['--provider-solid'], t['--provider-on-solid']) >= 4.5, `${p.id}: ${color} solid foreground`);
     }
-  });
-}
+  }
+});
 test('provider identity uses exact provider keys rather than model names or broad prefix matching', () => {
   assert.equal(providerID('opencode/free'), 'opencode');
   assert.equal(providerID('opencode-go/model/variant'), 'opencode-go');

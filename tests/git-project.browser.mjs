@@ -191,7 +191,10 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       await response.finished();
     }
     await expect(page.getByRole('button', { name: 'Save agreement', exact: true })).toBeEnabled();
-    await expect(page.getByText('You can explicitly request a different Git action in chat and confirm it there. One-time requests leave these defaults unchanged.')).toBeVisible();
+    await page.getByRole('button', { name: 'Help: Explicit Git requests', exact: true }).focus();
+    await expect(page.getByRole('tooltip')).toContainText('You can explicitly request a different Git action in chat and confirm it there.');
+    await expect(page.getByRole('tooltip')).toContainText('A one-time request leaves the saved defaults unchanged.');
+    await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Ask in chat', exact: true })).toBeVisible();
     assert.equal(
       (await fixture.app.gitProjects.policy(fixture.project.id)).preset,

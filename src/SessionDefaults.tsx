@@ -5,6 +5,7 @@ import { Button, PageCloseButton, PageHeading, Panel, Field } from "./echoflex/C
 import { ParentModelFields } from "./ModelSetup";
 import { modelVariant } from "../domain/workspace.mjs";
 import { api } from "./api";
+import { ContextSettings } from './ContextSettings';
 
 export function SessionDefaults({
   data,
@@ -30,14 +31,12 @@ export function SessionDefaults({
     return (
       <Panel>
         <h3>Choose a project</h3>
-        <p>Open a project to set how its new chats start.</p>
       </Panel>
     );
   if (!draft)
     return (
       <Panel>
         <h3>Loading session defaults…</h3>
-        <p role="status">Please wait for the project settings to load.</p>
       </Panel>
     );
   const workflow = data.settings.workflows.find(
@@ -79,9 +78,7 @@ export function SessionDefaults({
     <div className="session-defaults">
       <PageHeading title="Session defaults" actions={<PageCloseButton onClick={onClose} />} />
       <form onSubmit={save}>
-        <Panel className="session-start">
-          <h3>Start a new chat</h3>
-          <p className="settings-context">New chats in <strong>{data.project.name ?? data.project.directory.split(/[\\/]/).pop()}</strong> start here. Existing chats keep their choices.</p>
+        <Panel className="session-start" title="Start a new chat" help="session-defaults">
           <div className="editor-columns">
             <Field label="Workflow">
               <select
@@ -133,11 +130,6 @@ export function SessionDefaults({
             </div>
           ) : (
             <div className="session-parent-fields">
-              <p>
-                {agent
-                  ? "Choose a parent model for this agent until one is set in its setup."
-                  : "Choose the parent model for chats without an agent."}
-              </p>
               <ParentModelFields
                 data={data}
                 model={draft.parentModel}
@@ -167,18 +159,17 @@ export function SessionDefaults({
           </div>
         </Panel>
       </form>
+      <ContextSettings key={data.project.id} project={data.project.id} />
       <div className="session-setup-links">
         <button onClick={() => onNavigate("agents")}>
           <span>
             <strong>Agents</strong>
-            <small>Prompts, parent models, and intelligence</small>
           </span>
           <ArrowUpRight size={18} />
         </button>
         <button onClick={() => onNavigate("workflows")}>
           <span>
             <strong>Workflows</strong>
-            <small>Instructions, child models, and parallel agents</small>
           </span>
           <ArrowUpRight size={18} />
         </button>

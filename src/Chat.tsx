@@ -1,5 +1,7 @@
 import { ProviderText, ProviderSelect } from "./ProviderColors";
-import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { ConversationRail } from './echoflex/ConversationRail';
+import { reportedContext, turnStatistics } from '../domain/conversation-rail.mjs';
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { clientID, copyText } from "./browser-capabilities.mjs";
@@ -449,6 +451,7 @@ export function Chat({
   pendingDecisions = 0,
   onReviewDecisions,
   onOpenDetails,
+  detailsDivider,
 }: {
   data: any;
   messages: any[];
@@ -478,9 +481,11 @@ export function Chat({
   pendingDecisions?: number;
   onReviewDecisions?: () => void;
   onOpenDetails?: (tab: string) => void;
+  detailsDivider?: ReactNode;
 }) {
   const end = useRef<HTMLDivElement>(null),
     area = useRef<HTMLDivElement>(null);
+  const transcript = useRef<HTMLDivElement>(null), railID = useId();
   const stick = useRef(true);
   const [showNewActivity, setShowNewActivity] = useState(false);
   const [inspectedWork, setInspectedWork] = useState<string | null>(null);
@@ -669,7 +674,7 @@ export function Chat({
     const userGroups = groupMessages(request.userMessages);
     const responseGroups = groupMessages(request.responseMessages);
     return (
-      <section key={request.key} className="request-group" aria-label={`Request ${requestIndex + 1}`}>
+      <section key={request.key} id={`${railID}-${request.key}`} className="request-group" aria-label={`Request ${requestIndex + 1}`}>
         {userGroups.map((group) => (
           <article key={group.key} className={`message ${group.role}`}>
             <div className="message-label"><GroupLabel role={group.role} models={[]} /></div>
@@ -703,27 +708,38 @@ export function Chat({
         ))}
       </section>
     );
-  }), [requestGroups, todos, busy, changeCount, pendingDecisions, data.models, session?.parentID, expandedWork, toggleWork, openChild, openDetails, reviewDecisions]);
+  }), [requestGroups, todos, busy, changeCount, pendingDecisions, data.models, session?.parentID, expandedWork, toggleWork, openChild, openDetails, reviewDecisions, railID]);
   const currentRequest = requestGroups.at(-1);
   const dockKey = inspectedWork && requestGroups.some(request => request.key === inspectedWork) ? inspectedWork : currentRequest?.key;
   const dockIndex = requestGroups.findIndex(request => request.key === dockKey);
   const dockRequest = requestGroups[dockIndex];
   const isCurrentDock = dockKey === currentRequest?.key;
   const dockTodos = isCurrentDock ? todos : (taskHistory.current.get(dockKey ?? '') ?? EMPTY_TODOS);
+  const railTurns = useMemo(() => requestGroups.map((request, index) => ({ key: request.key,
+    target: `${railID}-${request.key}`, label: `Turn ${index + 1}`,
+    ...turnStatistics(request, data.models, busy && index === requestGroups.length - 1),
+  })), [requestGroups, data.models, busy, railID]);
+  const context = useMemo(() => reportedContext(messages, data.models), [messages, data.models]);
+  const dockSummary = dockRequest ? summarizeRequestWork(dockRequest.allMessages, dockTodos) : null;
+  const dockHasContent = dockSummary && (dockSummary.hasWork || dockRequest.responseMessages.some(m => m.info?.summary) || (isCurrentDock && (busy || changeCount > 0)));
   useLayoutEffect(() => { setInspectedWork(null); setExpandedWork(null); }, [currentRequest?.key]);
   return (
-    <div className="chat-view" aria-busy={syncing}>
-      {dockRequest && (summarizeRequestWork(dockRequest.allMessages, dockTodos).hasWork || (isCurrentDock && (busy || changeCount > 0))) && <div className="request-dock" id="chat-tool-dock">
+    <div className="chat-view has-conversation-rail" aria-busy={syncing}>
+      <ConversationRail scroll={area} content={transcript} turns={railTurns} selected={dockKey}
+        onSelect={key => { stick.current = false; setInspectedWork(key); setExpandedWork(key); }}
+        onScrollIntent={() => { stick.current = false; }} context={context} divider={detailsDivider} identity={attachmentContext} />
+      {dockRequest && (dockHasContent || inspectedWork === dockKey) && <div className="request-dock" id="chat-tool-dock">
         <div className="request-dock-context"><span>{isCurrentDock ? 'Current turn' : `Reviewing turn ${dockIndex + 1}`}</span>
           {!isCurrentDock && <button type="button" onClick={() => { setInspectedWork(null); setExpandedWork(null); }}>Back to current turn <ArrowUpRight size={12} /></button>}</div>
-        <RequestWorking summary={summarizeRequestWork(dockRequest.allMessages, dockTodos)}
+        {dockHasContent ? <RequestWorking summary={dockSummary!}
           messages={dockRequest.responseMessages} requestKey={dockRequest.key} docked
           expanded={expandedWork === dockRequest.key} live={isCurrentDock && busy}
           changeCount={isCurrentDock ? changeCount : 0}
-          onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
+          onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} /> : <div className="request-dock-empty">No tools recorded for this turn</div>}
       </div>}
       <div
         className="chat-scroll"
+        id={`conversation-${railID}`}
         ref={area}
         onScroll={() => {
           const x = area.current!;
@@ -731,7 +747,7 @@ export function Chat({
           setShowNewActivity((visible) => (visible === stick.current ? !stick.current : visible));
         }}
       >
-        <div className="chat-transcript">
+        <div className="chat-transcript" ref={transcript}>
         {!messages.length && !pendingSend && busy ? (
           <Empty icon={LoaderCircle} title="Starting your conversation…" />
         ) : !messages.length && !pendingSend ? (

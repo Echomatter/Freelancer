@@ -31,14 +31,16 @@ for (const variants of [true, false]) {
       await page.getByRole('button', { name: 'Project settings', exact: true }).click();
       await page.getByRole('button', { name: 'Session defaults', exact: true }).click();
       const panel = page.locator('.session-defaults');
-      await expect(panel).toContainText('Existing chats keep their choices.');
+      await panel.getByRole('button', { name: 'Help: Session defaults', exact: true }).focus();
+      await expect(page.getByRole('tooltip')).toContainText('Existing chats keep their choices.');
+      await page.keyboard.press('Escape');
       await expect(panel).not.toContainText(/Maximum parallel|Spending preference|Excluded models/);
       await panel.getByRole('combobox', { name: 'Parent model', exact: true }).selectOption('opencode/free');
       const intelligence = panel.getByRole('combobox', { name: 'Intelligence', exact: true });
       if (variants) await intelligence.selectOption('high');
       else await expect(intelligence).toHaveCount(0);
       await panel.getByRole('button', { name: 'Save defaults', exact: true }).click();
-      await expect(panel.getByRole('status')).toHaveText('Saved for new chats');
+      await expect(panel.locator('.session-start').getByRole('status')).toHaveText('Saved for new chats');
       await page.reload();
       await page.getByRole('button', { name: 'Project settings', exact: true }).click();
       await page.getByRole('button', { name: 'Session defaults', exact: true }).click();
@@ -46,7 +48,7 @@ for (const variants of [true, false]) {
       if (variants) await expect(intelligence).toHaveValue('high');
     });
     await test.step('Agent-owned choices are shown as the source of the default', async () => {
-      await page.getByRole('button', { name: 'Agents', exact: true }).click();
+      await page.locator('.settings-drawer-links').getByRole('button', { name: 'Agents', exact: true }).click();
       await page.locator('.catalog-card').filter({ has: page.getByRole('heading', { name: 'Engineer', exact: true }) }).getByRole('button', { name: 'Edit Engineer', exact: true }).click();
       const editor = page.getByRole('region', { name: 'Agent editor' });
       await editor.getByRole('combobox', { name: 'Default model', exact: true }).selectOption('opencode/free');

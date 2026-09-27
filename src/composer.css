@@ -37,6 +37,8 @@
 .composer-menu-attach { display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px; margin-bottom: 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--bg); color: var(--text); text-align: left; }
 .composer-menu-attach > span:last-child { display: grid; gap: 4px; }
 .composer-menu-attach strong { font-size: 12px; }
+.composer-attach-row { display: flex; align-items: center; gap: 4px; margin-bottom: 14px; }
+.composer-attach-row .composer-menu-attach { margin-bottom: 0; }
 .composer-menu-attach small, .composer-menu-panel > p { font-size: 11px; color: var(--muted); line-height: 1.5; }
 .composer-menu-panel > p { margin: 12px 0 0; }
 .composer-menu-panel .composer-selects { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }

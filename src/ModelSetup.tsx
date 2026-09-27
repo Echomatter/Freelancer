@@ -90,7 +90,7 @@ export function ParentModelFields({
     data.snapshot.preferences?.preferences;
   return (
     <div className={variants.length ? "editor-columns" : "parent-model-only"}>
-      <Field label={allowAutomatic ? "Default model" : "Parent model"}>
+      <Field label={allowAutomatic ? "Default model" : "Parent model"} help={allowAutomatic ? undefined : "parent-model"}>
         <ProviderSelect
           provider={model}
           required

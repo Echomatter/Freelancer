@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { createPortal } from "react-dom";
 import { useEffect, useRef, useState } from "react";
 import { ProgressStatus } from './echoflex/ProgressStatus';
@@ -180,7 +181,7 @@ export function ProjectProgress({
         aria-current={index === current ? 'step' : undefined} className={index < current ? 'complete' : ''}>
         {index < current ? <Check size={15} aria-label="Complete" /> : <span aria-hidden="true">{index + 1}</span>}{label}
       </li>)}</ol>
-      <p>Indexes make project files and past conversations searchable. Existing indexes are reused after the first successful setup.</p>
+      <HelpHint topic="project-indexes" />
     </Dialog>
   );
 }

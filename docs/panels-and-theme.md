@@ -1,6 +1,7 @@
 # Panel sizing and startup palette
 
-Drag the right edge of navigation or the left edge of Details. Widths preview
+Drag the right edge of navigation or empty space in the conversation rail on
+the left edge of Details. Turn dots jump; the pulsing ring scrolls. Widths preview
 immediately and save on release. Double-click an edge to reset that panel.
 The focused separator supports Arrow keys, Shift for larger steps, and Home/End.
 Escape cancels a drag. Failed saves roll back with a visible error.

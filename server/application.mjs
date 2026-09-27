@@ -46,6 +46,7 @@ import {
 } from "../domain/workspace.mjs";
 import { executionPrompt, policyVersion } from "./execution.mjs";
 import { createGitProjects } from "./git-project.mjs";
+import { createContextSettings } from './context-settings.mjs';
 import { gitExecutionContract } from "../domain/git-project.mjs";
 import { senderState } from "../domain/sender.mjs";
 
@@ -85,10 +86,11 @@ export function createApplication({
   let connecting = false;
   let sending = 0;
   let refreshingAgents = false;
+  let refreshingContext = false;
   let refreshingUsage;
   let providerFlight;
   async function changeCredentials(change) {
-    if (connecting || sending)
+    if (connecting || sending || refreshingContext)
       throw Error("Wait for the current action to finish before connecting.");
     connecting = true;
     try {
@@ -196,6 +198,9 @@ export function createApplication({
   const modelRatings = createModelRatingService({ host, backendRoot, dataRoot, localData, project, store,
     getCatalog: async (id) => app.bootstrap(id) });
   const app = {
+    contextSettings: createContextSettings({ store, host, project,
+      canRefresh: () => !connecting && !sending && !refreshingAgents && !refreshingContext,
+      setRefreshing: value => { refreshingContext = value; } }),
     store,
     project,
     gitProjects,
@@ -701,9 +706,9 @@ export function createApplication({
         attachments,
       },
     ) {
-      if (connecting || refreshingAgents)
+      if (connecting || refreshingAgents || refreshingContext)
         throw Error(
-          "Finish refreshing the connection or agent catalog before sending a message.",
+          "Finish refreshing the connection, context settings or agent catalog before sending a message.",
         );
       sending++;
       let gitAcceptedMessage;

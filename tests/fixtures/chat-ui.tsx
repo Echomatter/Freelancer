@@ -22,10 +22,12 @@ initial.find((message) => message.info.id === 'a5')!.parts.splice(10, 0,
   { id: 'delegate-callback', callID: 'delegate-callback', type: 'tool', tool: 'delegate', state: { status: 'completed', input: { worker: 'child-five' }, metadata: { sessionId: 'child-five', agentName: 'Researcher', freelancer_status: 'completed' }, output: JSON.stringify({ attempts: [{ child_session: 'child-five', selected_model: 'opencode/free' }] }) } },
 );
 function Fixture() {
+  const [showDetails, setShowDetails] = useState(true);
   const [messages, setMessages] = useState(initial), [session, setSession] = useState('one'), [draft, setDraft] = useState(''), [busy, setBusy] = useState(false), [details, setDetails] = useState('changes'), [child, setChild] = useState('');
   const add = () => { setBusy(true); setMessages(rows => [...rows, { info: {id: `stream-${rows.length}`, role:'assistant'}, parts:[{type:'text',text:'New streamed prose. '.repeat(35)}]}]); };
   return <main style={{height:'100vh', display:'flex', flexDirection:'column'}}>
     <nav style={{padding:12,display:'flex',gap:12}} aria-label="Fixture controls">
+      <button onClick={() => setShowDetails(value => !value)}>Toggle details</button>
       <button onClick={add}>Append response</button>
       <button onClick={() => { setBusy(true); setMessages(rows => [...rows, { info: { id: `handoff-${rows.length}`, role: 'user' }, parts: [{ type: 'text', text: '[Freelancer Delegate handoff regression-123456]\nUser concern:\nInspect this independently.' }] }]); }}>Append delegation handoff</button>
       <button onClick={() => { setMessages([{ info: { id: 'first-user', role: 'user' }, parts: [{ type: 'text', text: 'Start a new conversation.' }] }, { info: { id: 'first-tool', role: 'assistant' }, parts: [{ id: 'first-read', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: 'src/first.ts' }, output: 'First tool output line.\n'.repeat(180) } }] }]); }}>Show first tool</button>
@@ -34,9 +36,9 @@ function Fixture() {
       <button onClick={() => setMessages(rows => [...rows, {info:{id:'helper',role:'assistant'},parts:[{id:'delegate',type:'tool',tool:'delegate',state:{status:'completed',input:{agentID:'researcher'},metadata:{agentName:'Researcher',selected_model:'opencode/free',sessionId:'child-fixture'}}}]}])}>Add helper</button>
       <span role="status">{child ? `Opened ${child}` : 'Presentation fixture · no model inference'}</span>
     </nav>
-    <div className="conversation-layout with-details">
+    <div className={`conversation-layout${showDetails ? ' with-details' : ''}`}>
       <Chat data={data} messages={messages} todos={[]} session={{id:session}} busy={busy} draft={draft} setDraft={setDraft} model="" setModel={() => {}} onSend={() => {}} onStop={() => setBusy(false)} onChild={setChild} onWorkflow={() => {}} agentID="engineer" setAgentID={() => {}} workflowID="build" onOpenDetails={setDetails} />
-      <Details chat={{title:'Chat presentation fixture',diff:[{file:'src/example.ts',scope:'workspace',additions:3,deletions:1,status:'modified'}]}} requestTab={details} onChild={setChild} />
+      {showDetails && <Details chat={{title:'Chat presentation fixture',diff:[{file:'src/example.ts',scope:'workspace',additions:3,deletions:1,status:'modified'}]}} requestTab={details} onChild={setChild} />}
     </div>
   </main>;
 }

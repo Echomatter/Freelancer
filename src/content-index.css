@@ -5,7 +5,8 @@
 .index-metrics span, .index-project small, .index-maintenance small { color: var(--muted); font-size: 12px; }
 .index-projects { display: grid; margin: 12px 0; border-top: 1px solid var(--line); }
 .index-project { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--line); }
-.index-project > div, .index-maintenance span { display: grid; gap: 4px; min-width: 0; }
+.index-project > div { display: grid; gap: 4px; min-width: 0; }
+.index-maintenance > div > span { display: flex; align-items: center; min-width: 0; }
 .index-project strong, .index-project small { overflow-wrap: anywhere; }
 .index-actions { display: flex; flex-wrap: wrap; gap: 10px; margin: 14px 0; }
 .index-database-stats { display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 0; color: var(--muted); font-size: 13px; }

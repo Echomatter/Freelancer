@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useId, useRef, useState } from "react";
 import {
   AlertCircle,
@@ -316,18 +317,10 @@ export function UsageHero({ view, state, onRefresh }: SummaryProps) {
                   ? "Not current"
                   : observedLabel(view.asOf, view.now)}
         </small>
+        <HelpHint topic="usage-estimate" />
         <details className="usage-method">
-          <summary>About this estimate</summary>
+          <summary>Observation details</summary>
           <div>
-            <p>
-              Each connected finite plan has an equal share. The fill shows what
-              remains available now, not interchangeable capacity. Free models
-              sit outside this estimate.
-            </p>
-            <p>
-              A window reset may not restore access while another limit remains.
-              Unknown portions are not empty.
-            </p>
             {view.asOf && (
               <small>
                 Oldest observation ·{" "}

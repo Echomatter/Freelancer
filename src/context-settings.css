@@ -1,0 +1,6 @@
+.context-settings { margin-top: 18px; }
+.context-settings-toggle { display: flex; align-items: center; gap: 12px; min-height: 40px; width: fit-content; cursor: pointer; font-size: 13px; }
+.context-settings-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.context-settings-toggle:has(input:disabled) { cursor: wait; opacity: .65; }
+.context-settings .session-defaults-save { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 14px; }
+.context-settings .session-defaults-save > span { color: var(--muted); font-size: 12px; }

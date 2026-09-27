@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { MoreHorizontal, Check, GitBranch, AlignLeft } from "lucide-react";
+import { MoreHorizontal, Check, GitBranch } from "lucide-react";
 import { Button, Field } from "./echoflex/Controls";
 import { api } from "./api";
 
@@ -67,7 +67,6 @@ export function ChatActions({
             <Field label="Chat name"><input value={title} onChange={(e) => setTitle(e.target.value)} /></Field>
             <Button type="submit" disabled={!title.trim()}><Check size={15} />Rename</Button>
             <Button type="button" onClick={() => run(() => action("fork"))}><GitBranch size={15} />Continue in a new chat</Button>
-            <Button type="button" disabled={!model} onClick={() => run(() => action("summarize"))}><AlignLeft size={15} />Compact conversation</Button>
           </>}
           {onHistory && <Button type="button" onClick={() => { setOpen(false); onHistory(); }}>{session ? "Archive, pin or export…" : "Browse history / export…"}</Button>}
           <Button type="button" variant="quiet" onClick={() => setOpen(false)}>

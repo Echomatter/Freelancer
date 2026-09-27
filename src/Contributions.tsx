@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { ProviderScope, ProviderText } from "./ProviderColors";
 import { useState } from "react";
 import { Badge } from "./echoflex/Controls";
@@ -44,7 +45,7 @@ export function ChatContributions({ contributions }: { contributions?: any }) {
       </label>
       <ContributionRows breakdown={contributions?.[group]} />
       {contributions?.ancestryUncertain && <p className="notice">Some delegation links could not be resolved.</p>}
-      <small>Estimated activity, not quality or subscription usage.</small>
+      <HelpHint topic="contributions" />
     </section>
   );
 }

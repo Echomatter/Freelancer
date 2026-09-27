@@ -29,9 +29,8 @@ export function RemoteGate({ children }: { children: ReactNode }) {
         setReady(true);
       } catch (e) { setError((e as Error).message); } finally { setBusy(false); }
     }}>
-      <p>Connect this browser to your computer. It will stay remembered across server restarts.</p>
-      <Field label="Device name"><input required maxLength={80} autoComplete="off" value={name} onChange={e => setName(e.target.value)} /></Field>
-      <p className="muted">Use your own device on trusted Wi-Fi. This HTTP connection is not encrypted.</p>
+      <Field label="Device name" help="remote-pairing"><input required maxLength={80} autoComplete="off" value={name} onChange={e => setName(e.target.value)} /></Field>
+      <p className="muted">{window.location.protocol === 'https:' ? 'HTTPS connection · Only this remembered browser can use Freelancer.' : 'Unencrypted HTTP · Use a trusted private network.'}</p>
       <Button variant="primary" disabled={busy}>{busy ? 'Connecting…' : 'Remember this device'}</Button>
     </form> : <p>On your computer, open Application settings → Remote access and scan a new QR code to remember this browser.</p>}
     {error && <p role="alert" className="notice error">{error}</p>}

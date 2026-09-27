@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Paperclip, Plus, X } from 'lucide-react';
@@ -53,11 +54,10 @@ export function ComposerMenu({ children, disabled, onAttach, context }: {
       onClick={() => setOpen(value => !value)}><Plus size={22} aria-hidden="true" /></button>
     {createPortal(<div ref={panel} id={id} hidden={!open} className="composer-menu-panel" role="region" aria-label="Message options">
       <header><strong>Message options</strong><button type="button" aria-label="Close message options" onClick={close}><X size={17} /></button></header>
-      <button type="button" className="composer-menu-attach" disabled={disabled} onClick={() => { onAttach(); setOpen(false); }}>
-        <span className="work-icon"><Paperclip size={18} /></span><span><strong>Attach files</strong><small>Choose files, or drop them into your message</small></span>
-      </button>
+      <div className="composer-attach-row"><button type="button" className="composer-menu-attach" disabled={disabled} onClick={() => { onAttach(); setOpen(false); }}>
+        <span className="work-icon"><Paperclip size={18} /></span><span><strong>Attach files</strong></span>
+      </button>{open && <HelpHint topic="message-options" />}</div>
       {children}
-      <p>Changes apply to your next message.</p>
     </div>, document.body)}
   </div>;
 }

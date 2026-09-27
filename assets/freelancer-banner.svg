@@ -1,20 +1,53 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="300" viewBox="0 0 1200 300" role="img" aria-labelledby="title desc">
   <title id="title">Freelancer</title>
-  <desc id="desc">Your models, projects, and agents in one local-first workspace.</desc>
-  <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop stop-color="#0b1729" />
-      <stop offset="1" stop-color="#142e43" />
-    </linearGradient>
-  </defs>
-  <rect width="1200" height="300" rx="24" fill="url(#bg)" />
-  <g stroke="#58d8c0" stroke-width="3" fill="none">
-    <path d="M105 150h60m0 0 54-59m-54 59 54 59" />
-    <circle cx="85" cy="150" r="31" />
-    <circle cx="234" cy="77" r="20" />
-    <circle cx="234" cy="223" r="20" />
+  <desc id="desc">A project workspace for OpenCode, with chat, project navigation, and turn details.</desc>
+  <rect width="1200" height="300" rx="22" fill="#151d25" />
+  <path d="M1 24a23 23 0 0 1 23-23h1152a23 23 0 0 1 23 23v252a23 23 0 0 1-23 23H24a23 23 0 0 1-23-23z" fill="none" stroke="#34414c" stroke-width="2" />
+
+  <g font-family="Segoe UI,Arial,sans-serif">
+    <text x="82" y="90" fill="#92a5b3" font-size="13" font-weight="600" letter-spacing="2.6">LOCAL PROJECT WORKSPACE</text>
+    <text x="78" y="153" fill="#edf2f5" font-size="58" font-weight="620" letter-spacing="-1.8">Freelancer</text>
+    <path d="M84 179h74" stroke="#77b8a9" stroke-width="3" />
+    <text x="82" y="219" fill="#b6c2ca" font-size="22">Project work with OpenCode</text>
   </g>
-  <text x="306" y="120" fill="#edfaf7" font-family="Segoe UI,Arial,sans-serif" font-size="62" font-weight="700">Freelancer</text>
-  <text x="310" y="166" fill="#a7c5d3" font-family="Segoe UI,Arial,sans-serif" font-size="25">A LOCAL-FIRST AI WORKSPACE</text>
-  <text x="310" y="226" fill="#58d8c0" font-family="Segoe UI,Arial,sans-serif" font-size="21">Your models. Your projects. Your control.</text>
+
+  <g transform="translate(610 48)">
+    <rect width="520" height="204" rx="13" fill="#1c2730" stroke="#3b4a56" />
+    <path d="M13 0h494a13 13 0 0 1 13 13v24H0V13A13 13 0 0 1 13 0z" fill="#202c35" />
+    <circle cx="20" cy="18" r="3.5" fill="#84939e" />
+    <circle cx="35" cy="18" r="3.5" fill="#596975" />
+    <circle cx="50" cy="18" r="3.5" fill="#596975" />
+    <path d="M0 38h520M60 38v166M436 38v166" stroke="#34434e" />
+
+    <g fill="#748491">
+      <rect x="17" y="58" width="25" height="5" rx="2.5" />
+      <rect x="17" y="76" width="33" height="5" rx="2.5" />
+      <rect x="17" y="94" width="29" height="5" rx="2.5" />
+      <rect x="17" y="127" width="31" height="5" rx="2.5" />
+      <rect x="17" y="145" width="26" height="5" rx="2.5" />
+    </g>
+    <rect x="11" y="70" width="43" height="17" rx="5" fill="#31423f" />
+    <rect x="17" y="76" width="33" height="5" rx="2.5" fill="#83bcae" />
+
+    <g fill="#53636f">
+      <rect x="82" y="58" width="134" height="7" rx="3.5" />
+      <rect x="82" y="75" width="209" height="5" rx="2.5" />
+      <rect x="82" y="91" width="252" height="5" rx="2.5" />
+    </g>
+    <rect x="169" y="111" width="214" height="28" rx="8" fill="#293742" />
+    <rect x="184" y="122" width="150" height="5" rx="2.5" fill="#728490" />
+    <g fill="#53636f">
+      <rect x="82" y="154" width="203" height="5" rx="2.5" />
+      <rect x="82" y="169" width="238" height="5" rx="2.5" />
+    </g>
+
+    <path d="M463 70v98" stroke="#53636f" stroke-width="2" />
+    <g fill="#202c35" stroke="#82919b" stroke-width="2">
+      <circle cx="463" cy="72" r="5" />
+      <circle cx="463" cy="105" r="5" />
+      <circle cx="463" cy="139" r="5" />
+      <circle cx="463" cy="169" r="7" fill="#77b8a9" stroke="#c0ddd5" />
+    </g>
+    <path d="M456 58h-11m-7 0h-1" stroke="#7b8b96" stroke-width="3" stroke-linecap="round" />
+  </g>
 </svg>

@@ -55,6 +55,7 @@ test('chat-dock', { tag: ['@presentation', '@chat'] }, async ({ appBrowser: brow
     await expect(page.locator('.chat-view')).toHaveCount(1);
   });
   await test.step('First-turn tools fit a short phone viewport', async () => {
+    await page.getByRole('button', { name: 'Toggle details', exact: true }).click();
     await page.setViewportSize({ width: 430, height: 580 });
     await page.getByRole('button', { name: 'Show first tool' }).click();
     await expect(dock).toContainText('Read first.ts');

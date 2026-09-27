@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { ProviderText, ProviderSelect } from "./ProviderColors";
 import { WorkCard } from './WorkCard';
 import { useEffect, useRef, useState } from 'react';
@@ -155,10 +156,10 @@ export function useChatSender(options: Options) {
           action={['waiting', 'uncertain', 'failed'].includes(row.status) ? <button type="button" className="work-card-cancel" onClick={() => void cancel(row)}>{row.status === 'waiting' ? 'Cancel message' : 'Acknowledge notice'}</button> : undefined}>
             <small><ProviderText provider={row.model === 'auto' ? 'opencode' : row.model} mark>{row.model === 'auto' ? 'Agent default / automatic' : (options.models.find(m => m.id === row.model)?.name ?? row.model)}</ProviderText></small>
             {row.text && <p>{row.text}</p>}
-            {row.kind === 'clarify' && row.status === 'submitted' && <small>Actual worker progress appears in Details.</small>}
+            {row.kind === 'clarify' && row.status === 'submitted' && <HelpHint topic="message-delivery" />}
             {(row.error || row.notice) && <p role="status">{row.error || row.notice}</p>}
       </WorkCard>)}
-      {intent && <Dialog title="While this response runs" description="Choose what happens to the current response and your message."
+      {intent && <Dialog title="While this response runs"
         icon={<Hand />} onClose={() => setIntent(null)} busy={pending} initialFocus="first"
         footer={<>{pending && <span role="status"><LoaderCircle className="spin" size={16} /> Saving message…</span>}
           <Button type="button" disabled={pending} onClick={() => setIntent(null)}>Cancel</Button></>}>
@@ -167,7 +168,7 @@ export function useChatSender(options: Options) {
           <option value="">No override · use assignment defaults</option>
           {options.models.map(m => <option key={m.id} value={m.id}>{m.name}{m.costClass === 'free' ? ' · Free' : ''} · {m.provider}</option>)}
         </ProviderSelect></label>
-        <p className="sender-scope">Queue and Interrupt use this model for the next parent turn. Delegate uses it for the worker only. Attached files stay in the composer.</p>
+        <HelpHint topic="message-delivery" />
         <div className="sender-options">
           <button type="button" disabled={pending} onClick={() => void choose('clarify')}><Bot size={22} aria-hidden="true" /><strong>Delegate</strong><span>Ask a worker to handle this concern at the parent’s next safe boundary.</span></button>
           <button type="button" disabled={pending} onClick={() => void choose('queue')}><ListPlus size={22} aria-hidden="true" /><strong>Queue</strong><span>Send automatically after the current turn finishes.</span></button>

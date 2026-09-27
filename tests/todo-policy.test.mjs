@@ -6,10 +6,12 @@ import { executionPrompt } from '../server/execution.mjs';
 
 test('native todos default on in every mode/helper and custom agent', () => {
   const config = { agent: { custom: { permission: { edit: 'deny' } } } };
-  configureAgentProfiles(config, checkedCatalog());
+  const catalog = checkedCatalog();
+  configureAgentProfiles(config, catalog);
   enableSessionTodos(config);
-  for (const name of ['engineer', 'researcher', 'designer', 'git', 'custom'])
+  for (const name of [...catalog.agents.map(agent => agent.id), 'custom'])
     assert.equal(config.agent[name].permission.todowrite, 'allow', name);
+  assert.equal(config.agent.git.disable, true, 'the retired Git agent stays disabled');
   assert.equal(config.agent.custom.permission.edit, 'deny');
   const before = structuredClone(config);
   configureAgentProfiles(config, checkedCatalog());

@@ -1,9 +1,4 @@
 .scheduled-prompts { max-width: 880px; margin: 0 auto; }
-.schedule-intro { display: flex; align-items: center; gap: 18px; }
-.schedule-intro > div { flex: 1; }
-.schedule-intro h3, .schedule-card h3, .schedule-editor h3 { margin: 0; }
-.schedule-intro p, .schedule-empty p { color: var(--muted); font-size: 13px; line-height: 1.7; margin: 6px 0 0; }
-.schedule-symbol { display: grid; place-items: center; background: var(--tint); color: var(--accent); width: 52px; height: 52px; border-radius: 14px; flex-shrink: 0; }
 .schedule-feedback { min-height: 28px; padding: 6px 0; color: var(--success); font-size: 12px; }
 .schedule-feedback > span { display: inline-flex; align-items: center; gap: 6px; }
 .schedule-editor { margin-bottom: 20px; border-color: var(--border-strong); }
@@ -13,8 +8,6 @@
 .schedule-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
 .schedule-editor input, .schedule-editor select, .schedule-editor textarea { width: 100%; min-width: 0; box-sizing: border-box; }
 .schedule-editor input[type=checkbox] { width: auto; }
-.schedule-hint, .schedule-footnote { color: var(--muted); font-size: 12px; line-height: 1.7; margin: 0; }
-.schedule-footnote { margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--line); }
 .schedule-empty { text-align: center; padding: 40px 24px; }
 .schedule-empty > svg { color: var(--accent); margin-bottom: 12px; }
 .schedule-empty h3 { margin: 0; }
@@ -30,8 +23,8 @@
 .schedule-last { border-top: 1px solid var(--line); padding: 12px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 10px; color: var(--muted); font-size: 12px; }
 .schedule-last .notice { width: 100%; overflow-wrap: anywhere; }
 @media (max-width: 640px) {
-  .schedule-intro { flex-wrap: wrap; gap: 12px; }
-  .schedule-intro > div { min-width: 170px; }
-  .schedule-intro > button { width: 100%; justify-content: center; }
   .schedule-fields { grid-template-columns: minmax(0, 1fr); }
 }
+
+.schedule-toolbar { margin-bottom: 6px; }
+.schedule-timezone { color: var(--muted); font-size: 12px; }

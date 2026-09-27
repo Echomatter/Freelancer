@@ -36,28 +36,40 @@ export async function startServer({ application: app, assets, port = 0, readActi
   await app.gitProjects?.recover();
   let origin;
   const remote = remoteAccess ?? await createRemoteAccess();
-  const server = http.createServer(async (req, res) => {
+  const handleRequest = async (req, res, publicWeb = false) => {
     const send = (status, value, type = "application/json", cache = "no-store") => {
-      res.writeHead(status, {
+      const headers = {
         "Content-Type": type,
         "Cache-Control": cache,
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
-      });
+      };
+      if (publicWeb) headers["Strict-Transport-Security"] = "max-age=31536000";
+      res.writeHead(status, headers);
       res.end(type === "application/json" ? JSON.stringify(value) : value);
     };
     try {
-      if (!isLoopbackRemote(req.socket.remoteAddress) && !privateIPv4(req.socket.remoteAddress))
-        return send(403, { error: "Local network access only" });
       const host = String(req.headers.host ?? "");
-      if (host !== new URL(origin).host && (!remote.origin || host !== new URL(remote.origin).host))
-        return send(403, { error: "Local application only" });
       const loopback = isLoopbackRemote(req.socket.remoteAddress);
-      if (!loopback && host === new URL(origin).host)
-        return send(403, { error: "Local application only" });
-      const requestOrigin = remote.origin && host === new URL(remote.origin).host ? remote.origin : origin;
+      let requestOrigin;
+      if (publicWeb) {
+        const publicOrigin = remote.webOrigin;
+        if (!loopback || !publicOrigin || host !== new URL(publicOrigin).host)
+          return send(403, { error: "Public web access is available only through its verified HTTPS tunnel." });
+        requestOrigin = publicOrigin;
+      } else {
+        if (!loopback && !privateIPv4(req.socket.remoteAddress))
+          return send(403, { error: "Local network access only" });
+        if (host !== new URL(origin).host && (!remote.origin || host !== new URL(remote.origin).host))
+          return send(403, { error: "Local application only" });
+        if (!loopback && host === new URL(origin).host)
+          return send(403, { error: "Local application only" });
+        requestOrigin = remote.origin && host === new URL(remote.origin).host ? remote.origin : origin;
+      }
       const url = new URL(req.url, requestOrigin),
         route = url.pathname;
+      if (publicWeb && route.startsWith('/api/') && req.headers.origin && req.headers.origin !== requestOrigin)
+        return send(403, { error: 'Cross-origin requests are not allowed.' });
       if (route === "/__shutdown" && req.method === "POST") {
         const supplied = String(req.headers["x-freelancer-shutdown"] ?? "");
         if (!loopback || requestOrigin !== origin || !shutdownToken || !safeEqual(supplied, shutdownToken))
@@ -70,9 +82,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
       if (route.startsWith("/api/")) {
         const supplied = String(req.headers["x-freelancer-git-bridge"] ?? "");
         const expected = process.env.FREELANCER_GIT_BRIDGE || "";
-        const lanApi = requestOrigin !== origin || !loopback;
+        const lanApi = publicWeb || requestOrigin !== origin || !loopback;
         const pairingRequest = lanApi && route === '/api/access/pair' && req.method === 'POST';
-        const lanTokenOk = !lanApi || pairingRequest || remote.authenticate(req, res);
+        const lanTokenOk = !lanApi || pairingRequest || remote.authenticate(req, res, publicWeb ? 'web' : 'lan');
         const agentBridge = loopback && !lanApi && route === "/api/git/agent" && !!expected && safeEqual(supplied, expected);
         if (
           (!agentBridge && req.headers["x-freelancer-client"] !== "webpage") ||
@@ -96,7 +108,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
           body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
         }
         if (pairingRequest) {
-          const paired = await remote.pair(body);
+          const paired = await remote.pair(body, publicWeb ? 'web' : 'lan');
           res.setHeader('Set-Cookie', paired.cookie);
           return send(200, { name: paired.name, expiresAt: paired.expiresAt });
         }
@@ -105,7 +117,8 @@ export async function startServer({ application: app, assets, port = 0, readActi
           if (lanApi) return send(403, { error: 'Manage remote access on this computer.' });
           if (route === '/api/remote-access' && req.method === 'GET') return send(200, remote.status());
           if (route === '/api/remote-access' && req.method === 'PUT') return send(200, await remote.configure(body));
-          if (route === '/api/remote-access/pairing' && req.method === 'POST') return send(200, await remote.pairLink());
+          if (route === '/api/remote-access/web' && req.method === 'PUT') return send(200, await remote.configureWeb(body));
+          if (route === '/api/remote-access/pairing' && req.method === 'POST') return send(200, await remote.pairLink(body.transport));
           if (route === '/api/remote-access/pairing' && req.method === 'DELETE') return send(200, await remote.cancelPairing());
           if (route === '/api/remote-access/devices' && req.method === 'DELETE') return send(200, await remote.revoke(body.id));
           return send(404, { error: 'Action not found' });
@@ -221,6 +234,10 @@ export async function startServer({ application: app, assets, port = 0, readActi
           const session = url.searchParams.get("session") ?? body.session ?? "";
           if (route === "/api/index/stats" && req.method === "GET")
             return send(200, await history.indexStats());
+          if (route === "/api/index/search" && req.method === "GET")
+            return send(200, await history.searchFiles(url.searchParams.get("q") ?? "", {
+              project: url.searchParams.get("project") ?? "",
+            }));
           if (route === "/api/index/maintenance" && req.method === "POST")
             return send(200, await history.maintainIndex(body.operation));
           if (route === "/api/history/search" && req.method === "GET")
@@ -275,6 +292,10 @@ export async function startServer({ application: app, assets, port = 0, readActi
           );
         if (req.method === "PUT" && route === "/api/session-defaults")
           return send(200, await app.saveSessionDefaults(project, body));
+        if (req.method === 'GET' && route === '/api/context-settings')
+          return send(200, await app.contextSettings.read(project));
+        if (req.method === 'PUT' && route === '/api/context-settings')
+          return send(200, await app.contextSettings.save(project, body));
         if (req.method === "GET" && route === "/api/preferences")
           return send(200, await app.readPreferences(project, url.searchParams.get("session")));
         if (req.method === "PUT" && route === "/api/preferences")
@@ -380,7 +401,10 @@ export async function startServer({ application: app, assets, port = 0, readActi
         code,
       });
     }
-  });
+  };
+  const localHandler = (req, res) => { void handleRequest(req, res); };
+  const publicHandler = (req, res) => { void handleRequest(req, res, true); };
+  const server = http.createServer(localHandler);
   let disposal;
   const dispose = () => disposal ??= (async () => {
     await remote.close();
@@ -400,7 +424,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
     server.listen(port, "127.0.0.1", resolve);
   });
   origin = `http://127.0.0.1:${server.address().port}`;
-  await remote.start(server.listeners('request')[0]);
+  await remote.start(localHandler, publicHandler);
   sender.start();
   schedules.start();
   return {

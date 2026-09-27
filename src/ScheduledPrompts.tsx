@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, CalendarClock, Check, Pause, Play, Plus, Trash2 } from "lucide-react";
 import { api } from "./api";
@@ -78,11 +79,10 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
   const name = (items: any[], id: string) => items.find(item => item.id === id)?.name ?? id;
   return <div className="scheduled-prompts">
     <PageHeading title="Scheduled prompts" actions={<PageCloseButton onClick={onClose} />} />
-    <Panel className="schedule-intro">
-      <span className="schedule-symbol"><CalendarClock size={25} aria-hidden="true" /></span>
-      <div><h3>A prompt, at the right time</h3><p>Run work in a fresh project chat while your local server is running. You can close the browser; keep the computer awake.</p></div>
+    <div className="context-actions schedule-toolbar">
       <Button variant="primary" disabled={!!busy || !!draft || !projects.length} onClick={() => edit()}><Plus size={16} /> New schedule</Button>
-    </Panel>
+      <HelpHint topic="schedules" />
+    </div>
     <div className="schedule-feedback" aria-live="polite">{notice && <span><Check size={15} aria-hidden="true" /> {notice}</span>}</div>
     {loadError && <p className="notice error" role="alert">Schedules could not be refreshed. {loadError} Retrying automatically.</p>}
     {schedulerError && <p className="notice error" role="alert">{schedulerError}</p>}
@@ -98,19 +98,19 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
             <Field label="Agent"><select required value={draft.agent} onChange={e => change({ agent: e.target.value })}>{agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{!agents.some(a => a.id === draft.agent) && <option value={draft.agent}>Choose an available agent</option>}</select></Field>
             <Field label="Workflow"><select required value={draft.workflow} onChange={e => change({ workflow: e.target.value })}>{workflows.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}{!workflows.some(w => w.id === draft.workflow) && <option value={draft.workflow}>Choose an available workflow</option>}</select></Field>
           </div>
-          <Field label="Model"><ProviderSelect required provider={draft.model} value={draft.model} onChange={e => change({ model: e.target.value })}><option value="" disabled>Choose a model</option>{models.map(m => <option key={m.id} value={m.id}>{m.name} · {m.provider}</option>)}{draft.model && !models.some(m => m.id === draft.model) && <option value={draft.model}>{draft.model} · Unavailable</option>}</ProviderSelect></Field>
+          <Field label="Model" help="schedule-execution"><ProviderSelect required provider={draft.model} value={draft.model} onChange={e => change({ model: e.target.value })}><option value="" disabled>Choose a model</option>{models.map(m => <option key={m.id} value={m.id}>{m.name} · {m.provider}</option>)}{draft.model && !models.some(m => m.id === draft.model) && <option value={draft.model}>{draft.model} · Unavailable</option>}</ProviderSelect></Field>
           <div className="schedule-fields">
-            <Field label="Repeat"><select value={draft.frequency} onChange={e => change({ frequency: e.target.value })}><option value="once">Once</option><option value="daily">Every day (24 hours)</option><option value="weekly">Every week (7 days)</option></select></Field>
+            <Field label="Repeat" help="schedule-timing"><select value={draft.frequency} onChange={e => change({ frequency: e.target.value })}><option value="once">Once</option><option value="daily">Every day (24 hours)</option><option value="weekly">Every week (7 days)</option></select></Field>
             <Field label="First run (your local time)"><input required type="datetime-local" value={draft.firstRunAt} onChange={e => change({ firstRunAt: e.target.value })} /></Field>
           </div>
-          <p className="schedule-hint">{Intl.DateTimeFormat().resolvedOptions().timeZone}. Repeats use elapsed time, so the local hour may shift with daylight saving. Missed runs are skipped.</p>
+          <small className="schedule-timezone">{Intl.DateTimeFormat().resolvedOptions().timeZone}</small>
           <label className="check"><input type="checkbox" checked={draft.enabled} onChange={e => change({ enabled: e.target.checked })} /> Schedule enabled</label>
           <div className="schedule-actions"><Button type="submit" variant="primary">{busy === "save" ? "Saving…" : "Save schedule"}</Button><Button type="button" onClick={() => { setDraft(null); setError(""); }}>Cancel</Button></div>
         </fieldset>
       </form>
     </Panel>}
     {!rows && !loadError && <p role="status">Loading scheduled prompts…</p>}
-    {rows?.length === 0 && !draft && <Panel className="schedule-empty"><CalendarClock size={32} aria-hidden="true" /><h3>Your next task can start here</h3><p>{projects.length ? "Schedule a review, a recurring report, or a small maintenance task." : "Open a project first, then choose where your scheduled prompt will run."}</p></Panel>}
+    {rows?.length === 0 && !draft && <Panel className="schedule-empty"><CalendarClock size={32} aria-hidden="true" /><h3>No scheduled prompts</h3>{!projects.length && <p>Open a project to create a schedule.</p>}</Panel>}
     <div className="schedule-list">{rows?.map(row => {
       const last = row.lastStatus ? { status: row.lastStatus, startedAt: row.lastRunAt, error: row.lastError, session: row.lastSession } : null;
       return <Panel key={row.id} className="schedule-card" aria-label={row.title}>
@@ -126,6 +126,5 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
         </div>
       </Panel>;
     })}</div>
-    <p className="schedule-footnote">Each run uses the selected model and the current agent and workflow instructions. Normal provider usage applies. Native approvals and the project’s Git agreement still apply; open the run to answer any requests. Pausing or deleting a schedule does not stop a chat already started.</p>
   </div>;
 }

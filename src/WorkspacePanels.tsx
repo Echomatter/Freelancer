@@ -211,9 +211,10 @@ export function Details({
   );
 }
 
-export function Files({ project, run, onClose }: { project: string; run: any; onClose: () => void }) {
+export function Files({ project, run, onClose, onSearch, initialPath }: { project: string; run: any; onClose: () => void; onSearch?: () => void; initialPath?: string }) {
   const [folder, setFolder] = useState(""),
     [loading, setLoading] = useState(true),
+    [openingPath, setOpeningPath] = useState(""),
     [nodes, setNodes] = useState<any[]>([]),
     [file, setFile] = useState<any>(null);
   useEffect(() => {
@@ -234,6 +235,23 @@ export function Files({ project, run, onClose }: { project: string; run: any; on
       cancelled = true;
     };
   }, [project, folder]);
+  useEffect(() => {
+    if (!initialPath) return;
+    let cancelled = false;
+    setFile(null);
+    setOpeningPath(initialPath);
+    void run(async () => {
+      try {
+        const value = await api(
+          "files?" + query(project) + "&content=true&path=" + encodeURIComponent(initialPath),
+        );
+        if (!cancelled) setFile({ ...value, path: initialPath });
+      } finally {
+        if (!cancelled) setOpeningPath("");
+      }
+    });
+    return () => { cancelled = true; };
+  }, [project, initialPath]);
   async function open(node) {
     if (node.type === "directory") {
       setFolder(node.path);
@@ -262,9 +280,10 @@ export function Files({ project, run, onClose }: { project: string; run: any; on
               Back
             </Button>
           )}
+          {onSearch && <Button variant="quiet" onClick={onSearch}><Search size={15} />Search all project files</Button>}
           <PageCloseButton onClick={onClose} />
         </>} />
-      <p className="files-location" aria-label="Current location">{file?.path || folder || "Your project"}</p>
+      <p className="files-location" aria-label="Current location">{file?.path || openingPath || folder || "Your project"}</p>
       {file ? (
         <Panel>
           {file.type === "binary" || file.encoding === "base64" ? (
@@ -276,7 +295,9 @@ export function Files({ project, run, onClose }: { project: string; run: any; on
         </Panel>
       ) : (
         <Panel>
-          {loading ? (
+          {openingPath ? (
+            <p role="status">Opening selected file…</p>
+          ) : loading ? (
             <p>Loading files…</p>
           ) : (
             nodes.map((node) => (

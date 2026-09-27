@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from 'react';
 import { Button, Panel, Field } from './echoflex/Controls';
 import { api, query } from './api';
@@ -45,14 +46,12 @@ export function DelegationSettings({ project, sessionID = '', refresh }: {
       if (serial === generation.current) setError(e instanceof Error ? e.message : 'Could not save delegation settings.');
     } finally { if (serial === generation.current) setSaving(false); }
   }
-  if (!project) return <Panel><h3>Choose a project</h3><p>Open a project to set its delegation budget.</p></Panel>;
+  if (!project) return <Panel><h3>Choose a project</h3></Panel>;
   const workerModels = ['balanced', 'any'].includes(draft?.costPreference) ? 'all' : draft?.costPreference;
-  return <Panel title="Delegation budget" className="delegation-settings">
-    <p>The main agent decides whether to work directly or assemble a team. These settings limit resources and consequences, not which expertise it may ask for.</p>
-    <Field label="Apply to"><select value={scope} disabled={saving} onChange={e => setScope(e.target.value)}>
+  return <Panel title="Delegation budget" help="delegation" className="delegation-settings">
+    <Field label="Apply to" help="delegation-scope"><select value={scope} disabled={saving} onChange={e => setScope(e.target.value)}>
       <option value="project">This project</option><option value="session" disabled={!sessionID}>Selected chat</option>
     </select></Field>
-    {scope === 'project' && <p>Project defaults apply to chats without their own override. A chat with saved limits keeps them; select that chat to edit its budget.</p>}
     {error && <p role="alert">{error} Your unsaved choices have not been discarded.</p>}
     {!draft ? <><p role="status">{error ? 'Settings could not be loaded.' : 'Loading delegation settings…'}</p>
       {error && <Button onClick={() => setReload(n => n + 1)}>Retry loading</Button>}</> : <form onSubmit={save}>
@@ -61,7 +60,7 @@ export function DelegationSettings({ project, sessionID = '', refresh }: {
           <Field label="Delegation"><select value={draft.delegation === "ask" ? "automatic" : draft.delegation} onChange={e => change({ delegation: e.target.value })}>
             <option value="automatic">Agent decides</option><option value="manual">Work directly — no delegated agents</option>
           </select></Field>
-          <Field label="Worker models"><select value={workerModels} onChange={e => change({
+          <Field label="Worker models" help="worker-models"><select value={workerModels} onChange={e => change({
             costPreference: e.target.value === 'all' ? 'any' : e.target.value,
             subscriptionDelegation: e.target.value === 'free-only' ? 'ask' : 'automatic',
           })}>
@@ -70,21 +69,19 @@ export function DelegationSettings({ project, sessionID = '', refresh }: {
             <option value="all">All available models</option>
             <option value="paid-only">Paid subscription models only</option>
           </select></Field>
-          <Field label="Simultaneous delegated agents"><input type="number" min="1" max="6" step="1" required value={draft.maxParallel}
+          <Field label="Simultaneous delegated agents" help="delegation-limits"><input type="number" min="1" max="6" step="1" required value={draft.maxParallel}
             onChange={e => change({ maxParallel: Number(e.target.value) })} /></Field>
           <Field label="Maximum delegation depth"><input type="number" min="1" max="6" step="1" required value={draft.maxDepth ?? 2}
             onChange={e => change({ maxDepth: Number(e.target.value) })} /></Field>
         </div>
-        <p>Paid subscription workers use OpenCode’s native permission. API-metered models are excluded. The parallel limit is a ceiling, not a team-size target.</p>
         <details><summary>Existing advanced limits</summary>
           <p>Allowed models: {draft.allowedModels.length ? draft.allowedModels.join(', ') : 'All eligible connected models'}.</p>
           {!!draft.allowedModels.length && <Button type="button" onClick={() => change({ allowedModels: [] })}>Clear model allowlist</Button>}
           <p>Excluded models: {draft.excludedModels.join(', ') || 'None'}. Excluded providers: {draft.excludedProviders.join(', ') || 'None'}.</p>
           {!!(draft.excludedModels.length || draft.excludedProviders.length) && <Button type="button" onClick={() => change({ excludedModels: [], excludedProviders: [] })}>Clear model and provider exclusions</Button>}
-          <p>Context policy: {draft.contextPolicy}. Child timeout: {draft.childTimeoutSeconds} seconds. These existing limits remain unchanged. Agent and workflow choices do not narrow the eligible model pool.</p>
+          <p>Context policy: {draft.contextPolicy}. Child timeout: {draft.childTimeoutSeconds} seconds.</p>
         </details>
-        <p>Saved changes govern the next main request. Active assignments keep their captured budget; tighter limits can block later dispatches, but never silently cancel work already running. Native permissions and project agreements cannot be overridden here.</p>
-        <div className="action-row"><Button type="submit" variant="primary">{saving ? 'Saving…' : 'Save delegation budget'}</Button>
+        <div className="action-row"><Button type="submit" variant="primary">{saving ? 'Saving…' : 'Save delegation budget'}</Button><HelpHint topic="delegation-changes" />
           {error && <Button type="button" onClick={() => setReload(n => n + 1)}>Discard edits and reload saved settings</Button>}</div>
         {saved && <p role="status">Delegation budget saved.</p>}
       </fieldset>

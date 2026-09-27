@@ -1,18 +1,18 @@
-import { Bot, BrainCircuit, CalendarClock, ChevronDown, Database, Files, Gauge, GitBranch, Github, History, Palette, Search, Settings2, SlidersHorizontal, Smartphone, Wallet, Workflow } from "lucide-react";
+import { Bot, BrainCircuit, CalendarClock, ChevronDown, Database, FileSearch, Files, FolderOpen, Gauge, GitBranch, GitFork, Github, HardDrive, History, MessageSquare, Palette, Settings2, Smartphone, Wallet, Workflow } from "lucide-react";
 
 export type SettingsScope = "project" | "application";
 
 const groups = {
   project: {
     label: "Project settings",
-    icon: GitBranch,
+    icon: FolderOpen,
     items: [
       { id: "files", label: "Files", icon: Files },
       { id: "agents", label: "Agents", icon: Bot },
       { id: "workflows", label: "Workflows", icon: Workflow },
+      { id: "sessions", label: "Session defaults", icon: MessageSquare },
+      { id: "delegation", label: "Delegation", icon: GitFork },
       { id: "github", label: "GitHub", icon: Github },
-      { id: "sessions", label: "Session defaults", icon: SlidersHorizontal },
-      { id: "delegation", label: "Delegation", icon: SlidersHorizontal },
     ],
   },
   application: {
@@ -25,8 +25,9 @@ const groups = {
       { id: "appearance", label: "Appearance", icon: Palette },
       { id: "remote-access", label: "Remote access", icon: Smartphone },
       { id: "schedules", label: "Scheduled prompts", icon: CalendarClock },
-      { id: "storage", label: "Data & Storage", icon: Database },
-      { id: "index", label: "Content index", icon: Search },
+      { id: "search", label: "Search files", icon: FileSearch },
+      { id: "index", label: "Content index", icon: Database },
+      { id: "storage", label: "Data & Storage", icon: HardDrive },
       { id: "git-defaults", label: "Git defaults", icon: GitBranch },
       { id: "history", label: "History", icon: History },
     ],
@@ -56,10 +57,10 @@ export function SettingsNavigation({ expanded, scope, tab, project, onToggle, on
         </button>
         <div id={`${group}-settings-links`} className="settings-drawer-links" hidden={!open}>
           {config.items.map(({ id, label, icon: ItemIcon }) => <button key={id} type="button"
-            className={scope === group && tab === id ? "selected" : ""}
-            aria-current={scope === group && tab === id ? "page" : undefined} aria-label={label}
-            title={label} onClick={() => onSelect(group, id)}>
-            <ItemIcon size={17} aria-hidden="true" /><span>{label}</span>
+              className={scope === group && tab === id ? "selected" : ""}
+              aria-current={scope === group && tab === id ? "page" : undefined} aria-label={label}
+              title={label} onClick={() => onSelect(group, id)}>
+              <ItemIcon size={17} aria-hidden="true" /><span>{label}</span>
           </button>)}
         </div>
       </section>;

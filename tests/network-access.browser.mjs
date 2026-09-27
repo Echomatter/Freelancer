@@ -17,9 +17,11 @@ test('network-access', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
   const desktop = await browser.newPage({ viewport: { width: 1440, height: 1000 } });
   await desktop.goto(f.url);
   await desktop.getByRole('button', { name: 'Application settings', exact: true }).click();
+  await expect(desktop.locator('.settings-nav-section')).toHaveCount(0);
+  await expect(desktop.locator('.settings-drawer-links:not([hidden]) button').first().locator('svg')).toBeVisible();
   await desktop.getByRole('button', { name: 'Remote access', exact: true }).click();
   await expect(desktop.getByRole('heading', { name: 'Remote access', exact: true })).toBeVisible();
-  await desktop.getByLabel('Enable remote access').check();
+  await desktop.getByLabel('Enable private-network access').check();
   await desktop.getByLabel('Network address').selectOption(host);
   await desktop.getByLabel('Port', { exact: true }).fill(String(port));
   await desktop.getByRole('button', { name: 'Save connection' }).click();
@@ -52,7 +54,7 @@ test('network-access', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
   await desktop.getByRole('button', { name: 'Application settings', exact: true }).click();
   await desktop.getByRole('button', { name: 'Remote access', exact: true }).click();
   await expect(desktop.getByLabel('Port', { exact: true })).toHaveValue(String(port));
-  await expect(desktop.getByLabel('Enable remote access')).toBeChecked();
+  await expect(desktop.getByLabel('Enable private-network access')).toBeChecked();
   const stranger = await browser.newPage({ viewport: { width: 390, height: 844 } });
   await stranger.goto(new URL(pairing.url).origin);
   await expect(stranger.getByRole('heading', { name: 'Connect to Freelancer' })).toBeVisible();
@@ -60,8 +62,8 @@ test('network-access', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
   await expect(desktop.getByText('No devices remembered yet.', { exact: true })).toBeVisible();
   await phone.reload();
   await expect(phone.getByRole('heading', { name: 'Connect to Freelancer' })).toBeVisible();
-  await desktop.getByLabel('Enable remote access').uncheck();
+  await desktop.getByLabel('Enable private-network access').uncheck();
   await desktop.getByRole('button', { name: 'Save connection' }).click();
-  await expect(desktop.getByText('Remote access is off', { exact: true })).toBeVisible();
+  await expect(desktop.getByText('Private-network access is off', { exact: true })).toBeVisible();
   await browser.close();
 });

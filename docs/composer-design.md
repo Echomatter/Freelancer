@@ -51,6 +51,11 @@ Earlier turns are labeled explicitly and provide **Back to current turn**.
 A new turn returns the dock to current work. Expanded tools scroll independently
 and never cover the composer. Tool bodies are not duplicated in the transcript.
 
+The [conversation rail](conversation-rail.md) adds an explicit jump: selecting a
+turn dot moves the transcript and opens that turn's tools together. Ordinary
+scrolling and the existing inline tool markers retain their behavior. A turn
+without tools shows an empty tool state instead of another turn's commands.
+
 The same outlined icon treatment identifies the Projects and Chats parent
 controls. Their children retain lighter icons. Compact navigation closes after
 chat selection and when the window enters the phone layout.

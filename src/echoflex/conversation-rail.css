@@ -1,0 +1,45 @@
+/* One palette-aware spine for turns, scrolling, and the Details boundary. */
+.chat-view.has-conversation-rail { padding-right: 34px; }
+.has-conversation-rail .chat-scroll { scrollbar-width: none; scrollbar-gutter: auto; }
+.has-conversation-rail .chat-scroll::-webkit-scrollbar { display: none; }
+.conversation-rail { --rail-ink: color-mix(in srgb, var(--accent) var(--rail-strength), var(--line)); position: absolute; inset: 0 0 0 auto; width: 34px; z-index: 8; color: var(--rail-ink); background: var(--bg); touch-action: none; user-select: none; }
+.conversation-rail-help { position: absolute; top: 2px; left: 5px; z-index: 4; }
+.conversation-rail-help .help-hint-trigger { color: var(--muted); opacity: .65; }
+.conversation-rail-help .help-hint-trigger:hover { opacity: 1; }
+.conversation-rail-track { position: absolute; inset: 44px 0 36px; cursor: pointer; }
+.conversation-rail.is-resizable .conversation-rail-track { pointer-events: none; }
+.conversation-rail-line { position: absolute; inset: -12px auto -16px 16px; width: 2px; border-radius: 3px; background: var(--rail-ink); opacity: .65; pointer-events: none; transition: background-color .6s ease; }
+.conversation-rail-turns { position: absolute; inset: 0; pointer-events: none; }
+.conversation-rail-turn { position: absolute; left: 9px; width: 16px; height: var(--turn-target); min-height: 0; transform: translateY(-50%); border: 0; padding: 0; display: grid; place-items: center; border-radius: 10px; color: inherit; background: none; cursor: pointer; pointer-events: auto; z-index: 3; }
+.conversation-rail-turn > span { display: block; width: var(--turn-size); height: var(--turn-size); box-sizing: border-box; border: 1.5px solid var(--accent); border-radius: 50%; background: var(--bg); transition: transform .14s ease, background-color .4s ease; }
+.conversation-rail-turn[aria-current] > span { background: var(--rail-ink); box-shadow: 0 0 0 3px var(--tint); }
+.conversation-rail-turn:hover > span, .conversation-rail-turn:focus-visible > span { transform: scale(1.45); background: var(--accent); }
+.conversation-rail-turn:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.conversation-rail-thumb { position: absolute; left: 1px; width: 32px; height: 30px; transform: translateY(-50%); display: grid; place-items: center; z-index: 2; pointer-events: auto; cursor: grab; border-radius: 16px; outline-offset: -2px; }
+.conversation-rail-thumb > span { position: relative; width: 20px; height: 20px; box-sizing: border-box; border: 2px solid var(--accent); border-radius: 50%; background: var(--tint); box-shadow: 0 0 0 3px var(--bg); pointer-events: none; }
+.conversation-rail-thumb > span::after { content: ''; position: absolute; inset: -6px; border-radius: 50%; border: 1px solid var(--rail-ink); animation: conversation-rail-breathe 3.8s ease-in-out infinite; opacity: .28; }
+.conversation-rail-thumb:hover > span, .conversation-rail-thumb:focus-visible > span { border-color: var(--accent); background: var(--hover); }
+.conversation-rail-thumb[aria-disabled=true] { opacity: .45; cursor: default; }
+.conversation-rail-thumb[aria-disabled=true] > span::after, .is-scrolling .conversation-rail-thumb > span::after { animation: none; }
+.conversation-rail-thumb:focus-visible { outline: 2px solid var(--focus); }
+.conversation-scrolling, .conversation-scrolling * { cursor: grabbing !important; user-select: none !important; }
+.conversation-rail-context { position: absolute; inset: auto 0 6px; z-index: 4; color: var(--muted); text-align: center; font-variant-numeric: tabular-nums; font-size: 9px; line-height: 18px; cursor: help; }
+.conversation-rail .conversation-rail-divider { inset: 0; width: 100%; z-index: 0; border-radius: 8px; }
+.conversation-rail .conversation-rail-divider::after { display: none; }
+.conversation-rail .conversation-rail-divider:hover, .conversation-rail .conversation-rail-divider:focus-visible { background: color-mix(in srgb, var(--tint) 65%, transparent); }
+.conversation-rail-tooltip { position: fixed; z-index: 60; width: min(270px, calc(100vw - 24px)); padding: 12px 14px; background: var(--paper); color: var(--text); border: 1px solid var(--border-strong); border-radius: 12px; box-shadow: 0 8px 28px var(--shadow-soft); pointer-events: auto; font-size: 11px; }
+.conversation-rail-tooltip header { display: flex; gap: 12px; justify-content: space-between; align-items: center; }
+.conversation-rail-tooltip header strong { color: var(--accent); font-size: 12px; }
+.conversation-rail-tooltip header span, .conversation-rail-tooltip dt, .conversation-rail-tooltip footer { color: var(--muted); }
+.conversation-rail-tooltip p { margin: 10px 0; line-height: 1.55; overflow-wrap: anywhere; }
+.conversation-rail-tooltip dl { display: grid; gap: 6px; margin: 0; }
+.conversation-rail-tooltip dl > div { display: flex; justify-content: space-between; gap: 14px; }
+.conversation-rail-tooltip dd { margin: 0; font-variant-numeric: tabular-nums; text-align: right; overflow-wrap: anywhere; min-width: 0; max-width: 170px; }
+.conversation-rail-tooltip footer { border-top: 1px solid var(--line); margin-top: 10px; padding-top: 9px; font-size: 10px; }
+.has-conversation-rail + .work-details { border-left: 0; }
+@media (max-width: 800px) { .with-details .work-details { z-index: 9; } }
+.request-dock-empty { padding: 12px; border: 1px solid var(--line); border-radius: 12px; color: var(--muted); font-size: 12px; background: var(--paper); }
+.has-conversation-rail .request-dock .request-working[open] { border-radius: 12px; }
+@keyframes conversation-rail-breathe { 50% { transform: scale(1.18); opacity: .07; } }
+@media (prefers-reduced-motion: reduce) { .conversation-rail-thumb > span::after { animation: none; } .conversation-rail-line, .conversation-rail-turn > span { transition: none; } }
+@media (forced-colors: active) { .conversation-rail-line, .conversation-rail-turn[aria-current] > span { background: Highlight; } .conversation-rail-turn > span, .conversation-rail-thumb > span { border-color: ButtonText; } }

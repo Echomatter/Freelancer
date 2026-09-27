@@ -282,6 +282,38 @@ export function createHistoryService({
         }).filter(Boolean);
       return { results, coverage: "Search covers OpenCode chats and imported ChatGPT / Codex snapshots, including archived chats and workers. Rebuild to refresh older conversations; current chats refresh when opened. Results are a local search copy, not a backup." };
     },
+    async searchFiles(query, options = {}) {
+      if (typeof query !== "string" || !query.trim())
+        return { results: [], coverage: "Search indexed files across registered projects." };
+      if (query.length > 200) throw Error("Search is limited to 200 characters.");
+      const terms = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
+      if (!terms.length)
+        return { results: [], coverage: "Enter words to search indexed file content." };
+      const settingsProjects = (await app.store.read("settings")).projects;
+      if (options.project && !settingsProjects.some((item) => item.id === options.project))
+        throw Error("Choose a registered project.");
+      const organizations = data().projects();
+      const projects = settingsProjects
+        .filter((item) => !options.project || item.id === options.project)
+        .map((item) => ({
+          id: item.id,
+          name: item.name,
+          key: process.platform === "win32"
+            ? path.resolve(item.directory).toLowerCase()
+            : path.resolve(item.directory),
+          archived: !!organizations[item.id]?.archivedAt,
+        }));
+      const byKey = new Map(projects.map((item) => [item.key, item]));
+      const match = terms.map((term) => `"${term}"`).join(" AND ");
+      const hits = data().searchFiles(match, [...byKey.keys()], options.limit);
+      return {
+        results: hits.flatMap(({ projectKey, ...hit }) => {
+          const project = byKey.get(projectKey);
+          return project ? [{ ...hit, project: project.id, projectName: project.name, projectArchived: project.archived }] : [];
+        }),
+        coverage: "Search uses the local file index for registered projects, including archived projects. Refresh Content index to include recent file changes; results are derived search copies, not project files.",
+      };
+    },
     async indexStats() {
       const projects = (await app.store.read("settings")).projects;
       const stats = data().indexStats();

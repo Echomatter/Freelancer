@@ -13,6 +13,7 @@ import { ProviderConnection } from "./ProviderConnection";
 import { SessionDefaults } from "./SessionDefaults";
 import { ScheduledPrompts } from "./ScheduledPrompts";
 import { RemoteAccess } from "./RemoteAccess";
+import type { SettingsScope } from "./SettingsNavigation";
 const providers = [
   ["openai", "OpenAI"],
   ["github-copilot", "GitHub Copilot"],
@@ -26,6 +27,7 @@ export function Settings({
   run,
   refresh,
   onNavigate,
+  onSetting,
   onColorsSaved,
   onHistory,
   onOpenChat,
@@ -38,6 +40,7 @@ export function Settings({
   onClose: () => void;
   onColorsSaved: (patch: ColorPatch) => void;
   onNavigate: (view: string) => void;
+  onSetting: (scope: SettingsScope, tab: string) => void;
   tab: string;
   run: (fn: () => Promise<any>) => Promise<void>;
   refresh: () => Promise<void>;
@@ -66,8 +69,8 @@ export function Settings({
         {tab === "remote-access" && <RemoteAccess onClose={onClose} />}
         {tab === "schedules" && <ScheduledPrompts data={data} onClose={onClose} onOpen={onOpenChat} />}
         {tab === "delegation" && <><PageHeading title="Delegation" actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
-        {tab === "storage" && <DataStorage onHistory={() => onHistory?.()} onClose={onClose} onChange={refresh} />}
-        {tab === "index" && <ContentIndex onClose={onClose} />}
+        {tab === "storage" && <DataStorage onHistory={() => onHistory?.()} onSearch={() => onSetting("application", "search")} onIndex={() => onSetting("application", "index")} onClose={onClose} onChange={refresh} />}
+        {tab === "index" && <ContentIndex onClose={onClose} onSearch={() => onSetting("application", "search")} onStorage={() => onSetting("application", "storage")} />}
         {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} onClose={onClose} refresh={refresh} />}
         {tab === "providers" && (
           <>

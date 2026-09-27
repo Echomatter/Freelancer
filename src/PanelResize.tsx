@@ -39,7 +39,7 @@ export function usePanelLayout(appearance: any, detailsOpen: boolean) {
     ready: appearance !== undefined && initialized.current, dismissError: () => setError(""),
     style: { "--navigation-width": `${fitted.navigation}px`, "--details-width": `${fitted.details}px` } as CSSProperties };
 }
-export function PanelResize({ panel, layout }: { panel: PanelName; layout: ReturnType<typeof usePanelLayout> }) {
+export function PanelResize({ panel, layout, className = '' }: { panel: PanelName; layout: ReturnType<typeof usePanelLayout>; className?: string }) {
   const cancelDrag = useRef<(() => void) | null>(null);
   useEffect(() => () => cancelDrag.current?.(), []);
   const limit = panelLimits[panel], value = layout.fitted[panel];
@@ -61,6 +61,7 @@ export function PanelResize({ panel, layout }: { panel: PanelName; layout: Retur
       window.removeEventListener("keydown", key);
       window.removeEventListener("blur", cancel);
       window.removeEventListener("resize", cancel);
+      handle.removeEventListener('lostpointercapture', cancel);
       cancelDrag.current = null;
       document.documentElement.classList.remove("panel-resizing");
       if (handle.hasPointerCapture(id)) handle.releasePointerCapture(id);
@@ -81,8 +82,9 @@ export function PanelResize({ panel, layout }: { panel: PanelName; layout: Retur
     window.addEventListener("keydown", key);
     window.addEventListener("blur", cancel);
     window.addEventListener("resize", cancel);
+    handle.addEventListener('lostpointercapture', cancel);
   }
-  return <div className={`panel-resizer panel-resizer-${panel}`} role="separator"
+  return <div className={`panel-resizer panel-resizer-${panel} ${className}`} role="separator"
     aria-orientation="vertical" aria-label={`${panel === "navigation" ? "Navigation" : "Details"} width`}
     aria-controls={`workspace-${panel}`} aria-valuemin={limit.min} aria-valuemax={max}
     aria-valuenow={value} aria-valuetext={`${value} pixels`} aria-disabled={!enabled} tabIndex={enabled ? 0 : -1}

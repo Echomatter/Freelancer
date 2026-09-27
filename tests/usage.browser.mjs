@@ -463,8 +463,9 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await theme("midnight");
     await settings("Providers");
     pauseBootstrap();
-    void refreshBootstrap();
+    const refreshClick = refreshBootstrap();
     await captured;
+    await refreshClick;
     await color("openai", "#3379cc");
     releaseBootstrap();
     hold = undefined;

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from './api';
-import { Button } from './echoflex/Controls';
+import { Button, Field } from './echoflex/Controls';
 import { ProgressStatus } from './echoflex/ProgressStatus';
 import { ProviderSelect } from './ProviderColors';
 import { ModelIntelligence } from './ModelSetup';
@@ -67,14 +67,13 @@ export function ModelRatingDialog({ models, connected, project, onClose, onStart
     onSubmit={event => { event.preventDefault(); void onStart(project, choice, variant).then(started => { if (started) onClose(); }); }}
     footer={<><Button type="button" disabled={pending} onClick={onClose}>Cancel</Button>
       <Button variant="primary" disabled={!choice || pending}>{pending ? 'Starting…' : 'Go'}</Button></>}>
-      <label className="field"><span>Configuration model</span>
+      <Field label="Configuration model" help="model-ratings">
         <ProviderSelect provider={choice} autoFocus required value={choice} onChange={event => { setChoice(event.target.value); setVariant(''); }}>
           <option value="">Select a connected model…</option>
           {available.map(row => <option key={row.id} value={row.id}>{row.name} · {row.provider} ({row.costClass})</option>)}
         </ProviderSelect>
-      </label>
+      </Field>
       <ModelIntelligence variants={available.find(row => row.id === choice)?.variants ?? []} value={variant} onChange={setVariant} disabled={pending} />
-      <p>Research missing model details in the background using this model’s normal provider allowance.</p>
       {error && <p className="notice error" role="alert">{error}</p>}
   </Dialog>;
 }

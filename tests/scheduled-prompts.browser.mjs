@@ -24,7 +24,7 @@ test('scheduled-prompts', { tag: ["@app"] }, async ({ appBrowser: browser, own }
   try {
     await page.goto(fixture.url);
     await openSettings();
-    await page.getByRole("heading", { name: "Your next task can start here" }).waitFor();
+    await page.getByRole("heading", { name: "No scheduled prompts" }).waitFor();
     await page.getByRole("button", { name: "New schedule", exact: true }).click();
     await page.getByLabel("Name", { exact: true }).fill("Morning project review");
     await page.getByLabel("Prompt", { exact: true }).fill("Review the recent changes and summarize any follow-ups.");
@@ -71,7 +71,7 @@ test('scheduled-prompts', { tag: ["@app"] }, async ({ appBrowser: browser, own }
     await card.getByRole("button", { name: "Keep", exact: true }).click();
     await card.getByRole("button", { name: "Delete Morning project review", exact: true }).click();
     await card.getByRole("button", { name: "Delete schedule", exact: true }).click();
-    await page.getByRole("heading", { name: "Your next task can start here" }).waitFor();
+    await page.getByRole("heading", { name: "No scheduled prompts" }).waitFor();
     await page.setViewportSize({ width: 1440, height: 1000 });
     await fixture.api("schedules", { title: "Scheduled native dispatch", prompt: "Summarize this project.",
       project: fixture.project.id, agent: "engineer", workflow: "review", model: "opencode/free",

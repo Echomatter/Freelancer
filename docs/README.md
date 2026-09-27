@@ -14,6 +14,7 @@ Start with what you are trying to do. These guides describe the **single browser
 | Your question | Read |
 | --- | --- |
 | What is Freelancer, and what can I use today? | [Project overview](../README.md) |
+| Where does the question-mark help in the application come from? | [Interface help in the README](../README.md#interface-help) |
 | How do I install dependencies, start it, and open my first project? | [Getting started](getting-started.md) |
 | How do I import local ChatGPT / Codex chats when adding a project? | [One-time project import](chatgpt-import.md) |
 | What are the server, React UI, OpenCode engine, database, agents, and tools? | [Architecture and component catalog](ARCHITECTURE.md) |
@@ -29,12 +30,13 @@ Start with what you are trying to do. These guides describe the **single browser
 | Shared popups, subagent priority, confirmations and build enforcement | [Echoflex dialogs](echoflex-dialogs.md) |
 | Add a message while work runs; Queue versus Delegate | [State-aware sender](state-aware-sender.md) |
 | Message options, collapsible context cards, and current-turn tool dock | [Composer and tools](composer-design.md) |
+| Turn navigation, scrolling, Details divider and native automatic compaction | [Conversation rail](conversation-rail.md) |
 | One-time and recurring local prompts with project, agent, workflow and model choices | [Scheduled prompts](scheduled-prompts.md) |
 | Share of work and native todo placement | [Contributions and todos](contributions-and-todos.md) |
 | Agent-directed teams, project/chat budgets, subscription choices and preserved guards | [Delegation budget](delegation-budget.md) |
 | Shared main/delegated agents, custom definitions and captured prompts | [Named agents](named-agents.md) |
 | Local checkpoints, GitHub setup, working agreements, and managed Sync | [Project history & GitHub](github-projects.md) |
-| Pins, archives, recoverable drafts, exports, SQLite, and storage locations | [Local data and history](local-data.md) |
+| Search indexed files across registered projects; inspect local data and history | [Local data and history](local-data.md) |
 | Navigation/Details resizing and saved appearance at startup | [Panels and theme](panels-and-theme.md) |
 | Fixed-port private-network access, QR pairing, and remembered devices | [Remote access](network-access.md) |
 | Palettes, provider identities, semantic colors, and extension points | [Color system](color-system.md) |

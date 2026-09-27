@@ -19,6 +19,7 @@
   color: var(--muted);
   line-height: 1.5;
 }
+.history-search-link { padding: 0; border: 0; color: var(--accent); background: none; font: inherit; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 .chat-search-panel {
   margin-top: 16px;
   padding: 12px;
@@ -105,6 +106,14 @@ button.history-open {
   display: grid;
   gap: 16px;
 }
+.storage-story { border-color: var(--line); }
+.storage-flow { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr) auto minmax(0, 1fr); align-items: center; gap: 12px; }
+.storage-flow-step { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 4px 10px; min-width: 0; padding: 13px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.storage-flow-step > svg { grid-row: span 2; color: var(--accent); }
+.storage-flow-step strong { font-size: 12px; }
+.storage-flow-step small { grid-column: 2; color: var(--muted); font-size: 11px; line-height: 1.4; }
+.storage-flow-arrow { color: var(--muted); }
+.storage-story-actions { display: flex; flex-wrap: wrap; gap: 8px; padding-top: 15px; }
 .data-location {
   overflow-wrap: anywhere;
   font-family: monospace;
@@ -137,6 +146,9 @@ button.history-open {
   font-size: 13px;
 }
 @media (max-width: 600px) {
+  .storage-flow { grid-template-columns: 1fr; }
+  .storage-flow-arrow { justify-self: center; transform: rotate(90deg); }
+  .storage-story-actions { display: grid; }
   .data-map {
     grid-template-columns: 1fr;
   }

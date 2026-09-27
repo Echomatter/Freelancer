@@ -365,6 +365,28 @@ export function createLocalDataStore(directory) {
         databaseBytes: pageSize * pageCount, reclaimableBytes: pageSize * freePages,
         walBytes };
     },
+    searchFiles(match, projectKeys, limit = 50) {
+      if (!Array.isArray(projectKeys) || !projectKeys.length) return [];
+      const keys = [...new Set(projectKeys.filter((key) => typeof key === "string" && key))];
+      if (!keys.length) return [];
+      return db.prepare(`SELECT
+        s.project_key AS projectKey,
+        s.virtual_path AS path,
+        s.source_role AS role,
+        s.status AS status,
+        u.unit_no AS unit,
+        u.locator AS locator,
+        u.heading AS heading,
+        snippet(content_units_fts, 7, '[', ']', ' … ', 26) AS excerpt,
+        bm25(content_units_fts) AS score
+        FROM content_units_fts
+        JOIN content_units u ON u.unit_id=content_units_fts.rowid
+        JOIN content_sources s ON s.source_id=u.source_id
+        WHERE content_units_fts MATCH ?
+          AND content_units_fts.project_key IN (${keys.map(() => "?").join(",")})
+        ORDER BY bm25(content_units_fts), s.routing_rank DESC, s.virtual_path
+        LIMIT ?`).all(match, ...keys, Math.max(1, Math.min(100, limit))).map(plain);
+    },
     projectIndexesReady(id) {
       return !!db.prepare('SELECT ready_at FROM project_index_state WHERE project_id=?').get(id);
     },

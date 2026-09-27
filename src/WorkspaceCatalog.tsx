@@ -262,7 +262,7 @@ export function WorkspaceCatalog({
                 onChange={(e) => update("name", e.target.value)}
               />
             </Field>
-            <Field label={isAgent ? "Prompt" : "Instructions"}>
+            <Field label={isAgent ? "Prompt" : "Instructions"} help={isAgent ? undefined : "workflows"}>
               <textarea
                 required={isAgent}
                 rows={6}
@@ -353,7 +353,6 @@ export function WorkspaceCatalog({
                     )}
                   </Field>
                 </div>
-                <p>Workflows guide the approach. Set worker limits and model preferences in Project settings → Delegation.</p>
               </>
             )}
             <div className="editor-footer">

@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from 'react';
 import { Check } from 'lucide-react';
 import { api } from './api';
@@ -29,8 +30,7 @@ export function ThemePicker({ theme, refresh, onSaved }: { theme?: string; refre
   const [expanded, setExpanded] = useState({ light: true, dark: true });
   const groups = [{ mode: 'light', heading: 'Light themes', palettes: lightPalettes }, { mode: 'dark', heading: 'Dark themes', palettes: darkPalettes }] as const;
   return <section className="palette-picker" aria-labelledby="theme-picker-heading">
-    <h3 id="theme-picker-heading">Theme</h3>
-    <p className="palette-intro">Choose a palette. Themes are ordered by accent color in each group.</p>
+    <h3 id="theme-picker-heading" aria-label="Theme">Theme<HelpHint topic="theme" /></h3>
     {groups.map(group => <div className="palette-group" key={group.mode}>
       <h4 className="palette-group-heading">
         <button type="button" className="palette-group-toggle" aria-expanded={expanded[group.mode]}
@@ -43,7 +43,6 @@ export function ThemePicker({ theme, refresh, onSaved }: { theme?: string; refre
             className="palette-option" onClick={() => void save(p.id)}>
             <span className="palette-mini" style={paletteStyles[p.id]} aria-hidden="true"><span className="palette-mini-nav" /><span className="palette-mini-main"><i /><i /><b /></span></span>
             <span className="palette-name"><strong>{p.name}</strong>{value === p.id && <Check size={16} aria-hidden="true" />}</span>
-            <small>{p.description}</small>
           </button>)}
         </div>}
     </div>)}

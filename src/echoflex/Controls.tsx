@@ -3,6 +3,8 @@
 import { X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cloneElement, isValidElement, useId, type ReactElement } from "react";
+import { HelpHint } from "../HelpHint";
+import type { HelpTopic } from "../documentation-help";
 export function Button({
   variant = "secondary",
   className = "",
@@ -22,13 +24,14 @@ export function PageCloseButton({ onClick, label = "Close settings", disabled = 
 
 export function Panel({
   title,
+  help,
   children,
   className = "",
   ...props
-}: HTMLAttributes<HTMLElement> & { title?: string }) {
+}: HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic }) {
   return (
     <section className={`panel ${className}`} {...props}>
-      {title && <h3>{title}</h3>}
+      {title && <h3 aria-label={help ? title : undefined}>{title}{help && <HelpHint topic={help} />}</h3>}
       {children}
     </section>
   );
@@ -44,12 +47,22 @@ export function PageHeading({ title, actions }: {
 }
 export function Field({
   label,
+  help,
   children,
 }: {
   label: string;
+  help?: HelpTopic;
   children: ReactNode;
 }) {
   const labelID = useId();
+  if (help) {
+    const child = isValidElement(children) ? children as ReactElement<any> : null;
+    const controlID = child?.props.id ?? `${labelID}-control`;
+    return <div className="field">
+      <span className="field-label"><label id={labelID} htmlFor={controlID}>{label}</label><HelpHint topic={help} /></span>
+      {child ? cloneElement(child, { id: controlID, "aria-labelledby": labelID }) : children}
+    </div>;
+  }
   return (
     <label className="field">
       <span id={labelID}>{label}</span>

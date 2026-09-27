@@ -1,4 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { HelpHint } from "./HelpHint";
+import { useEffect, useRef, useState } from 'react';
 import { Check, RotateCcw } from 'lucide-react';
 import { api } from './api';
 import { Button } from './echoflex/Controls';
@@ -13,7 +14,6 @@ export function ProviderColorPicker({ provider, name, onSaved }: {
   const [draft, setDraft] = useState(stored), [pending, setPending] = useState(false), [error, setError] = useState('');
   const [message, setMessage] = useState('');
   const saving = useRef(false), dirty = useRef(false), mounted = useRef(true);
-  const id = useId();
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => { if (!dirty.current && !saving.current) setDraft(stored); }, [stored]);
   let valid: string | null = null;
@@ -38,9 +38,8 @@ export function ProviderColorPicker({ provider, name, onSaved }: {
     } catch (e) { if (mounted.current) setError(e instanceof Error ? e.message : 'Color could not be saved.'); }
     finally { saving.current = false; if (mounted.current) setPending(false); }
   }
-  return <fieldset className="provider-color-picker" disabled={pending} aria-describedby={`${id}-help`}>
-    <legend>{name} color</legend>
-    <p id={`${id}-help`}>Choose a color for this provider and its models. Text shades adjust to your palette for readability.</p>
+  return <fieldset className="provider-color-picker" disabled={pending}>
+    <legend>{name} color<HelpHint topic="provider-color" /></legend>
     <div className="provider-color-presets" role="group" aria-label={`${name} color presets`}>
       {providerColorPresets.map(p => <button type="button" key={p.name} aria-label={`${name}: ${p.name}`} aria-pressed={valid === p.color}
         onClick={() => choose(p.color)} className="color-preset">

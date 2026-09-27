@@ -1,4 +1,5 @@
 import { checkedCatalog } from '../../backend/tools/runtime/agent-catalog.mjs';
+import { applyContextSettings } from '../../backend/tools/runtime/context-settings.mjs';
 import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
@@ -63,6 +64,7 @@ export async function localDataFixture() {
   const calls = [],
     exports = [];
   const row = (id) => state.sessions.find((s) => s.id === id);
+  const contextConfigs = new Map();
   const host = {
     async request(route, options = {}) {
       calls.push({ route, options });
@@ -84,8 +86,13 @@ export async function localDataFixture() {
             },
           ],
         };
-      if (route === "/agent") return checkedCatalog(await store.read("settings")).agents.map(a=>({name:a.id,mode:"all",permission:[]}));
-      if (route === "/config") return { model: "opencode/free" };
+      if (route === '/instance/dispose') { contextConfigs.delete(options.directory); return true; }
+      if (route === "/agent") {
+        const settings = await store.read('settings');
+        if (!contextConfigs.has(options.directory)) contextConfigs.set(options.directory, applyContextSettings({ model: 'opencode/free', compaction: { auto: true, prune: true, reserved: 8192 } }, settings, options.directory ?? directory));
+        return checkedCatalog(settings).agents.map(a=>({name:a.id,mode:"all",permission:[]}));
+      }
+      if (route === "/config") return contextConfigs.get(options.directory) ?? { model: 'opencode/free', compaction: { auto: true } };
       if (route === "/config/providers")
         return { providers: [{ id: "opencode", models: { free: {} } }] };
       if (route === "/session/status") return state.status;

@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from 'react';
 import { FolderOpen, ArrowUp, Import } from 'lucide-react';
 import { api } from './api';
@@ -43,13 +44,13 @@ export function ProjectImport({ preview, busy, error, onClose, onComplete }: { p
   onClose: () => void; onComplete: (selected: string[]) => void }) {
   const [selected, setSelected] = useState<string[]>([]);
   const supported = preview.chats.filter((chat: any) => chat.supported);
-  return <Dialog title="Bring your chats along?" icon={<Import />} description="Optional · before building the project indexes"
+  return <Dialog title="Import conversations" icon={<Import />}
     size="wide" onClose={onClose} busy={busy} footer={<>
       <Button type="button" disabled={busy} onClick={() => onComplete([])}>Skip import</Button>
       <Button type="button" variant="primary" disabled={busy || !selected.length} onClick={() => onComplete(selected)}>Import {selected.length || 'selected'} and open project</Button></>}>
     <strong>{preview.detected ? 'ChatGPT / Codex detected' : 'ChatGPT / Codex not detected'}</strong>
     <p>{preview.notice}</p><p className="project-import-path">{preview.directory}</p>
-    <p>Saved messages open in the same chat layout. Continuing a chat uses its history to orient a new Freelancer conversation. The original app and its database stay unchanged.</p>
+    <div className="context-actions"><span>Optional import</span><HelpHint topic="project-import" /></div>
     {!!supported.length && <label className="check"><input type="checkbox" disabled={busy} checked={selected.length === supported.length} onChange={event => setSelected(event.target.checked ? supported.map((chat: any) => chat.id) : [])} />Select all matching chats ({supported.length})</label>}
     {!preview.chats.length && <p>{preview.notice?.includes('different path')
       ? preview.notice
@@ -60,7 +61,6 @@ export function ProjectImport({ preview, busy, error, onClose, onComplete }: { p
       <input type="checkbox" disabled={busy || !chat.supported} checked={selected.includes(chat.id)} onChange={event => setSelected(previous => event.target.checked ? [...previous, chat.id] : previous.filter(id => id !== chat.id))} />
       <span><strong>{chat.title || 'Untitled chat'}</strong><small>{new Date(chat.updatedAt).toLocaleDateString()}{chat.archived ? ' · Archived in Codex' : ''}{!chat.supported ? ' · Too large for import (64 MB limit)' : ''}</small></span>
     </label>)}</div>
-    <p>Local user/assistant messages and recorded tool output are copied once. Credentials, hidden reasoning, system instructions and external attachment files are excluded.</p>
     {error && <p className="notice error" role="alert">{error}</p>}
   </Dialog>;
 }

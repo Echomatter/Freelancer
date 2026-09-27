@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from "react";
 import {
   Archive,
@@ -38,6 +39,7 @@ export function HistoryPage({
   onClose,
   onOpen,
   onChange,
+  onFileSearch,
 }: {
   data: any;
   project: string;
@@ -46,6 +48,7 @@ export function HistoryPage({
   onClose: () => void;
   onOpen: (project: string, session: string) => void;
   onChange: () => Promise<void>;
+  onFileSearch?: () => void;
 }) {
   const [selectedProject, setProject] = useState(project);
   const otherActivity = useProjectActivity(
@@ -72,7 +75,6 @@ export function HistoryPage({
   const [chatQuery, setChatQuery] = useState("");
   const [chatModel, setChatModel] = useState("");
   const [chatResults, setChatResults] = useState<any[]>([]);
-  const [chatCoverage, setChatCoverage] = useState("");
   const [chatSearchError, setChatSearchError] = useState("");
   const [chatSearching, setChatSearching] = useState(false);
   const [searchRevision, setSearchRevision] = useState(0);
@@ -125,7 +127,7 @@ export function HistoryPage({
       void api("history/search?" + new URLSearchParams({ q: chatQuery, project: selectedProject, model: chatModel }))
         .then((result) => {
           if (current !== chatSearchVersion.current) return;
-          setChatResults(result.results); setChatCoverage(result.coverage); setChatSearchError("");
+          setChatResults(result.results); setChatSearchError("");
         })
         .catch((error) => { if (current === chatSearchVersion.current) setChatSearchError(error.message); })
         .finally(() => { if (current === chatSearchVersion.current) setChatSearching(false); });
@@ -308,7 +310,7 @@ export function HistoryPage({
           </select></label>
           <label>Model ID (optional)<input aria-label="Search model" value={chatModel} maxLength={200} placeholder="provider/model" onChange={(e) => { setSelected(new Set()); setChatModel(e.target.value); }} /></label>
         </div>
-        <small>Search uses the local conversation index. Refresh older chats in Application settings → Content index.</small>
+        <div className="context-actions"><HelpHint topic="history-search" />{onFileSearch && <button type="button" className="history-search-link" onClick={onFileSearch}>Search indexed project files</button>}</div>
         {chatSearchError && <p className="notice error" role="alert">{chatSearchError}</p>}
       </section>
       <div className="history-tabs" role="group" aria-label="History filter">
@@ -405,7 +407,6 @@ export function HistoryPage({
           </div>
         ))}
       </section>
-      <small>{searching ? chatCoverage : result?.coverage}</small>
       {!searching && result?.hasMore && (
         <Button
           disabled={pending || loading}
@@ -484,13 +485,9 @@ export function HistoryPage({
             >
               <Download size={16} />
               Export selected
-            </Button>
+            </Button><HelpHint topic="history-export" />
           </div>
-          <small>
-            Exports can contain sensitive text and tool output. They are not
-            complete backups; project files and external attachment bytes are
-            not included.
-          </small>
+
         </footer>
       )}
     </div>

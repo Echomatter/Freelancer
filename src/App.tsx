@@ -18,7 +18,7 @@ import {
   LoaderCircle,
 } from "lucide-react";
 import { api, query, subscribe } from "./api";
-import { Button, Panel, Badge, Empty, PageCloseButton, PageHeading } from "./echoflex/Controls";
+import { Button, Panel, Badge, Empty, Field, PageCloseButton, PageHeading } from "./echoflex/Controls";
 import { Chat } from "./Chat";
 import { RenderBoundary } from './RenderBoundary';
 const GitHubProject = lazy(() => import('./GitHubProject').then(module => ({ default: module.GitHubProject })));
@@ -34,6 +34,7 @@ import { startingChoices } from "../domain/session-defaults.mjs";
 import { compatibleApplication } from "../domain/protocol.mjs";
 import { ProjectProgress } from "./ProjectPicker";
 import { ChatNavigation, ProjectNavigation } from "./NavigationMenus";
+import { IndexedSearch } from "./IndexedSearch";
 import { Questions } from "./Question";
 import { Permissions } from './Permissions';
 import { Dialog, useConfirmation } from './echoflex/Dialog';
@@ -74,6 +75,7 @@ function ChatLoading({ label }: { label: string }) {
 export default function App() {
   const confirmation = useConfirmation();
   const [folderPicker, setFolderPicker] = useState(false), [importPreview, setImportPreview] = useState<any>(null);
+  const [indexedFilePath, setIndexedFilePath] = useState("");
   const [importBusy, setImportBusy] = useState(false), [importError, setImportError] = useState('');
   const [data, setData] = useState<any>(null),
     [project, setProject] = useState(""),
@@ -131,15 +133,16 @@ export default function App() {
   const historyOpen = view === "history";
   const setView = (next: React.SetStateAction<string>) => startTransition(() => setViewState(next));
   const openHistory = (id?: string) => { setHistorySelection(id); setExpandedSettings("application"); setView("history"); };
-  const closeSettings = () => { setExpandedSettings(null); setHistorySelection(undefined); setView("chat"); };
+  const closeSettings = () => { setExpandedSettings(null); setHistorySelection(undefined); setIndexedFilePath(""); setView("chat"); };
   const openSettings = (scope: SettingsScope, item: string) => {
     if (item === "history") { openHistory(); return; }
+    if (item === "files") setIndexedFilePath("");
     setSettingsScope(scope);
     setExpandedSettings(scope);
     setTab(item);
-    setView(({ github: "github", models: "models", usage: "overview", agents: "agents", workflows: "workflows", files: "files" } as Record<string, string>)[item] ?? "settings");
+    setView(({ github: "github", models: "models", usage: "overview", agents: "agents", workflows: "workflows", files: "files", search: "search" } as Record<string, string>)[item] ?? "settings");
   };
-  const navigationScope: SettingsScope = historyOpen ? "application" : view === "settings" ? settingsScope : view === "models" || view === "overview" ? "application" : "project";
+  const navigationScope: SettingsScope = historyOpen || view === "search" ? "application" : view === "settings" ? settingsScope : view === "models" || view === "overview" ? "application" : "project";
   const navigationTab = historyOpen ? "history" : view === "settings" ? tab : view === "chat" ? "" : view === "overview" ? "usage" : view;
   const [details, setDetails] = useState(false),
     [detailsSel, setDetailsSel] = useState({ tab: "activity", n: 0 }),
@@ -457,7 +460,8 @@ export default function App() {
     return { accepted, sessionID: createdSession || session };
   }
   async function openProject(existing?: any) {
-    if (projectTransition.current) return;
+    if (projectTransition.current) return false;
+    let opened = false;
     projectTransition.current = true;
     bootstrapVersion.current++;
     chatVersion.current++;
@@ -500,11 +504,24 @@ export default function App() {
         setFolderOpen(false);
         setFolder("");
         setView("chat");
+        opened = true;
       } finally {
         projectTransition.current = false;
         setProjectLoading(null);
       }
     });
+    return opened;
+  }
+  async function openIndexedFile(projectID: string, filePath: string) {
+    const selected = data?.settings.projects.find((item: any) => item.id === projectID);
+    if (!selected) throw Error("This project is no longer registered.");
+    if (projectID !== project && !await openProject(selected))
+      throw Error("The project could not be opened. Check the workspace status and try again.");
+    setIndexedFilePath(filePath);
+    setSettingsScope("project");
+    setExpandedSettings("project");
+    setTab("files");
+    setView("files");
   }
   async function previewProject() {
     setImportBusy(true); setImportError('');
@@ -801,8 +818,8 @@ export default function App() {
                       next?.click();
                     }}
                     onOpenDetails={openDetails}
+                    detailsDivider={panelLayout.fitted.detailsResizable ? <PanelResize panel="details" layout={panelLayout} className="conversation-rail-divider" /> : undefined}
                   /></RenderBoundary>
-                  {panelLayout.fitted.detailsResizable && <PanelResize panel="details" layout={panelLayout} />}
                   {details && (
                     <Details
                       chat={chat}
@@ -839,18 +856,16 @@ export default function App() {
                       <ArrowUpRight size={16} />
                     </Button>
                   </Panel>
-                  <Panel title="Model contributions">
-                    <small>Recorded activity this month, not a quality score.</small>
+                  <Panel title="Model contributions" help="contributions">
                     <ContributionRows breakdown={data.costs.contributions?.models} />
                   </Panel>
                 </div>
                 {!!data.costs.contributions?.agents.rows.length && (
-                  <Panel title="Agent contributions">
-                    <small>Recorded activity this month, not a quality score.</small>
+                  <Panel title="Agent contributions" help="contributions">
                     <ContributionRows breakdown={data.costs.contributions.agents} />
                   </Panel>
                 )}
-                <Panel title="Pick up where you left off">
+                <Panel title="Recent projects">
                   <div className="project-cards">
                     {data.settings.projects.filter(p => !p.organization?.archivedAt).map((p) => (
                       <button
@@ -872,9 +887,10 @@ export default function App() {
               </div>
             )}
             {view === "files" && project && (
-              <Files project={project} run={run} onClose={closeSettings} />
+              <Files project={project} run={run} onClose={closeSettings} initialPath={indexedFilePath} onSearch={() => openSettings("application", "search")} />
             )}
-            {view === "history" && project && <HistoryPage key={historySelection ?? "all"} data={data} project={project} activity={sessionActivity} initialSession={historySelection} onClose={closeSettings} onChange={refresh} onOpen={async (projectID, id) => {
+            {view === "search" && <IndexedSearch projects={data.settings.projects} onOpen={openIndexedFile} onIndex={() => openSettings("application", "index")} onClose={closeSettings} />}
+            {view === "history" && project && <HistoryPage key={historySelection ?? "all"} data={data} project={project} activity={sessionActivity} initialSession={historySelection} onClose={closeSettings} onChange={refresh} onFileSearch={() => openSettings("application", "search")} onOpen={async (projectID, id) => {
               if (projectID !== project) {
                 const selected = data.settings.projects.find(p => p.id === projectID);
                 if (!selected) return;
@@ -919,6 +935,7 @@ export default function App() {
                    data={data}
                   onColorsSaved={colorsSaved}
                   onNavigate={setView}
+                  onSetting={openSettings}
                   tab={tab}
                   run={run}
                   refresh={refresh}
@@ -1026,7 +1043,7 @@ export default function App() {
       {projectLoading && <ProjectProgress {...projectLoading} onStop={indexJobs.job?.status === 'running' && indexJobs.job?.stoppable
         ? () => { void indexJobs.stop().catch(() => {}); } : undefined} />}
       {folderOpen && (
-            <Dialog title="Where are we working?" ariaLabel="Open project" description="Choose a project folder to get started."
+            <Dialog title="Open project" ariaLabel="Open project"
             icon={<FolderOpen />} onClose={() => setFolderOpen(false)} busy={!!projectLoading || importBusy} initialFocus="first"
             size={data?.settings.projects.length ? 'wide' : 'compact'} layout={data?.settings.projects.length ? 'split' : 'stack'}
             footer={<>
@@ -1090,14 +1107,13 @@ export default function App() {
       {importPreview && <ProjectImport preview={importPreview} busy={importBusy} error={importError} onClose={() => setImportPreview(null)} onComplete={selected => void finishProjectSetup(selected)} />}
       {projectEdit && (
           <Dialog title="Manage project" icon={<FolderOpen />} onClose={() => setProjectEdit(null)} busy={working} initialFocus="first"
-            description="This changes the name shown in Freelancer. The folder and native workspace stay where they are."
             footer={<>
               <Button type="button" onClick={() => setProjectEdit(null)}>Done</Button>
               <Button type="button" onClick={() => void run(() => removeProject(projectEdit))}>Delete from Freelancer</Button>
               <Button variant="primary" disabled={!projectName.trim() || working}>Save name</Button>
             </>}
             onSubmit={(e) => { e.preventDefault(); void run(saveProjectName); }}>
-            <label className="field"><span>Project name</span><input autoFocus value={projectName} maxLength={80} onChange={(e) => setProjectName(e.target.value)} /></label>
+            <Field label="Project name" help="project-name"><input autoFocus value={projectName} maxLength={80} onChange={(e) => setProjectName(e.target.value)} /></Field>
             <label className="field"><span>Folder</span><input value={projectEdit.directory} readOnly /></label>
             {error && <p className="notice error" role="alert">{error}</p>}
           </Dialog>

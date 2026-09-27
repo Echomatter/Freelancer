@@ -1,4 +1,5 @@
 // Application view models. These sort for browsing; they never select a route.
+import { contextUsage } from './context-usage.mjs';
 const number = x => typeof x === 'number' && Number.isFinite(x) ? x : null;
 export const clean = x => String(x ?? '').replace(/[\x00-\x1f\x7f-\x9f]/g, ' ').replace(/\s+/g,' ').trim();
 export const clip = (s, width) => { const chars = [...clean(s)]; return chars.length > width ? chars.slice(0,Math.max(0,width-1)).join('') + '…' : chars.join(''); };
@@ -88,13 +89,10 @@ export function reconcileActivity(parts = [], receipts = [], now = Date.now()) {
 export function sessionSummary(messages = [], providers = [], children = []) {
   const last = messages.findLast(m => m.role === 'assistant' && !m.summary);
   const measured = messages.filter(m => m.role === 'assistant' && !m.summary && (m.tokens?.input > 0 || m.tokens?.output > 0 || m.tokens?.cache?.read > 0));
-  const contextMessage = measured.at(-1);
-  const model = providers.find(p => p.id === contextMessage?.providerID)?.models?.[contextMessage?.modelID];
-  const t = contextMessage?.tokens;
-  const used = t ? [t.input,t.output,t.reasoning,t.cache?.read,t.cache?.write].reduce((sum,n) => sum+(number(n) || 0),0) : null;
+  const context = contextUsage(messages, info => providers.find(p => p.id === info.providerID)?.models?.[info.modelID]?.limit?.context);
   const actual = children.filter(c => c.child && c.dispatched), free = actual.filter(c => c.surface === 'opencode-free');
   return { parent:last ? `${last.providerID}/${last.modelID}` : null, role:last?.agent || null,
-    contextUsed:used, contextLimit:number(model?.limit?.context), contextPercent:used !== null && model?.limit?.context ? Math.round(used/model.limit.context*100) : null,
+    contextUsed:context.used, contextLimit:context.limit, contextPercent:context.ratio === null ? null : Math.round(context.ratio * 100),
     active:children.filter(c => ['working','tool','waiting'].includes(c.phase)).length,
     freePercent:actual.length ? Math.round(free.length/actual.length*100) : null,
     executions:actual.length, free:free.length,

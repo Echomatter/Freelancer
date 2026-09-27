@@ -54,7 +54,7 @@ test('chatgpt-import', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
     await picker.getByRole('button', { name: 'Use this folder', exact: true }).click();
     assert.equal(await project.getByRole('textbox', { name: 'Project folder' }).inputValue(), f.directory);
     await project.getByRole('button', { name: 'Next', exact: true }).click();
-    const importing = page.getByRole('dialog', { name: 'Bring your chats along?', exact: true });
+    const importing = page.getByRole('dialog', { name: 'Import conversations', exact: true });
     await importing.waitFor();
     assert.equal(indexedAfterImport, false);
     assert.equal(await importing.getByText('Other repository', { exact: true }).count(), 0);

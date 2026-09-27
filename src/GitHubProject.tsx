@@ -1,3 +1,4 @@
+import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from "react";
 import { Dialog } from './echoflex/Dialog';
 import {
@@ -13,7 +14,7 @@ import {
   History,
   X,
 } from "lucide-react";
-import { Button, PageCloseButton, PageHeading, Badge, Empty, Panel } from "./echoflex/Controls";
+import { Button, PageCloseButton, PageHeading, Badge, Empty, Panel, Field } from "./echoflex/Controls";
 import { api, query } from "./api";
 import { gitPresets, agreementText } from "../domain/git-project.mjs";
 import "./git-project.css";
@@ -305,16 +306,12 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
               <HardDrive size={23} />
             </span>
             <div>
-              <small>01 · ON THIS COMPUTER</small>
-              <h2>Local project history</h2>
+              <h2 aria-label="Local project history">Local project history<HelpHint topic="git-history" /></h2>
             </div>
             <Badge tone={policy.tracking ? "success" : "neutral"}>
               {policy.tracking ? "On" : "Off"}
             </Badge>
           </div>
-          <p>
-            Save checkpoints you can return to. Nothing leaves this computer.
-          </p>
           {!data.tools.git ? (
             <>
               <p>Git needs to be installed once.</p>
@@ -347,8 +344,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                   : "Set up history for this folder, then review files for your first checkpoint."}
               </p>
               {data.local?.branches?.length > 0 && (
-                <label>
-                  Main version
+                <Field label="Main version" help="git-main">
                   <select
                     aria-label="Setup main version"
                     value={mainBranch}
@@ -364,11 +360,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                       </option>
                     ))}
                   </select>
-                  <small>
-                    This names the existing main version; it does not rename or
-                    switch a branch.
-                  </small>
-                </label>
+                </Field>
               )}
               {(!data.local?.identity.name || !data.local?.identity.email) && (
                 <div className="git-identity">
@@ -388,10 +380,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                       placeholder="Your GitHub private email or work email"
                     />
                   </label>
-                  <small>
-                    Saved for this project only. These details appear in its
-                    history.
-                  </small>
+                  <HelpHint topic="git-identity" />
                 </div>
               )}
               <Button
@@ -410,10 +399,6 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
             </>
           ) : (
             <>
-              <p className="git-ready">
-                <Check size={17} /> Checkpoints stay on this computer until you
-                sync.
-              </p>
               <small>
                 {data.local?.identity.name} · {data.local?.identity.email}
               </small>
@@ -430,7 +415,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                   () => api("git/identity", { project, name, email }, "PUT"),
                   () => setEditingIdentity(false),
                 )}>Save checkpoint identity</Button>
-                <small>Saved in this project’s Git configuration only.</small>
+                <HelpHint topic="git-identity" />
               </div>}
               <Button
                 variant="quiet"
@@ -453,7 +438,6 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
               >
                 Stop tracking automation
               </Button>
-              <small>Existing history and files are kept.</small>
             </>
           )}
         </Panel>
@@ -463,8 +447,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
               <Github size={23} />
             </span>
             <div>
-              <small>02 · ONLINE WHEN READY</small>
-              <h2>GitHub connection</h2>
+              <h2 aria-label="GitHub connection">GitHub connection<HelpHint topic="git-connection" /></h2>
             </div>
             <Badge tone={data.auth.connected ? "success" : "neutral"}>
               {githubStatus}
@@ -499,8 +482,8 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
               <p>
                 {data.auth.connected
                   ? repo
-                    ? `Signed in as ${data.auth.login}. This project is linked to ${repo.name}. Credentials stay in the system credential store.`
-                    : `Signed in as ${data.auth.login}. Choose a GitHub project below to link this project. Credentials stay in the system credential store.`
+                    ? `Signed in as ${data.auth.login}. This project is linked to ${repo.name}.`
+                    : `Signed in as ${data.auth.login}. Choose a GitHub project below to link this project.`
                   : data.auth.message ||
                     "Sign in with your browser. Never paste a token into chat."}
               </p>
@@ -531,7 +514,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                   <Badge>{repo.private ? "Private" : "Public"}</Badge>
                   <small>
                     {policy.github
-                      ? "Uploads follow your agreement below."
+                      ? "Sync enabled"
                       : "Uploads are off."}
                   </small>
                   {data.auth.connected && policy.tracking && (
@@ -553,8 +536,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
               )}
               {data.auth.connected && !repo && !policy.tracking && (
                 <p className="git-footnote">
-                  Turn on local project history below before linking a GitHub
-                  project. Building remains independent of GitHub sign-in.
+                  Turn on local project history before linking a GitHub project.
                 </p>
               )}
               {data.auth.connected && policy.tracking && !repo && (
@@ -605,11 +587,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
         <div className="git-section-heading">
           <ShieldCheck size={22} />
           <div>
-            <h2>How should Freelancer handle your work?</h2>
-            <p>
-              Choose the agreement. The application checks it; changing an
-              agent’s instructions cannot grant more access.
-            </p>
+            <h2 aria-label="Working agreement">Working agreement<HelpHint topic="git-agreement" /></h2>
           </div>
         </div>
         <fieldset disabled={disabled} className="git-presets">
@@ -632,8 +610,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
         </fieldset>
         <div className="git-agreement-options">
           {policy.tracking && data.local?.branches?.length > 0 && (
-            <label>
-              Main version
+            <Field label="Main version" help="git-main">
               <select
                 aria-label="Main version"
                 value={mainBranch}
@@ -649,10 +626,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                   </option>
                 ))}
               </select>
-              <small>
-                Only affects future work. No branch is renamed or switched now.
-              </small>
-            </label>
+            </Field>
           )}
           <label className="check">
             <input
@@ -688,11 +662,10 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
         <div className="git-agreement-summary">
           <small>YOUR SAVED AGREEMENT</small>
           <p>“{agreementText(policy)}”</p>
-          <p>You can explicitly request a different Git action in chat and confirm it there. One-time requests leave these defaults unchanged.</p>
+          <HelpHint topic="git-explicit-request" />
           <small>
             The main version is{" "}
             <strong>{policy.mainBranch || "determined during setup"}</strong>.
-            Turning sync off keeps all existing files and history.
           </small>
         </div>
       </Panel>
@@ -700,7 +673,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
         <div className="git-section-heading">
           <GitBranch size={22} />
           <div>
-            <h2>Current work</h2>
+            <h2 aria-label="Current work">Current work<HelpHint topic="git-sync" /></h2>
             <p>
               {data.local?.branch
                 ? `Working on ${data.local.branch}`
@@ -716,8 +689,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
           <span id="changed-files-heading" className="git-sr-only">Changed files</span>
           {!changed.length ? (
             <p>
-              No file changes to save. Existing checkpoints may still need
-              uploading.
+              No changed files.
             </p>
           ) : (
             <>
@@ -779,9 +751,6 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
             </>
           )}
         </div>
-        {changed.some((f) => f.excluded) && <p className="git-footnote">
-          Files marked with a reason above are left out of managed checkpoints. Select the source files you want to save.
-        </p>}
         {branchMismatch && <p className="notice" role="status">
           This checkout is on {data.local.branch}, while the current agreement syncs {policy.mainBranch}.
           You can save a local checkpoint here; choose a task-branch agreement to sync this branch.
@@ -823,32 +792,21 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
           policy.preset !== "main" &&
           data.local?.branch === policy.mainBranch && (
             <div className="git-first-upload">
-              <p>
-                New GitHub project? Upload its starting checkpoint before
-                preparing task reviews. This is available only while the GitHub
-                project is empty.
-              </p>
               <Button
                 variant="quiet"
                 disabled={disabled || !canMutate}
                 onClick={() => preview("start")}
               >
                 Upload starting version
-              </Button>
+              </Button><HelpHint topic="git-first-upload" />
             </div>
           )}
-        <p className="git-footnote">
-          Every preview names the exact files and destination. Sync checks
-          outgoing history for common credential patterns and Git errors; it
-          does not run your project’s test suite.
-        </p>
       </Panel>
       <Panel>
         <div className="git-section-heading">
           <History size={21} />
           <div>
-            <h2>History &amp; recent actions</h2>
-            <p>A local checkpoint is not proof of an upload.</p>
+            <h2 aria-label="History & recent actions">History &amp; recent actions<HelpHint topic="git-receipts" /></h2>
           </div>
         </div>
         <div className="git-operation-list">
@@ -897,10 +855,6 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
           ))}
         </details>
       </Panel>
-      <p className="git-footnote">
-        {data.limitations} Conflicts, staged renames, large histories and
-        unsupported storage stop with guidance rather than destructive recovery.
-      </p>
       {confirmation && (
         <Dialog
           className="git-confirm"

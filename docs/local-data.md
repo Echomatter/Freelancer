@@ -16,6 +16,12 @@ search across registered projects, pins, multiple selection, Undo, and progressi
 **Load more history** when browsing a project. Search results use the same selection,
 archive, and export controls; selection is limited to one project at a time.
 
+**Application settings → Search files** searches indexed file content across all
+registered projects, including archived ones. Choose a project to narrow results,
+then open a hit in that project's **Project settings → Files** view. Refresh the
+search copy in **Application settings → Content index**; searching never changes
+project files.
+
 **Application settings → Data & Storage** shows actual locations and explains ownership.
 Use **Put project away** to hide a project from active navigation, and **Restore
 project** to bring it back. Its folder and Git agreement remain untouched.

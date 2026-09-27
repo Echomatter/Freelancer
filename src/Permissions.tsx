@@ -16,7 +16,7 @@ export function Permissions({ requests, suspended = false, allowAlways = true, o
   if (!request) return null;
   return <>
     <div className="question-reminder"><span>Permission needed</span>
-      <Button onClick={() => setDismissed(previous => { const next = new Set(previous); next.delete(request.id); return next; })}>Review permission</Button></div>
+      <Button data-review-decision={request.worker ? 'worker' : 'parent'} onClick={() => setDismissed(previous => { const next = new Set(previous); next.delete(request.id); return next; })}>Review permission</Button></div>
     {[queue.find(row => !row.worker), queue.find(row => row.worker)].filter(Boolean).map(row => <PermissionDialog key={row!.id} request={row!} allowAlways={allowAlways}
       open={!dismissed.has(row!.id) && (!suspended || !!row!.worker)}
       onLater={() => setDismissed(previous => new Set([...previous, row!.id]))}

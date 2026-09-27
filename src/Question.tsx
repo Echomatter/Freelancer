@@ -31,7 +31,7 @@ export function Questions({ requests, suspended = false, onRespond }: {
     <>
       <div className="question-reminder">
         <span>{queue.length === 1 ? "An answer is needed" : `${queue.length} requests need an answer`}</span>
-        <Button onClick={() => setDismissed(previous => { const next = new Set(previous); next.delete(request.id); return next; })}>Review question</Button>
+        <Button data-review-decision={request.worker ? 'worker' : 'parent'} onClick={() => setDismissed(previous => { const next = new Set(previous); next.delete(request.id); return next; })}>Review question</Button>
       </div>
       {[queue.find(row => !row.worker), queue.find(row => row.worker)].filter(Boolean).map(row => <Question key={row!.id} request={row!} count={queue.length}
         open={!dismissed.has(row!.id) && (!suspended || !!row!.worker)}

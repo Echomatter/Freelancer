@@ -11,6 +11,8 @@ import { Button, Panel, Field, Badge, PageCloseButton, PageHeading } from "./ech
 import { api } from "./api";
 import { ProviderConnection } from "./ProviderConnection";
 import { SessionDefaults } from "./SessionDefaults";
+import { ScheduledPrompts } from "./ScheduledPrompts";
+import { RemoteAccess } from "./RemoteAccess";
 const providers = [
   ["openai", "OpenAI"],
   ["github-copilot", "GitHub Copilot"],
@@ -26,11 +28,13 @@ export function Settings({
   onNavigate,
   onColorsSaved,
   onHistory,
+  onOpenChat,
   onClose,
 }: {
   data: any;
   sessionID?: string;
   onHistory?: () => void;
+  onOpenChat: (project: string, session: string) => Promise<void>;
   onClose: () => void;
   onColorsSaved: (patch: ColorPatch) => void;
   onNavigate: (view: string) => void;
@@ -59,6 +63,8 @@ export function Settings({
   return (
     <div className="settings-layout">
       <div className="settings-content">
+        {tab === "remote-access" && <RemoteAccess onClose={onClose} />}
+        {tab === "schedules" && <ScheduledPrompts data={data} onClose={onClose} onOpen={onOpenChat} />}
         {tab === "delegation" && <><PageHeading title="Delegation" actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
         {tab === "storage" && <DataStorage onHistory={() => onHistory?.()} onClose={onClose} onChange={refresh} />}
         {tab === "index" && <ContentIndex onClose={onClose} />}

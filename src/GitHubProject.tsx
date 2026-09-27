@@ -18,8 +18,8 @@ import { api, query } from "./api";
 import { gitPresets, agreementText } from "../domain/git-project.mjs";
 import "./git-project.css";
 
-type Props = { project: string; onClose: () => void; onUseSync: () => void };
-export function GitHubProject({ project, onClose, onUseSync }: Props) {
+type Props = { project: string; onClose: () => void; onAsk: () => void };
+export function GitHubProject({ project, onClose, onAsk }: Props) {
   const [data, setData] = useState<any>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -40,8 +40,14 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
     initialized = useRef(false);
   const refresh = async (signal?: AbortSignal) => {
     const revision = ++version.current;
-    const next = await api("git?" + query(project), undefined, "GET", signal);
-    if (alive.current && revision === version.current) setData(next);
+    try {
+      const next = await api("git?" + query(project), undefined, "GET", signal);
+      if (alive.current && revision === version.current) setData(next);
+      return next;
+    } catch (error) {
+      if (alive.current && revision === version.current) throw error;
+      return {};
+    }
   };
   useEffect(() => {
     alive.current = true;
@@ -49,7 +55,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
       try {
-        await refresh(controller.signal);
+        if (!inFlight.current) await refresh(controller.signal);
       } catch (e) {
         if (!controller.signal.aborted) setError((e as Error).message);
       }
@@ -82,9 +88,10 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
         .map((f) => f.file),
     );
   }, [data]);
-  async function act(action: () => Promise<any>, done?: (r: any) => void) {
+  async function act(action: () => Promise<any>, done?: (r: any) => void, refreshAfter = true) {
     if (inFlight.current) return;
     inFlight.current = true;
+    ++version.current; // A pre-action poll cannot overwrite the action's state.
     setPending(true);
     setError("");
     setNotice("");
@@ -98,7 +105,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
         setNotice(result.message || result.result);
       // Success remains success even if the status refresh fails.
       try {
-        await refresh();
+        if (refreshAfter) await refresh();
       } catch {
         setError(
           "Action finished, but status could not be refreshed. Check again before repeating it.",
@@ -191,7 +198,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
         title="Checking project history…"
         action={
           error ? (
-            <Button onClick={() => void act(() => refresh())}>Try again</Button>
+            <Button onClick={() => void act(() => refresh(), undefined, false)}>Try again</Button>
           ) : undefined
         }
       >
@@ -224,7 +231,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
           <Button
             aria-label="Refresh Git status"
             disabled={pending}
-            onClick={() => void act(() => refresh())}
+            onClick={() => void act(() => refresh(), undefined, false)}
           >
             <RefreshCw size={17} className={pending ? "spin" : ""} />
           </Button>
@@ -681,6 +688,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
         <div className="git-agreement-summary">
           <small>YOUR SAVED AGREEMENT</small>
           <p>“{agreementText(policy)}”</p>
+          <p>You can explicitly request a different Git action in chat and confirm it there. One-time requests leave these defaults unchanged.</p>
           <small>
             The main version is{" "}
             <strong>{policy.mainBranch || "determined during setup"}</strong>.
@@ -700,11 +708,12 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
               · {changed.length} changed files
             </p>
           </div>
-          <Button variant="quiet" onClick={onUseSync}>
-            Ask the Git agent
+          <Button variant="quiet" onClick={onAsk}>
+            Ask in chat
           </Button>
         </div>
-        <div className="git-files" aria-label="Changed files">
+        <div className="git-files" role="group" aria-labelledby="changed-files-heading">
+          <span id="changed-files-heading" className="git-sr-only">Changed files</span>
           {!changed.length ? (
             <p>
               No file changes to save. Existing checkpoints may still need
@@ -724,7 +733,7 @@ export function GitHubProject({ project, onClose, onUseSync }: Props) {
                       e.target.checked ? eligible.map((f) => f.file) : [],
                     )
                   }
-                  disabled={disabled}
+                    disabled={disabled}
                 />{" "}
                 Select eligible changed files
               </label>

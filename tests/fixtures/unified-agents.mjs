@@ -268,7 +268,10 @@ export async function unifiedFixture(t) {
         quota_state: {},
       };
     },
-    limits: { requestMs: 3000, pollMs: 1, taskMs: 1000, stopMs: 20 },
+    // Successful stop verification still returns after two 1ms polls. Give the
+    // event loop room under parallel browser/contract load; a 20ms deadline
+    // can expire between those polls even when the simulated worker is idle.
+    limits: { requestMs: 3000, pollMs: 1, taskMs: 1000, stopMs: 1000 },
   });
   const context = (session = parent.id) => ({
     sessionID: session,

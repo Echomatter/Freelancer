@@ -6,6 +6,7 @@ import os from "node:os";
 import { fileURLToPath } from "node:url";
 import { createApplication } from "../../server/application.mjs";
 import { createStore } from "../../server/store.mjs";
+import { createRemoteAccess } from "../../server/remote-access.mjs";
 import { startServer } from "../../server/http.mjs";
 import { createActivityReader } from "../../server/activity.mjs";
 import { defaults } from "../../shared/strategy.mjs";
@@ -228,6 +229,7 @@ export async function localDataFixture() {
     }),
   });
   const runtime = await startServer({
+    remoteAccess: await createRemoteAccess({ file: path.join(root, "remote-access.json") }),
     application: app,
     readActivity: createActivityReader({ project: app.project, host }),
     assets: fileURLToPath(new URL("../../dist/", import.meta.url)),

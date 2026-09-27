@@ -10,6 +10,6 @@ const files = (await Promise.all(directories.map(async (directory) =>
     .map((name) => path.join(directory, name))
 ))).flat();
 
-const result = spawnSync(process.execPath, ["--test", ...files], { stdio: "inherit" });
+const result = spawnSync(process.execPath, ["--test", "--test-concurrency=4", ...process.argv.slice(2), ...files], { stdio: "inherit" });
 if (result.error) throw result.error;
 process.exit(result.status ?? 1);

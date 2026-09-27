@@ -1,61 +1,26 @@
-import { spawnSync } from "node:child_process";
-import { mkdirSync, writeFileSync } from "node:fs";
-import { pathToFileURL } from "node:url";
-import path from "node:path";
-import { palettes } from "../domain/theme.mjs";
+import { spawn } from 'node:child_process';
+import { createRequire } from 'node:module';
 
-// Each journey starts and closes its own loopback fixture. Keep them sequential
-// to avoid port and browser-process contention on developer machines. A failed
-// journey must not suppress evidence from the remaining independent journeys.
-export const journeys = [
-  "colors",
-  "git-project",
-  "local-data",
-  "named-agents",
-  "panels-theme",
-  "usage",
-  "usage-meter",
-  "polish",
-  "chat-tweaks",
-  "chat-dock",
-  "chat-loading-cache",
-  "send-feedback",
-  "unfinished-work",
-  "history-search",
-  "model-ratings",
-  "progress-jobs",
-  "dialogs",
-  "chatgpt-import",
-];
-
-export function runJourneys({ names = journeys, run = spawnSync, log = console.log, record = () => {} } = {}) {
-  const results = [];
-  for (const name of names) {
-    const file = `tests/${name}.browser.mjs`;
-    log(`\nBrowser journey: ${name}`);
-    const started = Date.now();
-    let result;
-    try {
-      result = run(process.execPath, [file], { stdio: "inherit", timeout: ["colors", "usage"].includes(name) ? 180000 + palettes.length * 2000 : 180000 });
-    } catch (error) {
-      result = { status: null, error };
-    }
-    const passed = result.status === 0 && !result.error && !result.signal;
-    results.push({ name, outcome: passed ? "success" : "failure", exitCode: result.status ?? null,
-      signal: result.signal ?? null, errorCode: result.error?.code ?? null, durationMs: Date.now() - started });
-    if (!passed) log(`FAIL ${name}: ${result.error?.message ?? result.signal ?? `exit ${result.status ?? "unknown"}`}`);
-    // Persist after each journey so an interrupted suite does not lose the
-    // completed results. Missing names remain explicitly not run.
-    record({ expected: names, results: [...results], notRun: names.slice(results.length), liveProviderInference: "not-run" });
-  }
-  return results;
+// Forward native filtering, UI, headed, debug and worker controls. Unknown
+// filters fail instead of silently reporting an empty passing suite.
+const args = process.argv.slice(2);
+// Discovery must not replace evidence or HTML reports from an executed suite.
+if (args.includes('--list') && !args.some(arg => /^--reporter(?:=|$)/.test(arg))) args.push('--reporter=list');
+if (args.some(arg => /^--ui(?:=|-|$)/.test(arg))) {
+  process.env.FREELANCER_TEST_UI = '1';
+  process.env.PLAYWRIGHT_HTML_OUTPUT_DIR = 'artifacts/browser-interactive-report';
 }
-
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-  const directory = path.resolve("artifacts", "verification");
-  mkdirSync(directory, { recursive: true });
-  const results = runJourneys({ record: report => writeFileSync(path.join(directory, "browser-journeys.json"), JSON.stringify(report, null, 2) + "\n") });
-  const failed = results.filter(result => result.outcome !== "success");
-  console.log(`\nBrowser journeys: ${results.length - failed.length} passed, ${failed.length} failed.`);
-  if (failed.length) process.exitCode = 1;
+const all = args.indexOf('--all-palettes');
+if (all >= 0) {
+  args.splice(all, 1);
+  process.env.FREELANCER_ALL_PALETTES = '1';
+  process.env.PLAYWRIGHT_HTML_OUTPUT_DIR = 'artifacts/browser-theme-report';
 }
+const require = createRequire(import.meta.url);
+const env = { ...process.env };
+// Playwright sets FORCE_COLOR for workers. Preserve a monochrome preference
+// without Node warning about two conflicting color controls on every worker.
+if (env.NO_COLOR !== undefined) { delete env.NO_COLOR; env.FORCE_COLOR = '0'; }
+const child = spawn(process.execPath, [require.resolve('@playwright/test/cli'), 'test', ...args], { stdio: 'inherit', env });
+child.on('error', error => { console.error(error); process.exitCode = 1; });
+child.on('exit', (code, signal) => { process.exitCode = signal ? 1 : code ?? 1; });

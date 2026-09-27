@@ -28,7 +28,7 @@ function Get-ChromePath {
     if (-not $chrome) { throw 'Google Chrome is required for the Freelancer desktop app.' }
     return $chrome
 }
-function Get-RunningUrl {
+function Get-RunningInfo {
     try {
         $info = Get-Content -LiteralPath (Join-Path $state 'launch.json') -Raw | ConvertFrom-Json
         $lock = Get-Content -LiteralPath (Join-Path $state 'application.lock') -Raw | ConvertFrom-Json
@@ -41,14 +41,16 @@ function Get-RunningUrl {
         $uri = [Uri]$info.url
         if ($uri.Scheme -ne 'http' -or $uri.Host -ne '127.0.0.1') { return }
         $response = Invoke-WebRequest -UseBasicParsing -Uri $uri.AbsoluteUri -TimeoutSec 2
-        if ($response.StatusCode -eq 200 -and $response.Content -match '<title>Freelancer</title>') { return $uri.AbsoluteUri }
+        if ($response.StatusCode -eq 200 -and $response.Content -match '<title>Freelancer</title>') {
+            return [pscustomobject]@{ Url = $uri.AbsoluteUri; LanUrl = $info.lanUrl }
+        }
     } catch { return }
 }
 try {
     try { $held = $mutex.WaitOne(60000) } catch [Threading.AbandonedMutexException] { $held = $true }
     if (-not $held) { throw 'Another Freelancer launch is still in progress. Try again shortly.' }
-    $url = Get-RunningUrl
-    if (-not $url) {
+    $running = Get-RunningInfo
+    if (-not $running) {
         if (-not (Test-Path -LiteralPath (Join-Path $appRoot 'dist\index.html'))) { throw 'Build the web app first: npm run build' }
         $node = (Get-Command node.exe -ErrorAction Stop).Source
         New-Item -ItemType Directory -Force -Path $state | Out-Null
@@ -57,12 +59,14 @@ try {
         $deadline = (Get-Date).AddSeconds(50)
         do {
             Start-Sleep -Milliseconds 400
-            $url = Get-RunningUrl
-            if ($url) { break }
+            $running = Get-RunningInfo
+            if ($running) { break }
             if ($started.HasExited) { throw "Freelancer could not start. See $state\server.stderr.log" }
         } while ((Get-Date) -lt $deadline)
-        if (-not $url) { throw "Freelancer startup timed out. See $state\server.stderr.log" }
+        if (-not $running) { throw "Freelancer startup timed out. See $state\server.stderr.log" }
     }
+    $url = [string]$running.Url
+    $lanUrl = [string]$running.LanUrl
     if (-not $NoBrowser) {
         if ($ChromeApp) {
             $chrome = Get-ChromePath
@@ -74,6 +78,7 @@ try {
         }
     }
     Write-Output $url
+    if ($lanUrl) { Write-Output ("LAN: " + $lanUrl) }
 } catch {
     if ($NoBrowser) { throw }
     Add-Type -AssemblyName PresentationFramework

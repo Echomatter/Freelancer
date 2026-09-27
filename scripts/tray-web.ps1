@@ -1,18 +1,32 @@
 [CmdletBinding()]
-param([switch]$Restart)
+param([switch]$Restart, [switch]$NoOpen)
 $ErrorActionPreference = 'Stop'
 $appRoot = Split-Path -Parent $PSScriptRoot
 $state = Join-Path $appRoot 'backend\.state\webpage'
 $iconPath = Join-Path $appRoot 'backend\.state\launcher\freelancer.ico'
 $mutex = New-Object Threading.Mutex($false, 'Local\FreelancerTrayController')
 $ownsTray = $false
+$preferenceFile = Join-Path $env:LOCALAPPDATA 'Freelancer\launcher.json'
+$startMode = 'chrome'
+try {
+    $saved = Get-Content -LiteralPath $preferenceFile -Raw | ConvertFrom-Json
+    if ($saved.startIn -in @('chrome', 'browser')) { $startMode = $saved.startIn }
+} catch { }
+
+function Set-StartMode([string]$mode) {
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $preferenceFile) | Out-Null
+    @{ startIn = $mode } | ConvertTo-Json | Set-Content -LiteralPath $preferenceFile -Encoding UTF8
+    $script:startMode = $mode
+    $chromeItem.Checked = $mode -eq 'chrome'
+    $browserItem.Checked = $mode -eq 'browser'
+}
 
 function Show-FreelancerError($message) {
     Add-Type -AssemblyName System.Windows.Forms
     [System.Windows.Forms.MessageBox]::Show([string]$message, 'Freelancer', 'OK', 'Error') | Out-Null
 }
-function Open-Freelancer {
-    & (Join-Path $PSScriptRoot 'launch-web.ps1') -ChromeApp | Out-Null
+function Open-Freelancer([string]$mode = $script:startMode) {
+    & (Join-Path $PSScriptRoot 'launch-web.ps1') -ChromeApp:($mode -eq 'chrome') | Out-Null
     if ($LASTEXITCODE -and $LASTEXITCODE -ne 0) { throw 'Freelancer could not open.' }
 }
 function Restart-Freelancer {
@@ -24,19 +38,27 @@ try {
     try { $ownsTray = $mutex.WaitOne(0) }
     catch [Threading.AbandonedMutexException] { $ownsTray = $true }
     if (-not $ownsTray) {
-        if ($Restart) { Restart-Freelancer } else { Open-Freelancer }
+        if ($Restart) { Restart-Freelancer } elseif (-not $NoOpen) { Open-Freelancer }
         return
     }
 
     Add-Type -AssemblyName System.Windows.Forms
     Add-Type -AssemblyName System.Drawing
+    [System.Windows.Forms.Application]::EnableVisualStyles()
     if (-not (Test-Path -LiteralPath $iconPath)) {
         & (Join-Path $PSScriptRoot 'create-desktop-shortcut.ps1') | Out-Null
     }
-    if ($Restart) { Restart-Freelancer } else { Open-Freelancer }
+    if ($Restart) { Restart-Freelancer } elseif (-not $NoOpen) { Open-Freelancer }
 
     $menu = New-Object System.Windows.Forms.ContextMenuStrip
     $openItem = $menu.Items.Add('Open Freelancer')
+    $openBrowserItem = $menu.Items.Add('Open in browser')
+    $startItem = New-Object System.Windows.Forms.ToolStripMenuItem('Start in')
+    $chromeItem = $startItem.DropDownItems.Add('Chrome app')
+    $browserItem = $startItem.DropDownItems.Add('Browser')
+    $chromeItem.Checked = $startMode -eq 'chrome'
+    $browserItem.Checked = $startMode -eq 'browser'
+    $menu.Items.Add($startItem) | Out-Null
     $restartItem = $menu.Items.Add('Restart server')
     $menu.Items.Add('-') | Out-Null
     $exitItem = $menu.Items.Add('Exit Freelancer')
@@ -47,6 +69,9 @@ try {
     $notify.Visible = $true
     $context = New-Object System.Windows.Forms.ApplicationContext
     $openItem.add_Click({ try { Open-Freelancer } catch { Show-FreelancerError $_.Exception.Message } })
+    $openBrowserItem.add_Click({ try { Open-Freelancer 'browser' } catch { Show-FreelancerError $_.Exception.Message } })
+    $chromeItem.add_Click({ try { Set-StartMode 'chrome' } catch { Show-FreelancerError $_.Exception.Message } })
+    $browserItem.add_Click({ try { Set-StartMode 'browser' } catch { Show-FreelancerError $_.Exception.Message } })
     $restartItem.add_Click({ try { Restart-Freelancer } catch { Show-FreelancerError $_.Exception.Message } })
     $notify.add_DoubleClick({ try { Open-Freelancer } catch { Show-FreelancerError $_.Exception.Message } })
     $exitItem.add_Click({

@@ -238,7 +238,16 @@ export function createApplication({
       if (receipt?.projectID !== p.id || receipt?.sessionID !== session.id)
         throw Error("Managed Git actions require a current Freelancer execution context for this project.");
       const actor = { sessionID: session.id, messageID: input.messageID, delegated: !!session.parentID, origin: "agent" };
+      if (receipt.readOnly && input.action !== "inspect") throw Error("This assignment is inspection-only.");
+      if (input.action === "prepare") {
+        await gitProjects.prepareTask(p.id, session.id);
+        gitProjects.finishDispatch(p.id, session.id, message.info.parentID);
+        return { result: "The agreed working branch is ready. No files were checkpointed or uploaded." };
+      }
       if (input.action === "preview") return gitProjects.preview(p.id, input, actor);
+      if (input.action === "request") return input.planID
+        ? gitProjects.requestExecute(p.id, { planID: input.planID, confirm: true, readMessages: () => messages(p, session.id) }, actor)
+        : gitProjects.requestPreview(p.id, { ...input, readMessages: () => messages(p, session.id) }, actor);
       if (input.action === "execute") return gitProjects.execute(p.id, { planID: input.planID, confirm: true }, actor);
       if (input.action === "merge") return gitProjects.merge(p.id, input.planID ? { ...input, confirm: true } : input, actor);
       throw Error("The agent cannot change setup, accounts or the project agreement.");
@@ -551,6 +560,10 @@ export function createApplication({
       catch (error) { availabilityWarnings.push(`Request receipts: ${error.message}`); }
       return {
         title: nativeSession.title || "New chat",
+        // Workers and older chats may be absent from the bounded sidebar list.
+        // Keep navigation identity with the verified transcript, including cache reads.
+        session: { id: nativeSession.id, title: nativeSession.title || "New chat",
+          parentID: nativeSession.parentID, time: nativeSession.time },
         messages: [...(importedSource?.messages ?? []), ...rows.map(row => ({ ...row,
           parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) }))],
         continuation: importedSource?.source ?? null,
@@ -594,6 +607,8 @@ export function createApplication({
       if (!Array.isArray(rows)) throw Error('OpenCode returned no chat transcript.');
       return {
         title: nativeSession.title || "New chat",
+        session: { id: nativeSession.id, title: nativeSession.title || "New chat",
+          parentID: nativeSession.parentID, time: nativeSession.time },
         messages: rows.map(row => ({ ...row,
           parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) })),
         continuation: null,
@@ -811,8 +826,8 @@ export function createApplication({
         }
         if (variant && !model)
           throw Error("Choose a parent model to use this intelligence level.");
-        if (!nativeSession.parentID)
-          await gitProjects.beforeBuild(id, session, workflow);
+        // Chat delivery must stay available to ask about agreement exceptions.
+        // Branch preparation is an explicit managed tool action, never a send gate.
         // Apply the same restriction to the existing child selector, not a second router.
         const preferences = {
           ...defaults,

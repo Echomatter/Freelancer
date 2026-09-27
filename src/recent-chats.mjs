@@ -11,7 +11,7 @@ export class RecentChats {
   }
 
   key(project, session) {
-    return JSON.stringify([project, session]);
+    return `${project}\0${session}`;
   }
 
   get(project, session) {
@@ -29,6 +29,15 @@ export class RecentChats {
 
   put(project, session, response, version = 0) {
     if (!project || !session) return;
+    const now = this.now();
+    // Expired entries should never evict a still-useful transcript merely
+    // because an expired chat was recently read before its deadline.
+    for (const [key, entry] of this.entries) {
+      if (entry.expiresAt <= now) {
+        this.bytes -= entry.bytes;
+        this.entries.delete(key);
+      }
+    }
     const key = this.key(project, session);
     const previous = this.entries.get(key);
     if (previous && previous.version > version) return;
@@ -43,16 +52,17 @@ export class RecentChats {
       imported: response.imported,
       continuation: response.continuation,
       title: response.title,
+      session: response.session ?? { id: session, title: response.title },
       status: {},
       permissions: [],
       questions: [],
       loaded: true,
       selectionKey: new URLSearchParams({ project, session }).toString(),
     };
-    const bytes = JSON.stringify(chat).length * 2;
+    const bytes = estimateBytes(project) + estimateBytes(session) + estimateBytes(chat);
     this.delete(project, session);
     if (bytes > this.maxBytes) return;
-    this.entries.set(key, { chat, bytes, version, expiresAt: this.now() + this.ttlMs });
+    this.entries.set(key, { project, session, chat, bytes, version, expiresAt: now + this.ttlMs });
     this.bytes += bytes;
     while (this.entries.size > this.limit || this.bytes > this.maxBytes) {
       const oldest = this.entries.keys().next().value;
@@ -71,12 +81,25 @@ export class RecentChats {
   }
 
   deleteProject(project) {
-    for (const key of this.entries.keys()) {
-      if (JSON.parse(key)[0] === project) {
-        const entry = this.entries.get(key);
+    for (const [key, entry] of this.entries) {
+      if (entry.project === project) {
         this.bytes -= entry.bytes;
         this.entries.delete(key);
       }
     }
   }
+}
+
+function estimateBytes(value, seen = new WeakSet()) {
+  if (value == null) return 0;
+  if (typeof value === 'string') return value.length * 2;
+  if (typeof value === 'number') return 8;
+  if (typeof value === 'boolean') return 4;
+  if (typeof value !== 'object') return 0;
+  if (seen.has(value)) return 0;
+  seen.add(value);
+  if (Array.isArray(value)) return 16 + value.reduce((sum, item) => sum + estimateBytes(item, seen), 0);
+  let total = 32;
+  for (const [key, item] of Object.entries(value)) total += key.length * 2 + estimateBytes(item, seen);
+  return total;
 }

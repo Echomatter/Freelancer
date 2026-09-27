@@ -257,7 +257,7 @@ legend {
 }
 .sidebar {
   min-height: 0;
-  overflow-y: auto;
+  overflow: hidden;
   background: var(--sidebar);
   border-right: 1px solid var(--line);
   padding: 30px 18px 18px;
@@ -489,22 +489,22 @@ legend {
 .sidebar-bottom {
   display: grid;
   gap: 12px;
-  flex-shrink: 0;
+  min-width: 0;
+  min-height: 0;
+  flex: 0 1 auto;
+  overflow-y: auto;
+  scrollbar-width: thin;
   margin-top: auto;
 }
-.settings-drawers { display: grid; gap: 5px; border-top: 1px solid var(--line); padding-top: 9px; }
-.settings-drawer-trigger, .settings-drawer-links button {
+.settings-drawers { display: grid; gap: 12px; border-top: 1px solid var(--line); padding-top: 9px; }
+.settings-drawer-links button {
   display: flex; align-items: center; gap: 11px; width: 100%; border: 0;
   background: transparent; color: var(--text); border-radius: 8px;
   text-align: left; padding: 10px 12px; font-size: 13px;
 }
-.settings-drawer-trigger:hover, .settings-drawer-links button:hover { background: var(--hover); }
-.settings-drawer-trigger[aria-expanded="true"] { background: var(--paper); font-weight: 650; }
-.settings-drawer-trigger > span, .settings-drawer-links button > span { flex: 1; }
-.settings-drawer-trigger:disabled { opacity: .5; }
-.drawer-chevron { transform: rotate(180deg); transition: transform .2s ease; }
-.drawer-chevron.open { transform: rotate(0); }
-.settings-drawer-links { display: grid; gap: 2px; max-height: min(48dvh, 480px); overflow-y: auto; padding: 4px 0 4px 2px; border-left: 1px solid var(--line); margin-left: 20px; animation: settings-rise .18s ease-out; }
+.settings-drawer-links button:hover { background: var(--hover); }
+.settings-drawer-links button > span { flex: 1; min-width: 0; }
+.settings-drawer-links { display: grid; gap: 2px; max-height: min(48dvh, 480px); overflow-y: auto; padding: 4px 0 4px 2px; border-left: 1px solid var(--accent); margin-left: 23px; animation: settings-rise .18s ease-out; }
 .settings-drawer-links[hidden] { display: none; }
 .settings-drawer-links button { padding: 9px 10px; color: var(--muted); }
 .settings-drawer-links button.selected { background: var(--tint); color: var(--accent); }
@@ -1494,6 +1494,8 @@ legend {
   .sidebar {
     padding: 20px 9px;
     gap: 18px;
+    overflow: visible;
+    z-index: 20;
   }
   .brand {
     font-size: 0;
@@ -1515,12 +1517,9 @@ legend {
     font-size: 0;
     padding: 12px;
   }
-  .settings-drawer-trigger,
   .settings-drawer-links button { justify-content: center; padding: 12px; }
   .settings-drawer-links { margin-left: 0; border-left: 0; padding: 2px 0; }
-  .settings-drawer-trigger > span,
-  .settings-drawer-links button > span,
-  .drawer-chevron { display: none; }
+  .settings-drawer-links button > span { display: none; }
   .sessions,
   .sidebar-label,
   .mini-usage {
@@ -2237,9 +2236,13 @@ button, a { -webkit-tap-highlight-color: transparent; }
 .with-details .chat-transcript { padding-inline: 28px; }
 .composer-cards .sender-error { margin: 0; }
 @media (max-width: 760px) { .chat-transcript, .with-details .chat-transcript { padding: 18px; } .composer-wrap, .with-details .composer-wrap { padding: 8px 18px 10px; } }
-@media (max-width: 520px) { .chat-transcript, .with-details .chat-transcript { padding: 16px; } .composer-wrap, .with-details .composer-wrap { padding: 8px 12px 8px; } }
+@media (max-width: 760px) { .chat-transcript > .request-group:first-child:has(> .request-working:first-child) > .request-working:first-child { margin-top: -18px; } }
+@media (max-width: 520px) { .chat-transcript, .with-details .chat-transcript { padding: 16px; } .chat-transcript > .request-group:first-child:has(> .request-working:first-child) > .request-working:first-child { margin-top: -16px; } .composer-wrap, .with-details .composer-wrap { padding: 8px 12px 8px; } }
 @media (prefers-reduced-motion: reduce) { .page { animation: none; } .button, .icon-button, .nav-item { transition: none; } }
 .chat-workspace { display: flex; flex: 1; min-height: 0; flex-direction: column; } .chat-workspace[hidden] { display: none; }
 .composer-wrap, .with-details .composer-wrap { padding-bottom: 0; } .composer { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
 .main { position: relative; }
 .draft-status { padding: 7px 28px; font-size: 12px; color: var(--muted); background: var(--paper); }
+.render-recovery { flex: 1; min-width: 0; align-self: center; padding: 32px; margin: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--paper); }
+.render-recovery p { color: var(--muted); max-width: 48ch; line-height: 1.6; }
+.render-recovery button { margin: 8px 8px 0 0; }

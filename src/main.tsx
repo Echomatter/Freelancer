@@ -1,6 +1,8 @@
 import React from "react";
 import { createRoot } from "react-dom/client";
 import App from "./App";
+import { RenderBoundary } from './RenderBoundary';
+import { RemoteGate } from './RemoteGate';
 import "./styles.css";
 import "./colors.css";
 import "./available-usage.css";
@@ -9,6 +11,6 @@ import { applyTheme } from "../domain/theme.mjs";
 applyTheme(document.documentElement.dataset.theme);
 createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <App />
+    <RenderBoundary><RemoteGate><App /></RemoteGate></RenderBoundary>
   </React.StrictMode>,
 );

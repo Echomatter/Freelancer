@@ -2,7 +2,7 @@
 
 Freelancer uses shared EchoFlex styling. The application owns a small semantic token catalog, theme startup handling and provider color derivation.
 
-The palette catalog offers 120 distinctively named choices, with 60 light and 60 dark palettes. Saved IDs remain stable. The catalog varies surface hue, depth and saturation as well as accent color, including contrasting combinations such as Seafoam Copper and Navy Rose. A weighted OKLab separation check guards against near-duplicate palettes; the independent contrast contracts remain the accessibility gate. In Application settings > Appearance, collapsible Light themes and Dark themes groups are each sorted by accent hue. Sage Daybreak and Forest Night are the default light and dark palettes; each choice colors the shell, EchoFlex controls, custom dialogs, status badges, code/diff surfaces and focus states consistently. Theme changes preview immediately while saving and revert with an error if the save is not confirmed. Saved palettes apply before the first application paint and survive restarts without origin-specific browser storage.
+The palette catalog offers 180 distinctively named choices, with 90 light and 90 dark palettes. Saved IDs remain stable. The catalog varies surface hue, depth and saturation as well as accent color, including contrasting combinations such as Seafoam Copper, Navy Rose, Rose Quartz Teal and Nightshade Gold. A weighted OKLab separation check guards against near-duplicate palettes; the independent contrast contracts remain the accessibility gate. In Application settings > Appearance, collapsible Light themes and Dark themes groups are each sorted by accent hue. Sage Daybreak and Forest Night are the default light and dark palettes; each choice colors the shell, EchoFlex controls, custom dialogs, status badges, code/diff surfaces and focus states consistently. Theme changes preview immediately while saving and revert with an error if the save is not confirmed. Saved palettes apply before the first application paint and survive restarts without origin-specific browser storage.
 
 Provider colors are appearance metadata, never routing, authentication or accounting policy. OpenCode Free defaults to green. Each provider offers preset colors, a custom hex color, a preview and a reset to its default on Application settings > Providers. Derive readable foreground, subtle tint and solid-marker variants from the selected color for each application palette. Preserve provider labels; never rely on color alone. Status/error colors and user-authored message content retain their own semantics.
 
@@ -48,7 +48,7 @@ node scripts/palette-css.mjs --check
 npm test
 npm run build
 npx playwright install chromium
-node tests/colors.browser.mjs
+npm run test:browser -- colors
 ```
 
 The color contracts cover legacy/default resolution, token parity, text/control contrast, custom provider colors, provider identity, input validation, concurrent partial writes, resets, HTTP boundaries, initial HTML, and token replacement. Source/token comparisons normalize Windows CRLF to LF; the CLI regression test accepts both line endings while rejecting changed or missing tokens.

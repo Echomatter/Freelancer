@@ -8,13 +8,12 @@ export function normalizeColor(value) {
   return hex;
 }
 export const colorChannels = value => normalizeColor(value).slice(1).match(/../g).map(c => parseInt(c, 16));
-export function luminance(value) {
-  const rgb = colorChannels(value).map(c => {
-    const s = c / 255;
-    return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
-  });
-  return rgb[0] * 0.2126 + rgb[1] * 0.7152 + rgb[2] * 0.0722;
-}
+const linear = Array.from({ length: 256 }, (_, channel) => {
+  const s = channel / 255;
+  return s <= 0.04045 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+});
+const channelLuminance = ([r, g, b]) => linear[r] * 0.2126 + linear[g] * 0.7152 + linear[b] * 0.0722;
+export const luminance = value => channelLuminance(colorChannels(value));
 export function contrast(a, b) {
   const x = luminance(a), y = luminance(b);
   return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
@@ -26,14 +25,18 @@ export function mixColor(a, b, amount) {
 }
 export function readableColor(base, surfaces, minimum = 4.5) {
   const source = normalizeColor(base);
-  const passes = color => surfaces.every(surface => contrast(color, surface) >= minimum);
-  if (passes(source)) return source;
+  const channels = colorChannels(source), backgrounds = surfaces.map(luminance);
+  const passes = rgb => {
+    const value = channelLuminance(rgb);
+    return backgrounds.every(background => (Math.max(value, background) + 0.05) / (Math.min(value, background) + 0.05) >= minimum);
+  };
+  if (passes(channels)) return source;
   // Mixing toward white/black retains the color family without trusting the
   // selected swatch as text. Work in quantized sRGB and test the emitted hex.
   for (let step = 1; step <= 255; step++) {
-    for (const endpoint of ['#000000', '#ffffff']) {
-      const candidate = mixColor(source, endpoint, step / 255);
-      if (passes(candidate)) return candidate;
+    for (const endpoint of [0, 255]) {
+      const candidate = channels.map(channel => Math.round(channel + (endpoint - channel) * (step / 255)));
+      if (passes(candidate)) return '#' + candidate.map(channel => channel.toString(16).padStart(2, '0')).join('');
     }
   }
   throw Error('The palette has incompatible text surfaces.');

@@ -33,9 +33,13 @@ const GitProject: Plugin = async ({ client, directory }) => {
     tool: {
       git_project: tool({
         description:
-          "Application-owned Git/GitHub: inspect the saved agreement, preview selected files, and execute that exact plan. Any named agent or workflow may use this tool; the saved project agreement and explicit user intent determine what is allowed. Merging a branch into the main version is allowed only through this tool with an explicit user request and confirmation; no raw shell commands, account setup, force-push or policy changes. Confirm-only uploads must be approved in the GitHub panel.",
+          "Managed Git/GitHub for every agent and workflow. Use inspect, preview and execute for ordinary work. Call prepare before implementation to prepare the agreed task branch; chats themselves never switch branches. If the user explicitly requests anything outside the saved agreement, use request with a reason and either agreement changes (tracking, github, preset, mainBranch), or tool git/gh and an exact args array. Ask the native question with the returned questions unchanged, then call request with planID after approval. This includes branch merges/deletions, uploads, history rewrites and visibility changes. Native permission and repository/content checks still apply. Never publish through shell.",
         args: {
-          action: tool.schema.enum(["inspect", "preview", "execute", "merge"]),
+          action: tool.schema.enum(["inspect", "preview", "execute", "merge", "request", "prepare"]),
+          reason: tool.schema.string().max(2000).optional(),
+          tool: tool.schema.enum(["git", "gh"]).optional(),
+          args: tool.schema.array(tool.schema.string()).max(50).optional(),
+          agreement: tool.schema.object({ tracking: tool.schema.boolean().optional(), github: tool.schema.boolean().optional(), preset: tool.schema.enum(["main", "branch", "review", "confirm", "inspect"]).optional(), mainBranch: tool.schema.string().optional() }).optional(),
           kind: tool.schema.enum(["checkpoint", "sync", "download"]).optional(),
           files: tool.schema.array(tool.schema.string()).max(500).optional(),
           message: tool.schema.string().max(4000).optional(),
@@ -43,7 +47,7 @@ const GitProject: Plugin = async ({ client, directory }) => {
           branch: tool.schema.string().optional(),
         },
         async execute(args, context) {
-          if (args.action === "execute" || (args.action === "merge" && args.planID)) {
+          if (["execute", "prepare"].includes(args.action) || (["merge", "request"].includes(args.action) && args.planID)) {
             await context.ask({
               permission: "git_project",
               patterns: [args.planID || "missing-preview"],

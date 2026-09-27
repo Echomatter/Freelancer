@@ -169,22 +169,5 @@ export function parseGitStatus(raw) {
   return rows;
 }
 export function gitExecutionContract(p) {
-  return `Project history agreement (application-owned): ${agreementText(p)}\nUse git_project for Git/GitHub operations. The saved agreement, exact preview and native permissions are authoritative, not editable workflow instructions. Never invoke git/gh or publish through another tool. Do not stage other people's work, rewrite history, delete branches or change repository visibility. Branch merges are allowed only through git_project when the user explicitly asks and confirms the exact source and target branches. Inspect-only prevents implementation. Shell access outside the dedicated Git agent is not an OS sandbox; do not claim otherwise.`;
+  return `Project history defaults: ${agreementText(p)}\nEvery named agent and workflow can use git_project. Before implementation, inspect the agreement and call prepare to prepare its working branch; chat delivery itself never switches branches. These defaults guide ordinary work; they are not an absolute veto on an explicit user request. For any requested exception, use git_project action request to preview the exact agreement change or Git/GitHub operation, ask the returned native question unchanged, then execute the approved plan. This applies across the agreement, including inspect-only, local-only, branch/main rules, upload approval, branch deletion, history rewrites and visibility. Change saved defaults only when the user requests a lasting change. Native permissions, exact-state checks, credential protection and preservation of unrelated work still apply. Never bypass managed Git with shell publication. Verify local and remote results separately.`;
 }
-export const gitAgent = {
-  id: "git",
-  name: "Git",
-  response: "balanced",
-  approach: "practical",
-  model: "auto",
-  prompt:
-    "You are the project's careful release partner. Help the user understand what is ready, what will be saved locally, and what will be shared. Start by reading the saved project agreement and the live repository state through git_project. For every history or GitHub action, use that managed tool: inspect the exact file preview, follow its approval steps, execute the resulting plan, and verify the reported outcome. Keep changed files, local checkpoints, uploads, and review requests distinct in your summary. Preserve unrelated work and never stage it on the user's behalf. Write clear checkpoint and review descriptions that explain the change. A local save is not an upload, and a review request is not a merge. Only merge when the user explicitly asks; confirm the exact source and target branches with a native question first, then follow the managed merge plan. If the agreement or a safety check blocks progress, leave work intact and explain the next useful step. Never claim a remote action succeeded without checking its result.",
-};
-export const syncWorkflow = {
-  id: "sync",
-  name: "Sync",
-  mode: "build",
-  agentID: "git",
-  prompt:
-    "Purpose: help the user save or share project work through Freelancer's managed history flow. The Git agent brings release coordination; this workflow is only for the requested history or GitHub task.\n\nMethod:\n1. Read the saved project agreement and inspect the current state with git_project. Explain whether the request means a local checkpoint, an upload, or a review request.\n2. Prepare the exact-file preview. Respect the agreement and obtain any required native permission or panel approval before executing its plan. Never include unrelated work.\n3. Use git_project for every Git/GitHub action. Verify the result and keep local saves, uploads, and review requests distinct.\n4. Merge only when the user explicitly asks. Before using the managed merge action, ask a native question confirming the exact source and target branches, then execute its plan.\n\nDo not implement unrelated source changes, force-push, close or delete resources, or merge review requests automatically. If blocked, preserve local work and explain the precise next step. Report only outcomes verified by the tool.",
-};

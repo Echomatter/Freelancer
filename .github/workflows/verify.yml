@@ -35,7 +35,7 @@ jobs:
         id: dependencies
       - name: JavaScript contracts and real Git fixtures
         id: javascript
-        run: npm test
+        run: npm run test:contracts
       - name: Python content-index and evidence contracts
         id: python
         if: ${{ !cancelled() && steps.dependencies.outcome == 'success' }}

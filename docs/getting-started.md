@@ -71,11 +71,12 @@ The favicon, desktop link, and installable-page manifest use the same F mark as 
 
 The launcher verifies the source root, process, lock, and live page before reusing a server. A stale remembered port is not used. Its diagnostic output is under `backend/.state/webpage/server.stdout.log` and `server.stderr.log`.
 
-For a second shortcut that gracefully restarts the local server and opens a fresh Chrome app window after an update:
-
-```powershell
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/create-restart-shortcut.ps1
-```
+Use one desktop icon: **Freelancer**. The shortcut creator moves the old matching
+**Freelancer Restart** shortcut into a local backup folder. Restart is available
+in the tray menu. **Open in browser** opens a regular browser tab, and **Start in →
+Chrome app / Browser** saves the default for the desktop icon and **Open Freelancer**.
+**Application settings → Remote access** configures a fixed LAN port and pairs
+remembered devices with a one-time QR code. See [remote access](network-access.md).
 
 The tray **Restart server** command sends the server's authenticated shutdown request, waits for its process and application lock to close, then starts it again. It never force-kills a live server. The equivalent command is `scripts/restart-web.ps1`. Use **Exit Freelancer** to stop both tray and server.
 
@@ -108,11 +109,11 @@ Use the new printed URL. A browser reload alone leaves old server code running. 
 
 ## Development and checks
 
-Use `npm run test:fast` during iteration. It discovers application and backend
-contracts automatically and skips only the real-Git integration files;
-`npm run test:git` runs those separately. `npm run test:app` and
-`npm run test:backend` isolate the application and runtime suites. `npm test`
-runs everything, with real-Git scenarios concurrent in isolated repositories.
+Use `npm run test:ui` to select and inspect browser journeys interactively.
+`npm test` builds, runs the browser journeys, then all JavaScript contracts.
+`npm run test:fast` runs contracts without real Git; `npm run test:git` runs
+those fixtures separately. See [testing](testing.md) for focused runs, traces,
+reports and the exhaustive palette sweep.
 
 For frontend iteration, start the actual backend on the port configured in [Vite's proxy](../vite.config.ts):
 
@@ -125,7 +126,7 @@ npm.cmd start
 npm.cmd run dev
 ```
 
-Use the URL Vite prints. `npm run build` creates the production UI; `npm start` serves it. See [the architecture](ARCHITECTURE.md) before changing ownership or adding another service.
+Use the URL Vite prints. `npm run build` creates the production UI; `npm start` serves it. Same-LAN phone access is available from the production tray menu; see [network access](network-access.md). See [the architecture](ARCHITECTURE.md) before changing ownership or adding another service.
 
 Baseline checks:
 
@@ -138,7 +139,7 @@ npm.cmd run smoke:runtime
 
 `npm run test:browser` runs all production browser journeys, including agent editing and simulated native execution.
 
-`npm test` runs JavaScript files in `tests/` and `backend/tests/`, including documentation-link checks. The smoke check starts the **installed** OpenCode and checks native roles, skills, tools, built assets, and bootstrap without asking a model to infer. It can still touch app-local runtime state; it is not a completely offline fixture.
+`npm run test:contracts` runs JavaScript contracts in `tests/` and `backend/tests/`, including documentation-link checks. The smoke check starts the **installed** OpenCode and checks native roles, skills, tools, built assets, and bootstrap without asking a model to infer. It can still touch app-local runtime state; it is not a completely offline fixture.
 
 Additional checks, depending on the changed area:
 

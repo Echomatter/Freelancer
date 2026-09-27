@@ -1,24 +1,11 @@
 import { tool } from "@opencode-ai/plugin"
 import path from "path"
 import fs from "fs"
-import { spawn } from "node:child_process"
+import { runProcess } from "../../tools/runtime/bridge.mjs"
 
-type Ctx = { directory: string; worktree?: string }
+type Ctx = { directory: string; worktree?: string; abort?: AbortSignal }
 
-function runCommand(cmd: string[], cwd: string): Promise<{ stdout: string; stderr: string; code: number }> {
-  return new Promise((resolve, reject) => {
-    const [file, ...args] = cmd
-    const child = spawn(file, args, { cwd, stdio: ["ignore", "pipe", "pipe"] })
-    let stdout = ""
-    let stderr = ""
-    if (child.stdout) child.stdout.on("data", (d) => { stdout += d.toString() })
-    if (child.stderr) child.stderr.on("data", (d) => { stderr += d.toString() })
-    child.on("error", (err) => reject(err))
-    child.on("close", (code) => resolve({ stdout, stderr, code: code ?? 1 }))
-  })
-}
-
-async function run(args: string[], cwd: string) {
+async function run(args: string[], cwd: string, signal?: AbortSignal) {
   const candidates: string[][] = []
   const node = process.env.FREELANCER_NODE || process.execPath
   const runtimeRoot = process.env.FREELANCER_RUNTIME_ROOT
@@ -29,9 +16,8 @@ async function run(args: string[], cwd: string) {
   let last = ""
   for (const cmd of candidates) {
     try {
-      const { stdout, stderr, code } = await runCommand(cmd, cwd)
-      if (code === 0) return stdout.trim()
-      last = stderr.trim() || stdout.trim() || `exit ${code}`
+      const [file, ...commandArgs] = cmd
+      return await runProcess(file, commandArgs, { cwd, signal, timeoutMs: 600000, errorOutput: true })
     } catch (err) {
       last = String(err)
     }
@@ -160,6 +146,6 @@ export default tool({
         cli.push("meta")
         break
     }
-    return await run(cli, root)
+    return await run(cli, root, context.abort)
   },
 })

@@ -7,6 +7,7 @@ import {
 } from "../../../domain/workspace.mjs";
 
 export const retiredAgents = Object.freeze([
+  "git",
   "build",
   "plan",
   "explore",

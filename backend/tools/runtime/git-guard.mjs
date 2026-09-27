@@ -49,7 +49,7 @@ export async function gitToolGuard({
   const isInspectOnly = agreement?.tracking && agreement.preset === "inspect";
   if (isInspectOnly && !readers.has(input.tool))
     throw Error(
-      "This project's saved GitHub agreement is inspect only, so source writes are blocked. Read, search, delegate inspection, or change the agreement in the GitHub panel.",
+      "This project's saved GitHub agreement is inspect only, so source writes are blocked. Read, search, delegate inspection, or use git_project request to ask the user to change the agreement.",
     );
 
   if (!agreement?.tracking) return;

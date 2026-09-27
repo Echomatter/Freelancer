@@ -112,6 +112,14 @@ function assistant(id, model, extra = {}) {
     parts: [{ type: 'text', text: 'A verified fixture result, not a live provider result.' }] };
 }
 const args = { agentID: 'engineer', workflowID: 'build', task: 'Perform a bounded task; preserve user changes.', needsWrites: true };
+test('worker system prompt includes captured agent and workflow instructions', async t => {
+  const f = await fixture(t, { agents: [{ id: 'engineer', name: 'Engineer', prompt: 'Inspect edge cases before editing.', response: 'concise', approach: 'practical' }] });
+  await f.service.execute(args, f.ctx);
+  const prompt = f.requests.find(row => row.kind === 'prompt');
+  assert.match(prompt.body.system, /Inspect edge cases before editing/);
+  assert.match(prompt.body.system, /Workflow:/);
+  assert.match(prompt.body.system, /Freelancer execution contract/);
+});
 test('delegation receipts replace an existing JSON file without discarding it', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'delegation-write-'));
   t.after(() => rm(root, {recursive:true, force:true}));

@@ -41,12 +41,15 @@ separate terminal product, hosted Freelancer service, or installer.
 
 ## Validation
 
-- `npm run test:fast` covers application and backend contracts without real-Git
-  fixtures; `npm run test:git` runs those. `npm test` and `npm run build`
-  validate the complete contracts and web build. Real-Git fixtures run
-  concurrently in isolated repositories.
+- `npm test` builds, runs browser journeys, then all JavaScript contracts.
+  `npm run test:ui` opens the interactive browser runner after building.
+  `npm run test:fast` runs contracts without real Git; `npm run test:git` runs
+  those fixtures. `npm run test:contracts` runs all contracts. Workers are
+  bounded and real-Git fixtures use isolated repositories. See `docs/testing.md`.
   `node scripts/palette-css.mjs --check` validates generated palette CSS.
 - After building, `npm run test:browser` runs the production browser journeys.
+  Use filename filters during iteration; `npm run test:themes` performs the
+  exhaustive palette sweep. Keep user-visible assertions in browser journeys.
   `npm run smoke:runtime` is a separate native startup check.
   Fixture success does not prove real provider authentication or a visible
   Windows launch; runtime smoke does not prove model inference. Report only the

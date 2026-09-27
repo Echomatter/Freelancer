@@ -30,7 +30,7 @@ and session data stubbed so no provider credentials or inference are required:
 ```sh
 npm run build
 npx playwright install chromium
-node tests/panels-theme.browser.mjs
+npm run test:browser -- panels-theme
 ```
 
 The browser pass checks initial dark HTML without JavaScript, both drag edges,

@@ -2,6 +2,13 @@
 
 ## Interaction
 
+Matching controls frame the text box: **Message options** on the left and the
+send action on the right. The flat options panel contains attachments, workflow,
+agent, model and intelligence in one view. Escape closes it and returns focus.
+Tasks, attachments and delivery status use collapsible support cards; collapse
+never removes files or cancels work. New delivery errors reveal their details.
+See [composer design](composer-design.md) for interaction and layout decisions.
+
 The composer has one dynamic action: Send when idle with content, Stop when a response is running and the text box is empty, and a Delegate / Queue / Interrupt dialog when text is entered during a response. Stop uses a circular icon so it does not look like a checkbox. Opening or dismissing the dialog never aborts a response. Interrupt stops the native response and cancels waiting deliveries while preserving the draft. Shift+Enter and IME composition retain their normal editing behavior. Local attachments use native OpenCode file parts on a normal send. They stay in the browser until sent, are limited to four files (4 MB each, 6 MB total), and are not included in saved text drafts or Queue / Delegate. During a response, the action stays Stop if only files are attached; typed text opens the dialog and leaves those files in the composer for a later send.
 
 The dialog captures the originating project, chat and draft. It offers a model override without changing global defaults. Cancelling preserves the draft. A successful submission clears only the exact captured draft, never text typed later or a draft in another chat.

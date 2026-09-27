@@ -1,6 +1,5 @@
 // One agent catalog for main chats and delegated assignments. Workflows own the job.
 // Native OpenCode still owns tools, permissions, sessions, and execution.
-import { gitAgent, syncWorkflow } from "./git-project.mjs";
 export const agentDefaults = [
   {
     id: "engineer",
@@ -29,7 +28,6 @@ export const agentDefaults = [
     approach: "creative",
     model: "auto",
   },
-  gitAgent,
 ];
 export const modelCategories = [
   ["free", "Free models"],
@@ -70,7 +68,6 @@ export const workflowDefaults = [
     prompt:
       "Purpose: give the user an independent, actionable assessment of the requested work. The selected agent supplies the lens; this workflow sets the review standard.\n\nMethod:\n1. Establish the intended behavior, inspect the change, and read surrounding code or UI to understand its real effects.\n2. Look for concrete defects, regressions, unsafe assumptions, broken user journeys, and important validation gaps. Use focused read-only inspection or safe checks where they can confirm a concern.\n3. Report only actionable findings. For each, explain the trigger, user or system impact, and precise code location or evidence. Order findings by severity. Separate confirmed defects from questions that need more evidence; do not present preference or speculation as a bug.\n4. If the user requests an independent second opinion, use a bounded named-agent assignment and verify its claims before including them.\n\nDo not modify source. Lead with findings; then state relevant test gaps or remaining risks. If you find no defects, say so and describe the limits of the review.",
   },
-  syncWorkflow,
 ].map((w) => ({
   ...w,
   category: "connected",
@@ -84,18 +81,18 @@ const merge = (defaults, overrides) => [
 ];
 export function workspaceCatalog(settings) {
   return {
-    agents: merge(agentDefaults, settings.agents ?? []).map((a) => ({
+    agents: merge(agentDefaults, (settings.agents ?? []).filter(a => a.id !== "git")).map((a) => ({
       variant: "inherit",
       ...a,
     })),
-    workflows: merge(workflowDefaults, settings.workflows ?? [])
+    workflows: merge(workflowDefaults, (settings.workflows ?? []).filter(w => w.id !== "sync"))
       .map((w) => ({ parallel: true, variant: "inherit", ...w }))
       .map((w) => {
         const builtIn = workflowDefaults.find(
           (d) => d.id === w.id && d.id !== "custom",
         );
         const value = builtIn ? { ...w, mode: builtIn.mode } : w;
-        return { ...value, agentID: value.agentID === "none" ? "engineer" : value.agentID };
+        return { ...value, agentID: ["none", "git"].includes(value.agentID) ? "engineer" : value.agentID };
       }),
   };
 }
@@ -187,6 +184,8 @@ export function resolveChoices(
   { workflowID = "build", agentID = "inherit", model = "inherit" } = {},
   defaults = {},
 ) {
+  if (workflowID === "sync") workflowID = "build";
+  if (agentID === "git") agentID = "engineer";
   const workflow = workspace.workflows.find((w) => w.id === workflowID);
   if (!workflow) throw Error("Choose a workflow");
   const resolvedAgentID = ["inherit", "none"].includes(agentID) ? workflow.agentID : agentID;

@@ -8,4 +8,10 @@ First opening a project shows real steps: open the folder, optionally import exa
 
 The status API is `/api/index/jobs` with GET/POST plus `/stop` and `/dismiss`. Supported kinds are `prepare`, `files`, `chats`, `optimize`, `check`, and `compact`. One status-managed index or SQLite operation runs at a time. Initial statuses are returned before work begins. SQLite maintenance runs on a worker thread so the server remains responsive; native SQLite locking still applies to concurrent writes. The UI/runtime contract is version 10; restart an older server after rebuilding.
 
+The native `content_index` tool forwards cancellation to its indexer process and
+uses a ten-minute timeout, a 4 MiB stdout limit, and a bounded stderr diagnostic
+tail. A timeout, cancellation, or oversized result is an explicit tool failure;
+it is not reported as a completed index. Large retrieval results can be narrowed
+with the source/family filters and row limit.
+
 Validation: `tests/index-jobs.test.mjs` covers scoping, restart readiness, partial completion, cancellation and SQLite failures. `tests/progress-jobs.browser.mjs` exercises the production UI with real file/SQLite indexing in an isolated project and simulated native conversations. Model research contracts and browser flows live in the model-ratings tests; these fixtures do not prove provider inference.

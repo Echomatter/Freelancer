@@ -17,8 +17,9 @@ Builds do not require GitHub sign-in or a linked repository. If local project
 history is enabled with a task-branch or review agreement, the first build may
 ask for a local checkpoint so the main version is preserved. That checkpoint is
 on this computer and is separate from GitHub upload.
-Explore, Review, and Sync requests keep the checked-out branch; they do not
-prepare an implementation branch.
+Sending a chat never changes branches or blocks a question about the agreement.
+Before implementation, the agent uses the managed `prepare` action to prepare the
+agreed working branch. Every agent and workflow can use this action.
 
 ## First setup (Windows)
 
@@ -60,23 +61,21 @@ rewrite global Git identity or install a global credential helper.
 
 - **Main version:** build on the designated local main branch; Sync uploads it
   without rewriting history.
-- **Separate tasks:** Build prepares/reuses a branch for that chat before edits.
+- **Separate tasks:** The managed prepare action prepares/reuses a branch for that chat before edits.
   Sync uploads the selected task and does not update main.
-- **Review:** upload the task and create/reuse its open review request. It never merges automatically; merges happen only when you explicitly ask the Git agent or Sync workflow and confirm the exact branches.
+- **Review:** upload the task and create/reuse its open review request. It never merges automatically; merges happen only when you explicitly ask any agent and confirm the exact branches.
 - **Show me first:** the agent can prepare a preview, but every upload must be
   approved in the GitHub panel. Native permission is not a substitute.
-- **Inspect only:** no managed checkpoints, branch switches or uploads. Build
-  implementation is blocked; use Explore/Review for inspection.
+- **Inspect only:** no managed checkpoints, branch switches or uploads. Implementation requires an explicitly confirmed agreement change.
 
 Turn GitHub sync off for local-only use. Turning history automation off does not
 delete .git, commits, files or existing GitHub projects. Working style can be
 saved as a default for newly configured projects; account/repository credentials
 and bindings are never copied into those defaults.
 
-The Git persona and Sync workflow are application defaults. Their editable
-instructions describe goals; the versioned project agreement owns permission.
+Every agent and workflow can manage project history. The saved agreement supplies defaults. For an explicit user request outside any part of it, `git_project` action `request` previews the exact operation or agreement change, asks a native question, and executes after approval. This covers inspect-only/local-only settings, branch/main rules, upload confirmation, branch deletion, history rewrites and visibility. One-time operations leave saved defaults unchanged.
 Both the panel and the native `git_project` tool call the same application
-service. Setup, account changes and policy editing are panel-only. The agent
+service. Account setup stays in the panel. Agreement changes can also be confirmed in chat. The agent
 uses one native permission request per approved plan, not one per shell command.
 
 ## Saving, getting updates and syncing
@@ -122,8 +121,8 @@ External editors/terminals are not locked, so avoid modifying a project during
 an approved Git action. Git's native ref/index locks and revalidation protect
 ordinary races, but this is not a filesystem transaction or an OS sandbox.
 
-Git/Sync provides specialist guidance; any capable agent can use managed history.
-Inspect-only project agreements prevent managed mutations regardless of workflow.
+Any agent can use managed history.
+Inspect-only defaults prevent automatic mutations; explicit requests can be confirmed in chat regardless of workflow.
 Native shell permissions remain authoritative; direct git/gh commands
 are guarded, but arbitrary scripts and other programs with the user's filesystem
 or credential access are not a security sandbox. Do not present the agreement
@@ -140,7 +139,7 @@ Run `npm test`, `npm run build`, and:
 
 ```
 npx tsc --noEmit --target ES2022 --moduleResolution bundler --module esnext --skipLibCheck backend/opencode/plugins/git-project.ts
-node tests/git-project.browser.mjs
+npm run test:browser -- git-project
 ```
 
 The browser gate requires test-only Playwright/Chromium. It uses the built UI,

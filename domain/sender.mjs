@@ -37,7 +37,7 @@ export function senderState(chat, session) {
 }
 
 export function normalizeIntent(input) {
-  if (!['queue', 'clarify'].includes(input.kind)) throw Error('Choose Queue or Delegate.');
+  if (!['queue', 'clarify', 'interrupt'].includes(input.kind)) throw Error('Choose Queue, Delegate, or Interrupt.');
   if (typeof input.id !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(input.id)) throw Error('Invalid delivery ID.');
   if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 190000) throw Error('Write a message of at most 190,000 characters.');
   if (!(input.kind === 'clarify' && input.model === 'auto') && (typeof input.model !== 'string' || !/^[\w.:-]+\/[^\s]+$/.test(input.model) || input.model.length > 500)) throw Error('Choose an available model.');

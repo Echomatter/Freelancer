@@ -49,6 +49,9 @@ export function activityLabel(phase) {
       awaiting_paid_permission: "Needs your approval",
       failed: "Stopped",
       cancelled: "Cancelled",
+      aborted: "Stopped",
+      timeout: "Time limit reached",
+      stop_unverified: "Stop not confirmed",
     }[phase] ?? String(phase ?? "Waiting").replaceAll("_", " ")
   );
 }

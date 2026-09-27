@@ -4,6 +4,10 @@
 
 Freelancer for OpenCode is one Windows-oriented source-run application: React in a browser or Chrome app, a loopback Node server, and native OpenCode. Closing the browser does not stop the independent server or cancel work.
 
+The web listener can opt into authenticated private-LAN access for a phone with
+`scripts/launch-web.ps1 -Lan`. OpenCode and process-control endpoints remain local.
+See [LAN phone access](network-access.md) for pairing and launch instructions.
+
 ## Ownership
 
 ```mermaid
@@ -52,13 +56,13 @@ The scroll area spans the workspace beside a sticky composer. Task and delivery 
 
 ## Managed Git
 
-Any capable agent can use git_project; Git/Sync is optional guidance. The service enforces agreements, exact previews, selected files, unrelated index protection, private-file/credential checks, approval, remote-tip verification and uncertain-operation recovery. No force push. Merge needs explicit intent and confirmation. Checkpoint is local; connection is not binding, and binding is not upload. [Git safeguards](github-projects.md)
+Every agent and workflow can use git_project; there is no Git agent or Sync workflow. The service enforces agreements, exact previews, selected files, unrelated index protection, private-file/credential checks, approval, remote-tip verification and uncertain-operation recovery. An explicit request outside any agreement default uses an exact request preview and a recorded native question answer. This covers agreement edits, merges, branch deletion, visibility and history rewrites using a lease; native permissions and content/identity checks remain in force. Sending a chat never changes branches. Checkpoint is local; connection is not binding, and binding is not upload. [Git safeguards](github-projects.md)
 
 ## Data and startup
 
 Private JSON lives in ignored `backend/.state/`. Organization, drafts, search and model ratings use `%LOCALAPPDATA%\Freelancer\freelancer.sqlite`, or absolute `FREELANCER_DATA_HOME`. Native data stays with OpenCode. Fresh source imports no old application history, registrations, drafts, receipts, databases or caches.
 
-`FREELANCER_APP_ROOT` optionally overrides the source root; `FREELANCER_RUNTIME_ROOT` points plugins at its backend. `OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG` select local plugins and profiles. `XDG_CONFIG_HOME` isolates configuration. Native `XDG_DATA_HOME` remains the existing OpenCode location, preserving auth without copying it. `FREELANCER_WEB_PORT` optionally fixes the loopback port.
+`FREELANCER_APP_ROOT` optionally overrides the source root; `FREELANCER_RUNTIME_ROOT` points plugins at its backend. `OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG` select local plugins and profiles. `XDG_CONFIG_HOME` isolates configuration. Native `XDG_DATA_HOME` remains the existing OpenCode location, preserving auth without copying it. `FREELANCER_WEB_PORT` optionally fixes the loopback port. LAN phone access is opt-in for a launch and keeps native/shutdown channels loopback-only. [Network access](network-access.md)
 
 `server/main.mjs` owns startup and the lock. `scripts/launch-web.ps1` verifies root, process, lock and live page before reusing a server. The native launcher is Windows-specific. Local text is not encrypted by Freelancer. Provider inference sends relevant context externally.
 
@@ -75,4 +79,4 @@ Private JSON lives in ignored `backend/.state/`. Organization, drafts, search an
 | Data | `server/data/`, `server/store.mjs`, `server/history.mjs` |
 | Color | `domain/theme.mjs`, `domain/provider-colors.mjs`, `src/ProviderColors.tsx` |
 
-Run `npm test`, `npm run build`, palette CSS check, then `npm run test:browser`. `npm run smoke:runtime` separately starts installed OpenCode without inference. Fixtures, browser rendering, native startup, real inference, authentication and visible Windows launch are distinct evidence boundaries.
+Run `npm test` for the build, browser journeys and contracts; see [testing](testing.md) for interactive and focused runs. Validate palette CSS separately. `npm run smoke:runtime` separately starts installed OpenCode without inference. Fixtures, browser rendering, native startup, real inference, authentication and visible Windows launch are distinct evidence boundaries.

@@ -5,26 +5,32 @@ import { createHash, randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { replaceFile } from '../../../server/replace-file.mjs';
 
-export function runProcess(file, args, { cwd, signal, timeoutMs = 15000 } = {}) {
+export function runProcess(file, args, { cwd, signal, timeoutMs = 15000, errorOutput = false } = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error('Cancelled before process start')); return; }
     const child = spawn(file, args, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let output = '', length = 0, settled = false;
+    let output = '', diagnostics = '', length = 0, settled = false;
     const fail = error => { if (!settled) { settled = true; cleanup(); child.kill(); reject(error); } };
     const abort = () => fail(new Error('Process cancelled'));
     const timer = setTimeout(() => fail(new Error('Auxiliary process timed out')), timeoutMs);
     function cleanup() { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
     child.stdout.on('data', chunk => {
+      if (settled) return;
       length += chunk.length;
       if (length > 4 * 1024 * 1024) fail(new Error('Auxiliary output limit reached'));
       else output += chunk.toString();
     });
-    child.stderr.resume(); // Do not forward unreviewed stderr containing account/config data.
+    // Account/config helpers suppress stderr; local indexer diagnostics are opt-in
+    // and bounded even when a rebuild prints progress for thousands of sources.
+    if (errorOutput) child.stderr.on('data', chunk => {
+      if (!settled) diagnostics = (diagnostics + chunk.toString()).slice(-16384);
+    });
+    else child.stderr.resume();
     child.on('error', fail);
     child.on('close', code => {
       if (settled) return;
       settled = true; cleanup();
-      if (code !== 0) reject(new Error(`Auxiliary process exited ${code}`)); else resolve(output.trim());
+      if (code !== 0) reject(new Error(diagnostics.trim() || `Auxiliary process exited ${code}`)); else resolve(output.trim());
     });
     signal?.addEventListener('abort', abort, { once: true });
   });

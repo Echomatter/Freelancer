@@ -215,8 +215,7 @@ prompts direct SQL access.
 
 ## Verification and remaining live checks
 
-Run `npm test`, `npm run build`, then (with Playwright installed as a temporary
-test dependency) `node tests/local-data.browser.mjs`. The new CI matrix exercises
+Run `npm test`, `npm run build`, then (with the Chromium test browser installed) `npm run test:browser -- local-data`. The new CI matrix exercises
 Ubuntu and Windows with normal navigation and uploads browser screenshots.
 The Windows panel workflow exercises the same browser application.
 

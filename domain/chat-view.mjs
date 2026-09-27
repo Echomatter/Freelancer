@@ -3,6 +3,14 @@
 // work summaries from already-loaded message arrays.
 import { hasUnfinishedTodos } from "./todos.mjs";
 
+export function responseErrorLabel(error) {
+  const name = typeof error === 'object' ? error?.name : '';
+  const message = String(typeof error === 'string' ? error : error?.data?.message ?? error?.message ?? '');
+  if (/^(?:MessageAbortedError|AbortError)$/.test(name) || /^(?:The operation was aborted\.?|This operation was aborted\.?|aborted|cancelled)$/i.test(message.trim()))
+    return 'Response stopped. Any work already completed is still available.';
+  return message || 'This response stopped. You can send a follow-up to continue.';
+}
+
 // OpenCode can finish a shell tool successfully while the command exits with
 // an error. Use its structured exit status, never guess from output prose.
 export function toolOutcomeStatus(part) {

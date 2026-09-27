@@ -1,4 +1,5 @@
 import { usageRecord } from "../domain/costs.mjs";
+import path from "node:path";
 
 // Observe native sessions independently of the selected view. OpenCode remains
 // the ledger of record; response IDs make reconnects and rescans idempotent.
@@ -8,10 +9,17 @@ export function createObserver({ host, store, interval = 15000 }) {
     stopped = false,
     timer;
   const status = { lastUpdated: null, error: null };
+  const normalizeDirectory = (directory) => {
+    if (typeof directory !== "string") return "";
+    const resolved = path.resolve(directory);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
   async function scan() {
     const { projects } = await store.read("settings");
+    const seen = new Set();
     for (const project of projects) {
       if (stopped) break;
+      const projectDirectory = normalizeDirectory(project.directory);
       const sessions = await host.request("/session?limit=1000", {
         directory: project.directory,
       });
@@ -20,12 +28,11 @@ export function createObserver({ host, store, interval = 15000 }) {
       start.setUTCHours(0, 0, 0, 0);
       for (const session of sessions) {
         if (stopped) break;
-        if (
-          session.directory?.toLowerCase() !== project.directory.toLowerCase()
-        )
+        if (normalizeDirectory(session.directory) !== projectDirectory)
           continue;
-        const key = project.id + session.id,
+        const key = `${project.id}\0${projectDirectory}\0${session.id}`,
           version = session.time?.updated;
+        seen.add(key);
         if (
           version < start.getTime() ||
           (version && versions.get(key) === version)
@@ -44,6 +51,7 @@ export function createObserver({ host, store, interval = 15000 }) {
         if (version) versions.set(key, version);
       }
     }
+    for (const key of versions.keys()) if (!seen.has(key)) versions.delete(key);
     status.lastUpdated = new Date().toISOString();
     status.error = null;
   }

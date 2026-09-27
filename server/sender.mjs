@@ -6,7 +6,7 @@ import { senderState, normalizeIntent, clarifyPrompt } from '../domain/sender.mj
 
 const keyOf = (project, session) => JSON.stringify([project, session]);
 const pending = r => r.status === 'waiting';
-const active = r => ['waiting', 'sending', 'submitted'].includes(r.status);
+const active = r => ['waiting', 'interrupting', 'sending', 'submitted'].includes(r.status);
 const digest = value => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const isDelegateHandoff = message => message?.info?.role === 'user' &&
   message.parts?.some(part => part.type === 'text' && /^\[Freelancer Delegate handoff [\w-]+\]\n/.test(part.text ?? ''));
@@ -35,7 +35,7 @@ export function createSender(app, { file = app.store?.directory && path.join(app
       const data = JSON.parse(await readFile(file, 'utf8'));
       if (data.version !== 1 || !Array.isArray(data.rows) || data.rows.some(r => !r.id || !r.project || !r.session)) throw Error('Invalid outbox');
       rows = data.rows;
-      for (const row of rows.filter(r => r.status === 'sending')) {
+      for (const row of rows.filter(r => ['sending', 'interrupting'].includes(r.status))) {
         row.status = 'uncertain';
         row.error = 'The server restarted during delivery. Check the native chat before sending again.';
       }
@@ -87,7 +87,7 @@ export function createSender(app, { file = app.store?.directory && path.join(app
     const candidate = data.models.find(m => m.id === row.model);
     if (row.model !== 'auto' && (!candidate || !(data.providers.connected.includes(candidate.provider) || (candidate.provider === 'opencode' && candidate.costClass === 'free'))))
       throw Error('The chosen model is no longer available. Cancel this item and choose another model.');
-    if (row.kind === 'queue') return { text: row.text, model: row.model, variant: row.variant, workflowID: row.workflowID, agentID: row.agentID };
+    if (row.kind !== 'clarify') return { text: row.text, model: row.model, variant: row.variant, workflowID: row.workflowID, agentID: row.agentID };
     const native = data.sessions.find(s => s.id === row.session);
     const last = [...(chat.receipts ?? [])].reverse().find(r => ['accepted', 'observed'].includes(r.status));
     const assistant = chat.messages.findLast(m => m.info?.role === 'assistant');
@@ -125,14 +125,14 @@ export function createSender(app, { file = app.store?.directory && path.join(app
         }
       }
       const row = group.find(r => pending(r) && r.kind === 'clarify') ?? group.find(pending);
-      if (!row || state.approvals || (row.kind === 'queue' && (!state.ready || group.some(r => ['submitted', 'uncertain', 'failed'].includes(r.status))))) { await save(); return; }
+      if (!row || state.approvals || (row.kind !== 'clarify' && (!state.ready || group.some(r => ['submitted', 'uncertain', 'failed'].includes(r.status))))) { await save(); return; }
       let input;
       try { input = await inputFor(row, chat); }
       catch (error) { row.status = 'failed'; row.error = error.message; await save(); return; }
       if (stopping.has(keyOf(project, session))) return;
       // Recheck after policy/model lookup: native state may have changed meanwhile.
       const fresh = senderState(await app.chat(project, session), session);
-      if (fresh.approvals || (row.kind === 'queue' && !fresh.ready)) return;
+      if (fresh.approvals || (row.kind !== 'clarify' && !fresh.ready)) return;
       row.status = 'sending';
       try { await save(); } // Persist the claim BEFORE sending; never blindly replay it.
       catch (error) { row.status = 'failed'; row.error = `Could not save delivery intent. Nothing was sent. ${error.message}`; return; }
@@ -197,13 +197,30 @@ export function createSender(app, { file = app.store?.directory && path.join(app
         senderState(chat, session);
         const row = { ...intent, project, session, fingerprint,
           sourceMessageID: chat.messages.findLast(m => m.info?.role === 'user' && !isDelegateHandoff(m))?.info.id,
-          status: 'waiting', createdAt: Date.now() };
+          status: intent.kind === 'interrupt' ? 'interrupting' : 'waiting', createdAt: Date.now() };
         await inputFor(row, chat); // Fail before clearing the user's draft.
         if (rows.filter(active).length >= 100) throw Error('The sender has 100 pending requests. Clear some before adding more.');
         rows.push(row);
         // Retain bounded idempotency tombstones, not accepted chat text.
         if (rows.length > 1000) rows = rows.filter(r => active(r) || r.createdAt > Date.now() - 7 * 86400000);
         try { await save(); } catch (e) { rows = rows.filter(r => r !== row); throw e; }
+        if (intent.kind === 'interrupt') {
+          // Persist the ID before aborting. Repeating a lost acknowledgement
+          // must never stop the replacement turn or dispatch the steer twice.
+          try {
+            for (const other of rows.filter(r => r !== row && r.project === project && r.session === session && pending(r))) {
+              other.status = 'cancelled'; delete other.text;
+            }
+            await save();
+            await app.stop(project, session);
+            for (const other of rows.filter(r => r !== row && r.project === project && r.session === session && r.status === 'submitted')) other.status = 'delivered';
+            row.status = 'waiting';
+          } catch (error) {
+            row.status = 'uncertain';
+            row.error = `Interrupt could not be confirmed. Inspect the chat before continuing. ${error.message}`;
+          }
+          await save();
+        }
         return publicRow(row);
       });
     },

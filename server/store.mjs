@@ -1,5 +1,5 @@
 import { executionContext } from "../backend/tools/runtime/execution-context.mjs";
-import { readFile, writeFile, mkdir, unlink } from "node:fs/promises";
+import { readFile, writeFile, mkdir, unlink, stat } from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { normalizePlans } from "../domain/costs.mjs";
@@ -10,6 +10,7 @@ import { replaceFile } from "./replace-file.mjs";
 export function createStore(root, { replace = replaceFile } = {}) {
   const directory = path.join(root, ".state", "webpage");
   let queue = Promise.resolve();
+  const cache = new Map();
   const files = {
     settings: "settings.json",
     usage: "usage.json",
@@ -29,51 +30,131 @@ export function createStore(root, { replace = replaceFile } = {}) {
     requests: () => ({ version: 1, records: {} }),
     gitOperations: () => ({ version: 1, records: {} }),
   };
-  async function read(name) {
+  const filePath = (name) => path.join(directory, files[name]);
+  const signature = (stats) =>
+    stats ? `${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}` : null;
+  async function currentSignature(name) {
+    try {
+      return signature(await stat(filePath(name), { bigint: true }));
+    } catch (e) {
+      if (e.code === "ENOENT") return null;
+      throw e;
+    }
+  }
+  function validate(name, value) {
+    if (value.version !== 1) throw Error("Unsupported document");
+    if (
+      name === "settings" &&
+      (!Array.isArray(value.projects) ||
+        !Array.isArray(value.workflows) ||
+        !Number.isInteger(value.revision))
+    )
+      throw Error("Invalid settings");
+    if (
+      ["usage", "requests", "gitOperations"].includes(name) &&
+      (!value.records ||
+        typeof value.records !== "object" ||
+        Array.isArray(value.records))
+    )
+      throw Error("Invalid usage");
+  }
+  async function load(name) {
     if (!files[name]) throw Error("Unknown document");
     try {
-      const value = JSON.parse(
-        await readFile(path.join(directory, files[name]), "utf8"),
-      );
-      if (value.version !== 1) throw Error("Unsupported document");
-      if (
-        name === "settings" &&
-        (!Array.isArray(value.projects) ||
-          !Array.isArray(value.workflows) ||
-          !Number.isInteger(value.revision))
-      )
-        throw Error("Invalid settings");
-      if (
-        ["usage", "requests", "gitOperations"].includes(name) &&
-        (!value.records ||
-          typeof value.records !== "object" ||
-          Array.isArray(value.records))
-      )
-        throw Error("Invalid usage");
+      const seen = await currentSignature(name),
+        cached = cache.get(name);
+      if (cached && cached.signature === seen) return cached.data;
+      if (seen === null) {
+        const value = defaults[name]();
+        cache.set(name, { signature: null, data: value });
+        return value;
+      }
+      const value = JSON.parse(await readFile(filePath(name), "utf8"));
+      validate(name, value);
+      cache.set(name, { signature: seen, data: value });
       return value;
     } catch (e) {
-      if (e.code === "ENOENT") return defaults[name]();
+      if (e.code === "ENOENT") {
+        const value = defaults[name]();
+        cache.set(name, { signature: null, data: value });
+        return value;
+      }
       throw Error(`Cannot read ${name}; your existing data was preserved.`);
+    }
+  }
+  async function read(name) {
+    return structuredClone(await load(name));
+  }
+  async function writeDocument(name, next) {
+    validate(name, next);
+    await mkdir(directory, { recursive: true });
+    const target = filePath(name),
+      temp = target + "." + randomUUID() + ".tmp";
+    try {
+      await writeFile(temp, JSON.stringify(next, null, 2), { mode: 0o600 });
+      await replace(temp, target);
+      cache.set(name, {
+        signature: await currentSignature(name),
+        data: next,
+      });
+    } finally {
+      await unlink(temp).catch(() => {});
     }
   }
   function update(name, change) {
     const work = queue.then(async () => {
-      const data = await read(name),
+      const data = await load(name),
         next = await change(structuredClone(data));
       if (JSON.stringify(data) === JSON.stringify(next)) return next;
-      await mkdir(directory, { recursive: true });
-      const target = path.join(directory, files[name]),
-        temp = target + "." + randomUUID() + ".tmp";
-      try {
-        await writeFile(temp, JSON.stringify(next, null, 2), { mode: 0o600 });
-        await replace(temp, target);
-      } finally {
-        await unlink(temp).catch(() => {});
-      }
+      // The callback and caller may keep next; neither may mutate our cache.
+      await writeDocument(name, structuredClone(next));
       return next;
     });
     queue = work.catch(() => {});
     return work;
+  }
+  async function updateRequests(change) {
+    const work = queue.then(async () => {
+      const data = await load("requests"),
+        next = await change(data);
+      if (next === data) return data;
+      await writeDocument("requests", next);
+      return next;
+    });
+    queue = work.catch(() => {});
+    return work;
+  }
+  async function observeRequests(records) {
+    return updateRequests((current) => {
+      let next = current,
+        nextRecords = current.records;
+      for (const row of records.filter(Boolean)) {
+        const receipt = nextRecords[row.parentMessageID];
+        if (!receipt || receipt.sessionID !== row.sessionID) continue;
+        const response = {
+            model: `${row.providerID}/${row.modelID}`,
+            completed: row.completed,
+          },
+          previous = receipt.responses?.[row.id];
+        if (
+          receipt.status === "observed" &&
+          previous?.model === response.model &&
+          previous?.completed === response.completed
+        )
+          continue;
+        if (next === current) {
+          nextRecords = { ...current.records };
+          next = { ...current, records: nextRecords };
+        }
+        const responses = { ...receipt.responses, [row.id]: response };
+        nextRecords[row.parentMessageID] = {
+          ...receipt,
+          status: "observed",
+          responses,
+        };
+      }
+      return next;
+    });
   }
   return {
     read,
@@ -90,26 +171,11 @@ export function createStore(root, { replace = replaceFile } = {}) {
       }));
     },
     async observe(records, { session } = {}) {
-      await update("requests", (s) => {
-        for (const row of records.filter(Boolean)) {
-          const receipt = s.records[row.parentMessageID];
-          if (!receipt || receipt.sessionID !== row.sessionID) continue;
-          receipt.status = "observed";
-          receipt.responses = {
-            ...receipt.responses,
-            [row.id]: {
-              model: `${row.providerID}/${row.modelID}`,
-              completed: row.completed,
-            },
-          };
-        }
-        return s;
-      });
+      const requestSnapshot = await observeRequests(records);
       return update("usage", async (s) => {
-        const requests = await read("requests");
         for (const row of records)
           if (row) {
-            let receipt = requests.records[row.parentMessageID];
+            let receipt = requestSnapshot.records[row.parentMessageID];
             if (!receipt && session?.id === row.sessionID && session?.metadata?.freelancer?.taskID) {
               receipt = await executionContext(root, row.directory, session, {info:{
                 role:"assistant", agent:row.nativeAgent, parentID:row.parentMessageID,
@@ -133,16 +199,22 @@ export function createStore(root, { replace = replaceFile } = {}) {
         return s;
       });
     },
-    recordRequest(record) {
-      return update("requests", (s) => {
-        const previous = s.records[record.id];
-        s.records[record.id] = {
+    async recordRequest(record) {
+      const captured = structuredClone(record);
+      const result = await updateRequests((current) => {
+        const previous = current.records[captured.id],
+          nextRecord = {
           ...previous,
-          ...record,
+          ...captured,
           ...(previous?.status === "observed" ? { status: "observed" } : {}),
         };
-        return s;
+        if (JSON.stringify(previous) === JSON.stringify(nextRecord)) return current;
+        return {
+          ...current,
+          records: { ...current.records, [captured.id]: nextRecord },
+        };
       });
+      return structuredClone(result);
     },
   };
 }

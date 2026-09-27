@@ -1,10 +1,14 @@
 import http from "node:http";
+import { once } from "node:events";
 import { timingSafeEqual } from "node:crypto";
 import { createSender } from "./sender.mjs";
+import { createSchedules } from "./schedules.mjs";
 import { savedTheme, themeDocument } from "./theme.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isLocalDataUnavailable } from "./data/store.mjs";
+import { privateIPv4 } from "./lan.mjs";
+import { createRemoteAccess } from "./remote-access.mjs";
 
 const types = {
   ".html": "text/html",
@@ -16,33 +20,47 @@ const types = {
   ".webmanifest": "application/manifest+json",
   ".json": "application/json",
 };
-export async function startServer({ application: app, assets, port = 0, readActivity, shutdownToken, onShutdown }) {
+const isLoopbackRemote = (remote) =>
+  remote === "127.0.0.1" || remote === "::ffff:127.0.0.1" || remote === "::1";
+const safeEqual = (supplied, expected) => {
+  const a = Buffer.from(supplied), b = Buffer.from(expected);
+  return a.length === b.length && timingSafeEqual(a, b);
+};
+
+export async function startServer({ application: app, assets, port = 0, readActivity, shutdownToken, onShutdown, remoteAccess }) {
   const history = app.history;
   const sender = createSender(app, { beforeSend: history?.ensureWritable });
   await sender.ready;
+  const schedules = createSchedules(app, { sender, readActivity });
+  await schedules.ready;
   await app.gitProjects?.recover();
   let origin;
+  const remote = remoteAccess ?? await createRemoteAccess();
   const server = http.createServer(async (req, res) => {
-    const send = (status, value, type = "application/json") => {
+    const send = (status, value, type = "application/json", cache = "no-store") => {
       res.writeHead(status, {
         "Content-Type": type,
-        "Cache-Control": "no-store",
+        "Cache-Control": cache,
         "X-Content-Type-Options": "nosniff",
         "Referrer-Policy": "no-referrer",
       });
       res.end(type === "application/json" ? JSON.stringify(value) : value);
     };
     try {
-      if (req.headers.host !== new URL(origin).host)
+      if (!isLoopbackRemote(req.socket.remoteAddress) && !privateIPv4(req.socket.remoteAddress))
+        return send(403, { error: "Local network access only" });
+      const host = String(req.headers.host ?? "");
+      if (host !== new URL(origin).host && (!remote.origin || host !== new URL(remote.origin).host))
         return send(403, { error: "Local application only" });
-      const url = new URL(req.url, origin),
+      const loopback = isLoopbackRemote(req.socket.remoteAddress);
+      if (!loopback && host === new URL(origin).host)
+        return send(403, { error: "Local application only" });
+      const requestOrigin = remote.origin && host === new URL(remote.origin).host ? remote.origin : origin;
+      const url = new URL(req.url, requestOrigin),
         route = url.pathname;
       if (route === "/__shutdown" && req.method === "POST") {
         const supplied = String(req.headers["x-freelancer-shutdown"] ?? "");
-        const remote = req.socket.remoteAddress;
-        const loopback = remote === "127.0.0.1" || remote === "::ffff:127.0.0.1" || remote === "::1";
-        if (!loopback || !shutdownToken || supplied.length !== shutdownToken.length ||
-          !timingSafeEqual(Buffer.from(supplied), Buffer.from(shutdownToken)))
+        if (!loopback || requestOrigin !== origin || !shutdownToken || !safeEqual(supplied, shutdownToken))
           return send(403, { error: "Local application only" });
         res.writeHead(202, { "Cache-Control": "no-store" });
         res.end();
@@ -52,13 +70,19 @@ export async function startServer({ application: app, assets, port = 0, readActi
       if (route.startsWith("/api/")) {
         const supplied = String(req.headers["x-freelancer-git-bridge"] ?? "");
         const expected = process.env.FREELANCER_GIT_BRIDGE || "";
-        const agentBridge = route === "/api/git/agent" && !!expected && supplied.length === expected.length && timingSafeEqual(Buffer.from(supplied), Buffer.from(expected));
+        const lanApi = requestOrigin !== origin || !loopback;
+        const pairingRequest = lanApi && route === '/api/access/pair' && req.method === 'POST';
+        const lanTokenOk = !lanApi || pairingRequest || remote.authenticate(req, res);
+        const agentBridge = loopback && !lanApi && route === "/api/git/agent" && !!expected && safeEqual(supplied, expected);
         if (
           (!agentBridge && req.headers["x-freelancer-client"] !== "webpage") ||
-          (req.headers.origin && req.headers.origin !== origin) ||
-          req.headers["sec-fetch-site"] === "cross-site"
+          (req.headers.origin && req.headers.origin !== requestOrigin) ||
+          req.headers["sec-fetch-site"] === "cross-site" ||
+          !lanTokenOk
         )
-          return send(403, { error: "Open Freelancer to continue" });
+          return send(403, { error: !lanTokenOk
+            ? "Pair this device from Application settings - Remote access on your computer."
+            : "Open Freelancer to continue" });
         let body = {};
         if (!["GET", "HEAD"].includes(req.method)) {
           let bytes = 0,
@@ -70,6 +94,21 @@ export async function startServer({ application: app, assets, port = 0, readActi
             chunks.push(chunk);
           }
           body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
+        }
+        if (pairingRequest) {
+          const paired = await remote.pair(body);
+          res.setHeader('Set-Cookie', paired.cookie);
+          return send(200, { name: paired.name, expiresAt: paired.expiresAt });
+        }
+        if (route === '/api/access/session' && req.method === 'GET') return send(200, { authenticated: true });
+        if (route.startsWith('/api/remote-access')) {
+          if (lanApi) return send(403, { error: 'Manage remote access on this computer.' });
+          if (route === '/api/remote-access' && req.method === 'GET') return send(200, remote.status());
+          if (route === '/api/remote-access' && req.method === 'PUT') return send(200, await remote.configure(body));
+          if (route === '/api/remote-access/pairing' && req.method === 'POST') return send(200, await remote.pairLink());
+          if (route === '/api/remote-access/pairing' && req.method === 'DELETE') return send(200, await remote.cancelPairing());
+          if (route === '/api/remote-access/devices' && req.method === 'DELETE') return send(200, await remote.revoke(body.id));
+          return send(404, { error: 'Action not found' });
         }
         const project = url.searchParams.get("project") ?? body.project;
         if (route === "/api/git/agent") {
@@ -84,6 +123,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
         if (route === "/api/git/bind" && req.method === "POST") return send(200, await app.gitProjects.bind(project, body));
         if (route === "/api/git/setup" && req.method === "POST") return send(200, await app.gitProjects.setup(project, body));
         if (route === "/api/git/preview" && req.method === "POST") return send(200, await app.gitProjects.preview(project, body));
+        if (route === "/api/git/request" && req.method === "POST") return send(200, body.planID
+          ? await app.gitProjects.requestExecute(project, body, { origin: "panel" })
+          : await app.gitProjects.requestPreview(project, body, { origin: "panel" }));
         if (route === "/api/git/execute" && req.method === "POST") return send(200, await app.gitProjects.execute(project, body, { origin: "panel" }));
         if (req.method === "GET" && route === "/api/activity" && readActivity)
           return send(200, await readActivity(project));
@@ -210,6 +252,14 @@ export async function startServer({ application: app, assets, port = 0, readActi
         }
         if (req.method === "GET" && route === "/api/sender")
           return send(200, await sender.list(project, url.searchParams.get("session")));
+        if (req.method === "GET" && route === "/api/schedules")
+          return send(200, await schedules.list());
+        if (req.method === "POST" && route === "/api/schedules")
+          return send(200, await schedules.create(body));
+        if (req.method === "PUT" && route === "/api/schedules")
+          return send(200, await schedules.update(body));
+        if (req.method === "DELETE" && route === "/api/schedules")
+          return send(200, await schedules.delete(body.id));
         if (req.method === "POST" && route === "/api/sender")
           return send(200, await sender.enqueue(project, body.session, body));
         if (req.method === "DELETE" && route === "/api/sender")
@@ -258,8 +308,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
           });
           try {
             for await (const chunk of stream) {
+              if (abort.signal.aborted) break;
               if (!res.write(chunk))
-                await new Promise((resolve) => res.once("drain", resolve));
+                await once(res, "drain", { signal: abort.signal });
             }
           } catch {
             /* Client disconnects and frontend reconnects. */
@@ -273,7 +324,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
       if (req.method !== "GET")
         return send(405, { error: "Method not allowed" });
       if (
-        (req.headers.origin && req.headers.origin !== origin) ||
+        (req.headers.origin && req.headers.origin !== requestOrigin) ||
         (req.headers["sec-fetch-site"] === "cross-site" &&
           !(
             route === "/" &&
@@ -296,6 +347,8 @@ export async function startServer({ application: app, assets, port = 0, readActi
         200,
         path.extname(file) === ".html" ? themeDocument(content.toString("utf8"), await savedTheme(app.store)) : content,
         types[path.extname(file)] ?? "application/octet-stream",
+        /^assets\/[\w-]+-[\w-]{8,}\.(?:js|css)$/.test(relative)
+          ? "public, max-age=31536000, immutable" : "no-store",
       );
     } catch (e) {
       if (res.headersSent) {
@@ -330,6 +383,8 @@ export async function startServer({ application: app, assets, port = 0, readActi
   });
   let disposal;
   const dispose = () => disposal ??= (async () => {
+    await remote.close();
+    await schedules.close();
     await sender.close();
     await app.indexJobs?.close();
     history?.close();
@@ -345,9 +400,11 @@ export async function startServer({ application: app, assets, port = 0, readActi
     server.listen(port, "127.0.0.1", resolve);
   });
   origin = `http://127.0.0.1:${server.address().port}`;
+  await remote.start(server.listeners('request')[0]);
   sender.start();
+  schedules.start();
   return {
-    server, url: origin, sender,
+    server, url: origin, get lanUrl() { return remote.origin || undefined; }, sender, schedules,
     async close() {
       if (server.listening) {
         await new Promise(resolve => {

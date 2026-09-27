@@ -8,6 +8,8 @@ import { createActivityReader } from "./activity.mjs";
 import { createObserver } from "./observer.mjs";
 import { acquireLock } from "./lock.mjs";
 import { resolveRuntimeConfig, runtimeEnv } from "./runtime-config.mjs";
+import { createRemoteAccess } from "./remote-access.mjs";
+import { savedWebPort, rememberWebPort } from "./web-port.mjs";
 
 // ── Startup migration ──────────────────────────────────────────────────
 // All paths resolve from the source tree. No runtime.json, no
@@ -20,6 +22,9 @@ const { backendRoot } = config;
 Object.assign(process.env, runtimeEnv(config));
 // Private process capability, never included in bootstrap or model prompts.
 process.env.FREELANCER_GIT_BRIDGE = randomBytes(32).toString("hex");
+const webPortFile = path.join(backendRoot, '.state/webpage/port.json');
+const webPort = await savedWebPort(webPortFile, process.env.FREELANCER_WEB_PORT);
+const remoteAccess = await createRemoteAccess({ file: path.join(backendRoot, '.state/remote-access.json') });
 
 const releaseLock = await acquireLock(path.join(backendRoot, ".state/webpage"));
 let host;
@@ -57,7 +62,8 @@ try {
     application: app,
     readActivity: createActivityReader({ project: app.project, host }),
     assets: path.resolve(config.appRoot, "dist"),
-    port: Number(process.env.FREELANCER_WEB_PORT) || 0,
+    port: webPort,
+    remoteAccess,
     shutdownToken,
     onShutdown: () => { void shutdown(); },
   });
@@ -70,8 +76,9 @@ try {
   await releaseLock();
   throw e;
 }
+await rememberWebPort(webPortFile, webPort);
 console.log(JSON.stringify({ url: runtime.url, pid: process.pid }));
-await writeFile(`${launchFile}.tmp`, JSON.stringify({ url: runtime.url, pid: process.pid, appRoot: config.appRoot, shutdownToken }));
+await writeFile(`${launchFile}.tmp`, JSON.stringify({ url: runtime.url, lanUrl: runtime.lanUrl, pid: process.pid, appRoot: config.appRoot, shutdownToken }));
 await rename(`${launchFile}.tmp`, launchFile);
 process.on("SIGINT", () => { void shutdown(); });
 process.on("SIGTERM", () => { void shutdown(); });

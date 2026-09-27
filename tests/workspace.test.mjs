@@ -33,7 +33,7 @@ test("agent defaults override project defaults and legacy none resolves to the w
   );
   assert.deepEqual(
     workspace.workflows.map((w) => w.id),
-    ["build", "plan", "explore", "review", "sync"],
+    ["build", "plan", "explore", "review"],
   );
   assert.equal(
     workspaceCatalog({
@@ -119,4 +119,15 @@ test("agent parent selections must be actual provider-qualified models", () => {
     normalizeAgent({ ...agent, model: "opencode/free" }, "test").model,
     "opencode/free",
   );
+});
+
+
+test("retired Git and Sync definitions cannot return through saved catalogs or selections", () => {
+  const catalog = workspaceCatalog({ agents: [{ id: "git", prompt: "old control" }], workflows: [{ id: "sync" }, { id: "release", agentID: "git" }] });
+  assert.equal(catalog.agents.some(a => a.id === "git"), false);
+  assert.equal(catalog.workflows.some(w => w.id === "sync"), false);
+  assert.equal(catalog.workflows.find(w => w.id === "release").agentID, "engineer");
+  const choice = resolveChoices(catalog, { agentID: "git", workflowID: "sync" });
+  assert.equal(choice.agent.id, "engineer");
+  assert.equal(choice.workflow.id, "build");
 });

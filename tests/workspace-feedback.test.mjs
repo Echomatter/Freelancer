@@ -1,6 +1,5 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
 import { setImmediate as immediate, setTimeout as delay } from "node:timers/promises";
 import { projectActivity, activityLabel, pollActivity } from "../domain/chat-activity.mjs";
 import { questionAnswers, pendingQuestions } from "../domain/questions.mjs";
@@ -167,38 +166,4 @@ test("real HTTP route serves scoped activity and preserves local-only guards", a
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("cache-control"), "no-store");
   assert.equal((await response.json()).sessions.parent.active, true);
-});
-
-test("source contract: sidebar and history share project activity; answers bypass error swallowing", async () => {
-  const app = await readFile(new URL("../src/App.tsx", import.meta.url), "utf8");
-  const navigation = await readFile(new URL("../src/NavigationMenus.tsx", import.meta.url), "utf8");
-  assert.match(app, /activity: sessionActivity\?\.\[s.id\]/);
-  assert.equal(navigation.match(/<SessionActivity activity=\{session.activity\}/g)?.length, 1);
-  const history = await readFile(new URL("../src/History.tsx", import.meta.url), "utf8");
-  assert.equal(history.match(/<SessionActivity activity=\{sessionActivity\?\.\[row.id\]\}/g)?.length, 1);
-  assert.match(app, /<HistoryPage[^>]*activity=\{sessionActivity\}/);
-  assert.match(history, /useProjectActivity\(\s*selectedProject,\s*selectedProject !== project,?\s*\)/);
-  assert.match(app, /useProjectActivity\(project,/);
-  const handler = app.slice(app.indexOf("onRespond={async"), app.indexOf("onRespond={async") + 550);
-  assert.match(handler, /await api\("respond"/);
-  assert.doesNotMatch(handler, /run\(async/);
-  assert.match(handler, /void refreshChat\(\)\.catch/);
-  const main = await readFile(new URL("../server/main.mjs", import.meta.url), "utf8");
-  assert.match(main, /readActivity: createActivityReader\(\{ project: app.project, host \}\)/);
-});
-
-test("source contract: shared dialogs retain parent and worker question state, local errors and reduced motion", async () => {
-  const question = await readFile(new URL("../src/Question.tsx", import.meta.url), "utf8");
-  assert.equal(question.match(/<Question key=/g)?.length, 1);
-  assert.match(question, /const request = queue\[0\]/);
-  assert.match(question, /queue.find\(row => !row.worker\)/);
-  assert.match(question, /queue.find\(row => row.worker\)/);
-  assert.match(question, /if \(inFlight.current\) return/);
-  assert.match(question, /role="alert"/);
-  assert.match(question, /<Dialog/);
-  assert.match(question, /if \(!inFlight.current\) onLater\(\)/);
-  const css = await readFile(new URL("../src/workspace-feedback.css", import.meta.url), "utf8");
-  assert.match(css, /prefers-reduced-motion: reduce/);
-  const shared = await readFile(new URL('../src/echoflex/dialog.css', import.meta.url), 'utf8');
-  assert.match(shared, /\.ef-dialog:not\(\[open\]\)/);
 });

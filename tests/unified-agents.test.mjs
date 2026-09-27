@@ -34,7 +34,7 @@ test("one authored catalog generates named profiles without a second prompt or n
   const config = configureAgentProfiles({}, c);
   assert.deepEqual(
     c.agents.map((a) => a.id),
-    ["engineer", "researcher", "designer", "git", "accessibility"],
+    ["engineer", "researcher", "designer", "accessibility"],
   );
   for (const agent of c.agents) {
     assert.equal(config.agent[agent.id].mode, "all");
@@ -487,7 +487,7 @@ test("managed Git authority comes from execution identity and the saved agreemen
     error => { assert.doesNotMatch(error.message, /Choose the Sync workflow/); return true; },
   );
   const receipt = await f.delegator.execute(
-    { ...job, agentID: "git", workflowID: "review" },
+    { ...job, agentID: "engineer", workflowID: "review" },
     ctx,
   );
   await assert.rejects(

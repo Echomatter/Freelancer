@@ -1,122 +1,133 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
-import { chromium } from 'playwright';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
+import { test, expect } from './support/browser-test.mjs';
 
-const f = await localDataFixture();
-const original = f.host.request.bind(f.host);
-let todos = Array.from({ length: 30 }, (_, i) => ({ content: `Long task ${i + 1}`, status: i ? 'pending' : 'in_progress' }));
-f.host.request = (route, options) => route.endsWith('/todo') ? Promise.resolve(todos) : original(route, options);
-f.state.messages.ses_history = Array.from({length: 22}, (_, i) => [
-  { info: { id: 'u'+i, role: 'user', time: {created: i*2} }, parts: [{id: 'up'+i, type: 'text', text: 'Review the layout, step '+(i+1)}] },
-  { info: { id: 'a'+i, parentID:'u'+i, role:'assistant', providerID:'opencode', modelID:'free', time:{created:i*2+1,completed:i*2+2},finish:'stop' }, parts:[{id:'ap'+i,type:'text',text:'The workspace keeps your project and active work in view. This result is demonstration content for the layout check.\n\n- Provider identities stay consistent.\n- The composer stays available while you read.\n- Worker results remain separate from verified success.'}] },
-]).flat();
-f.state.messages.ses_history[0].parts[0].text = 'Please check the responsive layout, preserve the current reading position, and confirm that longer messages use a comfortable width without filling the entire conversation. '.repeat(4);
-const browser = await chromium.launch({headless:true});
-const page = await browser.newPage({viewport:{width:1440,height:960}});
-const errors=[];page.on('pageerror', e=>errors.push(e.message));page.setDefaultTimeout(15000);
-try {
-  await page.goto(f.url);
-  const chats = page.locator('.chat-navigation');
-  const chatsTrigger = chats.getByRole('button', { name: 'Chats', exact: true });
-  if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
-  await chats.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
-  await page.getByRole('button',{name:'Dismiss task list until it changes'}).waitFor();
-  const scroll=page.locator('.chat-scroll'), composer=page.locator('.composer');
-  const bounds=await scroll.boundingBox(), input=await composer.boundingBox();
-  assert.ok(Math.abs(bounds.y+bounds.height-960)<2,'scroll track reaches workspace bottom');
-  assert.ok(Math.abs(input.y+input.height-960)<2,'composer aligns with scroll track bottom');
-  const message = page.locator('.message.user').last();
-  const bubble = await message.locator('.message-body').boundingBox();
-  const row = await message.locator('..').boundingBox();
-  assert.ok(Math.abs(bubble.x+bubble.width-row.x-row.width)<2,'user messages align with the conversation right edge');
-  assert.ok(bubble.width<row.width/2,'short messages fit their text instead of leaving a wide color block');
-  const longBubble = await page.locator('.message.user').first().boundingBox();
-  assert.ok(longBubble.width>320 && longBubble.width<row.width*.9,'long user messages remain readable as the chat pane expands');
-  const transcriptWidth = () => page.locator('.chat-transcript').evaluate(e => {
-    const style = getComputedStyle(e);
-    const available = e.closest('.chat-view').clientWidth;
-    return { inset: parseFloat(style.paddingLeft), content: e.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), available };
-  });
-  const withoutDetails = await transcriptWidth();
-  await page.getByRole('button', { name: 'Details', exact: true }).click();
-  const withDetails = await transcriptWidth();
-  assert.equal(withoutDetails.inset, withDetails.inset, 'Details does not change chat edge padding');
-  assert.ok([withoutDetails, withDetails].every(m => m.content / m.available > .85), 'chat fills the available pane in both states');
-  await page.getByRole('button', { name: 'Details', exact: true }).click();
-  await scroll.evaluate(e=>{e.scrollTop=300;});
-  const before=await scroll.evaluate(e=>e.scrollTop);
-  await page.getByRole('button',{name:'Application settings',exact:true}).click();
-  await page.getByRole('button',{name:'Models',exact:true}).click();
-  await page.getByRole('heading',{name:'Models',exact:true}).waitFor();
-  assert.equal(await page.locator('.page-title').getByRole('button',{name:'Close settings'}).count(),1,'Models close button stays in the page heading');
-  assert.equal(await page.locator('.topbar').getByRole('button',{name:'Close settings'}).count(),0,'settings close button stays out of the top bar');
-  await page.getByRole('button',{name:'Project settings',exact:true}).click();
-  assert.equal(await page.getByRole('button',{name:'Workspace',exact:true}).count(),0);
-  await page.getByRole('button',{name:'Files',exact:true}).click();
-  await page.getByRole('heading',{name:'Files',exact:true}).waitFor();
-  assert.equal(await page.locator('.page-title').getByRole('button',{name:'Close settings'}).count(),1,'Files close button stays in the page heading');
-  await page.getByRole('button',{name:'Close settings',exact:true}).click();
-  await composer.waitFor();
-  assert.ok(Math.abs((await scroll.evaluate(e=>e.scrollTop))-before)<3,'navigation preserves reading position');
-  await page.getByRole('button',{name:'Dismiss task list until it changes'}).click();
-  assert.equal(await page.getByRole('button',{name:'Dismiss task list until it changes'}).count(),0);
-  assert.equal(todos.length,30,'dismiss did not mutate native todos');
-  await page.getByRole('button',{name:'Show tasks',exact:true}).click();
-  await page.getByRole('button',{name:'Dismiss task list until it changes'}).waitFor();
-  await scroll.evaluate(e=>{e.scrollTop=e.scrollHeight;});
-  await mkdir('artifacts/polish',{recursive:true});
-  await page.screenshot({path:'artifacts/polish/workspace-desktop.png'});
-  f.state.status.ses_history={type:'busy'};
-  f.state.messages.ses_history.push(
-    { info: { id: 'u-live', role: 'user', time: { created: 100 } }, parts: [{ id: 'up-live', type: 'text', text: 'Continue the layout check.' }] },
-    { info: { id: 'a-live', parentID: 'u-live', role: 'assistant', providerID: 'opencode', modelID: 'free', time: { created: 101 } }, parts: [{ id: 'tool-live', type: 'tool', tool: 'read', state: { status: 'running', input: { filePath: 'layout.css' } } }] },
-  );
-  await page.reload();
-  if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
-  await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
-  await page.locator('.composer textarea').fill('Check the navigation while the current work continues.');
-  await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
-  const dialog=page.getByRole('dialog',{name:'While this response runs'});
-  for (const choice of ['Delegate','Queue','Interrupt']) assert.equal(await dialog.getByRole('button',{name:new RegExp('^'+choice+' ')}).count(),1);
-  await dialog.getByRole('button',{name:/^Queue Send automatically/}).click();
-  const queued=page.locator('.work-card').filter({hasText:'Queue · Waiting'});
-  await queued.waitFor();
-  assert.equal(await queued.getByRole('button',{name:'Cancel message'}).count(),1);
-  const taskCard = page.locator('.work-card').filter({ hasText: 'Tasks · 0/30 complete' });
-  const taskToggle = taskCard.getByRole('button', { name: /Tasks · 0\/30 complete/ });
-  assert.equal(await taskToggle.getAttribute('aria-expanded'), 'false', 'long task cards start collapsed so they do not create a nested scroll region');
-  assert.ok(await queued.count(), 'queued delivery remains visible alongside a long task list');
-  await taskToggle.click();
-  const cardMetrics = await page.evaluate(() => {
-    const cards = document.querySelector('.composer-cards');
-    const tasks = document.querySelector('.todo-dock-list');
-    return { cards: getComputedStyle(cards).overflowY, tasks: getComputedStyle(tasks).overflowY };
-  });
-  assert.equal(cardMetrics.cards, 'visible', 'composer cards do not gain their own scrollbar');
-  assert.equal(cardMetrics.tasks, 'visible', 'task list does not gain a second scrollbar');
-  await queued.getByRole('button',{name:'Dismiss delivery card'}).click();
-  await page.getByRole('button',{name:'Show hidden delivery cards'}).click();
-  await queued.waitFor();
-  await page.screenshot({path:'artifacts/polish/workspace-cards.png'});
-  await queued.getByRole('button',{name:'Cancel message'}).click();
-  await queued.waitFor({state:'detached'});
-  await page.locator('.composer textarea').fill('Keep this draft after stopping.');
-  await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
-  await dialog.getByRole('button',{name:/^Interrupt Stop the current response/}).click();
-  await page.getByRole('dialog',{name:'While this response runs'}).waitFor({state:'detached'});
-  await page.getByRole('button',{name:'Send message'}).waitFor();
-  assert.equal(await page.locator('.composer textarea').inputValue(),'Keep this draft after stopping.');
-  assert.ok(f.calls.some(call=>call.route.endsWith('/abort')),'Interrupt reaches native abort');
-  await page.setViewportSize({width:480,height:840});
-  await composer.waitFor();
-  const mobile=await composer.boundingBox();
-  assert.ok(mobile.x>=0&&mobile.x+mobile.width<=480,'composer fits narrow viewport');
-  assert.ok(Math.abs(mobile.y+mobile.height-840)<2,'narrow composer stays bottom aligned');
-  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow');
-  await page.screenshot({path:'artifacts/polish/workspace-narrow.png'});
-  await page.emulateMedia({reducedMotion:'reduce'});
-  assert.deepEqual(errors,[]);
-  console.log('PASS bottom-aligned scrollbar/composer, retained navigation position, shared dismissible cards, explicit queue cancel, narrow layout and no browser errors');
-} catch(error){await mkdir('artifacts/polish',{recursive:true});await page.screenshot({path:'artifacts/polish/failure.png'});throw error;}
-finally { await browser.close(); await f.close(); }
+test('polish', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, own }) => {
+  const f = await own(localDataFixture());
+  const original = f.host.request.bind(f.host);
+  let todos = Array.from({ length: 30 }, (_, i) => ({ content: `Long task ${i + 1}`, status: i ? 'pending' : 'in_progress' }));
+  f.host.request = (route, options) => route.endsWith('/todo') ? Promise.resolve(todos) : original(route, options);
+  f.state.messages.ses_history = Array.from({length: 22}, (_, i) => [
+    { info: { id: 'u'+i, role: 'user', time: {created: i*2} }, parts: [{id: 'up'+i, type: 'text', text: 'Review the layout, step '+(i+1)}] },
+    { info: { id: 'a'+i, parentID:'u'+i, role:'assistant', providerID:'opencode', modelID:'free', time:{created:i*2+1,completed:i*2+2},finish:'stop' }, parts:[{id:'ap'+i,type:'text',text:'The workspace keeps your project and active work in view. This result is demonstration content for the layout check.\n\n- Provider identities stay consistent.\n- The composer stays available while you read.\n- Worker results remain separate from verified success.'}] },
+  ]).flat();
+  f.state.messages.ses_history[0].parts[0].text = 'Please check the responsive layout, preserve the current reading position, and confirm that longer messages use a comfortable width without filling the entire conversation. '.repeat(4);
+
+  const page = await browser.newPage({viewport:{width:1440,height:960}});
+  const errors=[];page.on('pageerror', e=>errors.push(e.message));page.setDefaultTimeout(15000);
+  try {
+    await page.goto(f.url);
+    const chats = page.locator('.chat-navigation');
+    const chatsTrigger = chats.getByRole('button', { name: 'Chats', exact: true });
+    if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
+    await chats.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
+    await page.getByRole('button',{name:'Dismiss task list until it changes'}).waitFor();
+    await expect(page.locator('.composer-wrap .work-card')).toHaveCount(1);
+    await page.locator('.composer-wrap .work-card-toggle').click();
+    await expect(page.locator('.composer-wrap .work-card')).toContainText('Long task 1');
+    await page.locator('.composer-wrap .work-card-toggle').click();
+    const scroll=page.locator('.chat-scroll'), composer=page.locator('.composer');
+    const bounds=await scroll.boundingBox(), input=await composer.boundingBox();
+    assert.ok(Math.abs(bounds.y+bounds.height-960)<2,'scroll track reaches workspace bottom');
+    assert.ok(Math.abs(input.y+input.height-960)<2,'composer aligns with scroll track bottom');
+    const message = page.locator('.message.user').last();
+    const bubble = await message.locator('.message-body').boundingBox();
+    const row = await message.locator('..').boundingBox();
+    assert.ok(Math.abs(bubble.x+bubble.width-row.x-row.width)<2,'user messages align with the conversation right edge');
+    assert.ok(bubble.width<row.width/2,'short messages fit their text instead of leaving a wide color block');
+    const longBubble = await page.locator('.message.user').first().boundingBox();
+    assert.ok(longBubble.width>320 && longBubble.width<row.width*.9,'long user messages remain readable as the chat pane expands');
+    const transcriptWidth = () => page.locator('.chat-transcript').evaluate(e => {
+      const style = getComputedStyle(e);
+      const available = e.closest('.chat-view').clientWidth;
+      return { inset: parseFloat(style.paddingLeft), content: e.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), available };
+    });
+    const withoutDetails = await transcriptWidth();
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    const withDetails = await transcriptWidth();
+    assert.equal(withoutDetails.inset, withDetails.inset, 'Details does not change chat edge padding');
+    assert.ok([withoutDetails, withDetails].every(m => m.content / m.available > .85), 'chat fills the available pane in both states');
+    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await scroll.evaluate(e=>{e.scrollTop=300;});
+    const before=await scroll.evaluate(e=>e.scrollTop);
+    await page.getByRole('button',{name:'Application settings',exact:true}).click();
+    await page.getByRole('button',{name:'Models',exact:true}).click();
+    await page.getByRole('heading',{name:'Models',exact:true}).waitFor();
+    assert.equal(await page.locator('.page-title').getByRole('button',{name:'Close settings'}).count(),1,'Models close button stays in the page heading');
+    assert.equal(await page.locator('.topbar').getByRole('button',{name:'Close settings'}).count(),0,'settings close button stays out of the top bar');
+    await page.getByRole('button',{name:'Project settings',exact:true}).click();
+    assert.equal(await page.getByRole('button',{name:'Workspace',exact:true}).count(),0);
+    await page.getByRole('button',{name:'Files',exact:true}).click();
+    await page.getByRole('heading',{name:'Files',exact:true}).waitFor();
+    assert.equal(await page.locator('.page-title').getByRole('button',{name:'Close settings'}).count(),1,'Files close button stays in the page heading');
+    await page.getByRole('button',{name:'Close settings',exact:true}).click();
+    await composer.waitFor();
+    assert.ok(Math.abs((await scroll.evaluate(e=>e.scrollTop))-before)<3,'navigation preserves reading position');
+    await page.getByRole('button',{name:'Dismiss task list until it changes'}).click();
+    assert.equal(await page.getByRole('button',{name:'Dismiss task list until it changes'}).count(),0);
+    assert.equal(todos.length,30,'dismiss did not mutate native todos');
+    await page.getByRole('button',{name:'Show tasks',exact:true}).click();
+    await page.getByRole('button',{name:'Dismiss task list until it changes'}).waitFor();
+    await scroll.evaluate(e=>{e.scrollTop=e.scrollHeight;});
+    await mkdir('artifacts/polish',{recursive:true});
+    await page.screenshot({path:'artifacts/polish/workspace-desktop.png'});
+    f.state.status.ses_history={type:'busy'};
+    f.state.messages.ses_history.push(
+      { info: { id: 'u-live', role: 'user', time: { created: 100 } }, parts: [{ id: 'up-live', type: 'text', text: 'Continue the layout check.' }] },
+      { info: { id: 'a-live', parentID: 'u-live', role: 'assistant', providerID: 'opencode', modelID: 'free', time: { created: 101 } }, parts: [{ id: 'tool-live', type: 'tool', tool: 'read', state: { status: 'running', input: { filePath: 'layout.css' } } }] },
+    );
+    await page.reload();
+    if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
+    await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
+    await page.locator('.composer textarea').fill('Check the navigation while the current work continues.');
+    await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
+    const dialog=page.getByRole('dialog',{name:'While this response runs'});
+    for (const choice of ['Delegate','Queue','Interrupt']) assert.equal(await dialog.getByRole('button',{name:new RegExp('^'+choice+' ')}).count(),1);
+    await dialog.getByRole('button',{name:/^Queue Send automatically/}).click();
+    const queued=page.locator('.work-card').filter({hasText:'Queue · Waiting'});
+    await queued.waitFor();
+    assert.equal(await queued.getByRole('button',{name:'Cancel message'}).count(),1);
+    const taskCard = page.locator('.work-card').filter({ hasText: 'Tasks · 0/30 complete' });
+    const taskToggle = taskCard.getByRole('button', { name: /Tasks · 0\/30 complete/ });
+    assert.equal(await taskToggle.getAttribute('aria-expanded'), 'false', 'long task cards start collapsed so they do not create a nested scroll region');
+    assert.ok(await queued.count(), 'queued delivery remains visible alongside a long task list');
+    await taskToggle.click();
+    const cardMetrics = await page.evaluate(() => {
+      const cards = document.querySelector('.composer-cards');
+      const tasks = document.querySelector('.todo-dock-list');
+      return { cards: getComputedStyle(cards).overflowY, tasks: getComputedStyle(tasks).overflowY, height: cards.clientHeight, scrollHeight: cards.scrollHeight };
+    });
+    assert.equal(cardMetrics.cards, 'auto', 'supporting cards share one bounded scroll area');
+    assert.ok(cardMetrics.height <= 260 && cardMetrics.scrollHeight > cardMetrics.height, 'a long task list cannot push the input off screen');
+    assert.equal(cardMetrics.tasks, 'visible', 'task list does not gain a second scrollbar');
+    await taskCard.getByText('Long task 30', { exact: true }).scrollIntoViewIfNeeded();
+    await expect(taskCard.getByText('Long task 30', { exact: true })).toBeInViewport();
+    await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeInViewport();
+    await queued.getByRole('button',{name:'Dismiss delivery card'}).click();
+    await page.getByRole('button',{name:'Show hidden delivery cards'}).click();
+    await queued.waitFor();
+    await page.screenshot({path:'artifacts/polish/workspace-cards.png'});
+    await queued.getByRole('button',{name:'Cancel message'}).click();
+    await queued.waitFor({state:'detached'});
+    await page.locator('.composer textarea').fill('Continue with this steering message.');
+    await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
+    await dialog.getByRole('button',{name:/^Interrupt Stop the current response/}).click();
+    await page.getByRole('dialog',{name:'While this response runs'}).waitFor({state:'detached'});
+    await page.locator('.message.user').filter({hasText:'Continue with this steering message.'}).waitFor();
+    assert.equal(await page.locator('.composer textarea').inputValue(),'');
+    assert.ok(f.calls.some(call=>call.route.endsWith('/abort')),'Interrupt reaches native abort');
+    assert.equal(f.state.messages.ses_history.filter(message=>message.parts?.some(part=>part.text==='Continue with this steering message.')).length,1,'Interrupt sends the captured steer once');
+    await page.setViewportSize({width:480,height:840});
+    await composer.waitFor();
+    const mobile=await composer.boundingBox();
+    assert.ok(mobile.x>=0&&mobile.x+mobile.width<=480,'composer fits narrow viewport');
+    assert.ok(Math.abs(mobile.y+mobile.height-840)<2,'narrow composer stays bottom aligned');
+    assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no horizontal overflow');
+    await page.screenshot({path:'artifacts/polish/workspace-narrow.png'});
+    await page.emulateMedia({reducedMotion:'reduce'});
+    assert.deepEqual(errors,[]);
+    console.log('PASS bottom-aligned scrollbar/composer, retained navigation position, shared dismissible cards, explicit queue cancel, narrow layout and no browser errors');
+  } catch(error){await mkdir('artifacts/polish',{recursive:true});await page.screenshot({path:'artifacts/polish/failure.png'});throw error;}
+  finally { await browser.close(); await f.close(); }
+});

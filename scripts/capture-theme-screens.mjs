@@ -2,7 +2,7 @@
 // the user's saved appearance or exposing their conversations.
 import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { chromium } from 'playwright';
+import { chromium } from '@playwright/test';
 import { palettes } from '../domain/theme.mjs';
 import { colorFixture } from '../tests/fixtures/color-app.mjs';
 

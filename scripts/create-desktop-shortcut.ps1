@@ -61,4 +61,13 @@ $shortcut.IconLocation = "$iconPath,0"
 $shortcut.Description = 'Open Freelancer and keep its local server in the system tray.'
 $shortcut.WindowStyle = 7
 $shortcut.Save()
+# Retire only the known old launcher for this checkout, keeping a backup.
+$oldPath = Join-Path $desktop 'Freelancer Restart.lnk'
+if (Test-Path -LiteralPath $oldPath) {
+    $old = $shell.CreateShortcut($oldPath)
+    if ($old.Arguments -eq ('"' + (Join-Path $PSScriptRoot 'restart-chrome-app.vbs') + '"')) {
+        $backup = Join-Path $assets ('Freelancer Restart-' + (Get-Date -Format 'yyyyMMddHHmmss') + '.lnk')
+        Move-Item -LiteralPath $oldPath -Destination $backup
+    }
+}
 Write-Output $shortcutPath

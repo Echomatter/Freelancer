@@ -6,6 +6,26 @@ import path from "node:path";
 import http from "node:http";
 import { startServer } from "../server/http.mjs";
 
+async function request(url, { host, path = "/", headers = {}, method = "GET" } = {}) {
+  const target = new URL(url);
+  return await new Promise((resolve, reject) => {
+    const req = http.request({
+      hostname: target.hostname,
+      port: target.port,
+      path,
+      method,
+      headers: { ...(host ? { Host: host } : {}), ...headers },
+    }, (res) => {
+      let body = "";
+      res.setEncoding("utf8");
+      res.on("data", chunk => { body += chunk; });
+      res.on("end", () => resolve({ status: res.statusCode, headers: res.headers, body }));
+    });
+    req.on("error", reject);
+    req.end();
+  });
+}
+
 test("loopback API and asset boundaries reject foreign origins and forged hosts", async (t) => {
   const assets = await mkdtemp(path.join(os.tmpdir(), "freelancer-http-"));
   await writeFile(path.join(assets, "index.html"), "<main>Freelancer</main>");

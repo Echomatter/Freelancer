@@ -449,8 +449,10 @@ test("main agreement sync publishes only the verified branch and completed plan 
     await f.runGit("--git-dir", f.remote, "rev-parse", "refs/heads/main"),
     await f.runGit("rev-parse", "HEAD"),
   );
+  const current = await f.service.preview(f.p.id, { kind: "sync", files: [], message: "Already uploaded" });
+  assert.ok(current.id, "an empty outgoing object set must not be sent as a blank batch object ID");
 });
-test("branch/review presets prepare a task before Build and never upload main", async (t) => {
+test("explicit task preparation follows branch/review defaults and never uploads main", async (t) => {
   for (const preset of ["branch", "review"]) {
     const f = await fixture(t, preset);
     await f.initialize();
@@ -458,7 +460,7 @@ test("branch/review presets prepare a task before Build and never upload main", 
     await f.bind();
     await f.runGit("push", f.remote, "main");
     const base = await f.runGit("rev-parse", "main");
-    await f.service.beforeBuild(f.p.id, "ses_task", {
+    await f.service.prepareTask(f.p.id, "ses_task", {
       mode: "build",
       id: "build",
     });
@@ -479,7 +481,7 @@ test("confirm preset permits preview but prevents the agent from approving an up
   await f.initialize();
   await f.save([".gitignore"]);
   await f.bind();
-  await f.service.beforeBuild(f.p.id, "ses_task", {
+  await f.service.prepareTask(f.p.id, "ses_task", {
     mode: "build",
     id: "build",
   });
@@ -513,7 +515,7 @@ test("confirm preset permits preview but prevents the agent from approving an up
 test("inspect-only permits conversation setup but rejects checkpoints and publish", async (t) => {
   const f = await fixture(t, "inspect");
   await f.initialize();
-  await f.service.beforeBuild(f.p.id, "ses_task", { mode: "build", id: "build" });
+  await f.service.prepareTask(f.p.id, "ses_task", { mode: "build", id: "build" });
   await assert.rejects(f.save([".gitignore"]), /inspect-only/);
   assert.ok(await f.service.inspect(f.p.id));
 });
@@ -523,23 +525,23 @@ test("other running chats block branch switches and saves; dirty work is not mov
   await f.save([".gitignore"]);
   f.busy({ ses_other: { type: "busy" } });
   await assert.rejects(
-    f.service.beforeBuild(f.p.id, "ses_task", { mode: "build", id: "build" }),
+    f.service.prepareTask(f.p.id, "ses_task", { mode: "build", id: "build" }),
     /other chats/,
   );
   f.busy({});
   await f.write("pending.txt", "keep");
   await assert.rejects(
-    f.service.beforeBuild(f.p.id, "ses_task", { mode: "build", id: "build" }),
+    f.service.prepareTask(f.p.id, "ses_task", { mode: "build", id: "build" }),
     /Save the current changes/,
   );
 });
-test("same-branch builds can start alongside other chats and configuration work", async (t) => {
+test("same-branch preparation can run alongside other chats and configuration work", async (t) => {
   const f = await fixture(t, "main");
   await f.initialize();
   f.busy({ ses_refresh: { type: "busy" } });
   await Promise.all([
-    f.service.beforeBuild(f.p.id, "ses_one", { mode: "build", id: "build" }),
-    f.service.beforeBuild(f.p.id, "ses_two", { mode: "build", id: "build" }),
+    f.service.prepareTask(f.p.id, "ses_one", { mode: "build", id: "build" }),
+    f.service.prepareTask(f.p.id, "ses_two", { mode: "build", id: "build" }),
   ]);
   assert.equal(await f.runGit("branch", "--show-current"), "main");
 });
@@ -555,6 +557,33 @@ test("deleted secret in earlier outgoing history still blocks upload", async (t)
   await f.runGit("commit", "-m", "delete from latest");
   await assert.rejects(f.save([], "sync"), /outgoing history/);
   assert.equal(f.pushes, 0);
+});
+test("outgoing history inspection batches object reads and handles binary blobs", async (t) => {
+  const f = await fixture(t, "main");
+  await f.initialize();
+  await f.save([".gitignore"]);
+  await f.bind();
+  const files = [];
+  for (let i = 0; i < 80; i++) {
+    const file = `binary-${i}.dat`;
+    files.push(file);
+    await writeFile(path.join(f.directory, file),
+      Buffer.from([0, 255, 10, i, 13, 128, 32, 65]),
+    );
+  }
+  assert.equal((await f.save(files, "sync")).status, "completed");
+  const catFiles = f.calls.filter((call) => call.args.includes("cat-file"));
+  assert.ok(catFiles.some((call) => call.args.includes("--batch-check")));
+  assert.ok(catFiles.some((call) => call.args.includes("--batch")));
+  assert.equal(
+    catFiles.some((call) =>
+      call.args.includes("-t") ||
+      call.args.includes("-s") ||
+      call.args.some((arg, index) => arg === "blob" && call.args[index - 1] === "cat-file"),
+    ),
+    false,
+  );
+  assert.ok(catFiles.length < 10);
 });
 test("remote failures preserve local checkpoint and never auto-retry", async (t) => {
   const f = await fixture(t, "main");
@@ -692,17 +721,17 @@ test("reservation fences the gap between branch selection and native prompt acce
   const f = await fixture(t);
   await f.initialize();
   await f.save([".gitignore"]);
-  await f.service.beforeBuild(f.p.id, "ses_one", {
+  await f.service.prepareTask(f.p.id, "ses_one", {
     mode: "build",
     id: "build",
   });
   await assert.rejects(
-    f.service.beforeBuild(f.p.id, "ses_two", { mode: "build", id: "build" }),
+    f.service.prepareTask(f.p.id, "ses_two", { mode: "build", id: "build" }),
     /chat is starting/,
   );
   assert.equal(await f.runGit("branch", "--show-current"), "freelancer/one");
   f.service.finishDispatch(f.p.id, "ses_one");
-  await f.service.beforeBuild(f.p.id, "ses_two", {
+  await f.service.prepareTask(f.p.id, "ses_two", {
     mode: "build",
     id: "build",
   });
@@ -1025,4 +1054,68 @@ test('initial source staging rejects changed content and secret files', async t 
   assert.equal(await f.runGit('ls-files', '--stage'), '');
   await f.write('secret.txt', 'ghp_' + 'x'.repeat(40));
   await assert.rejects(f.service.preview(f.p.id, { kind: 'checkpoint', files: ['secret.txt'], message: 'Prepare source' }), /credential/);
+});
+
+
+test("explicit requests require an exact native answer and cannot cross sessions or later user turns", async t => {
+  const f = await fixture(t, "inspect");
+  await f.initialize();
+  const actor = { origin: "agent", sessionID: "ses_request" };
+  let messages = [{ info: { id: "user-request", role: "user" } }];
+  const readMessages = async () => messages;
+  const preview = await f.service.requestPreview(f.p.id, { agreement: { preset: "main" }, reason: "User explicitly requested saving this project", readMessages }, actor);
+  const input = { planID: preview.id, confirm: true, readMessages };
+  await assert.rejects(f.service.requestExecute(f.p.id, input, actor), /native question/);
+  messages.push({ info: { role: "assistant" }, parts: [{ type: "tool", tool: "question", state: { status: "completed", input: { questions: preview.questions }, metadata: { answers: [["Cancel"]] }, time: { end: Date.now() } } }] });
+  await assert.rejects(f.service.requestExecute(f.p.id, input, actor), /native question/);
+  messages.at(-1).parts[0].state.metadata.answers = [["Approve"]];
+  await assert.rejects(f.service.requestExecute(f.p.id, input, { ...actor, sessionID: "other" }), /conversation/);
+  messages.push({ info: { id: "new-request", role: "user" } });
+  await assert.rejects(f.service.requestExecute(f.p.id, input, actor), /user request changed/);
+  messages.pop();
+  assert.equal((await f.service.requestExecute(f.p.id, input, actor)).status, "completed");
+  assert.equal((await f.service.policy(f.p.id)).preset, "main");
+});
+
+test("request exceptions preserve saved defaults, bind repository state, and never replay completed commands", async t => {
+  const f = await fixture(t, "main");
+  await f.initialize();
+  await f.save([".gitignore"]);
+  const actor = { origin: "panel" };
+  const plan = await f.service.requestPreview(f.p.id, { tool: "git", args: ["branch", "requested"], reason: "Create a branch explicitly requested by the user" }, actor);
+  await assert.rejects(f.service.requestExecute(f.p.id, { planID: plan.id }, actor), /Approve/);
+  await f.runGit("branch", "external-change");
+  await assert.rejects(f.service.requestExecute(f.p.id, { planID: plan.id, confirm: true }, actor), /changed/);
+  const fresh = await f.service.requestPreview(f.p.id, { tool: "git", args: ["branch", "requested"], reason: "Create the requested branch" }, actor);
+  const result = await f.service.requestExecute(f.p.id, { planID: fresh.id, confirm: true }, actor);
+  assert.equal(result.status, "completed");
+  assert.equal((await f.service.requestExecute(f.p.id, { planID: fresh.id, confirm: true }, actor)).status, "completed");
+  assert.equal((await f.service.policy(f.p.id)).preset, "main");
+  for (const args of [["rebase", "-x", "evil"], ["push", "other", "main"], ["push", "origin", "--mirror"], ["restore", "--", "../outside"]]) {
+    await assert.rejects(f.service.requestPreview(f.p.id, { tool: "git", args, reason: "Invalid command" }, actor));
+  }
+});
+
+
+test("requested main consolidation joins retired history and deletes only redundant branch refs", async t => {
+  const f = await fixture(t, "main");
+  await f.initialize();
+  await f.save([".gitignore"]);
+  const old = await f.runGit("rev-parse", "HEAD");
+  await f.runGit("switch", "--orphan", "rebuild");
+  await f.write("current.txt", "current rebuild");
+  await f.runGit("add", "current.txt");
+  await f.runGit("commit", "-m", "Rebuild");
+  const tree = await f.runGit("rev-parse", "HEAD^{tree}");
+  const request = async args => {
+    const actor = { origin: "panel" };
+    const p = await f.service.requestPreview(f.p.id, { tool: "git", args, reason: "User requested consolidating all branches while retaining the rebuild" }, actor);
+    return f.service.requestExecute(f.p.id, { planID: p.id, confirm: true }, actor);
+  };
+  await request(["switch", "-c", "consolidated"]);
+  await request(["merge", "--allow-unrelated-histories", "--strategy=ours", "-m", "Preserve retired history alongside the rebuild", "main"]);
+  assert.equal(await f.runGit("rev-parse", "HEAD^{tree}"), tree);
+  await f.runGit("merge-base", "--is-ancestor", old, "HEAD");
+  await request(["branch", "-d", "rebuild"]);
+  assert.equal((await f.runGit("branch", "--list", "rebuild")), "");
 });

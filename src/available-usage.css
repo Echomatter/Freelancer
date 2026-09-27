@@ -9,6 +9,7 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
+  min-width: 0;
 }
 .usage-dock > button {
   flex-shrink: 0;
@@ -16,13 +17,16 @@
 .usage-sidebar {
   display: flex;
   flex-direction: column;
+  width: 100%;
+  max-width: 100%;
+  overflow: hidden;
   min-height: 0;
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 12px;
 }
 .usage-sidebar[data-expanded="true"] {
-  min-height: 260px;
+  min-height: min(260px, 44dvh);
 }
 .usage-disclosure {
   flex-shrink: 0;
@@ -32,6 +36,7 @@
   border-radius: 12px;
   background: transparent;
   width: 100%;
+  min-width: 0;
   padding: 14px;
   text-align: left;
   min-height: 38px;
@@ -44,11 +49,14 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
+  min-width: 0;
 }
 .usage-label {
   color: var(--muted);
   font-size: 12px;
   font-weight: 500;
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .usage-headline {
   display: block;
@@ -138,6 +146,8 @@
 .usage-breakout {
   display: flex;
   flex-direction: column;
+  flex: 1 1 auto;
+  min-width: 0;
   min-height: 0;
   padding: 12px;
   max-height: min(360px, 42dvh);
@@ -148,6 +158,7 @@
   display: none;
 }
 .usage-breakout-rows {
+  flex: 1 1 auto;
   overflow-y: auto;
   min-height: 0;
   padding: 0 3px;
@@ -187,6 +198,7 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 8px;
+  min-width: 0;
   font-size: 13px;
 }
 .usage-provider-heading strong {
@@ -196,9 +208,12 @@
 }
 .usage-provider-value {
   color: var(--text);
-  flex-shrink: 0;
+  flex: 0 1 auto;
+  min-width: 0;
   font-weight: 600;
   font-size: 13px;
+  overflow-wrap: anywhere;
+  text-align: right;
 }
 .usage-rail {
   height: 6px;

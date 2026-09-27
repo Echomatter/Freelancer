@@ -132,10 +132,14 @@ export function Details({
     <aside className="work-details" id="workspace-details">
       <h2 className="details-chat-title">{chat.title || "New chat"}</h2>
       <ChatContributions contributions={contributions} />
-      <nav className="tab-row">
+      <nav className="tab-row" role="tablist" aria-label="Details sections">
         {["activity", "changes", ...(docked ? [] : ["tasks"])].map((id) => (
           <button
             key={id}
+            type="button"
+            role="tab"
+            aria-selected={tab === id}
+            aria-controls={`details-${id}`}
             className={tab === id ? "selected" : ""}
             onClick={() => setTab(id)}
           >
@@ -144,7 +148,7 @@ export function Details({
         ))}
       </nav>
       {tab === "activity" && (
-        <>
+        <section id="details-activity" role="tabpanel" aria-label="Activity" tabIndex={0}>
           <div className="detail-summary">
             <span>Context</span>
             <strong>
@@ -163,10 +167,10 @@ export function Details({
               children="Agents will appear here when they join the work."
             />
           )}
-        </>
+        </section>
       )}
       {tab === "tasks" && (
-        <>
+        <section id="details-tasks" role="tabpanel" aria-label="Tasks" tabIndex={0}>
           {!busy && hasUnfinishedTodos(chat.todos ?? []) && <p role="status">Response ended with unfinished tasks. Send a follow-up to continue.</p>}
           {(chat.todos ?? []).map((todo, i) => (
             <div className="todo" key={todo.id ?? i}>
@@ -180,10 +184,10 @@ export function Details({
             </div>
           ))}
           {!chat.todos?.length && <Empty icon={Check} title="No tasks yet" />}
-        </>
+        </section>
       )}
       {tab === "changes" && (
-        <>
+        <section id="details-changes" role="tabpanel" aria-label="Changes" tabIndex={0}>
           {chat.changesUnavailable && <p className="notice">Current project changes could not be loaded. Refresh to retry.</p>}
           {["session", "workspace"].map(scope => {
             const files = (chat.diff ?? []).filter(file => (file.scope ?? "session") === scope);
@@ -201,7 +205,7 @@ export function Details({
             </section>;
           })}
           {!chat.diff?.length && !chat.changesUnavailable && <Empty icon={File} title="No changes yet" />}
-        </>
+        </section>
       )}
     </aside>
   );

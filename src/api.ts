@@ -1,3 +1,5 @@
+import { createEventInvalidator } from "./live-events.mjs";
+
 export async function api(
   route: string,
   body?: unknown,
@@ -39,14 +41,22 @@ export async function subscribe(
       });
       if (!response.ok || !response.body) throw Error("Connection interrupted");
       const reader = response.body.getReader();
-      while (!signal.aborted) {
-        const { done } = await reader.read();
-        if (done) break;
-        onChange();
+      const decoder = new TextDecoder();
+      const invalidate = createEventInvalidator(onChange);
+      try {
+        while (!signal.aborted) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          invalidate(decoder.decode(value, { stream: true }));
+        }
+      } finally {
+        await reader.cancel().catch(() => {});
+        reader.releaseLock();
       }
     } catch {
       if (signal.aborted) return;
     }
+    if (signal.aborted) return;
     await new Promise<void>((resolve) => {
       const done = () => {
         clearTimeout(timeout);

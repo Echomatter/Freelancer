@@ -1,4 +1,4 @@
-import { Bot, BrainCircuit, ChevronUp, Database, Files, Gauge, GitBranch, Github, History, Palette, Search, Settings2, SlidersHorizontal, Wallet, Workflow } from "lucide-react";
+import { Bot, BrainCircuit, CalendarClock, ChevronDown, Database, Files, Gauge, GitBranch, Github, History, Palette, Search, Settings2, SlidersHorizontal, Smartphone, Wallet, Workflow } from "lucide-react";
 
 export type SettingsScope = "project" | "application";
 
@@ -23,6 +23,8 @@ const groups = {
       { id: "usage", label: "Available Usage", icon: Gauge },
       { id: "providers", label: "Providers", icon: Wallet },
       { id: "appearance", label: "Appearance", icon: Palette },
+      { id: "remote-access", label: "Remote access", icon: Smartphone },
+      { id: "schedules", label: "Scheduled prompts", icon: CalendarClock },
       { id: "storage", label: "Data & Storage", icon: Database },
       { id: "index", label: "Content index", icon: Search },
       { id: "git-defaults", label: "Git defaults", icon: GitBranch },
@@ -47,10 +49,10 @@ export function SettingsNavigation({ expanded, scope, tab, project, onToggle, on
     {(["project", "application"] as const).map((group) => {
       const config = groups[group], Icon = config.icon, open = expanded === group;
       return <section key={group} className="settings-drawer">
-        <button type="button" className="settings-drawer-trigger" aria-label={config.label} title={config.label} aria-expanded={open}
+        <button type="button" className="nav-card-trigger settings-drawer-trigger" aria-label={config.label} title={config.label} aria-expanded={open}
           aria-controls={`${group}-settings-links`} disabled={group === "project" && !project}
           onClick={() => onToggle(group)}>
-          <Icon size={18} aria-hidden="true" /><span>{config.label}</span><ChevronUp size={15} className={open ? "drawer-chevron open" : "drawer-chevron"} aria-hidden="true" />
+          <Icon className="nav-card-icon" size={17} aria-hidden="true" /><span>{config.label}</span><ChevronDown size={15} className={open ? "nav-chevron expanded" : "nav-chevron"} aria-hidden="true" />
         </button>
         <div id={`${group}-settings-links`} className="settings-drawer-links" hidden={!open}>
           {config.items.map(({ id, label, icon: ItemIcon }) => <button key={id} type="button"

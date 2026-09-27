@@ -1,103 +1,71 @@
 import assert from 'node:assert/strict';
+import { mkdir } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { chromium } from 'playwright';
 import { createServer } from 'vite';
+import { test, expect } from './support/browser-test.mjs';
 
-const vite = await createServer({
-  root: fileURLToPath(new URL('../', import.meta.url)),
-  server: { host: '127.0.0.1', port: 0 },
-});
-let browser;
-try {
+test('chat-dock', { tag: ['@presentation', '@chat'] }, async ({ appBrowser: browser, own }) => {
+  const vite = await own(createServer({ root: fileURLToPath(new URL('../', import.meta.url)), optimizeDeps: { entries: ['tests/fixtures/chat-ui.html'] }, server: { host: '127.0.0.1', port: 0 } }));
   await vite.listen();
-  const url = new URL('/tests/fixtures/chat-ui.html', vite.resolvedUrls.local[0]).href;
-  browser = await chromium.launch({ headless: true, ...(process.env.CHROMIUM_PATH ? { executablePath: process.env.CHROMIUM_PATH } : {}) });
   const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
-  page.setDefaultTimeout(12000);
-  await page.goto(url);
-  const scroll = page.locator('.chat-scroll');
-  const dock = page.locator('.request-dock');
-  await page.getByRole('button', { name: 'Show first tool' }).click();
-  const firstCard = page.locator('.request-group .request-working[data-request-work-key]').first();
-  await firstCard.waitFor();
-  await page.waitForTimeout(100);
-  const firstCardPosition = await firstCard.evaluate((element) => ({
-    card: element.getBoundingClientRect().top,
-    scroll: document.querySelector('.chat-scroll').getBoundingClientRect().top,
-    scrollTop: document.querySelector('.chat-scroll').scrollTop,
-  }));
-  assert.ok(Math.abs(firstCardPosition.card - firstCardPosition.scroll) < 4,
-    `the first work card moves to the top as soon as it appears (${JSON.stringify(firstCardPosition)})`);
-  await page.getByRole('button', { name: 'Switch chat' }).click();
-  await page.waitForTimeout(80);
-  const positionCard = async (index, offset = 0) => {
-    await scroll.evaluate((element, { index, offset }) => {
-      const card = element.querySelectorAll('.request-working[data-request-work-key]')[index];
-      element.scrollTop += card.getBoundingClientRect().top - element.getBoundingClientRect().top - offset;
-    }, { index, offset });
-    await page.waitForTimeout(80);
-  };
-  await positionCard(5);
-  const leftEdge = await page.evaluate(() => {
-    const scroll = document.querySelector('.chat-scroll');
-    const transcript = document.querySelector('.chat-transcript');
-    const dock = document.querySelector('.request-dock');
-    return { text: scroll.getBoundingClientRect().left + parseFloat(getComputedStyle(transcript).paddingLeft),
-      dock: dock.getBoundingClientRect().left };
+  await page.goto(new URL('/tests/fixtures/chat-ui.html', vite.resolvedUrls.local[0]).href);
+  const scroll = page.locator('.chat-scroll'), dock = page.locator('.request-dock');
+  await test.step('Current-turn tools stay docked while the transcript scrolls', async () => {
+    await expect(dock).toContainText('Read example-11.ts');
+    await expect(dock).toContainText('Current turn');
+    await expect(page.locator('.chat-transcript .request-working, .chat-transcript .tool-card')).toHaveCount(0);
+    await expect(page.locator('.request-marker')).toHaveCount(12);
+    const top = (await dock.boundingBox()).y;
+    await scroll.evaluate(el => { el.scrollTop = 0; });
+    await expect(dock).toContainText('Read example-11.ts');
+    assert.equal((await dock.boundingBox()).y, top);
   });
-  assert.ok(leftEdge.dock <= leftEdge.text - 4, 'the dock covers the transcript text edge');
-  assert.match(await dock.locator('.request-working-title').innerText(), /Read example-5\.ts/);
-  await dock.locator('summary').first().click();
-  const body = dock.locator('.request-working-body');
-  assert.equal(await dock.locator('.request-working').evaluate((element) => element.open), true);
-  assert.equal(await body.locator('.agent-card').count(), 1, 'callbacks for the same child share one card');
-  assert.match(await body.locator('.agent-card').innerText(), /opencode\/free/);
-  assert.doesNotMatch(await body.locator('.agent-card').innerText(), /unknown|pending/i);
-  await body.locator('.tool-card summary').last().click();
-  const placement = await dock.evaluate((element) => ({
-    dockTop: element.getBoundingClientRect().top,
-    headTop: element.querySelector('.request-working-head').getBoundingClientRect().top,
-    bodyTop: element.querySelector('.request-working-body').getBoundingClientRect().top,
-  }));
-  assert.ok(Math.abs(placement.headTop - placement.dockTop) < 4 && placement.bodyTop > placement.headTop,
-    'opening a nested tool keeps the dock header in place');
-  const sizes = await body.evaluate((element) => ({ scroll: element.scrollHeight, client: element.clientHeight }));
-  assert.ok(sizes.scroll > sizes.client, 'expanded work has its own scroll track');
-  const chatBefore = await scroll.evaluate((element) => element.scrollTop);
-  await body.evaluate((element) => { element.scrollTop = 100; });
-  assert.equal(await scroll.evaluate((element) => element.scrollTop), chatBefore, 'scrolling work leaves chat position intact');
-  await scroll.evaluate((element) => { element.scrollTop += 85; });
-  await page.waitForTimeout(750);
-  assert.equal(await dock.locator('.request-working').evaluate((element) => element.open), false, 'downward chat scroll rolls work shut');
-  await positionCard(6, 24);
-  assert.match(await dock.locator('.request-working-title').innerText(), /Read example-5\.ts/, 'old turn remains docked until the next card arrives');
-  assert.ok(await dock.evaluate((element) => new DOMMatrixReadOnly(getComputedStyle(element).transform).m42) < 0, 'incoming card pushes previous dock upward');
-  await positionCard(6);
-  assert.match(await dock.locator('.request-working-title').innerText(), /Read example-6\.ts/, 'next card takes the dock');
-  await positionCard(6, 24);
-  assert.match(await dock.locator('.request-working-title').innerText(), /Read example-5\.ts/, 'reverse scroll restores the previous card');
-  await page.setViewportSize({ width: 430, height: 800 });
-  await positionCard(6);
-  const bounds = await dock.boundingBox();
-  assert.ok(bounds && bounds.x >= 0 && bounds.x + bounds.width <= 430, 'dock fits a narrow chat');
-  await page.setViewportSize({ width: 430, height: 500 });
-  await positionCard(5);
-  await dock.locator('summary').first().click();
-  const compactBody = await dock.locator('.request-working-body').boundingBox();
-  const compactScroll = await scroll.boundingBox();
-  assert.ok(compactBody && compactScroll && compactBody.y + compactBody.height <= compactScroll.y + compactScroll.height + 2,
-    'expanded work stays inside a short chat viewport');
-  await page.setViewportSize({ width: 1200, height: 850 });
-  await scroll.evaluate((element) => { element.scrollTop = element.scrollHeight; });
-  await page.waitForTimeout(750);
-  await dock.locator('summary').first().click();
-  assert.equal(await dock.locator('.request-working').evaluate((element) => element.open), true);
-  await page.getByRole('button', { name: 'Append tool' }).click();
-  await dock.locator('.tool-card summary').filter({ hasText: 'Read live-update.ts' }).waitFor();
-  assert.equal(await dock.locator('.request-working').evaluate((element) => element.open), true,
-    'a streamed tool keeps the work panel open');
-  console.log('PASS floating work dock, independent scroll, roll-up, turn handoff in both directions, narrow layout');
-} finally {
-  await browser?.close();
-  await vite.close();
-}
+  await test.step('A slim marker opens earlier tools without jumping the conversation', async () => {
+    const marker = page.getByRole('button', { name: 'Open tools for turn 6', exact: true });
+    await marker.scrollIntoViewIfNeeded();
+    const before = await scroll.evaluate(el => el.scrollTop);
+    await marker.click();
+    await expect(dock).toContainText('Reviewing turn 6');
+    await expect(dock.locator('.request-working')).toHaveAttribute('open');
+    await expect(dock.locator('.agent-card')).toHaveCount(1);
+    await expect(dock.locator('.agent-card')).toContainText('opencode/free');
+    await dock.locator('.tool-card summary').last().click();
+    const body = dock.locator('.request-working-body');
+    const sizes = await body.evaluate(el => ({ scroll: el.scrollHeight, height: el.clientHeight }));
+    assert.ok(sizes.scroll > sizes.height, 'tool output has a bounded independent scroll area');
+    const afterOpen = await scroll.evaluate(el => el.scrollTop);
+    // Shrinking the viewport may clamp the old offset, but never scrolls to a source card.
+    assert.ok(Math.abs(afterOpen - before) < 3);
+    await body.evaluate(el => { el.scrollTop = 110; });
+    assert.equal(await scroll.evaluate(el => el.scrollTop), afterOpen);
+    await scroll.evaluate(el => { el.scrollTop += 70; });
+    await expect(dock).toContainText('Reviewing turn 6');
+    await expect(dock.locator('.request-working')).toHaveAttribute('open');
+    await page.getByRole('button', { name: 'Back to current turn' }).click();
+    await expect(dock).toContainText('Read example-11.ts');
+    await expect(dock.locator('.request-working')).not.toHaveAttribute('open');
+  });
+  await test.step('Streamed tools update the same dock and preserve its open state', async () => {
+    await dock.locator('summary').first().click();
+    await page.getByRole('button', { name: 'Append tool', exact: true }).click();
+    await expect(dock.locator('.tool-card summary').filter({ hasText: 'Read live-update.ts' })).toBeVisible();
+    await expect(dock.locator('.request-working')).toHaveAttribute('open');
+    await page.getByRole('button', { name: 'Append delegation handoff' }).click();
+    await expect(page.locator('.handoff-card')).toBeVisible();
+    await expect(page.locator('.chat-view')).toHaveCount(1);
+  });
+  await test.step('First-turn tools fit a short phone viewport', async () => {
+    await page.setViewportSize({ width: 430, height: 580 });
+    await page.getByRole('button', { name: 'Show first tool' }).click();
+    await expect(dock).toContainText('Read first.ts');
+    await expect(dock).toContainText('Current turn');
+    await dock.locator('summary').first().click();
+    await dock.locator('.tool-card summary').first().click();
+    const rect = await dock.boundingBox(), composer = await page.locator('.composer').boundingBox();
+    assert.ok(rect.x >= 0 && rect.x + rect.width <= 430);
+    assert.ok(rect.y + rect.height <= composer.y, 'tools never cover the composer');
+    assert.ok((await page.getByRole('button', { name: 'Open tools for turn 1', exact: true }).boundingBox()).height <= 40);
+    await mkdir('artifacts/composer', { recursive: true });
+    await page.screenshot({ path: 'artifacts/composer/phone-tools.png' });
+  });
+});

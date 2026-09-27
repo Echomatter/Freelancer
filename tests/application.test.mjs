@@ -72,6 +72,10 @@ async function fixture(t, realPreferences = false) {
       if (route === "/permission") return pendingPermissions;
       if (route === "/session/ses_owned") return { id: "ses_owned", directory };
       if (route === "/session/ses_owned/message") return messageRows;
+      if (route === "/session/ses_worker") return { id: "ses_worker", directory,
+        title: "Inspect cache", parentID: "ses_owned", time: { created: 1, updated: 2 },
+        metadata: { privateContext: "do-not-expose" } };
+      if (route === "/session/ses_worker/message") return messageRows;
       if (route === "/session/ses_foreign")
         return { id: "ses_foreign", directory: root };
       return [];
@@ -154,6 +158,20 @@ async function fixture(t, realPreferences = false) {
     },
   };
 }
+
+test("worker transcripts carry verified navigation identity outside the sidebar list", async t => {
+  const f = await fixture(t);
+  const project = await f.app.addProject(f.directory);
+  const bootstrap = await f.app.bootstrap(project.id);
+  assert.equal(bootstrap.sessions.some(s => s.id === "ses_worker"), false);
+  for (const response of [await f.app.chat(project.id, "ses_worker"),
+    await f.app.chatTranscript(project.id, "ses_worker", "Index unavailable")]) {
+    assert.deepEqual(response.session, { id: "ses_worker", title: "Inspect cache",
+      parentID: "ses_owned", time: { created: 1, updated: 2 } });
+    assert.equal(JSON.stringify(response.session).includes("do-not-expose"), false);
+  }
+  await assert.rejects(f.app.chat(project.id, "ses_foreign"), /another project/);
+});
 
 test("opening a folder installs project defaults and preserves project source", async (t) => {
   const f = await fixture(t);
@@ -1146,4 +1164,13 @@ test("Clarify preserves the parent model and requests a bounded worker with the 
   assert.match(call.options.body.parts[0].text, /Do not change the parent model/);
   assert.match(call.options.body.parts[0].text, /User concern:\nCheck the edge case/);
   await sender.close();
+});
+
+
+test("sending a chat never prepares or switches Git branches before an agreement question can be asked", async t => {
+  const f = await fixture(t);
+  const p = await f.app.addProject(f.directory);
+  f.app.gitProjects.prepareTask = async () => { throw Error("Unexpected automatic checkout"); };
+  await f.app.send(p.id, "ses_owned", { text: "Please change the Git agreement", workflowID: "build", agentID: "engineer", model: "opencode/free" });
+  assert.ok(f.calls.some(c => String(c.route).includes("prompt_async")));
 });

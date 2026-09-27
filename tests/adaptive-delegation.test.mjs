@@ -211,7 +211,7 @@ test('a free-only user instruction prevents a paid default even without a saved 
 });
 
 
-test('Git agreement is authoritative while Git expertise and Sync remain optional guidance', async t => {
+test('Git agreement applies independently of agent and workflow labels', async t => {
   const f = await unifiedFixture(t), ctx = await f.send({ agentID: 'git', workflowID: 'explore' });
   await f.delegator.checkTool({ sessionID: f.parent.id, tool: 'delegate' }, { args: job });
   const r = await f.delegator.execute({ ...job, agentID: 'researcher', task: 'Investigate repository conventions.' }, ctx);

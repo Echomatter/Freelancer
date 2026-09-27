@@ -25,6 +25,7 @@ Setup installs or checks Node.js, Git, GitHub CLI and OpenCode, plus Chrome for 
 - **Get another perspective:** Ask the assistant to give a focused task to another model, such as researching an issue or reviewing a change. Follow its progress and inspect its conversation.
 - **Stay in control:** Review questions and permission requests, see task progress, and decide when to save or share changes. GitHub is optional; connecting an account does not automatically upload your project.
 - **Make the space yours:** Adjust the layout and appearance, browse available models, and search project files and conversations.
+- **Continue from another device:** Enable Remote access in Application settings, scan a one-time QR code, and manage remembered devices. The app keeps its selected ports across restarts. Phone access uses unencrypted HTTP on a trusted private network; it does not enable public access.
 
 Closing the browser window does not stop the local server or work already running. If you used the desktop shortcut, use the tray icon’s **Exit Freelancer** command to stop it. If you started the server with `npm.cmd start`, keep that PowerShell window open and press **Ctrl+C** to stop it.
 
@@ -34,7 +35,9 @@ Start with [your first project and chat](docs/getting-started.md#first-use). The
 
 ## For contributors and technical readers
 
-This is a source-run React interface served by a local Node.js server. Native OpenCode handles conversations, models, authentication, tools and permissions. Freelancer adds the project UI, saved organization, search, worker coordination and managed Git actions. There is no hosted Freelancer service or packaged installer. The [architecture guide](docs/ARCHITECTURE.md) maps ownership and source entry points; [repository instructions](AGENTS.md) cover changes to this codebase.
+This is a source-run React interface served by a local Node.js server. Native OpenCode handles conversations, models, authentication, tools and permissions. Freelancer adds the project UI, saved organization, search, worker coordination, managed Git actions and optional private-network access. Remote access uses one-time QR pairing and per-device remembered credentials, stored as hashes in private local state. LAN traffic uses plain HTTP, so pair devices only on a trusted network. There is no hosted Freelancer service or packaged installer. The [architecture guide](docs/ARCHITECTURE.md) maps ownership and source entry points; [repository instructions](AGENTS.md) cover changes to this codebase.
+
+For phone or tablet access, open **Application settings → Remote access**. Choose a fixed LAN port, pair each browser with a one-time QR code and remove devices individually when needed. See the [remote access guide](docs/network-access.md) for device trust, port persistence and network boundaries.
 
 To run an already installed checkout manually, use Node.js **22.13 or newer** and the native OpenCode executable (`opencode-ai@1.18.31` is the [documented baseline](docs/getting-started.md#prerequisites)). From the repository root:
 

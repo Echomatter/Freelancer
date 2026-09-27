@@ -28,19 +28,22 @@ Start with what you are trying to do. These guides describe the **single browser
 | Shared progress bars, index/SQLite jobs and first-open preparation | [Background progress](progress-jobs.md) |
 | Shared popups, subagent priority, confirmations and build enforcement | [Echoflex dialogs](echoflex-dialogs.md) |
 | Add a message while work runs; Queue versus Delegate | [State-aware sender](state-aware-sender.md) |
+| Message options, collapsible context cards, and current-turn tool dock | [Composer and tools](composer-design.md) |
+| One-time and recurring local prompts with project, agent, workflow and model choices | [Scheduled prompts](scheduled-prompts.md) |
 | Share of work and native todo placement | [Contributions and todos](contributions-and-todos.md) |
 | Agent-directed teams, project/chat budgets, subscription choices and preserved guards | [Delegation budget](delegation-budget.md) |
 | Shared main/delegated agents, custom definitions and captured prompts | [Named agents](named-agents.md) |
 | Local checkpoints, GitHub setup, working agreements, and managed Sync | [Project history & GitHub](github-projects.md) |
 | Pins, archives, recoverable drafts, exports, SQLite, and storage locations | [Local data and history](local-data.md) |
 | Navigation/Details resizing and saved appearance at startup | [Panels and theme](panels-and-theme.md) |
+| Fixed-port private-network access, QR pairing, and remembered devices | [Remote access](network-access.md) |
 | Palettes, provider identities, semantic colors, and extension points | [Color system](color-system.md) |
 
 For agents versus workflows versus delegated assignments, start with the [component glossary](ARCHITECTURE.md#ownership). For first-chat model selection and project defaults, see [first use](getting-started.md#first-use).
 
 ## Development and verification
 
-Use [development and checks](getting-started.md#development-and-checks) for the actual commands, and [the source map](ARCHITECTURE.md#code-map-and-validation) to find the owning module before editing.
+Use [testing](testing.md) for interactive journeys, focused runs and coverage boundaries, [development and checks](getting-started.md#development-and-checks) for setup, and [the source map](ARCHITECTURE.md#code-map-and-validation) to find the owning module before editing.
 
 [Local-data smoke checks](local-data-smoke.md) cover installed-runtime observations. The feature guides above include their focused checks. The [unified verification workflow](../.github/workflows/verify.yml) runs contracts and browser journeys on Windows and Ubuntu.
 

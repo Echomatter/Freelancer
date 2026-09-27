@@ -29,7 +29,7 @@ Freelancer keeps project work and the activity behind it in one local applicatio
 - **Get another perspective:** Ask the assistant to give a focused task to another model, such as researching an issue or reviewing a change. Follow its progress and inspect its conversation.
 - **Stay in control:** Review questions and permission requests, see task progress, and decide when to save or share changes. GitHub is optional; connecting an account does not automatically upload your project.
 - **Make the space yours:** Adjust the layout and appearance, browse available models, and search project files and conversations.
-- **Continue from another device:** Enable private-network access or optional internet access in Application settings, pair the browser once, and manage remembered devices. The app keeps its ports across restarts. Private-network access uses unencrypted HTTP; internet access uses Tailscale Funnel over HTTPS and still requires device pairing.
+- **Continue from another device:** Enable private-network access or optional internet access in Application settings, pair the browser once, and manage remembered devices. The private-network port and selected HTTPS port remain configured across restarts. Private-network access uses unencrypted HTTP; internet access uses Tailscale Funnel over HTTPS and still requires device pairing.
 
 ### Project workspace and chat
 

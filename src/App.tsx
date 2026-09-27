@@ -3,7 +3,7 @@ import { ModelRatingDialog, ModelRatingProgress, useModelRatings } from './Model
 import { IndexJobsContext, IndexJobProgress, useIndexJobs } from './IndexJobs';
 import { ProgressStatus } from './echoflex/ProgressStatus';
 import { useDrafts } from "./useDrafts";
-import { lazy, Suspense, startTransition, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, startTransition, useEffect, useMemo, useRef, useState } from "react";
 import {
   Plus,
   FolderOpen,
@@ -20,6 +20,7 @@ import {
 import { api, query, subscribe } from "./api";
 import { Button, Panel, Badge, Empty, PageCloseButton, PageHeading } from "./echoflex/Controls";
 import { Chat } from "./Chat";
+import { RenderBoundary } from './RenderBoundary';
 const GitHubProject = lazy(() => import('./GitHubProject').then(module => ({ default: module.GitHubProject })));
 import { PanelResize, usePanelLayout } from "./PanelResize";
 import { applyTheme } from "../domain/theme.mjs";
@@ -47,6 +48,7 @@ import { senderState } from "../domain/sender.mjs";
 import { RecentChats } from "./recent-chats.mjs";
 
 const EMPTY_TODOS: any[] = [];
+const compactModelNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
 
 function modelStatus(availability: string, used = false) {
   if (availability === 'deprecated') return { label: 'Deprecated', tone: 'error' };
@@ -56,7 +58,7 @@ function modelStatus(availability: string, used = false) {
 }
 
 function modelQuantity(value: number) {
-  return new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 }).format(value);
+  return compactModelNumber.format(value);
 }
 
 function ChatLoading({ label }: { label: string }) {
@@ -115,6 +117,7 @@ export default function App() {
     [freeOnly, setFreeOnly] = useState(false);
   const [sending, setSending] = useState(false);
   const sendFlight = useRef(false);
+  const stopFlight = useRef(false);
   const [pendingSend, setPendingSend] = useState<{
     key: string; text: string; attachments: { filename: string; mime: string; url: string }[];
     previousIDs: string[]; state: 'sending' | 'accepted' | 'unconfirmed';
@@ -211,6 +214,7 @@ export default function App() {
   const pending = useRef(0);
   const bootstrapVersion = useRef(0),
     chatVersion = useRef(0),
+    chatRequests = useRef(new Map<string, { version: number; promise: Promise<any> }>()),
     timer = useRef<ReturnType<typeof setTimeout>>();
   const navigation = useRef("");
   const draftMemory = useDrafts(project, session, !!data && compatibleApplication(data));
@@ -246,15 +250,28 @@ export default function App() {
     if (projectTransition.current) return;
     if (targetProject && targetSession) {
       const key = query(targetProject, targetSession),
-        id = ++chatVersion.current,
-        next = await api("chat?" + key);
-      recentChats.current.put(targetProject, targetSession, next, id);
+        existing = chatRequests.current.get(key),
+        reusable = existing?.version === chatVersion.current,
+        id = reusable ? existing.version : ++chatVersion.current;
+      let request = reusable ? existing : undefined;
+      if (!request) {
+        const promise = api("chat?" + key).then(next => {
+          recentChats.current.put(targetProject, targetSession, next, id);
+          return next;
+        }).finally(() => {
+          if (chatRequests.current.get(key)?.version === id) chatRequests.current.delete(key);
+        });
+        request = { version: id, promise };
+        chatRequests.current.set(key, request);
+      }
+      const next = await request.promise;
       if (id === chatVersion.current && (navigation.current === key || navigation.current === originKey)) {
         setChat({ ...next, loaded: true, selectionKey: key });
       }
     }
   };
   const modelRatings = useModelRatings(() => refresh());
+  const browsedModels = useMemo(() => browseModels(data?.models ?? [], { query: modelQuery, provider: modelProvider, sort: modelSort, freeOnly }), [data?.models, modelQuery, modelProvider, modelSort, freeOnly]);
   const refreshCurrent = useRef<() => Promise<unknown>>(() => Promise.resolve());
   refreshCurrent.current = () => Promise.all([refreshChat(), refresh()]);
   async function run(fn: () => Promise<any>) {
@@ -340,7 +357,8 @@ export default function App() {
   const chat = chatState.selectionKey === selectedKey ? chatState : cachedChat ?? {
     messages: [], status: {}, permissions: [], questions: [],
   };
-  const current = data?.sessions.find((s) => s.id === session),
+  const current = data?.sessions.find((s) => s.id === session) ??
+      (session && chat.selectionKey === selectedKey ? chat.session : undefined),
     turnState = session ? senderState(chat, session) : { busy: false },
     busy = sending || turnState.busy;
   const selectedChoicesKey = session
@@ -361,6 +379,12 @@ export default function App() {
   // Native events may arrive before the POST acknowledgement or bootstrap.
   // Keep the display bridge until the real chat can stay mounted on its own.
   useEffect(() => { if (sendObserved && !chatLoading) setPendingSend(null); }, [sendObserved, chatLoading]);
+  const selectSession = (id: string) => {
+    if (!id) return;
+    if (id !== session) chatVersion.current++;
+    setSession(id);
+    setView("chat");
+  };
   async function createChat() {
     if (!project) {
       setFolderOpen(true);
@@ -369,8 +393,7 @@ export default function App() {
     setCreatingChat(true);
     try {
       const next = await api("chats", { project });
-      setSession(next.id);
-      setView("chat");
+      selectSession(next.id);
     } finally {
       setCreatingChat(false);
     }
@@ -399,7 +422,7 @@ export default function App() {
           createdSession = id;
           setStartingSession(id);
           setPendingSend(value => value?.key === origin ? { ...value, key: query(project, id) } : value);
-          if (navigation.current === origin) setSession(id);
+          if (navigation.current === origin) selectSession(id);
         }
         await api("send", {
           project,
@@ -525,8 +548,7 @@ export default function App() {
   async function continueChatInNew(sessionRow: any) {
     await run(async () => {
       const next = await api("chat/action", { project, session: sessionRow.id, action: "fork" });
-      setSession(next.id);
-      setView("chat");
+      selectSession(next.id);
     });
   }
   async function archiveChat(sessionRow: any) {
@@ -592,7 +614,7 @@ export default function App() {
             .map((s) => ({ ...s, activity: sessionActivity?.[s.id] }))}
           selected={session} disabled={!!projectLoading || !data || !compatibleApplication(data)} creating={creatingChat}
           onNew={() => run(createChat)}
-          onSelect={(s) => { setSession(s.id); setView("chat"); }}
+          onSelect={(s) => selectSession(s.id)}
           onContinue={continueChatInNew} onArchive={archiveChat} onPin={pinChat} onExport={exportChat}
         />
         <div className="sidebar-bottom usage-dock">
@@ -618,7 +640,7 @@ export default function App() {
             {view === "chat" && current?.parentID && (
               <Button
                 variant="quiet"
-                onClick={() => setSession(current.parentID)}
+                onClick={() => selectSession(current.parentID)}
               >
                 Back to parent chat
               </Button>
@@ -631,12 +653,12 @@ export default function App() {
                 model={model}
                 run={run}
                 refresh={refresh}
-                onSession={setSession}
+                onSession={selectSession}
                 onHistory={() => openHistory(current?.parentID ?? current?.id)}
               />
             )}
             {view === "chat" && session && (
-              <Button variant="quiet" onClick={() => setDetails(!details)}>
+              <Button variant="quiet" aria-expanded={details} aria-controls="workspace-details" onClick={() => setDetails(!details)}>
                 <PanelLeftClose size={16} />
                 Details
               </Button>
@@ -709,7 +731,7 @@ export default function App() {
               <div className="chat-workspace" hidden={view !== "chat"}>
                 {chat.imported && <div className="imported-chat-notice"><span>Imported from ChatGPT / Codex · one-time snapshot. Continue to orient a new chat from this history.</span>
                   <Button disabled={working || current?.organization?.archived || data.project?.organization?.archivedAt} onClick={() => void run(async () => {
-                    const next = await api('chat/imported/continue', { project, session }); setSession(next.id);
+                    const next = await api('chat/imported/continue', { project, session }); selectSession(next.id);
                   })}>Continue in Freelancer</Button></div>}
                 {chat.continuation && <div className="imported-chat-notice" role="status"><span>{(sending && !chat.receipts?.length) || (busy && chat.receipts?.at(-1)?.orienting) ? 'Orienting…' : 'Continued from a ChatGPT / Codex snapshot. Saved history provides the starting context.'}</span></div>}
                 {(current?.organization?.archived || data.project?.organization?.archivedAt) && <div className="archive-banner" role="status">This work is archived{current?.organization?.archiveScope === 'freelancer' ? ' in Freelancer only' : ''}. Restore it before sending. <Button onClick={() => { if (data.project?.organization?.archivedAt) openSettings('application', 'storage'); else openHistory(current?.parentID ?? current?.id); }}>Manage archive</Button></div>}
@@ -737,7 +759,7 @@ export default function App() {
                   className={`conversation-layout ${details ? "with-details" : ""}`}
                 >
                   {chatLoading && !visibleSend ? <ChatLoading label={startingSession === "__new__" || startingSession === session && !!session ? "Sending your first message…" : "Loading recent conversation…"} /> : <>
-                  <Chat
+                  <RenderBoundary key={`${project}/${session}`}><Chat
                     data={data}
                     syncing={chatSyncing || chatLoading}
                     pendingSend={sendObserved ? null : visibleSend}
@@ -756,13 +778,15 @@ export default function App() {
                     setVariant={setVariant}
                     onSend={send}
                     attachmentStore={attachmentStore.current}
-                    onStop={() =>
-                      run(async () => {
+                    onStop={() => {
+                      if (stopFlight.current) return Promise.resolve();
+                      stopFlight.current = true;
+                      return run(async () => {
                         await api("stop", { project, session });
                         await refreshChat();
-                      })
-                    }
-                    onChild={setSession}
+                      }).finally(() => { stopFlight.current = false; });
+                    }}
+                    onChild={selectSession}
                     agentID={agentID}
                     setAgentID={setAgentID}
                     workflowID={workflowID}
@@ -770,11 +794,14 @@ export default function App() {
                     changeCount={new Set((chat.diff ?? []).map(file => file.file ?? file.path)).size}
                     pendingDecisions={(chat.permissions ?? []).length + (chat.questions ?? []).length}
                     onReviewDecisions={() => {
-                      decisions.current?.scrollTo({ top: 0 });
-                      (decisions.current?.querySelector("button") as HTMLButtonElement | null)?.focus();
+                      // Reopen the existing dialog, retaining its draft. These
+                      // triggers only review; they cannot answer or grant consent.
+                      const next = decisions.current?.querySelector<HTMLButtonElement>('[data-review-decision="worker"]')
+                        ?? decisions.current?.querySelector<HTMLButtonElement>('[data-review-decision]');
+                      next?.click();
                     }}
                     onOpenDetails={openDetails}
-                  />
+                  /></RenderBoundary>
                   {panelLayout.fitted.detailsResizable && <PanelResize panel="details" layout={panelLayout} />}
                   {details && (
                     <Details
@@ -786,14 +813,14 @@ export default function App() {
                         (c) => c.sessionID === session,
                       )}
                       requestTab={detailsSel}
-                      onChild={setSession}
+                      onChild={selectSession}
                     />
                   )}
                   </>}
                 </div>
               </div>
-            {view === "github" && <GitHubProject key={project} project={project} onClose={closeSettings} onUseSync={() => {
-              setAgentID("git"); setWorkflowID("sync"); setModel("inherit"); setVariant("inherit"); setView("chat");
+            {view === "github" && <GitHubProject key={project} project={project} onClose={closeSettings} onAsk={() => {
+              setView("chat");
             }} />}
             {view === "overview" && (
               <div className="page overview">
@@ -854,7 +881,7 @@ export default function App() {
                 await openProject(selected);
                 if (navigation.current !== query(projectID)) return;
               }
-              setSession(id); setView("chat");
+              selectSession(id);
             }} />}
             {(view === "agents" || view === "workflows") && (
               <WorkspaceCatalog
@@ -879,6 +906,15 @@ export default function App() {
                 <Settings
                    sessionID={session}
                    onHistory={() => openHistory()}
+                   onOpenChat={async (projectID, id) => {
+                     if (projectID !== project) {
+                       const selected = data.settings.projects.find(p => p.id === projectID);
+                       if (!selected) throw Error("This project is no longer available.");
+                       await openProject(selected);
+                       if (navigation.current !== query(projectID)) return;
+                     }
+                     selectSession(id);
+                   }}
                    onClose={closeSettings}
                    data={data}
                   onColorsSaved={colorsSaved}
@@ -937,15 +973,10 @@ export default function App() {
                      <Button aria-pressed={freeOnly} onClick={() => setFreeOnly(true)}>Free</Button>
                    </div>
                  </div>
-                 {!browseModels(data.models, { query: modelQuery, provider: modelProvider, sort: modelSort, freeOnly }).length &&
-                   <p role="status">No models match these filters.</p>}
-                 <div className="model-grid">
-                  {browseModels(data.models, {
-                    query: modelQuery,
-                    provider: modelProvider,
-                    sort: modelSort,
-                    freeOnly,
-                  }).map((m) => {
+                  {!browsedModels.length &&
+                    <p role="status">No models match these filters.</p>}
+                  <div className="model-grid">
+                   {browsedModels.map((m) => {
                     const used = !!m.recent || m.outcomes?.total > 0 ||
                       data.costs.contributions?.models?.rows?.some((row: any) => row.id === m.id);
                     const status = modelStatus(m.availability, used);

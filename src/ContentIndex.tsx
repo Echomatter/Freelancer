@@ -34,7 +34,8 @@ export function ContentIndex({ onClose }: { onClose: () => void }) {
     setPending(action); setError("");
     try {
       await jobs.start(action);
-      setConfirmCompact(false);
+      if (action === 'compact') setConfirmCompact(false);
+      if (action === 'reset') setConfirmReset(false);
     } catch (failure) { setError((failure as Error).message); }
     finally { setPending(""); }
   }

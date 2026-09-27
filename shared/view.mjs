@@ -9,13 +9,26 @@ export function economicClass(surface) {
 }
 export function modelRows(providers = [], snapshot = {}) {
   const library = snapshot.evidence || {}, roster = snapshot.roster?.eligible_models || [];
+  const routes = new Map();
+  for (const route of roster) if (!routes.has(route.id)) routes.set(route.id, route);
+  const evidenceByAlias = new Map();
+  for (const evidence of Object.values(library.models || {}))
+    for (const alias of evidence.aliases || []) if (!evidenceByAlias.has(alias)) evidenceByAlias.set(alias, evidence);
+  const quotas = new Map();
+  for (const quota of snapshot.usage?.providers || []) if (!quotas.has(quota.id)) quotas.set(quota.id, quota);
+  const outcomesByModel = new Map();
+  for (const outcome of snapshot.history?.entries || []) {
+    if (outcome.observation_kind === 'operational') continue;
+    if (!outcomesByModel.has(outcome.model)) outcomesByModel.set(outcome.model, []);
+    outcomesByModel.get(outcome.model).push(outcome);
+  }
   return providers.flatMap(provider => Object.entries(provider.models || {}).map(([modelID, model]) => {
-    const id = `${provider.id}/${modelID}`, route = roster.find(r => r.id === id);
+    const id = `${provider.id}/${modelID}`, route = routes.get(id);
     const key = library.alias_index?.[id];
-    const evidence = library.models?.[key] || Object.values(library.models || {}).find(e => e.aliases?.includes(id));
+    const evidence = library.models?.[key] || evidenceByAlias.get(id);
     const surface = route?.surface;
-    const quota = snapshot.usage?.providers?.find(p => p.id === surface);
-    const outcomes = (snapshot.history?.entries || []).filter(e => e.model === id && e.observation_kind !== 'operational');
+    const quota = quotas.get(surface);
+    const outcomes = outcomesByModel.get(id) || [];
     const validated = outcomes.filter(e => e.success === true && e.tests_passed === true).length;
     const context = number(model.limit?.context);
     return { id, modelID, provider: provider.id, name: clean(model.name || modelID), surface,

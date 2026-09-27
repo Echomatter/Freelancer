@@ -2,6 +2,7 @@ import { ProviderText, ProviderSelect } from "./ProviderColors";
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import { clientID, copyText } from "./browser-capabilities.mjs";
 import {
   ArrowUp,
   Square,
@@ -31,6 +32,7 @@ import { resolveTodoLayout } from "../domain/appearance.mjs";
 import { hasUnfinishedTodos, todoStatusLabel } from "../domain/todos.mjs";
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES } from "../domain/attachments.mjs";
 import { useChatSender, SenderControls } from "./ChatSender";
+import { ComposerMenu } from "./ComposerMenu";
 import { WorkCard } from "./WorkCard";
 import {
   buildRequestGroups,
@@ -41,6 +43,7 @@ import {
   delegateModel,
   isHandoffPart,
   latestToolParts,
+  responseErrorLabel,
 } from "../domain/chat-view.mjs";
 
 function Code({ children, className }: { children?: any; className?: string }) {
@@ -55,7 +58,7 @@ function Code({ children, className }: { children?: any; className?: string }) {
           aria-label="Copy code"
           onClick={async () => {
             try {
-              await navigator.clipboard.writeText(text);
+              await copyText(text);
               setCopied(true);
               setTimeout(() => setCopied(false), 1500);
             } catch {
@@ -89,7 +92,7 @@ function readAttachment(file: File): Promise<PendingAttachment> {
     reader.onerror = () => reject(Error(`Could not read ${file.name}.`));
     reader.onload = () => {
       const mime = file.type || "application/octet-stream";
-      resolve({ id: crypto.randomUUID(), filename: file.name, mime, url: `data:${mime};base64,${String(reader.result).split(",", 2)[1] ?? ""}`, size: file.size });
+      resolve({ id: clientID(), filename: file.name, mime, url: `data:${mime};base64,${String(reader.result).split(",", 2)[1] ?? ""}`, size: file.size });
     };
     reader.readAsDataURL(file);
   });
@@ -107,6 +110,7 @@ const Markdown = memo(function Markdown({ text }: { text: string }) {
   );
 });
 function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: string) => void; modelFallback?: string }) {
+  const [open, setOpen] = useState(false);
   const state = part.state ?? {},
     meta = state.metadata ?? {},
     saved =
@@ -179,29 +183,26 @@ function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: strin
       <ChevronDown size={14} />
     </>
   );
-  const detail = (
-    <>
-      {input.filePath && (
-        <p>
-          <FileText size={14} /> {input.filePath}
-        </p>
-      )}
-      <pre>
-        {state.error ??
-          (typeof state.output === "string"
-            ? state.output
-            : JSON.stringify(state.output ?? input, null, 2))}
-      </pre>
-      {meta.diff && typeof meta.diff === "string" && <Diff text={meta.diff} />}
-      {Array.isArray(state.attachments) && state.attachments.length > 0 && (
-        <div className="chat-attachments">{state.attachments.map((file: any, index: number) => <Attachment key={file.id ?? index} file={file} />)}</div>
-      )}
-    </>
-  );
   return (
-    <details className={`tool-card ${toolOutcomeStatus(part) === "error" ? "error" : ""}`}>
+    <details className={`tool-card ${toolOutcomeStatus(part) === "error" ? "error" : ""}`} onToggle={(event) => setOpen(event.currentTarget.open)}>
       <summary>{heading}</summary>
-      {detail}
+      {open && <>
+        {input.filePath && (
+          <p>
+            <FileText size={14} /> {input.filePath}
+          </p>
+        )}
+        <pre>
+          {state.error ??
+            (typeof state.output === "string"
+              ? state.output
+              : JSON.stringify(state.output ?? input, null, 2))}
+        </pre>
+        {meta.diff && typeof meta.diff === "string" && <Diff text={meta.diff} />}
+        {Array.isArray(state.attachments) && state.attachments.length > 0 && (
+          <div className="chat-attachments">{state.attachments.map((file: any, index: number) => <Attachment key={file.id ?? index} file={file} />)}</div>
+        )}
+      </>}
     </details>
   );
 }
@@ -249,7 +250,7 @@ function CopyResponse({ messages }: { messages: any[] }) {
   const text = messages.flatMap((message) => (message.parts ?? []).filter((part: any) => (part.type === "text" || part.type === "reasoning") && !message.info?.summary).map((part: any) => String(part.text ?? "").trim())).filter(Boolean).join("\n\n");
   if (!text) return null;
   return <button type="button" className="copy-response" aria-label={copied ? "Response copied" : "Copy response"} title={copied ? "Copied" : "Copy response"} onClick={async () => {
-    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); }
+    try { await copyText(text); setCopied(true); setTimeout(() => setCopied(false), 1800); }
     catch { setCopied(false); }
   }}>{copied ? <Check size={14} /> : <Copy size={14} />}<span>{copied ? "Copied" : "Copy"}</span></button>;
 }
@@ -329,7 +330,7 @@ function RequestWorking({ summary, messages, onChild, live, changeCount = 0, onO
   return (
     <details className={`request-working ${docked ? "is-docked" : ""}`} data-request-work-key={docked ? undefined : requestKey} open={expanded} aria-label="Work summary">
       <summary className="request-working-head" onClick={(event) => { event.preventDefault(); onToggle(requestKey); }}>
-        {live ? <LoaderCircle size={16} className="spin" /> : summary.errors ? <CircleAlert size={16} /> : <Terminal size={16} />}
+        <span className="work-icon">{live ? <LoaderCircle size={16} className="spin" /> : summary.errors ? <CircleAlert size={16} /> : <Terminal size={16} />}</span>
         <span className="request-working-title" title={status}>{status}</span>
         <span className="request-working-meta">
           {summary.toolCount + summary.workerCount > 0 && <span>{summary.toolCount + summary.workerCount} action{summary.toolCount + summary.workerCount === 1 ? "" : "s"}</span>}
@@ -390,6 +391,11 @@ function GroupBody({ group, onChild, mode = "all", childReport = false }: { grou
       if (msg.info?.role === "user" && /^\[Freelancer Delegate handoff [\w-]+\]\n/.test(text)) {
         flush();
         nodes.push(<details key={key} className="handoff-card"><summary><Bot size={16} />Handoff · Delegate request<ChevronDown size={14} /></summary><pre>{text}</pre></details>);
+        return;
+      }
+      if (childReport && msg.info?.role === 'user') {
+        flush();
+        nodes.push(<details key={key} className="handoff-card assignment-card"><summary><Bot size={16} />Assignment<ChevronDown size={14} /></summary><div className="handoff-content"><Markdown text={text} /></div></details>);
         return;
       }
       if (childReport && msg.info?.role === "assistant" && msg.info?.time?.completed && msg.info?.finish && msg.info.finish !== "tool-calls") {
@@ -477,11 +483,9 @@ export function Chat({
     area = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [showNewActivity, setShowNewActivity] = useState(false);
-  const [dock, setDock] = useState<{ key: string; push: number; height: number } | null>(null);
+  const [inspectedWork, setInspectedWork] = useState<string | null>(null);
   const [expandedWork, setExpandedWork] = useState<string | null>(null);
-  const [rollingWork, setRollingWork] = useState(false);
-  const lastScrollTop = useRef(0);
-  const rollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const messageInput = useRef<HTMLTextAreaElement>(null);
   const attachmentInput = useRef<HTMLInputElement>(null);
   const attachmentCache = useRef(attachmentStore ?? new Map<string, PendingAttachment[]>());
   const [, updateAttachments] = useState(0);
@@ -529,63 +533,30 @@ export function Chat({
     taskSession.current = session?.id;
     taskHistory.current.clear();
   }
-  const updateDock = useCallback(() => {
-    const scroll = area.current;
-    if (!scroll) return;
-    const top = scroll.getBoundingClientRect().top;
-    const cards = [...scroll.querySelectorAll<HTMLElement>('.request-working[data-request-work-key]')];
-    let current: HTMLElement | undefined;
-    let next: HTMLElement | undefined;
-    for (const card of cards) {
-      if (card.getBoundingClientRect().top <= top + 1) current = card;
-      else { next = card; break; }
-    }
-    const key = current?.dataset.requestWorkKey;
-    const height = current?.querySelector('summary')?.getBoundingClientRect().height ?? 0;
-    const push = next && height ? Math.min(0, next.getBoundingClientRect().top - top - height) : 0;
-    const viewportHeight = scroll.clientHeight;
-    setDock((previous) => key ? previous?.key === key && Math.abs(previous.push - push) < 0.5 && previous.height === viewportHeight ? previous : { key, push, height: viewportHeight } : null);
-  }, []);
   const toggleWork = useCallback((key: string) => {
-    if (rollTimer.current) clearTimeout(rollTimer.current);
-    setRollingWork(false);
-    if (dock?.key === key) {
-      setExpandedWork((previous) => previous === key ? null : key);
-      return;
-    }
-    const scroll = area.current;
-    const card = [...(scroll?.querySelectorAll<HTMLElement>('.request-working[data-request-work-key]') ?? [])].find((item) => item.dataset.requestWorkKey === key);
-    if (scroll && card) {
-      const delta = card.getBoundingClientRect().top - scroll.getBoundingClientRect().top;
-      scroll.scrollTop += delta;
-      lastScrollTop.current = scroll.scrollTop;
-      updateDock();
-    }
-    setExpandedWork(key);
-  }, [dock?.key, updateDock]);
+    setInspectedWork(key);
+    setExpandedWork(previous => previous === key ? null : key);
+  }, []);
+  useLayoutEffect(() => {
+    const input = messageInput.current;
+    if (input) { input.style.height = '0px'; input.style.height = Math.min(160, Math.max(44, input.scrollHeight)) + 'px'; }
+  }, [draft, session?.id]);
   const followLatest = () => {
     const scroll = area.current;
     if (scroll && stick.current && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 2) {
       scroll.scrollTop = scroll.scrollHeight;
-      // A streamed tool can grow the transcript. This automatic follow is not
-      // a user scroll and must not roll an open work panel shut.
-      lastScrollTop.current = scroll.scrollTop;
     }
   };
   useLayoutEffect(() => {
     stick.current = true;
     setShowNewActivity(false);
-    setDock(null);
+    setInspectedWork(null);
     setExpandedWork(null);
-    if (rollTimer.current) clearTimeout(rollTimer.current);
-    setRollingWork(false);
     followLatest();
   }, [session?.id]);
   useLayoutEffect(() => {
     followLatest();
-    updateDock();
   }, [messages, busy, pendingSend]);
-  useEffect(() => () => { if (rollTimer.current) clearTimeout(rollTimer.current); }, []);
   useEffect(() => {
     const scroll = area.current;
     const content = scroll?.firstElementChild;
@@ -595,7 +566,6 @@ export function Chat({
       if (!frame) frame = requestAnimationFrame(() => {
         frame = 0;
         followLatest();
-        updateDock();
       });
     });
     observer.observe(scroll);
@@ -610,11 +580,19 @@ export function Chat({
   const workflow =
     data.settings.workflows.find((w) => w.id === workflowID) ??
     data.settings.workflows[0];
-  const models = workspaceModels(
+  const models = useMemo(() => workspaceModels(
     data.models ?? [],
     data.providers.connected,
     data.settings.appearance?.showDepletedModels !== false,
-  );
+  ), [data.models, data.providers.connected, data.settings.appearance?.showDepletedModels]);
+  const modelProviders = useMemo(() => data.providers.all.filter((provider) =>
+    models.some((m) => m.provider === provider.id),
+  ), [data.providers.all, models]);
+  const modelsByProvider = useMemo(() => {
+    const grouped = new Map<string, any[]>();
+    for (const item of models) grouped.set(item.provider, [...(grouped.get(item.provider) ?? []), item]);
+    return grouped;
+  }, [models]);
   const inheritedAgent = data.settings.agents.find(
     (a) => a.id === workflow.agentID,
   );
@@ -634,10 +612,11 @@ export function Chat({
     : inheritedModel && inheritedModel !== "auto"
       ? inheritedModel
       : (data.nativeModels?.[selectedAgent?.id ?? "engineer"] ?? data.nativeModels?.default ?? "");
-  const currentModel = workspaceModels(
+  const selectableCurrentModels = useMemo(() => workspaceModels(
     data.models ?? [],
     data.providers.connected,
-  ).find((m) => m.id === parentID);
+  ), [data.models, data.providers.connected]);
+  const currentModel = selectableCurrentModels.find((m) => m.id === parentID);
   const selectedModel = currentModel ? parentID : "";
   const intelligence = modelVariant(
     currentModel?.variants,
@@ -684,7 +663,6 @@ export function Chat({
   const requestGroups = useMemo(() => buildRequestGroups(messages), [messages]);
   const requestContent = useMemo(() => requestGroups.map((request, requestIndex, all) => {
     const isLast = requestIndex === all.length - 1;
-    const firstRequestHasTool = requestIndex === 0 && request.responseMessages.some((message) => message.parts?.some((part) => part.type === "tool"));
     if (isLast) taskHistory.current.set(request.key, todos);
     const requestTodos = isLast ? todos : (taskHistory.current.get(request.key) ?? EMPTY_TODOS);
     const summary = summarizeRequestWork(request.allMessages, requestTodos);
@@ -692,24 +670,20 @@ export function Chat({
     const responseGroups = groupMessages(request.responseMessages);
     return (
       <section key={request.key} className="request-group" aria-label={`Request ${requestIndex + 1}`}>
-        {firstRequestHasTool && (
-          <RequestWorking summary={summary} changeCount={isLast ? changeCount : 0}
-            live={isLast && busy} messages={request.responseMessages}
-            requestKey={request.key} expanded={expandedWork === request.key && dock?.key !== request.key}
-            onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
-        )}
         {userGroups.map((group) => (
           <article key={group.key} className={`message ${group.role}`}>
             <div className="message-label"><GroupLabel role={group.role} models={[]} /></div>
-            <div className="message-body"><GroupBody group={group} onChild={openChild} /></div>
+            <div className="message-body"><GroupBody group={group} onChild={openChild} childReport={!!session?.parentID} /></div>
           </article>
         ))}
-        {!firstRequestHasTool && (
-          <RequestWorking summary={summary} changeCount={isLast ? changeCount : 0}
-            live={isLast && busy} messages={request.responseMessages}
-            requestKey={request.key} expanded={expandedWork === request.key && dock?.key !== request.key}
-            onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
-        )}
+        {(summary.hasWork || (isLast && (busy || changeCount > 0))) && <button type="button"
+          className="request-marker" data-request-work-key={request.key}
+          aria-label={`Open tools for turn ${requestIndex + 1}`}
+          aria-expanded={expandedWork === request.key} aria-controls="chat-tool-dock"
+          onClick={() => { setInspectedWork(request.key); setExpandedWork(request.key); }}>
+          <span className="work-icon"><Terminal size={15} /></span>
+          <span>Turn {requestIndex + 1} tools</span><small>{summary.toolCount + summary.workerCount} action{summary.toolCount + summary.workerCount === 1 ? '' : 's'}{summary.errors ? ` · ${summary.errors} failed` : ''}</small><ArrowUpRight size={14} />
+        </button>}
         {isLast && pendingDecisions > 0 && (
           <div className="decision-banner" role="status">
             <span>Needs your decision · {pendingDecisions} pending — review to continue.</span>
@@ -722,33 +696,37 @@ export function Chat({
             <div className="message-body">
               <GroupBody group={group} onChild={openChild} mode="prose" childReport={!!session?.parentID} />
               {group.messages.some((m) => m.info?.error) && (
-                <p className="notice error">{group.messages.find((m) => m.info?.error)?.info.error.data?.message ?? "This response stopped. You can try again."}</p>
+                <p className="notice error">{responseErrorLabel(group.messages.find((m) => m.info?.error)?.info.error)}</p>
               )}
             </div>
           </article>
         ))}
       </section>
     );
-  }), [requestGroups, todos, busy, changeCount, pendingDecisions, data.models, expandedWork, dock?.key, toggleWork, openChild, openDetails, reviewDecisions]);
-  const dockIndex = requestGroups.findIndex((request) => request.key === dock?.key);
-  const dockRequest = dockIndex < 0 ? null : requestGroups[dockIndex];
-  const dockTodos = dockIndex === requestGroups.length - 1 ? todos : (taskHistory.current.get(dockRequest?.key ?? "") ?? EMPTY_TODOS);
-  useLayoutEffect(() => { updateDock(); }, [requestContent, updateDock]);
+  }), [requestGroups, todos, busy, changeCount, pendingDecisions, data.models, session?.parentID, expandedWork, toggleWork, openChild, openDetails, reviewDecisions]);
+  const currentRequest = requestGroups.at(-1);
+  const dockKey = inspectedWork && requestGroups.some(request => request.key === inspectedWork) ? inspectedWork : currentRequest?.key;
+  const dockIndex = requestGroups.findIndex(request => request.key === dockKey);
+  const dockRequest = requestGroups[dockIndex];
+  const isCurrentDock = dockKey === currentRequest?.key;
+  const dockTodos = isCurrentDock ? todos : (taskHistory.current.get(dockKey ?? '') ?? EMPTY_TODOS);
+  useLayoutEffect(() => { setInspectedWork(null); setExpandedWork(null); }, [currentRequest?.key]);
   return (
     <div className="chat-view" aria-busy={syncing}>
+      {dockRequest && (summarizeRequestWork(dockRequest.allMessages, dockTodos).hasWork || (isCurrentDock && (busy || changeCount > 0))) && <div className="request-dock" id="chat-tool-dock">
+        <div className="request-dock-context"><span>{isCurrentDock ? 'Current turn' : `Reviewing turn ${dockIndex + 1}`}</span>
+          {!isCurrentDock && <button type="button" onClick={() => { setInspectedWork(null); setExpandedWork(null); }}>Back to current turn <ArrowUpRight size={12} /></button>}</div>
+        <RequestWorking summary={summarizeRequestWork(dockRequest.allMessages, dockTodos)}
+          messages={dockRequest.responseMessages} requestKey={dockRequest.key} docked
+          expanded={expandedWork === dockRequest.key} live={isCurrentDock && busy}
+          changeCount={isCurrentDock ? changeCount : 0}
+          onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
+      </div>}
       <div
         className="chat-scroll"
         ref={area}
         onScroll={() => {
           const x = area.current!;
-          const movement = x.scrollTop - lastScrollTop.current;
-          lastScrollTop.current = x.scrollTop;
-          if (movement > 2 && expandedWork && !rollingWork) {
-            setRollingWork(true);
-            if (rollTimer.current) clearTimeout(rollTimer.current);
-            rollTimer.current = setTimeout(() => { setExpandedWork(null); setRollingWork(false); }, 650);
-          }
-          updateDock();
           stick.current = x.scrollHeight - x.scrollTop - x.clientHeight < 120;
           setShowNewActivity((visible) => (visible === stick.current ? !stick.current : visible));
         }}
@@ -784,13 +762,6 @@ export function Chat({
         )}
         <div ref={end} />
         </div>
-      {dockRequest && <div className={`request-dock ${rollingWork ? "is-rolling" : ""}`} style={{ transform: `translateY(${dock?.push ?? 0}px)`, "--chat-scroll-height": `${dock?.height ?? 0}px` } as React.CSSProperties}>
-        <RequestWorking summary={summarizeRequestWork(dockRequest.allMessages, dockTodos)}
-          messages={dockRequest.responseMessages} requestKey={dockRequest.key} docked
-          expanded={expandedWork === dockRequest.key} live={dockIndex === requestGroups.length - 1 && busy}
-          changeCount={dockIndex === requestGroups.length - 1 ? changeCount : 0}
-          onToggle={toggleWork} onChild={openChild} onOpenDetails={openDetails} />
-      </div>}
       {showNewActivity && messages.length > 0 && (
         <div className="new-activity-row">
           <button type="button" className="new-activity" onClick={jumpToLatest}>
@@ -802,7 +773,7 @@ export function Chat({
         <div className="composer-cards">
         {resolveTodoLayout(data.settings.appearance) === 'docked' && todos.length > 0 && dismissedTasks === taskRevision && <button type="button" className="restore-work" onClick={() => setDismissedTasks('')}>Show tasks</button>}
         {resolveTodoLayout(data.settings.appearance) === "docked" && todos.length > 0 && dismissedTasks !== taskRevision && (
-          <WorkCard title={`Tasks · ${todos.filter((todo) => todo.status === "completed").length}/${todos.length} complete`} icon={<Check size={16} />} onDismiss={() => setDismissedTasks(taskRevision)} dismissLabel="Dismiss task list until it changes" defaultOpen={todos.length <= 6}>
+          <WorkCard title={`Tasks · ${todos.filter((todo) => todo.status === "completed").length}/${todos.length} complete`} icon={<Check size={16} />} onDismiss={() => setDismissedTasks(taskRevision)} dismissLabel="Dismiss task list until it changes" defaultOpen={false} preview={!busy && hasUnfinishedTodos(todos) ? 'Unfinished tasks · send a follow-up to continue' : (todos.find(todo => todo.status === 'in_progress')?.content ?? 'View task list')}>
             {!busy && hasUnfinishedTodos(todos) && <p role="status">Response ended with unfinished tasks. Send a follow-up to continue.</p>}
             <div className="todo-dock-list">
               {todos.map((todo, i) => (
@@ -815,6 +786,15 @@ export function Chat({
             </div>
           </WorkCard>
         )}
+        {attachments.length > 0 && <WorkCard title={`Attachments · ${attachments.length}`} icon={<Paperclip size={16} />} defaultOpen attention={!!attachmentError} preview={attachments.map(file => file.filename).join(', ')}>
+          {attachments.length > 0 && <div className="composer-attachments" aria-label="Attachments ready to send">{attachments.map((file) => <span className="composer-attachment" key={file.id}><FileText size={14} /><span title={file.filename}>{file.filename}</span><button type="button" aria-label={`Remove ${file.filename}`} onClick={() => saveAttachments(attachmentContext, attachments.filter((item) => item.id !== file.id))}><X size={13} /></button></span>)}</div>}
+          {readingAttachments && <p className="composer-attachment-note" role="status"><LoaderCircle size={13} className="spin" /> Adding files…</p>}
+          {attachmentError && <p className="composer-attachment-error" role="alert">{attachmentError}</p>}
+          {busy && attachments.length > 0 && <p className="composer-attachment-note" role="status">Queue, Delegate, and Interrupt send text only; these files stay attached for your next send.</p>}
+
+        </WorkCard>}
+        {!attachments.length && readingAttachments && <p role="status">Adding files…</p>}
+        {!attachments.length && attachmentError && <p className="composer-attachment-error" role="alert">{attachmentError}</p>}
         {sender.ui}
         </div>
         <form
@@ -827,37 +807,8 @@ export function Chat({
             sender.submit();
           }}
         >
-          <textarea
-            aria-label="Message"
-            placeholder={
-              session?.imported ? 'Continue in Freelancer to send a new message…' : data?.project
-                ? "Describe what you want to make…"
-                : "Open a project to get started…"
-            }
-            value={draft}
-            disabled={!data?.project || syncing || draftLoading}
-            readOnly={readOnly}
-            onChange={(e) => setDraft(e.target.value)}
-            onPaste={(event) => { if (event.clipboardData.files.length && !syncing && !readOnly && !draftLoading) { event.preventDefault(); void addAttachments(event.clipboardData.files); } }}
-            onKeyDown={(e) => {
-              if (
-                e.key === "Enter" &&
-                !e.shiftKey &&
-                !e.nativeEvent.isComposing
-              ) {
-                e.preventDefault();
-                sender.submit();
-              }
-            }}
-          />
-          <input ref={attachmentInput} hidden type="file" multiple aria-label="Choose attachments" tabIndex={-1} onChange={(event) => { if (event.target.files) void addAttachments(event.target.files); event.target.value = ""; }} />
-          {attachments.length > 0 && <div className="composer-attachments" aria-label="Attachments ready to send">{attachments.map((file) => <span className="composer-attachment" key={file.id}><FileText size={14} /><span title={file.filename}>{file.filename}</span><button type="button" aria-label={`Remove ${file.filename}`} onClick={() => saveAttachments(attachmentContext, attachments.filter((item) => item.id !== file.id))}><X size={13} /></button></span>)}</div>}
-          {readingAttachments && <p className="composer-attachment-note" role="status"><LoaderCircle size={13} className="spin" /> Adding files…</p>}
-          {attachments.length > 0 && <p className="composer-attachment-note">Attachments are temporary until sent; saved text drafts do not include file bytes.</p>}
-          {attachmentError && <p className="composer-attachment-error" role="alert">{attachmentError}</p>}
-          {busy && attachments.length > 0 && <p className="composer-attachment-note" role="status">Queue and Delegate send text only; these files stay attached for your next send.</p>}
-          <div className="composer-actions">
-            <button type="button" className="composer-attach" aria-label="Attach files" title="Attach files from this computer" disabled={syncing || readOnly || draftLoading} onClick={() => attachmentInput.current?.click()}><Paperclip size={17} /><span>Attach</span></button>
+          <div className="composer-entry">
+          <ComposerMenu context={attachmentContext} disabled={syncing || readOnly || draftLoading} onAttach={() => attachmentInput.current?.click()}>
             <div className="composer-selects">
               <label className="composer-choice">
                 <span>Workflow</span>
@@ -935,14 +886,9 @@ export function Chat({
                         {currentModel ? "(Depleted)" : "(Unavailable)"}
                       </option>
                     )}
-                    {data.providers.all
-                      .filter((provider) =>
-                        models.some((m) => m.provider === provider.id),
-                      )
-                      .map((provider) => (
+                    {modelProviders.map((provider) => (
                         <optgroup key={provider.id} label={provider.name}>
-                          {models
-                            .filter((m) => m.provider === provider.id)
+                          {(modelsByProvider.get(provider.id) ?? [])
                             .map((m) => (
                               <option key={m.id} value={m.id}>
                                 {m.name}
@@ -962,6 +908,30 @@ export function Chat({
                 />
               </div>
             </div>
+          </ComposerMenu>
+          <textarea ref={messageInput}
+            aria-label="Message"
+            placeholder={
+              session?.imported ? 'Continue in Freelancer to send a new message…' : data?.project
+                ? "Describe what you want to make…"
+                : "Open a project to get started…"
+            }
+            value={draft}
+            disabled={!data?.project || syncing || draftLoading}
+            readOnly={readOnly}
+            onChange={(e) => setDraft(e.target.value)}
+            onPaste={(event) => { if (event.clipboardData.files.length && !syncing && !readOnly && !draftLoading) { event.preventDefault(); void addAttachments(event.clipboardData.files); } }}
+            onKeyDown={(e) => {
+              if (
+                e.key === "Enter" &&
+                !e.shiftKey &&
+                !e.nativeEvent.isComposing
+              ) {
+                e.preventDefault();
+                sender.submit();
+              }
+            }}
+          />
             <SenderControls
               sender={sender}
               busy={busy}
@@ -969,6 +939,9 @@ export function Chat({
               disabled={!selectedModel || !data?.project || syncing || readOnly || draftLoading}
             />
           </div>
+          <div className="composer-context" aria-label="Current message settings"><span>{selectedAgent?.name ?? 'Agent'} · {workflow.name}</span><span title={currentModel?.name}>{currentModel?.name ?? 'Choose a model'}{intelligence ? ` · ${intelligence}` : ''}</span></div>
+          <input ref={attachmentInput} hidden type="file" multiple aria-label="Choose attachments" tabIndex={-1} onChange={(event) => { if (event.target.files) void addAttachments(event.target.files); event.target.value = ""; }} />
+
         </form>
       </div>
       </div>

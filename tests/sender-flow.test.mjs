@@ -29,7 +29,7 @@ function fixture() {
   const queue = (id, text) => sender.enqueue('project', 'chat', {
     id, kind: 'queue', text, model: 'opencode/free', workflowID: 'build', agentID: 'inherit',
   });
-  return { sender, state, sent, queue, get stops() { return stops; } };
+  return { sender, state, sent, queue, app, get stops() { return stops; } };
 }
 
 test('queued messages wait for native completion and dispatch once in FIFO order', async () => {
@@ -61,6 +61,40 @@ test('interrupt cancels waiting delivery before aborting native work', async () 
   assert.deepEqual(f.sent, []);
   assert.deepEqual(await f.sender.list('project', 'chat'), []);
   await f.sender.close();
+});
+
+test('steering interrupts once, cancels old queue, and delivers the captured message once', async () => {
+  const f = fixture();
+  try {
+    await f.queue('queue_before_steer', 'Old queued message');
+    const input = { id: 'steer_request_0001', kind: 'interrupt', text: 'Focus on the new direction', model: 'opencode/free' };
+    const first = await f.sender.enqueue('project', 'chat', input);
+    assert.equal(first.status, 'waiting');
+    assert.equal(f.stops, 1);
+    await f.sender.tick();
+    assert.deepEqual(f.sent, [input.text]);
+    // A lost acknowledgement can be retried even after the replacement starts.
+    await f.sender.enqueue('project', 'chat', input);
+    await f.sender.tick();
+    assert.equal(f.stops, 1);
+    assert.deepEqual(f.sent, [input.text]);
+    await assert.rejects(f.sender.enqueue('project', 'chat', { ...input, text: 'Changed' }), /different request/);
+  } finally { await f.sender.close(); }
+});
+
+test('an unconfirmed interrupt preserves the steering text and never dispatches it automatically', async () => {
+  const f = fixture();
+  try {
+    f.app.stop = async () => { throw Error('Native stop acknowledgement lost'); };
+    const input = { id: 'uncertain_steer_0001', kind: 'interrupt', text: 'Keep this direction', model: 'opencode/free' };
+    const row = await f.sender.enqueue('project', 'chat', input);
+    assert.equal(row.status, 'uncertain');
+    assert.equal(row.text, input.text);
+    f.state.status = {};
+    await f.sender.tick();
+    assert.deepEqual(f.sent, []);
+    assert.equal((await f.sender.enqueue('project', 'chat', input)).status, 'uncertain');
+  } finally { await f.sender.close(); }
 });
 
 test('a failed parent turn holds later queued work until its notice is acknowledged', async () => {

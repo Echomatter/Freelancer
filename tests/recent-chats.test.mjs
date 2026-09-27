@@ -28,3 +28,42 @@ test('oversized chats are not held in memory', () => {
   cache.put('one', 'large', { messages: [{ text: 'x'.repeat(1000) }] });
   assert.equal(cache.get('one', 'large'), null);
 });
+
+test('worker navigation metadata survives cache hydration without live permissions', () => {
+  const cache = new RecentChats();
+  cache.put('p', 'worker', { session: { id: 'worker', parentID: 'parent', title: 'Inspect cache' },
+    messages: [], permissions: [{ id: 'old-permission' }], status: { worker: { type: 'busy' } } });
+  assert.equal(cache.get('p', 'worker').session.parentID, 'parent');
+  assert.deepEqual(cache.get('p', 'worker').permissions, []);
+  assert.equal(cache.get('other-project', 'worker'), null);
+});
+
+test('expired recent entries are removed before evicting useful older entries', () => {
+  let now = 0;
+  const cache = new RecentChats({ limit: 2, ttlMs: 100, now: () => now });
+  cache.put('p', 'expired', { messages: [] });
+  now = 50;
+  cache.put('p', 'valid', { messages: [] });
+  cache.get('p', 'expired'); // Make it the most recently used, but not younger.
+  now = 110;
+  cache.put('p', 'new', { messages: [] });
+  assert.ok(cache.get('p', 'valid'));
+  assert.equal(cache.get('p', 'expired'), null);
+  cache.deleteProject('p');
+  assert.equal(cache.bytes, 0);
+});
+
+test('cache sizing does not serialize every refreshed chat', () => {
+  const original = JSON.stringify;
+  const cache = new RecentChats({ maxBytes: 10_000 });
+  JSON.stringify = () => { throw Error('unexpected stringify'); };
+  try {
+    cache.put('project', 'session', { title: 'Worker', messages: [{ parts: [{ type: 'text', text: 'cached' }] }] }, 1);
+    assert.equal(cache.get('project', 'session').messages[0].parts[0].text, 'cached');
+    assert.equal(cache.get('other', 'session'), null);
+    cache.deleteProject('project');
+    assert.equal(cache.get('project', 'session'), null);
+  } finally {
+    JSON.stringify = original;
+  }
+});

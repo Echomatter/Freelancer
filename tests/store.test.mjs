@@ -99,3 +99,112 @@ test("usage stays attached to the agent snapshot for its request across rescans 
     undefined,
   );
 });
+
+test("request observations reuse the request snapshot and skip no-op rewrites", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-cache-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  let writes = 0;
+  const store = createStore(root, {
+    replace: async (source, target) => {
+      writes++;
+      await writeFile(target, await readFile(source));
+    },
+  });
+  await store.recordRequest({
+    id: "msg_request",
+    sessionID: "ses_one",
+    status: "prepared",
+    agent: { id: "engineer", name: "Engineer" },
+    workflow: { id: "build" },
+    catalog: Object.fromEntries(
+      Array.from({ length: 1000 }, (_, index) => [
+        `agent-${index}`,
+        { instructions: "captured".repeat(20) },
+      ]),
+    ),
+  });
+  const rows = [
+    {
+      id: "msg_response",
+      sessionID: "ses_one",
+      parentMessageID: "msg_request",
+      providerID: "opencode",
+      modelID: "free",
+      completed: true,
+      tokens: 12,
+    },
+  ];
+  await store.observe(rows);
+  const afterFirstObserve = writes;
+  await store.observe(rows);
+  assert.equal(writes, afterFirstObserve);
+  assert.equal((await store.read("usage")).records.msg_response.agentID, "engineer");
+  assert.equal(
+    (await store.read("requests")).records.msg_request.catalog["agent-999"]
+      .instructions,
+    "captured".repeat(20),
+  );
+});
+
+test("cached reads are isolated, stat-invalidated and fail closed on corrupt replacement", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-invalidated-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = createStore(root);
+  await store.recordRequest({
+    id: "msg_request",
+    sessionID: "ses_one",
+    agent: { id: "engineer", name: "Engineer" },
+    workflow: { id: "build" },
+  });
+  const first = await store.read("requests");
+  first.records.msg_request.agent.name = "Mutated";
+  assert.equal(
+    (await store.read("requests")).records.msg_request.agent.name,
+    "Engineer",
+  );
+  const file = path.join(store.directory, "requests.json");
+  await writeFile(
+    file,
+    JSON.stringify({
+      version: 1,
+      records: {
+        msg_request: {
+          id: "msg_request",
+          sessionID: "ses_one",
+          agent: { id: "designer", name: "Designer" },
+          workflow: { id: "build" },
+        },
+      },
+    }),
+  );
+  assert.equal(
+    (await store.read("requests")).records.msg_request.agent.name,
+    "Designer",
+  );
+  await writeFile(file, "{broken");
+  await assert.rejects(store.read("requests"), /Cannot read requests/);
+  await assert.rejects(store.recordRequest({ id: "new" }), /Cannot read requests/);
+  assert.equal(await readFile(file, "utf8"), "{broken");
+});
+
+test("update inputs and results cannot mutate cached durable snapshots", async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-cache-ownership-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = createStore(root);
+  const input = { id: "request", agent: { id: "engineer" } };
+  const result = await store.recordRequest(input);
+  input.agent.id = "changed-input";
+  result.records.request.agent.id = "changed-result";
+  assert.equal((await store.read("requests")).records.request.agent.id, "engineer");
+  let retained;
+  const settings = await store.update("settings", s => {
+    retained = s;
+    s.appearance = { theme: "light" };
+    return s;
+  });
+  settings.appearance.theme = "dark";
+  retained.revision = 123;
+  const saved = await store.read("settings");
+  assert.equal(saved.appearance.theme, "light");
+  assert.equal(saved.revision, 0);
+});

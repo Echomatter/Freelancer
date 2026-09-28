@@ -103,7 +103,7 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     report(`${browserPalettes.length} saved palettes, live shell surfaces, selected and focused palette cards`);
     await chooseTheme('sandstone');
     fault = true; gate = new Promise(r => { release = r; });
-    const failedSave = page.getByRole('button', { name: 'Use Blue Hour palette' }).click();
+    const failedSave = page.getByRole('button', { name: `Use ${palettes.find(p => p.id === 'midnight').name} palette` }).click();
     await page.waitForFunction(() => document.documentElement.dataset.theme === 'midnight');
     release(); gate = undefined; await failedSave;
     await page.getByRole('alert').filter({ hasText: 'Deliberate save failure' }).waitFor();

@@ -23,11 +23,14 @@ async function fixture(t) {
 test('palette registry keeps legacy identities and adds bespoke palettes', () => {
   assert.deepEqual(palettes.slice(0, 16).map(p => p.id), ['light', 'dark', 'sandstone', 'midnight', 'coast', 'lilac', 'ember', 'aurora',
     'porcelain', 'rosewater', 'matcha', 'marigold', 'graphite', 'mulberry', 'fjord', 'espresso']);
-  assert.equal(palettes.length, 180);
-  assert.equal(lightPalettes.length, 90);
-  assert.equal(darkPalettes.length, 90);
+  assert.equal(palettes.length, 300);
+  assert.equal(lightPalettes.length, 150);
+  assert.equal(darkPalettes.length, 150);
   assert.equal(new Set(palettes.map(p => p.id)).size, palettes.length);
   assert.equal(new Set(palettes.map(p => p.name)).size, palettes.length);
+  const nameWords = palettes.flatMap(p => p.name.toLowerCase().split(' '));
+  assert.equal(nameWords.length, palettes.length * 2);
+  assert.equal(new Set(nameWords).size, nameWords.length);
   assert.equal(themePalette('light').tokens.bg, '#f8f9f6');
   assert.equal(themePalette('dark').tokens.bg, '#171c19');
   assert.equal(new Set(palettes.map(p => p.tokens.bg)).size, palettes.length);
@@ -60,6 +63,9 @@ test('All palettes meet semantic text, state, button and focus contrast', () => 
       for (const role of ['text', 'muted', 'accent', 'link']) assert.ok(contrast(t[role], surface) >= 4.5, `${p.id} ${role} on ${surface}`);
       assert.ok(contrast(t.focus, surface) >= 3, `${p.id} focus on ${surface}`);
     }
+    assert.ok(contrast(t.text, t.muted) >= 1.04, `${p.id}: muted copy does not collapse to primary text`);
+    assert.ok(contrast(t.tint, t.bg) >= 1.12, `${p.id}: selected tint is perceptible on the page`);
+    assert.ok(contrast(t.hover, t.bg) >= 1.12, `${p.id}: hover surface is perceptible on the page`);
     for (const surface of [t.bg, t.paper, t.sidebar]) assert.ok(contrast(t['border-strong'], surface) >= 3, `${p.id}: border on ${surface}`);
     for (const role of ['success', 'danger', 'warning', 'info']) {
       assert.ok(contrast(t[role], t[role + '-tint']) >= 4.5, `${p.id}: ${role} status`);

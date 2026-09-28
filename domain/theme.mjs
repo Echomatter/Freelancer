@@ -1,4 +1,4 @@
-import { mixColor, onColor, readableColor } from './color.mjs';
+import { contrast, mixColor, onColor, readableColor } from './color.mjs';
 
 // One small application-owned palette catalog, not an editable style engine.
 // A palette's mode also drives the browser's built-in widgets.
@@ -115,7 +115,7 @@ const definitions = [
     bg: '#f7e7d9', paper: '#fbf7f4', sidebar: '#e9bc96', text: '#261e17', muted: '#6f6052', line: '#cca483', accent: '#0931aa', tint: '#e8e7ee', hover: '#f1d6be' },
   { id: 'lemon-verbena', name: 'Lemon Verbena', mode: 'light', description: 'Lemon paper with a verbena accent.',
     bg: '#ebeae5', paper: '#f8f8f7', sidebar: '#c7c6b8', text: '#262517', muted: '#6f6d52', line: '#afaea0', accent: '#09aa67', tint: '#e5f2eb', hover: '#dddcd3' },
-  { id: 'peach-ultramarine', name: 'Peach Ultramarine', mode: 'light', description: 'Peach paper with a ultramarine accent.',
+  { id: 'peach-ultramarine', name: 'Peach Ultramarine', mode: 'light', description: 'Peach paper with an ultramarine accent.',
     bg: '#fcf5f2', paper: '#fefcfb', sidebar: '#f3d4c8', text: '#261b17', muted: '#6f5a52', line: '#d4b8ad', accent: '#40377b', tint: '#efecf1', hover: '#f8e8e1' },
   { id: 'seafoam-copper', name: 'Seafoam Copper', mode: 'light', description: 'Seafoam paper with a copper accent.',
     bg: '#d9f7f0', paper: '#f4fbf9', sidebar: '#96e9d4', text: '#172622', muted: '#526f68', line: '#83ccb9', accent: '#aa4c09', tint: '#eeede6', hover: '#bef1e5' },
@@ -363,13 +363,329 @@ const definitions = [
     bg: '#094246', paper: '#101c26', sidebar: '#040709', text: '#f2f7f9', muted: '#93c7ce', line: '#313c47', accent: '#f23b31', tint: '#372128', hover: '#263b48' },
   { id: 'graphite-celery', name: 'Graphite Celery', mode: 'dark', description: 'Graphite surfaces with a fresh celery accent.',
     bg: '#0e0b1b', paper: '#16173b', sidebar: '#0c1324', text: '#eeeef4', muted: '#8b99c4', line: '#393754', accent: '#8ef353', tint: '#2f4440', hover: '#11133c' },
+  { id: 'alder-glow', name: 'Alder Glow', mode: 'light', description: 'Warm birch paper with an embered red accent.',
+    bg: '#f6ece1', paper: '#fffaf4', sidebar: '#ecd9c2', text: '#33231a', muted: '#6b5545', line: '#ddc8ae', accent: '#a8321f', tint: '#f6e2d4', hover: '#f0e0cd' },
+  { id: 'bay-leaf', name: 'Bay Leaf', mode: 'light', description: 'Deep bay green on pale leaf-paper.',
+    bg: '#eef3e6', paper: '#fbfdf7', sidebar: '#d3e2c3', text: '#1f2b1c', muted: '#4f6148', line: '#c2d2b0', accent: '#2f6b2e', tint: '#dfeccf', hover: '#e3ebd6' },
+  { id: 'driftwood-rose', name: 'Driftwood Rose', mode: 'light', description: 'Weathered taupe with a wild-rose accent.',
+    bg: '#f3ebe8', paper: '#fdf9f7', sidebar: '#e2cfca', text: '#38222a', muted: '#6f505b', line: '#d3b8b1', accent: '#96284b', tint: '#f3dbe2', hover: '#ecded9' },
+  { id: 'estuary-blue', name: 'Estuary Blue', mode: 'light', description: 'River-mouth grey-blue with a deep current accent.',
+    bg: '#e9eff4', paper: '#fbfdfe', sidebar: '#c9d9e6', text: '#1b2a3a', muted: '#4c6073', line: '#b3c6d6', accent: '#1d5a8a', tint: '#d8e7f4', hover: '#dde7ef' },
+  { id: 'fig-grove', name: 'Fig Grove', mode: 'light', description: 'Orchard fig violet with a ripe fig accent.',
+    bg: '#f2ecf3', paper: '#fdfbfd', sidebar: '#dccfe0', text: '#2c2133', muted: '#63516e', line: '#c6b3cc', accent: '#6b2a6e', tint: '#e8d9ec', hover: '#e7dde9' },
+  { id: 'ginkgo-gold', name: 'Ginkgo Gold', mode: 'light', description: 'Ginkgo-leaf cream with a leaf-green and gold accent.',
+    bg: '#f7eed2', paper: '#fefdf4', sidebar: '#e9cf8e', text: '#37300f', muted: '#635a3a', line: '#d5c693', accent: '#47630f', tint: '#f3e7c3', hover: '#f0e2ba' },
+  { id: 'heron-grey', name: 'Heron Grey', mode: 'light', description: 'Cool heron grey with a deep petrol accent.',
+    bg: '#e8ebee', paper: '#f8f9fa', sidebar: '#c3ccd4', text: '#1c242c', muted: '#4b5764', line: '#a9b4bf', accent: '#0e5a5e', tint: '#d5e8e8', hover: '#d9dfe4' },
+  { id: 'juniper-frost', name: 'Juniper Frost', mode: 'light', description: 'Pale frost wash with a deep pine accent.',
+    bg: '#eff5f3', paper: '#fafdfc', sidebar: '#c9dcc9', text: '#1a2e26', muted: '#496067', line: '#a4c3b4', accent: '#1f5c38', tint: '#d4e9e2', hover: '#dbe4dc' },
+  { id: 'kestrel-rust', name: 'Kestrel Rust', mode: 'light', description: 'Sunlit parchment with a kestrel-rust accent.',
+    bg: '#f5eee2', paper: '#fefcf7', sidebar: '#d8c096', text: '#3a2a18', muted: '#5e4e37', line: '#cbb48d', accent: '#7c2d0c', tint: '#f2ddc8', hover: '#e9dcc2' },
+  { id: 'lotus-pond', name: 'Lotus Pond', mode: 'light', description: 'Still pond-water green with a deep lotus accent.',
+    bg: '#ddece2', paper: '#fbfffc', sidebar: '#9fd0b8', text: '#1d2f24', muted: '#44564f', line: '#8fb89f', accent: '#0b4f46', tint: '#c8e8d8', hover: '#cfdccf' },
+  { id: 'marl-clay', name: 'Marl Clay', mode: 'light', description: 'Chalky marl pink with a raspberry-clay accent.',
+    bg: '#f6e3de', paper: '#fdf8f6', sidebar: '#e3b3a6', text: '#3a2320', muted: '#5f4745', line: '#d2b3a6', accent: '#8e2440', tint: '#eed3d3', hover: '#ead2c8' },
+  { id: 'northsea-glass', name: 'Northsea Glass', mode: 'light', description: 'Cold northern sea-glass with a deep ocean accent.',
+    bg: '#d8e4e2', paper: '#f9fcfb', sidebar: '#9dbfbe', text: '#1a2c30', muted: '#3a4d50', line: '#8fb0ae', accent: '#0f4c5c', tint: '#c6e2e2', hover: '#ccd8d6' },
+  { id: 'oatmilk-espresso', name: 'Oatmilk Espresso', mode: 'light', description: 'Oatmilk cream with a dark espresso accent.',
+    bg: '#f1e9da', paper: '#fdfaf3', sidebar: '#d3b98c', text: '#2e2417', muted: '#594a36', line: '#c6b48f', accent: '#5c3a1e', tint: '#e9dcc4', hover: '#e8d8b8' },
+  { id: 'quince-orchard', name: 'Quince Orchard', mode: 'light', description: 'Pressed quince straw with a dark bronze accent.',
+    bg: '#f5eecb', paper: '#fefdf4', sidebar: '#dcc47e', text: '#33300f', muted: '#54542e', line: '#c9bd85', accent: '#6d4a12', tint: '#eee4b8', hover: '#ece0b4' },
+  { id: 'sedge-marsh', name: 'Sedge Marsh', mode: 'light', description: 'Grey-green sedge with a deep pine accent.',
+    bg: '#dde0d2', paper: '#fafcf7', sidebar: '#a3ad8f', text: '#232d1f', muted: '#384132', line: '#939e83', accent: '#1c472a', tint: '#d2e2d2', hover: '#d0d5c2' },
+  { id: 'lichen-basalt', name: 'Lichen Basalt', mode: 'dark', description: 'Smoked bark with a pale lichen-green glow.',
+    bg: '#221d1a', paper: '#2f2723', sidebar: '#161110', text: '#f3ece4', muted: '#bda797', line: '#4a3a32', accent: '#7fe0b2', tint: '#2c4a3e', hover: '#332922' },
+  { id: 'driftwood-noir', name: 'Driftwood Noir', mode: 'dark', description: 'Waterlogged grey-green with a blossom-pink signal.',
+    bg: '#1e2622', paper: '#2a352d', sidebar: '#121713', text: '#e9f0e8', muted: '#a9bcab', line: '#37473b', accent: '#ff9db0', tint: '#4e2c38', hover: '#2c3830' },
+  { id: 'harbor-flare', name: 'Harbor Flare', mode: 'dark', description: 'Midnight harbor blue sparked with chartreuse.',
+    bg: '#141c30', paper: '#1f2947', sidebar: '#0b0f1f', text: '#e9edf8', muted: '#a6b1cc', line: '#33405f', accent: '#c6f24e', tint: '#3a4c22', hover: '#222c46' },
+  { id: 'violet-furnace', name: 'Violet Furnace', mode: 'dark', description: 'Violet ink fired with furnace gold.',
+    bg: '#141230', paper: '#221d45', sidebar: '#0b0a1e', text: '#efeaf9', muted: '#afa9cc', line: '#3d3660', accent: '#ffc53d', tint: '#4c3d20', hover: '#28224a' },
+  { id: 'sage-ember', name: 'Sage Ember', mode: 'dark', description: 'Mid-tone sage grey warmed by ember amber.',
+    bg: '#2e3833', paper: '#3c4a43', sidebar: '#1b2320', text: '#ecf2ea', muted: '#aebbb2', line: '#49584f', accent: '#ffb454', tint: '#4e3d24', hover: '#3d4a43' },
+  { id: 'kiln-ice', name: 'Kiln Ice', mode: 'dark', description: 'Fired coffee-black cooled by clear ice blue.',
+    bg: '#271c14', paper: '#37281d', sidebar: '#170f0a', text: '#f4ece2', muted: '#c0a892', line: '#54402f', accent: '#8fd6ff', tint: '#27465a', hover: '#38291f' },
+  { id: 'fern-gilt', name: 'Fern Gilt', mode: 'dark', description: 'Deep fern shade with gilt highlights.',
+    bg: '#13251c', paper: '#1e3a28', sidebar: '#0a150e', text: '#e9f2e7', muted: '#a6c2ab', line: '#2c4f38', accent: '#ffd166', tint: '#4d4222', hover: '#22392c' },
+  { id: 'claret-sage', name: 'Claret Sage', mode: 'dark', description: 'Claret shadow balanced by cool sage.',
+    bg: '#2a1218', paper: '#3b1c24', sidebar: '#1a0a0e', text: '#f4e9ea', muted: '#c4a3a8', line: '#57303a', accent: '#a8e6a3', tint: '#2c4c30', hover: '#3a1a22' },
+  { id: 'olive-comet', name: 'Olive Comet', mode: 'dark', description: 'Dark olive haze crossed by a violet comet.',
+    bg: '#202417', paper: '#2f3320', sidebar: '#12140b', text: '#f0f1e4', muted: '#b6b898', line: '#40462e', accent: '#b49aff', tint: '#38335c', hover: '#2e3221' },
+  { id: 'slate-bloom', name: 'Slate Bloom', mode: 'dark', description: 'Blue slate night with a blooming lilac.',
+    bg: '#1a2027', paper: '#263039', sidebar: '#101418', text: '#ebeff3', muted: '#a9b4bd', line: '#39434d', accent: '#f2a7ff', tint: '#4a2f56', hover: '#28333d' },
+  { id: 'bronze-petal', name: 'Bronze Petal', mode: 'dark', description: 'Aged bronze-olive with a hot petal pink.',
+    bg: '#2b2a20', paper: '#3a382a', sidebar: '#171610', text: '#f2efe4', muted: '#bcb498', line: '#4e4a34', accent: '#ff7eb6', tint: '#50283e', hover: '#3a3729' },
+  { id: 'mangrove-flare', name: 'Mangrove Flare', mode: 'dark', description: 'Mangrove darks lit by a lime flare.',
+    bg: '#0f2a24', paper: '#1a4038', sidebar: '#071613', text: '#eaf4ee', muted: '#a4beb2', line: '#2c5048', accent: '#d9f99d', tint: '#3a4c26', hover: '#1c3832' },
+  { id: 'plum-ingot', name: 'Plum Ingot', mode: 'dark', description: 'Smelted plum darks with a gold ingot accent.',
+    bg: '#2b1626', paper: '#3a2135', sidebar: '#170b14', text: '#f3eaf2', muted: '#c2a7bc', line: '#523344', accent: '#ffcf4d', tint: '#4d4222', hover: '#38222f' },
+  { id: 'port-ember', name: 'Port Ember', mode: 'dark', description: 'Dark port wine warmed by a peach ember.',
+    bg: '#2a1219', paper: '#3a1c26', sidebar: '#180a10', text: '#f2e9ee', muted: '#c2a7b0', line: '#55333e', accent: '#ffb59e', tint: '#4e2f26', hover: '#3c2029' },
+  { id: 'seastack-lime', name: 'Seastack Lime', mode: 'dark', description: 'Blue-grey sea stack charged with lime.',
+    bg: '#232d38', paper: '#303d4d', sidebar: '#141a21', text: '#e9eff5', muted: '#a9b7c4', line: '#3d4b5c', accent: '#a3e635', tint: '#354a24', hover: '#303c49' },
+  { id: 'amber-field', name: 'Amber Field', mode: 'light', description: 'Sun-cured amber with a dark bronze accent.',
+    bg: '#eedcae', paper: '#fefbf3', sidebar: '#cda452', text: '#33270b', muted: '#493e24', line: '#b8933f', accent: '#583905', tint: '#f0e0b4', hover: '#e7d6a8' },
+  { id: 'citron-grove', name: 'Citron Grove', mode: 'light', description: 'Sharp citron leaf with a dark grove accent.',
+    bg: '#f5f8e4', paper: '#fcfdf4', sidebar: '#bccb6e', text: '#2f330f', muted: '#50532e', line: '#a9b45c', accent: '#42530a', tint: '#e9edb8', hover: '#e4e6c2' },
+  { id: 'chartreuse-lab', name: 'Chartreuse Lab', mode: 'light', description: 'Electric chartreuse tempered by a lab-dark accent.',
+    bg: '#dfe3ba', paper: '#fafbf2', sidebar: '#9aa64e', text: '#2a300c', muted: '#36391f', line: '#878f45', accent: '#2f3b05', tint: '#e6e8b6', hover: '#d6d8ac' },
+  { id: 'olive-branch', name: 'Olive Branch', mode: 'light', description: 'Silvered olive leaves with a dark branch accent.',
+    bg: '#ececdf', paper: '#fbfbf3', sidebar: '#c2c197', text: '#2c2e0e', muted: '#434627', line: '#abaa7f', accent: '#3f470f', tint: '#e6e6bc', hover: '#e0dec2' },
+  { id: 'shamrock-mist', name: 'Shamrock Mist', mode: 'light', description: 'Shamrock green breathing through cool mist.',
+    bg: '#d5ead7', paper: '#f8fdf9', sidebar: '#7fc48d', text: '#1e3524', muted: '#394b3c', line: '#6faa7c', accent: '#115131', tint: '#c9e8d2', hover: '#c6d8c9' },
+  { id: 'sage-velvet', name: 'Sage Velvet', mode: 'light', description: 'Garden sage with a crushed-velvet plum accent.',
+    bg: '#dfe4d6', paper: '#fafbf5', sidebar: '#a9b795', text: '#262b1e', muted: '#444639', line: '#95a281', accent: '#5e2a54', tint: '#e2dce4', hover: '#d3d6c4' },
+  { id: 'atoll-ring', name: 'Atoll Ring', mode: 'light', description: 'Pale lagoon ringed by a deep atoll accent.',
+    bg: '#d3e6e4', paper: '#f7fcfb', sidebar: '#7fb5b1', text: '#1b3030', muted: '#334342', line: '#6b9d98', accent: '#0a4844', tint: '#bfe3e1', hover: '#c2d2d0' },
+  { id: 'tide-chart', name: 'Tide Chart', mode: 'light', description: 'Nautical chart blues with a deep-water accent.',
+    bg: '#d5e3ea', paper: '#f8fbfc', sidebar: '#7fa9bd', text: '#1b2c36', muted: '#2e3c44', line: '#6c93a6', accent: '#103d59', tint: '#c2dcea', hover: '#c0d0d8' },
+  { id: 'skerry-mist', name: 'Skerry Mist', mode: 'light', description: 'Sea-skerry rocks in cold mist, deep-channeled.',
+    bg: '#e9eff3', paper: '#f7f9fa', sidebar: '#b4c9d6', text: '#1d2931', muted: '#3b454d', line: '#9db0bd', accent: '#1a4a6b', tint: '#d2e0ea', hover: '#d6dbe0' },
+  { id: 'indigo-dye', name: 'Indigo Dye', mode: 'light', description: 'Fresh indigo dye with a vat-dark accent.',
+    bg: '#e2e2f1', paper: '#fafafe', sidebar: '#a2a8da', text: '#22233f', muted: '#3f3e51', line: '#8e93c2', accent: '#2b2f7e', tint: '#d5d5f0', hover: '#d2d2e8' },
+  { id: 'heliotrope-haze', name: 'Heliotrope Haze', mode: 'light', description: 'Heliotrope haze with a deep bloom accent.',
+    bg: '#e9e4f3', paper: '#faf9fd', sidebar: '#b7a9d8', text: '#2b2340', muted: '#474055', line: '#a294c0', accent: '#4a2f86', tint: '#ddd5f1', hover: '#dcd4e8' },
+  { id: 'dragonfruit-fizz', name: 'Dragonfruit Fizz', mode: 'light', description: 'Dragonfruit fizz with a deep rind accent.',
+    bg: '#f8e2ea', paper: '#fef8fa', sidebar: '#e59dbd', text: '#3a1f2c', muted: '#583d48', line: '#cf87a7', accent: '#821a4a', tint: '#f0cfdf', hover: '#eed2dc' },
+  { id: 'blood-orange-sorbet', name: 'Blood Orange Sorbet', mode: 'light', description: 'Blood-orange sorbet with a scorched-rind accent.',
+    bg: '#f9e2d6', paper: '#fef9f5', sidebar: '#e89f8b', text: '#3e2314', muted: '#583f2f', line: '#d18f74', accent: '#7c280c', tint: '#f3d3c2', hover: '#efd2c2' },
+  { id: 'chili-chocolate', name: 'Chili Chocolate', mode: 'light', description: 'Dark chili chocolate with a dried-chili accent.',
+    bg: '#eadfd8', paper: '#faf7f4', sidebar: '#bfa894', text: '#33231a', muted: '#4c3e31', line: '#a8937f', accent: '#6d2e16', tint: '#e7d5c8', hover: '#ded2c4' },
+  { id: 'copper-moss', name: 'Copper Moss', mode: 'light', description: 'Mossy stone struck with a copper accent.',
+    bg: '#e2e4cc', paper: '#fafbf4', sidebar: '#a7ab7f', text: '#2e2c14', muted: '#3e3e2d', line: '#92966b', accent: '#4f3a0e', tint: '#e6dcbc', hover: '#d6d3b5' },
+  { id: 'iris-bed', name: 'Iris Bed', mode: 'light', description: 'Bearded iris rows with a rhizome-dark accent.',
+    bg: '#e8eaf5', paper: '#fafbfe', sidebar: '#b9c2e4', text: '#23263e', muted: '#3f3a4e', line: '#a3abd0', accent: '#2c3a75', tint: '#d8ddf2', hover: '#d5d8e8' },
+  { id: 'grape-arbor', name: 'Grape Arbor', mode: 'light', description: 'Grape arbor shade with a crushed-grape accent.',
+    bg: '#ece2ee', paper: '#fdf9fd', sidebar: '#c2a9c8', text: '#332032', muted: '#4f404c', line: '#ac93b2', accent: '#5f2560', tint: '#e4d2e8', hover: '#ddd4e0' },
+  { id: 'damson-jam', name: 'Damson Jam', mode: 'light', description: 'Damson jam with a dark-stone accent.',
+    bg: '#f0e2e6', paper: '#fdf8fa', sidebar: '#cf9fae', text: '#38202b', muted: '#503b43', line: '#b78b9a', accent: '#6e1f45', tint: '#e9d0dc', hover: '#e2d2d8' },
+  { id: 'foxglove-lane', name: 'Foxglove Lane', mode: 'light', description: 'Foxglove spires with a throat-spot accent.',
+    bg: '#f0d8e9', paper: '#fdf8fc', sidebar: '#d295c5', text: '#352036', muted: '#493946', line: '#b881ab', accent: '#6d1a5e', tint: '#e8cde6', hover: '#dfc7db' },
+  { id: 'violet-thicket', name: 'Violet Thicket', mode: 'light', description: 'A shaded violet thicket with a bloom-dark accent.',
+    bg: '#e8e2f1', paper: '#faf8fd', sidebar: '#8f77ad', text: '#171221', muted: '#1b1822', line: '#7d6891', accent: '#1f0f3d', tint: '#d9cff0', hover: '#d3cbdf' },
+  { id: 'flamingo-parade', name: 'Flamingo Parade', mode: 'light', description: 'Flamingo feathers over a lagoon-deep accent.',
+    bg: '#f5d9d4', paper: '#fef9f8', sidebar: '#d98a78', text: '#3c211d', muted: '#46312e', line: '#c07a68', accent: '#073d39', tint: '#cfd9d4', hover: '#e8c9c2' },
+  { id: 'bubblegum-alley', name: 'Bubblegum Alley', mode: 'light', description: 'Bubblegum pink with a liquorice-dark accent.',
+    bg: '#f7dff0', paper: '#fef8fc', sidebar: '#e09ecb', text: '#371f31', muted: '#563e4f', line: '#c988b3', accent: '#521847', tint: '#eed0e8', hover: '#ecd4e4' },
+  { id: 'rosehip-tea', name: 'Rosehip Tea', mode: 'light', description: 'Rosehip tea with a brewed-dark accent.',
+    bg: '#f7e9e2', paper: '#fdf9f7', sidebar: '#e2b8a4', text: '#3a2024', muted: '#4d3837', line: '#cda086', accent: '#711f2b', tint: '#f0dcd4', hover: '#e9d8cc' },
+  { id: 'paprika-smoke', name: 'Paprika Smoke', mode: 'light', description: 'Smoked paprika over ash-rose with an ember accent.',
+    bg: '#e6dbd4', paper: '#faf6f5', sidebar: '#b39484', text: '#33231f', muted: '#402f2c', line: '#9e7f71', accent: '#532617', tint: '#e4d2c8', hover: '#d9cfc6' },
+  { id: 'pumpkin-coach', name: 'Pumpkin Coach', mode: 'light', description: 'Pumpkin-coach orange with a midnight-harvest accent.',
+    bg: '#f8ead0', paper: '#fefbf4', sidebar: '#e0a45c', text: '#37270e', muted: '#4e412a', line: '#c8924f', accent: '#6c3406', tint: '#f2dcb6', hover: '#eed8b4' },
+  { id: 'lighthouse-beam', name: 'Lighthouse Beam', mode: 'light', description: 'Warm lighthouse white with a night-sea accent.',
+    bg: '#f4f0e2', paper: '#fefdf6', sidebar: '#cbc4a6', text: '#2c2a15', muted: '#565138', line: '#b5ad8a', accent: '#1e3a6e', tint: '#e3e0cd', hover: '#e8e1cb' },
+  { id: 'butter-storm', name: 'Butter Storm', mode: 'light', description: 'Butter yellow under a slate-storm accent.',
+    bg: '#f6efcf', paper: '#fefdf5', sidebar: '#e0d189', text: '#33300f', muted: '#5e5b36', line: '#c9ba74', accent: '#3d4e63', tint: '#e2e4e2', hover: '#eae5c2' },
+  { id: 'camellia-grove', name: 'Camellia Grove', mode: 'light', description: 'Camellia bloom with a deep leaf-green accent.',
+    bg: '#f6e2e0', paper: '#fdf8f6', sidebar: '#df9f98', text: '#3a2220', muted: '#553d3a', line: '#cd8f86', accent: '#244b25', tint: '#e4e4d2', hover: '#e8d2cb' },
+  { id: 'after-dinner-mint', name: 'After-Dinner Mint', mode: 'light', description: 'Cool mint with a dark-chocolate accent.',
+    bg: '#ddf0e4', paper: '#f9fdfb', sidebar: '#9ed4b6', text: '#1f3129', muted: '#45584f', line: '#8abd9f', accent: '#4a2f23', tint: '#cde8d8', hover: '#ccdcd2' },
+  { id: 'kite-festival', name: 'Kite Festival', mode: 'light', description: 'Kite-sky blue with a tangerine accent.',
+    bg: '#e0ebf4', paper: '#f8fbfd', sidebar: '#a3c4de', text: '#1c2733', muted: '#45505b', line: '#8dabc6', accent: '#86360c', tint: '#f0e0d2', hover: '#d3dde6' },
+  { id: 'inkwell-cream', name: 'Inkwell Cream', mode: 'light', description: 'Fresh cream with a deep inkwell accent.',
+    bg: '#f1ecdd', paper: '#fdfbf5', sidebar: '#c6bda2', text: '#29291a', muted: '#4f4e3b', line: '#b0a68a', accent: '#232c4e', tint: '#e0e1e6', hover: '#e3ddc8' },
+  { id: 'strawberry-basil', name: 'Strawberry Basil', mode: 'light', description: 'Ripe strawberries with torn-basil accent.',
+    bg: '#f7efe4', paper: '#fefbf6', sidebar: '#a9bd7f', text: '#3a2320', muted: '#4e463b', line: '#94a56d', accent: '#8b1a24', tint: '#f0dcd4', hover: '#e7dcc8' },
+  { id: 'campfire-ash', name: 'Campfire Ash', mode: 'light', description: 'Cool campfire ash with an ember-gold accent.',
+    bg: '#e6e3dc', paper: '#f8f8f5', sidebar: '#b3aea1', text: '#28271f', muted: '#444339', line: '#9d9889', accent: '#5a3c0d', tint: '#d0b58b', hover: '#d8d5c8' },
+  { id: 'turmeric-ink', name: 'Turmeric Ink', mode: 'light', description: 'Ground turmeric with a deep ink-teal accent.',
+    bg: '#f4e5c2', paper: '#fefbf2', sidebar: '#d6b45c', text: '#33290e', muted: '#514830', line: '#c2a24c', accent: '#17424a', tint: '#dfe4e2', hover: '#e9dbb2' },
+  { id: 'pebble-beach', name: 'Pebble Beach', mode: 'light', description: 'Wet pebbles with a kelp-dark accent.',
+    bg: '#e3e5e3', paper: '#f8f8f5', sidebar: '#9aa39c', text: '#232629', muted: '#383831', line: '#878d87', accent: '#223c43', tint: '#d8dcd8', hover: '#d2d4d0' },
+  { id: 'apricot-storm', name: 'Apricot Storm', mode: 'light', description: 'Apricot flesh under a slate-storm accent.',
+    bg: '#f7e0c0', paper: '#fef9f2', sidebar: '#d69c4e', text: '#38240f', muted: '#493a2b', line: '#bd8a45', accent: '#1e3a5c', tint: '#ead9c2', hover: '#e6cba8' },
+  { id: 'pencil-shaving', name: 'Pencil Shaving', mode: 'light', description: 'Warm graphite grey with a pencil-lead accent.',
+    bg: '#e9e6e0', paper: '#faf9f7', sidebar: '#b8b4a8', text: '#26261e', muted: '#48473f', line: '#a29d8f', accent: '#33373c', tint: '#e2e2e2', hover: '#d8d5cb' },
+  { id: 'fern-gully', name: 'Fern Gully', mode: 'light', description: 'A shaded fern gully with a frond-dark accent.',
+    bg: '#d8e2cc', paper: '#f8fbf4', sidebar: '#82a06c', text: '#1c2617', muted: '#2b3226', line: '#6f9060', accent: '#173718', tint: '#ccd8ba', hover: '#c8d0b6' },
+  { id: 'lavender-honey', name: 'Lavender Honey', mode: 'light', description: 'Lavender rows with a honey-dark accent.',
+    bg: '#e8e4f0', paper: '#faf8fd', sidebar: '#c0b3d4', text: '#2b2340', muted: '#4d465d', line: '#aa9cc2', accent: '#64430d', tint: '#efe3c2', hover: '#dcd4e6' },
+  { id: 'cactus-flower', name: 'Cactus Flower', mode: 'light', description: 'Desert cactus with a bold flower accent.',
+    bg: '#dfe6d2', paper: '#fafbf5', sidebar: '#9fb483', text: '#26301c', muted: '#3b4431', line: '#8da172', accent: '#7b1946', tint: '#e8d8de', hover: '#d2d6be' },
+  { id: 'mimosa-morning', name: 'Mimosa Morning', mode: 'light', description: 'Pale mimosa with a toasted-peel accent.',
+    bg: '#fbf3dc', paper: '#fffdf5', sidebar: '#ecd090', text: '#38300f', muted: '#635b36', line: '#d6bd76', accent: '#894c08', tint: '#f2e6ba', hover: '#efe2ba' },
+  { id: 'seal-pup', name: 'Seal Pup', mode: 'light', description: 'Soft seal-grey with a deep harbour accent.',
+    bg: '#e0ded8', paper: '#f7f7f4', sidebar: '#8b8b84', text: '#1a1d21', muted: '#222526', line: '#77776f', accent: '#1a2535', tint: '#d4d9de', hover: '#c9cac3' },
+  { id: 'sloe-gin', name: 'Sloe Gin', mode: 'light', description: 'Sloe berries with a gin-dark violet accent.',
+    bg: '#e4dfe8', paper: '#faf8fb', sidebar: '#9c8fa8', text: '#282230', muted: '#302b34', line: '#887c92', accent: '#3c1e4e', tint: '#d8d2e6', hover: '#d0c9d8' },
+  { id: 'rhubarb-crumble', name: 'Rhubarb Crumble', mode: 'light', description: 'Pink rhubarb with a crumble-brown accent.',
+    bg: '#f5e0e4', paper: '#fdf8f9', sidebar: '#df9fb4', text: '#3a1f28', muted: '#583d44', line: '#c9889f', accent: '#544119', tint: '#ecdfd2', hover: '#e9d2d8' },
+  { id: 'golden-hour', name: 'Golden Hour', mode: 'light', description: 'Low golden sun with a plum-shadow accent.',
+    bg: '#f6e8cc', paper: '#fefbf3', sidebar: '#e3bd72', text: '#3a2c14', muted: '#5c4e35', line: '#d0aa60', accent: '#6e2a4e', tint: '#f0dfc0', hover: '#ecdfba' },
+  { id: 'cocoa-amber', name: 'Cocoa Amber', mode: 'dark', description: 'Roasted cocoa darks with a warm amber coin.',
+    bg: '#33231c', paper: '#41302a', sidebar: '#211410', text: '#f6ece6', muted: '#c2a893', line: '#574135', accent: '#ffb03a', tint: '#4e3d22', hover: '#40302a' },
+  { id: 'moss-gilt', name: 'Moss Gilt', mode: 'dark', description: 'Mid-tone moss grey with gilt edging.',
+    bg: '#2f3b33', paper: '#3e4c41', sidebar: '#1c2520', text: '#edf2e9', muted: '#abb8a9', line: '#4a5a4c', accent: '#ffce54', tint: '#4e4423', hover: '#3b4940' },
+  { id: 'slate-salmon', name: 'Slate Salmon', mode: 'dark', description: 'Blue-grey slate with a salmon flash.',
+    bg: '#3a3f4a', paper: '#4a505c', sidebar: '#23262e', text: '#eceef4', muted: '#adb3c0', line: '#545a68', accent: '#ff8a7a', tint: '#52332f', hover: '#484e59' },
+  { id: 'mauve-seafoam', name: 'Mauve Seafoam', mode: 'dark', description: 'Dusty mauve depths with seafoam light.',
+    bg: '#3d2f3d', paper: '#4e3d4e', sidebar: '#261c26', text: '#f3eaf2', muted: '#c2a9c0', line: '#594759', accent: '#7df0d4', tint: '#2a4d44', hover: '#4b3b4b' },
+  { id: 'khaki-cornflower', name: 'Khaki Cornflower', mode: 'dark', description: 'Dark khaki olive with a cornflower opening.',
+    bg: '#413c28', paper: '#524c34', sidebar: '#29251a', text: '#f2eee1', muted: '#bfb493', line: '#5b5340', accent: '#8fb8ff', tint: '#2c3f60', hover: '#4f4a33' },
+  { id: 'steel-signal', name: 'Steel Signal', mode: 'dark', description: 'Cold steel blue-black with a signal-red mark.',
+    bg: '#1f2a33', paper: '#2b3944', sidebar: '#121a20', text: '#e9eff4', muted: '#a7b4bd', line: '#39474f', accent: '#ff5d5d', tint: '#52282c', hover: '#29363f' },
+  { id: 'eggplant-leaf', name: 'Eggplant Leaf', mode: 'dark', description: 'Eggplant darks with a fresh leaf accent.',
+    bg: '#2b2135', paper: '#3a2d47', sidebar: '#181221', text: '#efebf5', muted: '#b3a9c4', line: '#4c3d5c', accent: '#a4f06a', tint: '#3a5227', hover: '#372b44' },
+  { id: 'jungle-tangerine', name: 'Jungle Tangerine', mode: 'dark', description: 'Deep jungle green with tangerine peel.',
+    bg: '#0f2e2b', paper: '#1a4039', sidebar: '#071b19', text: '#e9f4ee', muted: '#a4beb2', line: '#2c5048', accent: '#ff9e57', tint: '#4c3a22', hover: '#1c3a35' },
+  { id: 'brick-gold', name: 'Brick Gold', mode: 'dark', description: 'Kiln-fired brick with a gold ingot glow.',
+    bg: '#431b16', paper: '#562820', sidebar: '#28100c', text: '#f4e9ec', muted: '#c9a49b', line: '#61342c', accent: '#ffc44d', tint: '#4c3a1e', hover: '#512720' },
+  { id: 'blackgreen-lilac', name: 'Blackgreen Lilac', mode: 'dark', description: 'Black-green shade breathing pale lilac.',
+    bg: '#182b1a', paper: '#233c25', sidebar: '#0d1a0f', text: '#e9f2e8', muted: '#a6c2ab', line: '#2e5233', accent: '#e8b4ff', tint: '#44335c', hover: '#243a27' },
+  { id: 'teal-lemon', name: 'Teal Lemon', mode: 'dark', description: 'Deep teal water with a lemon slice.',
+    bg: '#14302e', paper: '#1f443f', sidebar: '#0a1c1a', text: '#eaf4ee', muted: '#a5bdb8', line: '#2c524c', accent: '#ffe14d', tint: '#4c4a22', hover: '#223d3a' },
+  { id: 'slate-apricot', name: 'Slate Apricot', mode: 'dark', description: 'Evening slate warmed by dried apricot.',
+    bg: '#232c3a', paper: '#303a4c', sidebar: '#141922', text: '#eaeef5', muted: '#a9b4c4', line: '#3d485e', accent: '#ffa07a', tint: '#4c3626', hover: '#2f3849' },
+  { id: 'bronze-sky', name: 'Bronze Sky', mode: 'dark', description: 'Dark bronze olive under a clear sky accent.',
+    bg: '#36301e', paper: '#474028', sidebar: '#221e12', text: '#f3efe2', muted: '#bdb08e', line: '#544c30', accent: '#6ec6ff', tint: '#27455a', hover: '#443d27' },
+  { id: 'cobalt-ember', name: 'Cobalt Ember', mode: 'dark', description: 'Cobalt night with a live ember accent.',
+    bg: '#1c2b4a', paper: '#29395e', sidebar: '#10182c', text: '#e9edf8', muted: '#a6aec6', line: '#38486a', accent: '#ff7a45', tint: '#4c3222', hover: '#283754' },
+  { id: 'brick-jade', name: 'Brick Jade', mode: 'dark', description: 'Dark brick red cooled by carved jade.',
+    bg: '#40201f', paper: '#522d2b', sidebar: '#281210', text: '#f5eae8', muted: '#c6a49e', line: '#5e3634', accent: '#7cf2a5', tint: '#2a4c36', hover: '#4e2b29' },
+  { id: 'graphite-cream', name: 'Graphite Cream', mode: 'dark', description: 'Soft graphite lifted by a cream sidebar.',
+    bg: '#26262b', paper: '#343439', sidebar: '#33333a', text: '#eef0f2', muted: '#abadb3', line: '#43434a', accent: '#ffe08a', tint: '#4c4426', hover: '#313137' },
+  { id: 'abyss-crimson', name: 'Abyss Crimson', mode: 'dark', description: 'Abyssal teal-black with a crimson pop.',
+    bg: '#101d1c', paper: '#1b2d2b', sidebar: '#050d0c', text: '#e9f2f0', muted: '#a3b8b4', line: '#2a4040', accent: '#f9627d', tint: '#4c2733', hover: '#1b2928' },
+  { id: 'grape-mint', name: 'Grape Mint', mode: 'dark', description: 'Crushed grape darks with cool mint.',
+    bg: '#2a2438', paper: '#39324b', sidebar: '#171222', text: '#eeebf6', muted: '#b0a9c6', line: '#473f5e', accent: '#63e6be', tint: '#26493f', hover: '#363049' },
+  { id: 'stone-watermelon', name: 'Stone Watermelon', mode: 'dark', description: 'Warm worked stone with watermelon flesh.',
+    bg: '#38322b', paper: '#494236', sidebar: '#242016', text: '#f2ede3', muted: '#bdb29e', line: '#564c3c', accent: '#ff677b', tint: '#4e2a33', hover: '#464034' },
+  { id: 'petrol-iris', name: 'Petrol Iris', mode: 'dark', description: 'Petrol blue depths with an iris-violet flare.',
+    bg: '#0e2a3a', paper: '#1a3a4c', sidebar: '#06141d', text: '#e8f0f5', muted: '#a3b6c2', line: '#2c4a5c', accent: '#a98dff', tint: '#342b52', hover: '#1a3547' },
+  { id: 'orchid-frost', name: 'Orchid Frost', mode: 'dark', description: 'Dark orchid woods under a frost-blue accent.',
+    bg: '#331e3a', paper: '#452b4d', sidebar: '#1d1022', text: '#f1eaf5', muted: '#bda9c8', line: '#57405f', accent: '#7cc4ff', tint: '#2c4a60', hover: '#422a4b' },
+  { id: 'olive-sakura', name: 'Olive Sakura', mode: 'dark', description: 'Dark olive grove with a sakura accent.',
+    bg: '#31331d', paper: '#414428', sidebar: '#1c1e0e', text: '#ebf2e8', muted: '#b3b798', line: '#4c4e2e', accent: '#ffa9c6', tint: '#4e2c3c', hover: '#3e4026' },
+  { id: 'cognac-cyan', name: 'Cognac Cyan', mode: 'dark', description: 'Dark cognac amber cut with electric cyan.',
+    bg: '#3c2a1e', paper: '#4e3828', sidebar: '#271a10', text: '#f4ece1', muted: '#c2ab93', line: '#5e4634', accent: '#4de3ff', tint: '#24495a', hover: '#4b3726' },
+  { id: 'plum-marigold', name: 'Plum Marigold', mode: 'dark', description: 'Smoked plum darks with a marigold torch.',
+    bg: '#262033', paper: '#352d46', sidebar: '#141021', text: '#e9edf6', muted: '#a9a5c2', line: '#423a5a', accent: '#f0a13c', tint: '#4c3d1e', hover: '#332c44' },
+  { id: 'graphite-orchid', name: 'Graphite Orchid', mode: 'dark', description: 'Neutral graphite with a vivid orchid signal.',
+    bg: '#2d3336', paper: '#3c4347', sidebar: '#1a1f21', text: '#eceff1', muted: '#abb2b5', line: '#484f53', accent: '#e879f9', tint: '#442c50', hover: '#394046' },
+  { id: 'wine-foam', name: 'Wine Foam', mode: 'dark', description: 'Dark wine cellar with pale sea-foam.',
+    bg: '#3b1f2b', paper: '#4e2c3a', sidebar: '#250f1a', text: '#f4e9ef', muted: '#c2a5b2', line: '#5a3644', accent: '#99f6e4', tint: '#2a4c46', hover: '#4b2a37' },
+  { id: 'forest-coral', name: 'Forest Coral', mode: 'dark', description: 'Deep forest floor with a coral bloom.',
+    bg: '#0f2b1d', paper: '#1b3d2a', sidebar: '#07170e', text: '#e9f3eb', muted: '#a4bcae', line: '#2b5240', accent: '#ff7070', tint: '#4c2a30', hover: '#1a3826' },
+  { id: 'olive-lavender', name: 'Olive Lavender', mode: 'dark', description: 'Hazy olive darks with a lavender field accent.',
+    bg: '#2c2f22', paper: '#3b3f2e', sidebar: '#1a1c13', text: '#eff0e2', muted: '#b2b49b', line: '#484b34', accent: '#c4b5fd', tint: '#3a3560', hover: '#393d2b' },
+  { id: 'lagoon-blush', name: 'Lagoon Blush', mode: 'dark', description: 'Night lagoon with a soft blush accent.',
+    bg: '#10293a', paper: '#1d394c', sidebar: '#071522', text: '#e8f0f3', muted: '#a4b7c2', line: '#2c495e', accent: '#fda4af', tint: '#4c2f3c', hover: '#1c3649' },
+  { id: 'pine-sky', name: 'Pine Sky', mode: 'dark', description: 'Pine-needle darks under an open sky accent.',
+    bg: '#1d2f24', paper: '#2a4032', sidebar: '#101c14', text: '#f3eddf', muted: '#a9bcae', line: '#2e5240', accent: '#7dd3fc', tint: '#27485a', hover: '#2a3d30' },
+  { id: 'umber-petal', name: 'Umber Petal', mode: 'dark', description: 'Near-black umber with a powder-petal accent.',
+    bg: '#1a1210', paper: '#281d1a', sidebar: '#0e0806', text: '#f3ebe6', muted: '#bfa89e', line: '#3e2f2a', accent: '#ffb3c1', tint: '#4c2b34', hover: '#261b18' },
+  { id: 'slate-mint', name: 'Slate Mint', mode: 'dark', description: 'Slate night with a lifted mint sidebar.',
+    bg: '#232838', paper: '#30364a', sidebar: '#2e3547', text: '#e9edf6', muted: '#a6aec4', line: '#3e4560', accent: '#7ef29d', tint: '#2a4c38', hover: '#2f3547' },
+  { id: 'abyss-tangerine', name: 'Abyss Tangerine', mode: 'dark', description: 'Cold abyss water with tangerine rind.',
+    bg: '#0d1f26', paper: '#182f37', sidebar: '#050f14', text: '#e8f1f2', muted: '#a3b7bd', line: '#2b424c', accent: '#ffa15c', tint: '#4c3a22', hover: '#1a2c33' },
+  { id: 'bordeaux-ice', name: 'Bordeaux Ice', mode: 'dark', description: 'Bordeaux shadow cleared by ice blue.',
+    bg: '#341420', paper: '#46202e', sidebar: '#200a10', text: '#f4e9ee', muted: '#c2a5b0', line: '#58323f', accent: '#8ce8ff', tint: '#27455a', hover: '#43202c' },
+  { id: 'olive-ember', name: 'Olive Ember', mode: 'dark', description: 'Dark olive night with an ember-orange accent.',
+    bg: '#25311c', paper: '#334226', sidebar: '#151c0e', text: '#edf2e6', muted: '#adb59b', line: '#424e2e', accent: '#ff8a66', tint: '#4c3226', hover: '#303f24' },
+  { id: 'lagoon-aqua', name: 'Lagoon Aqua', mode: 'dark', description: 'Still lagoon darks with a bright aqua lane.',
+    bg: '#0e3232', paper: '#1a4443', sidebar: '#061e1e', text: '#eaf4f2', muted: '#a4bdb9', line: '#2b5150', accent: '#5df2c8', tint: '#23493f', hover: '#1a3f3e' },
+  { id: 'bark-gold', name: 'Bark Gold', mode: 'dark', description: 'Dark tree bark with a gold-leaf accent.',
+    bg: '#3e2f22', paper: '#503e2c', sidebar: '#2a1e14', text: '#f3ebe2', muted: '#c0ab93', line: '#5c4a36', accent: '#ffc15c', tint: '#4c3f1e', hover: '#4d3c2a' },
+  { id: 'emerald-lime', name: 'Emerald Lime', mode: 'dark', description: 'Emerald depths with a lime-zest accent.',
+    bg: '#12332a', paper: '#1e463b', sidebar: '#081e17', text: '#eaf3ea', muted: '#a5bcae', line: '#2c5546', accent: '#c9f24b', tint: '#3c4c22', hover: '#1f4034' },
+  { id: 'grape-marigold', name: 'Grape Marigold', mode: 'dark', description: 'Dark grape arbour with a marigold lantern.',
+    bg: '#2e1b3e', paper: '#3f2851', sidebar: '#1a0f26', text: '#f0eaf6', muted: '#b5a5c8', line: '#553d68', accent: '#ffb347', tint: '#4c3a1e', hover: '#3c2650' },
+  { id: 'sienna-lime', name: 'Sienna Lime', mode: 'dark', description: 'Burnt sienna darks with a lime spark.',
+    bg: '#3a1c14', paper: '#4c2a1e', sidebar: '#251009', text: '#f5ece1', muted: '#c4a894', line: '#5e3a2a', accent: '#d4f75a', tint: '#424c22', hover: '#492a1e' },
+  { id: 'reef-papaya', name: 'Reef Papaya', mode: 'dark', description: 'Deep reef teal with papaya flesh.',
+    bg: '#1f3a3a', paper: '#2c4c4b', sidebar: '#122424', text: '#e9f2f1', muted: '#a5bcbb', line: '#334f4e', accent: '#ff9d6b', tint: '#4c3826', hover: '#2b4746' },
+  { id: 'indigo-punch', name: 'Indigo Punch', mode: 'dark', description: 'Indigo night with a fruit-punch accent.',
+    bg: '#2b2f4e', paper: '#3a3e63', sidebar: '#1a1d33', text: '#ebecf7', muted: '#a8aac8', line: '#454a6e', accent: '#f7678f', tint: '#4c2a3c', hover: '#383c60' },
+  { id: 'holly-wisteria', name: 'Holly Wisteria', mode: 'dark', description: 'Holly-leaf darks lit by wisteria violet.',
+    bg: '#1a3826', paper: '#264a33', sidebar: '#0e2115', text: '#e9f3e9', muted: '#a9bcae', line: '#2e5440', accent: '#b8a0ff', tint: '#38335b', hover: '#24462f' },
+  { id: 'fig-rose', name: 'Fig Rose', mode: 'dark', description: 'Ripe fig darks with a rosewater accent.',
+    bg: '#38222e', paper: '#4a2f3d', sidebar: '#241320', text: '#f3e9ef', muted: '#c2a5b4', line: '#573747', accent: '#ff7d9c', tint: '#4e2a38', hover: '#472c3a' },
+  { id: 'pitch-vermilion', name: 'Pitch Vermilion', mode: 'dark', description: 'Pitch black lifted by a vermilion sidebar.',
+    bg: '#0c0f16', paper: '#181c26', sidebar: '#1a2130', text: '#edeff4', muted: '#a6adbc', line: '#2b313e', accent: '#ff5c39', tint: '#4c2a24', hover: '#181d28' },
 ];
+// A distinct descriptive word for each palette, in catalog order. Reuse a
+// color phrase's final word when it is unique; otherwise its compound form
+// keeps the color story while making every displayed name exactly two words.
+const epithets = `Verdure Silvan Sirocco Cerulean Seabreeze Luminance Firelight Canopy Rime Rouge
+Sencha Solstice Cinderspark Velour Boreal Roast White Petals Herbal Cream Tropical Adobe
+Airy Clean Cooled Aqua Inky Alpine Midnight Garnet Baked Sprout Marine Magenta Dune
+Shallow Vivid Birch Scarlet Emerald Void Coral Green Spice Trench Moss Neon Molten
+Lightning Electric Pistachio Bramble Spring Fuchsia Apricot Lemon Ultramarine Copper Saffron
+Rosemary Icewater Pine Honey Pepper Aubergine Buttercup Chalk Fern Peacock Parchment Opal
+Almond Burgundy Magnolia Verbena Sorbet Cornflower Wheat Hydrangea Dewdrop Terracotta
+Chamomile Lotus Sepia Milkglass Blossom Cloudberry Obsidian Petrol Chartreuse Navy Mahogany
+Lantern Citron Oxblood Firefly Supernova Cacao Basalt Jade Moon Cypress Persimmon Celadon
+Flame Champagne Ionized Papaya Glacier Cinder Moonstone Nocturne Sable Blackberry Hibiscus
+Spruce Seafoam Comet Olive Eclipse Crisp Pastoral Preserved Yuzu Porcelain Peach Tailored
+Mineral Mulberry Barkcloth Skylit Shell Gentle Thyme Alabaster Banana Disciplined Oxidized
+Dusky Arctic Assertive Heather Glinting Rain Warmth Earthen Cucumber Ricepaper Sunlit
+Seagrass Nightshade Dusty Sharpened Cherry Kelp Azalea Smoky Mint Auburn Pomegranate
+Periwinkle Iron Balanced Polished Nebula Estuarine Cave Brightness Abyssal Luminous Slate
+Toasted Raven Honeyed Walnut Voltage Sunrise Murex Navigation Celery Embered Leaf Weathered
+River Orchard Ginkgo Heron Frost Kestrel Pond Chalky Northern Oatmilk Quince Sedge
+Lichen Waterlogged Sparked Furnace Dusklit Coffee Gilt Claret Meteoric Blooming Aged Mangrove
+Smelted Port Stack Cured Zesty Tempered Silvered Shamrock Garden Ringed Nautical Skerry
+Indigo Heliotrope Dragonfruit Blood Chili Mossy Bearded Arbor Damson Spires Thicket
+Flamingo Bubblegum Rosehip Paprika Pumpkin Lighthouse Butter Camellia Chocolate Kite
+Inkwell Strawberries Campfire Spiced Pebbles Flesh Pencil Gully Rows Desert Mimosa
+Seal Sloe Rhubarb Golden Roasted Edging Salmon Mauve Khaki Steel Eggplant Jungle
+Kiln Mosslight Slice Evening Bronze Incandescent Carved Lifted Crimson Crushed Worked Flare
+Woods Sakura Cognac Torch Chromatic Cellar Undergrowth Hazy Blush Needle Powder Moonlit
+Abyss Bordeaux Ember Lane Woodland Zest Arbour Sienna Reef Fruit Holly Rosewater Pitch`.trim().split(/\s+/);
+if (epithets.length !== definitions.length) throw Error('Every palette needs one distinct name epithet.');
+const lastWords = definitions.map(definition => definition.name.split(' ').at(-1));
+const lastWordCounts = new Map();
+for (const word of lastWords) {
+  const key = word.toLowerCase();
+  lastWordCounts.set(key, (lastWordCounts.get(key) ?? 0) + 1);
+}
+const epithetWords = new Set(epithets.map(word => word.toLowerCase()));
+const paletteNames = definitions.map((definition, index) =>
+  `${epithets[index]} ${lastWordCounts.get(lastWords[index].toLowerCase()) === 1 && !epithetWords.has(lastWords[index].toLowerCase())
+    ? lastWords[index] : definition.name.replace(/[^a-zA-Z]+(.)?/g, (_, initial) => initial?.toUpperCase() ?? '')}`);
+if (new Set(paletteNames.flatMap(name => name.toLowerCase().split(' '))).size !== definitions.length * 2)
+  throw Error('Palette name words must be unique across the catalog.');
+function visibleStateColor(base, background, foreground, minimum = 1.12) {
+  if (contrast(base, background) >= minimum) return base;
+  const source = base.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+  let best = null, bestDistance = Infinity;
+  for (const endpoint of ['#000000', '#ffffff']) {
+    const target = endpoint.slice(1).match(/../g).map(channel => parseInt(channel, 16));
+    for (let step = 1; step <= 255; step++) {
+      const channels = source.map((channel, index) => Math.round(channel + (target[index] - channel) * step / 255));
+      const candidate = '#' + channels.map(channel => channel.toString(16).padStart(2, '0')).join('');
+      if (contrast(candidate, background) < minimum || contrast(candidate, foreground) < 4.5) continue;
+      const distance = channels.reduce((sum, channel, index) => sum + (channel - source[index]) ** 2, 0);
+      if (distance < bestDistance) {
+        best = candidate;
+        bestDistance = distance;
+      }
+      break;
+    }
+  }
+  return best ?? base;
+}
+function distinctMutedColor(base, surfaces, text, minimum = 1.5) {
+  const readable = readableColor(base, surfaces);
+  if (contrast(readable, text) >= minimum) return readable;
+  for (let step = 1; step <= 255; step++) {
+    for (const endpoint of ['#000000', '#ffffff']) {
+      const candidate = mixColor(readable, endpoint, step / 255);
+      if (contrast(candidate, text) >= minimum && surfaces.every(surface => contrast(candidate, surface) >= 4.5)) return candidate;
+    }
+  }
+  return readable;
+}
 function palette(definition) {
   const { id, name, mode, description, ...base } = definition;
-  const surfaces = [base.bg, base.paper, base.sidebar, base.tint, base.hover];
+  const tint = visibleStateColor(base.tint, base.bg, base.text);
+  const hover = visibleStateColor(base.hover, base.bg, base.text);
+  const surfaces = [base.bg, base.paper, base.sidebar, tint, hover];
   const accent = readableColor(base.accent, surfaces);
-  const tokens = { ...base, accent,
-    muted: readableColor(base.muted, surfaces),
+  const muted = distinctMutedColor(base.muted, surfaces, base.text);
+  const tokens = { ...base, accent, tint, hover,
+    muted,
     'accent-contrast': onColor(accent),
     'accent-hover': readableColor(mixColor(accent, mode === 'dark' ? '#ffffff' : '#000000', 0.08), surfaces),
     'border-strong': readableColor(base.muted, [base.paper, base.bg, base.sidebar], 3),
@@ -389,7 +705,8 @@ function palette(definition) {
   }
   return Object.freeze({ id, name, mode, description, tokens: Object.freeze(tokens) });
 }
-export const palettes = Object.freeze(definitions.map(palette));
+export const palettes = Object.freeze(definitions.map((definition, index) =>
+  palette({ ...definition, name: paletteNames[index] })));
 // Accent hue drives the appearance panel's within-mode color order, so the
 // grid reads as a rainbow rather than registry insertion order.
 export function accentHue(value) {
@@ -425,7 +742,10 @@ export const lightPalettes = Object.freeze(sortedPalettes.filter(p => p.mode ===
 export const darkPalettes = Object.freeze(sortedPalettes.filter(p => p.mode === 'dark'));
 export const isTheme = value => palettes.some(p => p.id === value);
 export const resolveTheme = value => isTheme(value) ? value : 'light';
-export const themePalette = value => palettes.find(p => p.id === resolveTheme(value));
+export const themePalette = value => {
+  const id = resolveTheme(value);
+  return palettes.find(p => p.id === id);
+};
 export const themeMode = value => themePalette(value).mode;
 export const themeColors = Object.freeze(Object.fromEntries(palettes.map(p => [p.id, p.tokens.bg])));
 export const paletteStyles = Object.freeze(Object.fromEntries(palettes.map(p => [p.id,

@@ -16,6 +16,14 @@ if (all >= 0) {
   process.env.FREELANCER_ALL_PALETTES = '1';
   process.env.PLAYWRIGHT_HTML_OUTPUT_DIR = 'artifacts/browser-theme-report';
 }
+// State the exhaustive cost up front: every palette is applied through the
+// browser UI, so the sweep grows linearly with the palette count. Import the
+// catalog only here to keep normal runs free of its startup cost.
+if (process.env.FREELANCER_ALL_PALETTES === '1') {
+  const { palettes } = await import('../domain/theme.mjs');
+  const targets = args.filter(arg => !arg.startsWith('-'));
+  console.log(`Exhaustive palette sweep: ${palettes.length} palettes x ${targets.length ? targets.join(' ') : 'all browser journeys'} (timeout 600s, traces without DOM snapshots).`);
+}
 const require = createRequire(import.meta.url);
 const env = { ...process.env };
 // Playwright sets FORCE_COLOR for workers. Preserve a monochrome preference

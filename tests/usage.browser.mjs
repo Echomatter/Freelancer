@@ -1,4 +1,4 @@
-import { browserPalettes, capturePalette, paletteArtifacts } from './support/palettes.mjs';
+import { browserPalettes, capturePalette, isRepresentativePalette, paletteArtifacts } from './support/palettes.mjs';
 import assert from "node:assert/strict";
 import { readFile, readdir, mkdir } from "node:fs/promises";
 import { usageFixture } from "./fixtures/usage-app.mjs";
@@ -278,6 +278,50 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       "no usage overflow",
     );
   }
+  async function paletteSmoke(palette) {
+    // Exhaustive sweep for non-representative palettes: the palette is
+    // applied with the exact tokens the settings UI would apply (this test
+    // imports the same domain/theme.mjs module the browser bundle uses),
+    // then rendered on the already-open dashboard and checked for meter
+    // geometry, provider contrast, overflow and matching surfaces. Saving,
+    // persistence and the DOM-wide text-contrast scan stay on the
+    // representative subset below; every palette still runs through the
+    // numerical contrast contracts on every contract run.
+    await checkCompoundMeter(page, 60);
+    await checkCompoundContrast(page);
+    await noOverflow();
+    assert.equal(
+      await sideValue().textContent(),
+      await heroValue().textContent(),
+    );
+    assert.equal(
+      await page
+        .locator(".usage-hero")
+        .evaluate((e) => getComputedStyle(e).backgroundColor),
+      rgb(palette.tokens.paper),
+    );
+  }
+  async function applyPaletteFast(palette) {
+    // Mirrors applyTheme() from domain/theme.mjs in a single round-trip:
+    // same dataset id, same inline tokens. Skips only the settings
+    // navigation, the appearance save round-trip and the dashboard
+    // navigation that theme()/overview() perform per palette.
+    await page.evaluate(
+      ({ id, mode, tokens }) => {
+        const root = document.documentElement;
+        root.dataset.theme = id;
+        root.style.backgroundColor = tokens.bg;
+        root.style.colorScheme = mode;
+        for (const [key, color] of Object.entries(tokens))
+          root.style.setProperty(`--${key}`, color);
+      },
+      { id: palette.id, mode: palette.mode, tokens: { ...palette.tokens } },
+    );
+    await page.waitForFunction(
+      (id) => document.documentElement.dataset.theme === id,
+      palette.id,
+    );
+  }
   async function theme(id) {
     await settings("Appearance");
     const name = palettes.find((palette) => palette.id === id).name;
@@ -371,7 +415,13 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     );
 
     for (const palette of browserPalettes) {
+      const full = isRepresentativePalette(palette.id);
       await test.step(`${palette.name}: compact and expanded usage`, async () => {
+        if (!full) {
+          await applyPaletteFast(palette);
+          await paletteSmoke(palette);
+          return;
+        }
         await theme(palette.id);
         await overview();
         await expanded(false);
@@ -398,7 +448,7 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       });
     }
     report(
-      "saved palettes: touching remaining/used portions, single endpoint, rendered contrast, no provider model dropdown, matching surfaces",
+      `palette rendering: touching remaining/used portions, single endpoint, rendered contrast, no provider model dropdown, matching surfaces (${browserPalettes.length} rendered; representative subset saved through the settings UI with full compact and expanded contrast, remainder applied with identical tokens and checked for geometry, provider contrast, overflow and matching surfaces)`,
     );
 
     await settings("Providers");

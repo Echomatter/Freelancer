@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile, readdir } from "node:fs/promises";
 import { panelFixture } from "./fixtures/panel-app.mjs";
-import { palettes } from "../domain/theme.mjs";
+import { palettes, themePalette } from "../domain/theme.mjs";
 import { test, expect } from './support/browser-test.mjs';
 
 test('panels-theme', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
@@ -135,8 +135,8 @@ test('panels-theme', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => 
     await page.getByRole("button", { name: "Application settings", exact: true }).click();
     await page.getByRole("button", { name: "Appearance", exact: true }).click();
     assert.equal(await page.locator(".palette-picker select").count(), 0);
-    const lightPalette = page.getByRole("button", { name: "Use Sage Daybreak palette", exact: true });
-    const darkPalette = page.getByRole("button", { name: "Use Forest Night palette", exact: true });
+    const lightPalette = page.getByRole("button", { name: `Use ${themePalette('light').name} palette`, exact: true });
+    const darkPalette = page.getByRole("button", { name: `Use ${themePalette('dark').name} palette`, exact: true });
     const darkCategory = page.getByRole("button", { name: `Dark themes (${palettes.filter(p => p.mode === "dark").length})` });
     assert.equal(await darkCategory.getAttribute("aria-expanded"), "true");
     await darkCategory.click(); assert.equal(await darkCategory.getAttribute("aria-expanded"), "false");

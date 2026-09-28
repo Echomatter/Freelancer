@@ -67,12 +67,16 @@ Python, PowerShell and installed-native startup checks remain separate in CI.
 
 Numerical color contracts still check every palette and custom swatch on every
 contract run. The normal browser run exercises eight representative light/dark,
-warm/cool and tinted palettes. `test:themes` applies all 180 through the browser;
+warm/cool and tinted palettes. `test:themes` applies all 300 through the browser;
 run it for palette or color-rendering changes. The report records which sweep ran.
 This reduces repetitive navigation without dropping the numerical coverage.
 Each palette is a named step in the interactive runner. Routine screenshots use
-the eight representative palettes; every palette still gets the same browser
-assertions, and failures retain their own screenshot and trace.
+the eight representative palettes; every palette gets a named browser step,
+and failures retain their own screenshot and trace.
+The exhaustive color-picker journey uses every palette through the settings UI.
+The exhaustive usage journey saves eight representative palettes through the UI
+with compact and expanded checks, then renders the other palettes using the same
+theme tokens for meter geometry, provider contrast, overflow and surface checks.
 The exhaustive command records actions and source references without a DOM
 snapshot at every transition, avoiding oversized trace archives. Normal and
 interactive runs keep DOM snapshots for debugging.

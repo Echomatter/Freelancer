@@ -24,7 +24,7 @@ try {
   }
   for (const name of retiredAgents) assert.ok(!agents.some(a => a.name === name), `Retired profile remains selectable: ${name}`);
   const skills = await host.request('/skill', { directory: config.appRoot });
-  for (const name of ['reorient', 'search-index', 'sync', 'model-routing', 'record-outcome'])
+  for (const name of ['reorient', 'search-index', 'model-routing', 'record-outcome'])
     assert.ok(skills.some(skill => skill.name === name), `Missing app skill ${name}`);
   const tools = await host.request('/experimental/tool/ids', { directory: config.appRoot });
   for (const name of ['delegate', 'content_index', 'git_project', 'todowrite']) assert.ok(tools.includes(name), `Missing native tool ${name}`);
@@ -38,7 +38,7 @@ try {
   const bootstrap = await fetch(web.url + '/api/bootstrap', { headers: { 'X-Freelancer-Client': 'webpage' } });
   assert.equal(bootstrap.status, 200);
   assert.ok((await bootstrap.json()).settings.workflows.some(w => w.mode === 'build'));
-  console.log('Native app-local startup, one named-agent catalog (main + delegated profiles), five skills, tools, built UI assets and bootstrap API verified; no inference requested.');
+  console.log('Native app-local startup, one named-agent catalog (main + delegated profiles), four skills, tools, built UI assets and bootstrap API verified; no inference requested.');
 } finally {
   if (web) { web.server.closeAllConnections(); await new Promise(resolve => web.server.close(resolve)); }
   host.stop();

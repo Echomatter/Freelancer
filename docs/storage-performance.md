@@ -37,7 +37,7 @@ rules so Windows case differences do not create duplicate version entries.
   attribution when the receipt is already present in the request snapshot.
 - A real request change still pays the cost to serialize the compatible
   single-file JSON document. Avoiding that would require a separate storage
-   format and a migration plan.
+  format and a migration plan.
 
 ## Reproducible synthetic measurement
 
@@ -55,3 +55,34 @@ These are single-run synthetic measurements, not end-to-end application latency
 or a guarantee on other machines. The previous algorithm already skipped disk
 writes for unchanged content; the improvement removes repeated parsing, cloning
 and whole-document comparisons on that path. Captured receipts remain intact.
+
+## Growth measurements before a storage migration
+
+Run `node scripts/benchmark-store-growth.mjs` from a prepared checkout. It
+measures 10, 100 and 250 synthetic receipts with 64 KiB captured payloads and
+three observation/read repetitions per workload. Cold scoped reads, changed
+observations, identical observations and warm scoped reads are reported
+separately, with wall time, process CPU, file size and actual atomic-replacement
+counts. This is a diagnostic, not a timing gate or a safe-workload guarantee.
+
+Only newly created temporary state is used; it is removed in a `finally` block.
+The command accepts no live data path and makes no provider or GitHub request.
+Aggregate results and samples, without receipt contents or local paths, are
+written to ignored `artifacts/performance/store-growth.json`. Imported callers
+can choose smaller bounded synthetic workloads; each is capped at 64 MiB and
+no more than ten repetitions. CI contracts use a tiny fixture to check bounds,
+write counts and output shape without enforcing machine-specific timing limits.
+
+Retain measurements with the exact checkout and environment used. Compare
+like-for-like workloads on the same machine. Use `Server-Timing` and the
+long-chat browser journey described in [Local chat performance](local-performance.md)
+to determine whether an observed delay actually comes from local writes,
+native reads or rendering before changing persistence. Full-document writes
+remain a known format cost; this benchmark does not remove that cost.
+
+A migration is separate work: it needs evidence of a user-visible bottleneck,
+external-reader compatibility, preserved captured authority, backup/rollback
+and interruption tests. Do not delete historical receipts, relax permission
+checks or rewrite native OpenCode storage merely to improve a benchmark.
+Live inference and sustained multi-session acceptance still use the
+[release acceptance record](release-acceptance.md), not synthetic timings.

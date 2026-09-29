@@ -51,7 +51,7 @@ export function isHandoffPart(part) {
 
 export function delegateChildSession(part) {
   const meta = part?.state?.metadata ?? {};
-  const child = meta.freelancer_activity?.child_session ?? meta.sessionId ?? meta.child_session;
+  const child = meta.freelancer_activity?.child_session ?? meta.sessionId ?? meta.child_session ?? part?.state?.input?.worker;
   return typeof child === "string" && child.trim() ? child : null;
 }
 
@@ -239,6 +239,7 @@ export function summarizeRequestWork(allMessages = [], todos = []) {
           meta.agentName ??
           meta.freelancer_activity?.agentName ??
           part?.state?.input?.agentID ??
+          part?.state?.input?.agent ??
           part?.state?.input?.role ??
           "Helper",
       });

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readdir, readFile, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { createDelegator, atomicJson, observe, failureKind, splitModel, freeOnlyAssignment, noWriteAssignment, userDirectedModelAssignment, sameDecisionAssignment } from '../tools/runtime/delegation.mjs';
+import { createDelegator, atomicJson, observe, failureKind, splitModel, freeOnlyAssignment, noWriteAssignment, userDirectedModelAssignment, sameDecisionAssignment, publicDelegateArgs } from '../tools/runtime/delegation.mjs';
 import { savePreferences } from '../tools/runtime/preferences.mjs';
 import { checkedCatalog } from '../tools/runtime/agent-catalog.mjs';
 import { defaults, preset } from '../../shared/strategy.mjs';
@@ -116,6 +116,64 @@ function assistant(id, model, extra = {}) {
     parts: [{ type: 'text', text: 'A verified fixture result, not a live provider result.' }] };
 }
 const args = { agentID: 'engineer', task: 'Perform a bounded task; preserve user changes.', needsWrites: true };
+test('public delegate argument normalization preserves empty catalog discovery', () => {
+  assert.deepEqual(publicDelegateArgs({}), {});
+  assert.deepEqual(publicDelegateArgs({ agent:'engineer', task:'Inspect one concern.' }), {
+    agent:'engineer', task:'Inspect one concern.', background:true,
+  });
+  assert.deepEqual(publicDelegateArgs({ worker:'child1', task:'Continue.' }), {
+    worker:'child1', task:'Continue.', background:false,
+  });
+});
+
+test('catalog discovery exposes exact eligible model IDs without starting a child', async t => {
+  const f = await fixture(t, { surface:'opencode-free', models:['opencode/muse-spark-1.3-contributor-free'] });
+  const result = await f.service.execute(publicDelegateArgs({}), f.ctx);
+  assert.equal(result.status, 'catalog');
+  assert.ok(result.agents.some(agent => agent.id === 'engineer'));
+  assert.deepEqual(result.budget.modelPool, ['opencode/muse-spark-1.3-contributor-free']);
+  assert.equal(f.requests.filter(row => row.kind === 'create').length, 0);
+});
+
+test('delegate validation identifies agent, task and model fields instead of blaming task length', async t => {
+  const f = await fixture(t, { surface:'opencode-free', models:['opencode/muse-spark-1.3-contributor-free'] });
+  await assert.rejects(f.service.execute({ task:'Inspect this.' }, f.ctx), error =>
+    error.name === 'InvalidAgent' && error.details.valid_agents.includes('engineer'));
+  await assert.rejects(f.service.execute({ agentID:'not-an-agent', task:'Inspect this.' }, f.ctx), error =>
+    error.name === 'InvalidAgent' && error.details.supplied_agent === 'not-an-agent');
+  await assert.rejects(f.service.execute({ agentID:'engineer', task:'   ' }, f.ctx), error =>
+    error.name === 'InvalidTask');
+  await assert.rejects(f.service.execute({ ...args, selectedModel:'free' }, f.ctx), error =>
+    error.name === 'InvalidModel' && error.details.eligible_models.includes('opencode/muse-spark-1.3-contributor-free'));
+  await assert.rejects(f.service.execute({ ...args, selectedModel:'opencode/muse-spark-1.3-free' }, f.ctx), error =>
+    error.name === 'InvalidModel' && error.details.eligible_models.includes('opencode/muse-spark-1.3-contributor-free'));
+  const long = await f.service.execute({ ...args, task:'Inspect this bounded concern. '.repeat(400) }, { ...f.ctx, messageID:'long-task' });
+  assert.equal(long.status, 'completed');
+});
+
+test('native retry state waits in the same worker and can recover to completion', async t => {
+  const f = await fixture(t, { hang:true, surface:'opencode-free', models:['opencode/free'] });
+  const nativeStatus = f.client.session.status;
+  let childPolls = 0;
+  f.client.session.status = async request => {
+    await nativeStatus(request);
+    if (f.sessions.has('child1')) {
+      childPolls++;
+      if (childPolls === 1) f.states.child1 = { type:'retry' };
+      if (childPolls === 2) {
+        f.messages.set('child1', [assistant('child1', { providerID:'opencode', modelID:'free' }, { agent:'engineer', parentID:f.requests.find(row => row.kind === 'prompt')?.body.messageID })]);
+        delete f.states.child1;
+      }
+    }
+    return { data:f.states };
+  };
+  const result = await f.service.execute({ ...args, needsWrites:false }, f.ctx);
+  assert.equal(result.status, 'completed');
+  assert.equal(result.attempts[0].child_session, 'child1');
+  assert.equal(f.requests.filter(row => row.kind === 'create').length, 1);
+  assert.equal(f.requests.filter(row => row.kind === 'abort').length, 0);
+});
+
 test('worker system prompt includes captured agent and fixed Build contract', async t => {
   const f = await fixture(t, { agents: [{ id: 'engineer', name: 'Engineer', prompt: 'Inspect edge cases before editing.', response: 'concise', approach: 'practical' }] });
   await f.service.execute(args, f.ctx);

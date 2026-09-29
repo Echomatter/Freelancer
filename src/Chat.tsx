@@ -140,7 +140,7 @@ function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: strin
     const failed = outcome === "error";
     let result: any = null;
     try { result = typeof state.output === "string" ? JSON.parse(state.output) : state.output && typeof state.output === "object" ? state.output : null; } catch { /* Native host may truncate a long receipt. */ }
-    const agentName = String(meta.agentName ?? meta.freelancer_activity?.agentName ?? result?.agent?.name ?? saved?.agent?.name ?? input.agentID ?? input.role ?? "Agent");
+    const agentName = String(meta.agentName ?? meta.freelancer_activity?.agentName ?? result?.agent?.name ?? saved?.agent?.name ?? input.agentID ?? input.agent ?? input.role ?? "Agent");
     const modelName = delegateModel(part) ?? modelFallback;
     const routeUnavailable = ["no_qualified_route", "delegation_unavailable"].includes(meta.freelancer_status ?? result?.status);
     const statusLabel = routeUnavailable ? "Route unavailable" : running ? "Agent working" : failed ? "Agent stopped" : "Agent finished";
@@ -228,7 +228,9 @@ function toolTitle(part: any): string {
   if (title) return String(title);
   if (toolName.includes("content_index")) return contentIndexTitle(input);
   if (part.tool === "delegate" || part.tool === "task")
-    return `Delegating to ${state.metadata?.agentName ?? input.agentID ?? input.role ?? "an agent"}`;
+    return input.worker && !state.metadata?.agentName
+      ? "Continuing agent"
+      : `Delegating to ${state.metadata?.agentName ?? input.agentID ?? input.agent ?? input.role ?? "an agent"}`;
   return String(state.title || part.tool || "Using a tool");
 }
 function contentIndexTitle(input: any): string {

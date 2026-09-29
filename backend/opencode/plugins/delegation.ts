@@ -27,7 +27,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
   }
 
   const { createBridge } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/bridge.mjs')).href)
-  const { createDelegator } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/delegation.mjs')).href)
+  const { createDelegator, publicDelegateArgs } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/delegation.mjs')).href)
   const { createPresenter, restoreDelegateTools, completionMetadata } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/presentation.mjs')).href)
   const delegate = createDelegator({ client, toolkitRoot, directory, ...createBridge(toolkitRoot) })
   const present = createPresenter({ client, directory })
@@ -50,11 +50,11 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
     },
     tool: {
       delegate: tool({
-        description: 'Assign a bounded task to a named agent. A new worker starts in the background. Use workers:true to list this parent conversation’s durable child assignments; use worker alone to read its current native chat transcript and status; use worker with task to continue it. Paid routes use native paid_delegate consent.',
+        description: 'Assign a bounded task to a named agent. Call delegate() with no arguments to inspect current agent IDs and the eligible model pool. Omit model for automatic eligible routing; use freeOnly:true when free capacity is required. A new worker starts in the background. Use workers:true to list durable child assignments; use worker alone to inspect one; use worker with task to continue it. Paid routes use native paid_delegate consent.',
         args: {
           agent: tool.schema.string().optional().describe('Named agent ID from the supplied catalog. Omit all arguments to inspect available agents and budget.'),
           task: tool.schema.string().min(1).optional().describe('A bounded assignment, relevant files and acceptance checks. Give concurrent writers disjoint areas.'),
-          model: tool.schema.string().optional().describe('Exact provider/model only when explicitly desired. Otherwise the runtime routes automatically.'),
+          model: tool.schema.string().optional().describe('Exact provider/model ID from delegate() budget.modelPool when explicitly desired. Omit for automatic eligible routing; use freeOnly:true to require free capacity.'),
           freeOnly: tool.schema.boolean().optional().describe('Only eligible free capacity, including descendants.'),
           inspectionOnly: tool.schema.boolean().optional().describe('No source modifications.'),
           independentReview: tool.schema.boolean().optional().describe('Seek a different model and exclude prior reviewers.'),
@@ -65,7 +65,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
         },
         async execute(args, context) {
           try {
-          const receipt = await delegate.execute({ ...args, background: !args.worker }, { ...context,
+          const receipt = await delegate.execute(publicDelegateArgs(args), { ...context,
             metadata: async (update: any) => { await present.metadata(context, update).catch(() => false) },
           })
           const output = ['catalog', 'workers', 'worker_transcript'].includes(receipt.status) ? receipt : {
@@ -86,7 +86,8 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
             return { title: boundary ? 'Blocked' : conflict ? 'Waiting for worker' : 'Worker unavailable',
               output: JSON.stringify({ status: boundary ? 'blocked' : conflict ? 'conflict' : 'unavailable', failure_class: kind,
                 reason: error?.message || 'Worker execution could not be established.',
-                action: boundary ? 'Honor this boundary. Do not retry through another tool. Continue permitted direct work.' : conflict ? 'Wait, narrow scope or sequence the work.' : 'Inspect the cause before retrying; preserve any uncertain child work.' }), metadata: {} }
+                ...(error?.details ? { details: error.details } : {}),
+                action: boundary ? 'Honor this boundary. Do not retry through another tool. Continue permitted direct work.' : conflict ? 'Wait, narrow scope or sequence the work.' : kind === 'invalid_request' ? 'Correct the named field using the returned catalog/model details; do not guess aliases or shorten the task as a workaround.' : 'Inspect the cause before retrying; preserve any uncertain child work.' }), metadata: {} }
           }
         },
       }),

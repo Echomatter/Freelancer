@@ -70,7 +70,10 @@ export function failureKind(error) {
   if (/timeout/i.test(name)) return 'timeout';
   return 'execution';
 }
-function fault(name, message) { return Object.assign(new Error(message), { name }); }
+function fault(name, message, details = undefined) { return Object.assign(new Error(message), { name, ...(details ? { details } : {}) }); }
+export function publicDelegateArgs(args = {}) {
+  return Object.keys(args).length ? { ...args, background: !args.worker } : args;
+}
 function unwrap(r) {
   if (r?.error) throw Object.assign(new Error(r.error?.data?.message || 'SDK request failed'), r.error);
   return r && Object.hasOwn(r, 'data') ? r.data : r;
@@ -423,7 +426,9 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       continued = child;
     }
     const agent = catalog.agents.find(agent => agent.id === args.agentID);
-    if (!agent || typeof args.task !== 'string' || !args.task.trim()) throw fault('InvalidAssignment', 'Choose a named agentID and bounded task from the catalog.');
+    if (!args.agentID) throw fault('InvalidAgent', 'Missing agent. Call delegate() to inspect the current catalog, then pass agent with one listed ID.', { valid_agents: catalog.agents.map(item => item.id) });
+    if (!agent) throw fault('InvalidAgent', `Unknown agent "${args.agentID}". Call delegate() to refresh the catalog and use one of the returned IDs.`, { supplied_agent: args.agentID, valid_agents: catalog.agents.map(item => item.id) });
+    if (typeof args.task !== 'string' || !args.task.trim()) throw fault('InvalidTask', 'Missing task. Pass a non-empty bounded assignment in task; prompt length is not used to choose an agent.', { agent: agent.id });
     if (savedPreferences.delegation === 'manual' || /\b(?:do not delegate|don.t delegate|handle (?:it|this) yourself|no (?:workers|delegation))\b/i.test(assignment)) throw fault('PreferenceConstraint', 'Delegation is disabled by the user. Work directly with permitted tools.');
     if (legacyContract && (!agentAssignmentAllowed(savedPreferences, agent.id, mode) || !agentAssignmentAllowed(captured, agent.id, mode))) throw fault('PreferenceConstraint', 'This named agent assignment is disabled by the captured legacy policy.');
     const inherited = await lookup(ctx.sessionID, ctx.directory);
@@ -436,8 +441,14 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     if (variant && !/^[\w-]{1,80}$/.test(variant)) throw fault('InvalidAssignment', 'Choose a reported child intelligence level');
     // Workflow model restrictions belong only to legacy captured requests.
     const allowedModels = pool(variant).filter(id => !legacyContract || legacyModelAllowed(legacyWorkflow, execution.catalogModels.find(m => m.id === id), execution.catalogConnected ?? []));
-    if (args.selectedModel && !allowedModels.includes(args.selectedModel))
-      throw fault('PreferenceConstraint', 'Selected model is excluded by the request budget or user preferences. No child started.');
+    if (args.selectedModel) {
+      try { splitModel(args.selectedModel); }
+      catch { throw fault('InvalidModel', 'model must be an exact provider/model ID. Call delegate() to inspect budget.modelPool, or omit model for automatic eligible routing.', { supplied_model: args.selectedModel, eligible_models: allowedModels }); }
+      const knownModel = execution.catalogModels.some(model => model.id === args.selectedModel);
+      if (!knownModel) throw fault('InvalidModel', `Unknown model "${args.selectedModel}". Use an exact ID from delegate() budget.modelPool, or omit model for automatic eligible routing.`, { supplied_model: args.selectedModel, eligible_models: allowedModels });
+      if (!allowedModels.includes(args.selectedModel))
+        throw fault('PreferenceConstraint', `Model "${args.selectedModel}" is known but not eligible for this request under the captured/current budget, provider, variant or exclusion rules. No child started.`, { supplied_model: args.selectedModel, eligible_models: allowedModels });
+    }
     if (!allowedModels.length) return { status: 'delegation_unavailable', failure_class: 'unavailable',
       agent: { id: agent.id, name: agent.name }, model_selection: null, attempts: [],
       routing_diagnostics: { eligible_model_count: 0, free_only: inherited?.freeOnly === true || args.freeOnly === true || savedPreferences.costPreference === 'free-only' || freeOnlyAssignment(assignment),
@@ -748,8 +759,18 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                   if (observation.error) throw Object.assign(new Error('Child failed'), observation.error);
                   if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses))
                     throw fault('UnsupportedRuntime', 'Missing runtime session status');
-                  if (statuses?.[child.id]?.type === 'retry')
-                    throw fault('ProviderRetry', 'Provider entered retry; returning control instead of waiting indefinitely');
+                  if (statuses?.[child.id]?.type === 'retry') {
+                    receipt.activity = { schema_version: 1, phase: 'waiting', label: 'Provider retry in progress',
+                      child_session: child.id, selected_model: selected, last_meaningful_at: meaningfulAt,
+                      assignment: args.task.slice(0, 240), requested_by: ctx.sessionID,
+                      dispatched_model: attempt.dispatched_model, observed_model: observation.observed,
+                      agentID: agent.id, agentName: agent.name, mode };
+                    await atomicJson(receiptFile, receipt);
+                    await ctx.metadata?.({ title: `@${agent.name} · Waiting for provider retry`,
+                      metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: 'running' } });
+                    await sleep(cfg.pollMs);
+                    continue;
+                  }
                   if (observation.complete && (!statuses?.[child.id] || statuses[child.id].type === 'idle')) {
                     attempt.status = 'completed'; attempt.completed_at = stamp(); attempt.elapsed_ms = now() - start;
                     receipt.status = 'completed';
@@ -824,7 +845,18 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
             attempt.usage_source = observation.usage ? 'session_messages' : 'unavailable';
             if (observation.error) throw Object.assign(new Error('Child failed'), observation.error);
             if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) throw fault('UnsupportedRuntime', 'Missing runtime session status');
-            if (statuses?.[child.id]?.type === 'retry') throw fault('ProviderRetry', 'Provider entered retry; returning control instead of waiting indefinitely');
+            if (statuses?.[child.id]?.type === 'retry') {
+              receipt.activity = { schema_version: 1, phase: 'waiting', label: 'Provider retry in progress',
+                child_session: child.id, selected_model: selected, last_meaningful_at: meaningfulAt,
+                assignment: args.task.slice(0, 240), requested_by: ctx.sessionID,
+                dispatched_model: attempt.dispatched_model, observed_model: observation.observed,
+                agentID: agent.id, agentName: agent.name, mode };
+              await atomicJson(receiptFile, receipt);
+              await ctx.metadata?.({ title: `@${agent.name} · Waiting for provider retry`,
+                metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: 'running' } });
+              await sleep(cfg.pollMs);
+              continue;
+            }
             if (observation.complete && (!statuses?.[child.id] || statuses[child.id].type === 'idle')) {
               attempt.status = 'completed'; attempt.completed_at = stamp(); attempt.elapsed_ms = now() - start;
               receipt.status = 'completed';

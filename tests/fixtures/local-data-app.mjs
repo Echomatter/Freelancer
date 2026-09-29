@@ -12,7 +12,7 @@ import { startServer } from "../../server/http.mjs";
 import { createActivityReader } from "../../server/activity.mjs";
 import { defaults } from "../../shared/strategy.mjs";
 
-export async function localDataFixture() {
+export async function localDataFixture({ gitOptions = {} } = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "freelancer-history-")));
   const directory = path.join(root, "project");
   await mkdir(directory);
@@ -229,6 +229,7 @@ export async function localDataFixture() {
     store,
     host,
     dataRoot: path.join(root, "user-data"),
+    gitOptions,
     backendFactory: () => ({
       snapshot: async () => snapshot,
       save: async () => {},

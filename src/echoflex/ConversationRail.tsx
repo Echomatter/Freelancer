@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
+import { HelpHint } from '../HelpHint';
 import { railOffset, railPosition } from './rail-geometry.mjs';
 import './conversation-rail.css';
 
@@ -16,7 +17,7 @@ export function ConversationRail({ scroll, content, turns, selected, onSelect, o
   const tip = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, HTMLButtonElement>());
   const cancelDrag = useRef<null | (() => void)>(null), jumpFrame = useRef(0);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
-  const tooltipID = useId();
+  const tooltipID = useId(), instructionsID = useId();
   const [metrics, setMetrics] = useState<Metrics>({ anchors: [], maximum: 0, position: 0, height: 0 });
   const latest = useRef(metrics);
   const [hovered, setHovered] = useState<string | null>(null), [focusKey, setFocusKey] = useState<string | null>(null);
@@ -131,9 +132,10 @@ export function ConversationRail({ scroll, content, turns, selected, onSelect, o
   return <div ref={root} className={`conversation-rail${dragging ? ' is-scrolling' : ''}`} style={style}
     data-context-level={context.ratio === null ? 'unknown' : Math.round(context.ratio * 100)}
     onWheel={event => { if (scroll.current && event.deltaY && !event.ctrlKey) { onScrollIntent(); scroll.current.scrollTop += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroll.current.clientHeight : 1); } }}>
+    <span id={instructionsID} className="conversation-rail-instructions">Dots select turns; arrow keys move between dots and Enter selects. The ring scrolls the conversation. The percentage reports model context use, not scroll position.</span>
     <div ref={track} className="conversation-rail-track" onPointerDown={event => { if (event.target === event.currentTarget) startScroll(event, true); }}>
       <div className="conversation-rail-line" aria-hidden="true" />
-      <div className="conversation-rail-turns" role="group" aria-label="Conversation turns">
+      <div className="conversation-rail-turns" role="group" aria-label="Conversation turns" aria-describedby={instructionsID}>
         {turns.map((turn, index) => <button key={turn.key} ref={node => { if (node) buttons.current.set(turn.key, node); else buttons.current.delete(turn.key); }} type="button"
           className="conversation-rail-turn" style={{ top: `${index / turns.length * 100}%` }}
           aria-label={`Jump to ${turn.label.toLowerCase()}`} aria-current={selected === turn.key ? 'step' : undefined}
@@ -151,7 +153,7 @@ export function ConversationRail({ scroll, content, turns, selected, onSelect, o
             event.preventDefault(); buttons.current.get(turns[Math.max(0, Math.min(turns.length - 1, next))].key)?.focus({ preventScroll: true });
           }}><span aria-hidden="true" /></button>)}
       </div>
-      <div className="conversation-rail-thumb" role="scrollbar" aria-label="Scroll conversation" aria-orientation="vertical"
+      <div className="conversation-rail-thumb" role="scrollbar" aria-label="Scroll conversation" aria-orientation="vertical" aria-describedby={instructionsID}
         aria-controls={scroll.current?.id} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(metrics.position * 100)}
         aria-valuetext={`${Math.round(metrics.position * 100)}% through conversation`} aria-disabled={metrics.maximum <= 0}
         tabIndex={metrics.maximum > 0 ? 0 : -1} style={{ top: `${metrics.position * 100}%` }} onPointerDown={event => startScroll(event)}
@@ -164,6 +166,9 @@ export function ConversationRail({ scroll, content, turns, selected, onSelect, o
         }}><span aria-hidden="true" /></div>
     </div>
     <div className="conversation-rail-context" title={context.label} aria-label={context.label}>{context.ratio === null ? '—' : `${Math.round(context.ratio * 100)}%`}</div>
+    <div className="conversation-rail-guide" onFocus={() => setHovered(null)} onMouseEnter={() => setHovered(null)}>
+      <HelpHint topic="turn-rail" label="Navigation and context" />
+    </div>
     {active && !dragging && createPortal(<div ref={tip} id={tooltipID} role="tooltip" className="conversation-rail-tooltip" style={tipPosition}
       onMouseEnter={() => clearTimeout(closeTimer.current)} onMouseLeave={hideTip}>
       <header><strong>{active.label}</strong><span>{active.status}</span></header>

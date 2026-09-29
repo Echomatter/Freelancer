@@ -3,7 +3,6 @@ import path from "node:path";
 import {
   workspaceCatalog,
   normalizeAgent,
-  normalizeWorkflow,
 } from "../../../domain/workspace.mjs";
 
 export const retiredAgents = Object.freeze([
@@ -18,7 +17,7 @@ export const retiredAgents = Object.freeze([
 ]);
 
 // One authored catalog. Native profiles are transport adapters, not a second
-// set of personas. The exact agent + workflow prompt is supplied per request.
+// set of personas. The exact agent prompt is supplied per request.
 export function checkedCatalog(settings = {}) {
   const catalog = workspaceCatalog(settings);
   const ids = new Set();
@@ -30,8 +29,6 @@ export function checkedCatalog(settings = {}) {
       );
     ids.add(agent.id);
   }
-  for (const workflow of catalog.workflows)
-    normalizeWorkflow(workflow, workflow.id, catalog.agents);
   return structuredClone(catalog);
 }
 export async function readAgentCatalog(root) {
@@ -70,7 +67,7 @@ export function configureAgentProfiles(config, catalog) {
       ...previous,
       mode: "all",
       description: `${agent.name}: available for a main chat or a delegated assignment in Freelancer.`,
-      // Persona and workflow are resolved once into each request's system prompt.
+      // The authored persona is resolved into each request's system prompt.
       // Do not pin an assignment's model or copy a mutable persona into this cache.
       prompt: "",
       model: undefined,

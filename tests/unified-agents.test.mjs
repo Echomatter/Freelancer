@@ -24,7 +24,6 @@ const custom = {
 };
 const job = {
   agentID: "engineer",
-  workflowID: "build",
   task: "Check a bounded part of the project.",
   selectedModel: "opencode/free-b",
 };
@@ -90,7 +89,7 @@ test("legacy restricted role preferences migrate conservatively without creating
   );
   assert.throws(
     () => normalizePreferences({ schemaVersion: 2, allowedRoles: ["worker"] }),
-    /retired/,
+    /retired helper roles/,
   );
 });
 test("main and delegated custom agents use the same captured definition and chosen model", async (t) => {
@@ -104,16 +103,17 @@ test("main and delegated custom agents use the same captured definition and chos
   assert.ok(catalog.agents.some((a) => a.id === agent.id));
   assert.ok(!catalog.agents.some((a) => a.id === "worker"));
   const receipt = await f.delegator.execute(
-    { ...job, agentID: agent.id, workflowID: "review" },
+    { ...job, agentID: agent.id },
     ctx,
   );
   assert.equal(receipt.status, "completed");
   assert.equal(receipt.agent.name, agent.name);
-  assert.equal(receipt.workflow.mode, "review");
+  assert.equal(receipt.mode, "build");
+  assert.equal(Object.hasOwn(receipt, "workflow"), false);
   const child = f.prompts.at(-1).body;
   assert.equal(child.agent, agent.id);
   assert.equal(child.system.split("UNIQUE_PERSONA_SENTINEL").length - 1, 1);
-  assert.match(child.system, /Work mode: review/);
+  assert.match(child.system, /Work mode: build/);
   assert.equal(child.model.modelID, "free-b");
   assert.equal(main.model.modelID, "free-a");
   assert.equal(receipt.role, undefined);
@@ -184,7 +184,7 @@ test("paid agent defaults still require native paid permission exactly once", as
     agent = await f.app.saveAgent({ ...custom, model: "opencode-go/paid" }),
     ctx = await f.send();
   const receipt = await f.delegator.execute(
-    { agentID: agent.id, workflowID: "build", task: "Inspect the code" },
+    { agentID: agent.id, task: "Inspect the code" },
     ctx,
   );
   assert.equal(receipt.status, "completed");
@@ -196,18 +196,19 @@ test("paid agent defaults still require native paid permission exactly once", as
   );
 });
 
-test("review behavior guides routing without becoming a write or nesting gate", async (t) => {
+test("independent-review intent is explicit and does not grant write or nesting authority", async (t) => {
   const f = await unifiedFixture(t),
-    ctx = await f.send({ agentID: "designer", workflowID: "review" });
+    ctx = await f.send({ agentID: "designer" });
   const receipt = await f.delegator.execute(
-    { ...job, agentID: "designer", workflowID: "review" },
+    { ...job, agentID: "designer", independentReview: true },
     ctx,
   );
   assert.equal(receipt.status, "completed");
+  assert.equal(receipt.mode, "build");
   assert.equal(receipt.read_only, false);
   assert.equal(f.selections.at(-1).needsModelDiversity, true);
   const nested = await f.delegator.execute(
-    { ...job, agentID: "researcher", workflowID: "explore", task: "Inspect a nested bounded concern." },
+    { ...job, agentID: "researcher", task: "Inspect a nested bounded concern." },
     f.context(receipt.attempts[0].child_session),
   );
   assert.equal(nested.status, "completed");
@@ -221,7 +222,7 @@ test("unknown agents, role-based calls, forged native identity and missing conte
   );
   await assert.rejects(
     f.delegator.execute({ role: "worker", task: "Edit" }, ctx),
-    /retired/,
+    /named agentID/,
   );
   f.rows.get(f.parent.id).at(-1).info.agent = "researcher";
   await assert.rejects(f.delegator.execute(job, ctx), /identity differs/);
@@ -278,7 +279,6 @@ test("refresh claims are released on errors and require exact named profiles on 
 test("new delegate metadata has a named agent and keeps the real tool rather than a Desktop disguise", () => {
   const receipt = {
     agent: { id: "designer", name: "Designer" },
-    workflow: { id: "review" },
     status: "completed",
     parent_session: "ses_parent",
     task_id: "id",
@@ -286,7 +286,6 @@ test("new delegate metadata has a named agent and keeps the real tool rather tha
   };
   const metadata = completionMetadata(receipt, {
     agentID: "designer",
-    workflowID: "review",
   });
   assert.equal(metadata.agentName, "Designer");
   assert.equal(metadata.sessionId, "ses_child");
@@ -295,7 +294,7 @@ test("new delegate metadata has a named agent and keeps the real tool rather tha
     taskCard({
       type: "tool",
       tool: "delegate",
-      state: { input: { agentID: "designer", workflowID: "review" } },
+      state: { input: { agentID: "designer", task: "Inspect this safely." } },
     }),
     null,
   );
@@ -372,7 +371,7 @@ test("historical agent-access settings migrate without gating new v5 assignments
   const engineer = await f.delegator.execute({ ...job, needsWrites: true }, ctx);
   assert.equal(engineer.status, "completed");
   const customReceipt = await f.delegator.execute(
-    { ...job, agentID: agent.id, workflowID: "review", task: "Review the bounded accessibility behavior." },
+    { ...job, agentID: agent.id, task: "Review the bounded accessibility behavior." },
     ctx,
   );
   assert.equal(customReceipt.status, "completed");
@@ -418,7 +417,6 @@ test("delegated Git coordination verifies the exact native parent call, not an i
     {
       ...job,
       agentID: "researcher",
-      workflowID: "explore",
       task: "Inspect local project history",
       needsWrites: true,
     },
@@ -439,7 +437,7 @@ test("delegated Git coordination verifies the exact native parent call, not an i
       callID: ctx.callID,
       state: {
         status: "running",
-        input: { agentID: "researcher", workflowID: "explore" },
+        input: { agentID: "researcher", task: "Inspect local project history" },
       },
     },
   ];
@@ -472,22 +470,21 @@ test("delegated Git coordination verifies the exact native parent call, not an i
   await assert.rejects(group(), /waiting only/);
 });
 
-test("managed Git authority comes from execution identity and the saved agreement, not workflow labels", async (t) => {
+test("managed Git does not depend on workflow labels", async (t) => {
   const f = await unifiedFixture(t),
-    ctx = await f.send({ agentID: "designer", workflowID: "review" });
+    ctx = await f.send({ agentID: "designer" });
   await assert.rejects(
     f.app.gitAgentAction({
       directory: f.directory,
       sessionID: f.parent.id,
       messageID: ctx.messageID,
       agentID: "git",
-      workflowID: "sync",
       action: "preview",
     }),
-    error => { assert.doesNotMatch(error.message, /Choose the Sync workflow/); return true; },
+    /project history|waiting only/,
   );
   const receipt = await f.delegator.execute(
-    { ...job, agentID: "engineer", workflowID: "review" },
+    { ...job, agentID: "engineer" },
     ctx,
   );
   await assert.rejects(
@@ -497,7 +494,7 @@ test("managed Git authority comes from execution identity and the saved agreemen
       messageID: f.context(receipt.attempts[0].child_session).messageID,
       action: "preview",
     }),
-    error => { assert.doesNotMatch(error.message, /Choose the Sync workflow/); return true; },
+    /project history|waiting only/,
   );
 });
 test("new chats preserve restrictive project policy rather than resetting it during catalog migration", async (t) => {

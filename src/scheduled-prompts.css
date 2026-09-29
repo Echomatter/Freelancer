@@ -1,4 +1,4 @@
-.scheduled-prompts { max-width: 880px; margin: 0 auto; }
+.scheduled-prompts { width: 100%; max-width: none; margin: 0 auto; }
 .schedule-feedback { min-height: 28px; padding: 6px 0; color: var(--success); font-size: 12px; }
 .schedule-feedback > span { display: inline-flex; align-items: center; gap: 6px; }
 .schedule-editor { margin-bottom: 20px; border-color: var(--border-strong); }

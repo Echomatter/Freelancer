@@ -1,4 +1,3 @@
-import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from "react";
 import { ArrowUpRight, CalendarClock, Check, Pause, Play, Plus, Trash2 } from "lucide-react";
 import { api } from "./api";
@@ -7,7 +6,7 @@ import { ProviderSelect } from "./ProviderColors";
 import { Badge, Button, Field, PageCloseButton, PageHeading, Panel } from "./echoflex/Controls";
 import "./scheduled-prompts.css";
 
-type Draft = { id?: string; title: string; prompt: string; project: string; agent: string; workflow: string; model: string; frequency: string; firstRunAt: string; enabled: boolean };
+type Draft = { id?: string; title: string; prompt: string; project: string; agent: string; model: string; frequency: string; firstRunAt: string; enabled: boolean };
 const localTime = (value: string | number) => {
   const date = new Date(value);
   if (!Number.isFinite(date.getTime())) return "";
@@ -31,7 +30,6 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
   const editor = useRef<HTMLInputElement>(null);
   const projects = data.settings.projects ?? [];
   const agents = data.settings.agents ?? [];
-  const workflows = data.settings.workflows ?? [];
   const models = workspaceModels(data.models ?? [], data.providers.connected ?? []);
   useEffect(() => {
     const controller = new AbortController();
@@ -52,7 +50,6 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
     setDraft(row ? { ...row, firstRunAt: localTime(row.firstRunAt) } : {
       title: "", prompt: "", project: data.project?.id ?? projects[0]?.id ?? "",
       agent: agents.find(a => a.id === "engineer")?.id ?? agents[0]?.id ?? "",
-      workflow: workflows.find(w => w.id === "build")?.id ?? workflows[0]?.id ?? "",
       model: "", frequency: "once", firstRunAt: localTime(Date.now() + 3600000), enabled: true,
     });
   };
@@ -78,10 +75,9 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
   }
   const name = (items: any[], id: string) => items.find(item => item.id === id)?.name ?? id;
   return <div className="scheduled-prompts">
-    <PageHeading title="Scheduled prompts" actions={<PageCloseButton onClick={onClose} />} />
+    <PageHeading title="Scheduled prompts" icon={CalendarClock} help="schedules" actions={<PageCloseButton onClick={onClose} />} />
     <div className="context-actions schedule-toolbar">
       <Button variant="primary" disabled={!!busy || !!draft || !projects.length} onClick={() => edit()}><Plus size={16} /> New schedule</Button>
-      <HelpHint topic="schedules" />
     </div>
     <div className="schedule-feedback" aria-live="polite">{notice && <span><Check size={15} aria-hidden="true" /> {notice}</span>}</div>
     {loadError && <p className="notice error" role="alert">Schedules could not be refreshed. {loadError} Retrying automatically.</p>}
@@ -94,11 +90,10 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
           <Field label="Name"><input ref={editor} required maxLength={120} value={draft.title} placeholder="Morning project review" onChange={e => change({ title: e.target.value })} /></Field>
           <Field label="Prompt"><textarea required rows={5} maxLength={32000} value={draft.prompt} placeholder="Review recent changes, run the relevant checks, and summarize anything that needs attention." onChange={e => change({ prompt: e.target.value })} /></Field>
           <Field label="Project"><select required value={draft.project} onChange={e => change({ project: e.target.value })}><option value="" disabled>Choose a project</option>{projects.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}{draft.project && !projects.some(p => p.id === draft.project) && <option value={draft.project}>Project unavailable</option>}</select></Field>
-          <div className="schedule-fields">
-            <Field label="Agent"><select required value={draft.agent} onChange={e => change({ agent: e.target.value })}>{agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{!agents.some(a => a.id === draft.agent) && <option value={draft.agent}>Choose an available agent</option>}</select></Field>
-            <Field label="Workflow"><select required value={draft.workflow} onChange={e => change({ workflow: e.target.value })}>{workflows.map(w => <option key={w.id} value={w.id}>{w.name}</option>)}{!workflows.some(w => w.id === draft.workflow) && <option value={draft.workflow}>Choose an available workflow</option>}</select></Field>
-          </div>
-          <Field label="Model" help="schedule-execution"><ProviderSelect required provider={draft.model} value={draft.model} onChange={e => change({ model: e.target.value })}><option value="" disabled>Choose a model</option>{models.map(m => <option key={m.id} value={m.id}>{m.name} · {m.provider}</option>)}{draft.model && !models.some(m => m.id === draft.model) && <option value={draft.model}>{draft.model} · Unavailable</option>}</ProviderSelect></Field>
+           <div className="schedule-fields">
+             <Field label="Agent"><select required value={draft.agent} onChange={e => change({ agent: e.target.value })}>{agents.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}{!agents.some(a => a.id === draft.agent) && <option value={draft.agent}>Choose an available agent</option>}</select></Field>
+             <Field label="Model" help="schedule-execution"><ProviderSelect required provider={draft.model} value={draft.model} onChange={e => change({ model: e.target.value })}><option value="" disabled>Choose a model</option>{models.map(m => <option key={m.id} value={m.id}>{m.name} · {m.provider}</option>)}{draft.model && !models.some(m => m.id === draft.model) && <option value={draft.model}>{draft.model} · Unavailable</option>}</ProviderSelect></Field>
+           </div>
           <div className="schedule-fields">
             <Field label="Repeat" help="schedule-timing"><select value={draft.frequency} onChange={e => change({ frequency: e.target.value })}><option value="once">Once</option><option value="daily">Every day (24 hours)</option><option value="weekly">Every week (7 days)</option></select></Field>
             <Field label="First run (your local time)"><input required type="datetime-local" value={draft.firstRunAt} onChange={e => change({ firstRunAt: e.target.value })} /></Field>
@@ -116,7 +111,7 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
       return <Panel key={row.id} className="schedule-card" aria-label={row.title}>
         <div className="schedule-card-heading"><h3>{row.title}</h3><Badge tone={row.enabled ? "success" : "neutral"}>{row.enabled ? "Enabled" : row.frequency === "once" && !row.nextRunAt && last ? "Finished schedule" : "Paused"}</Badge></div>
         <p className="schedule-prompt">{row.prompt}</p>
-        <div className="schedule-meta"><span>{name(projects, row.project)}</span><span>{name(agents, row.agent)} · {name(workflows, row.workflow)}</span><span>{name(data.models ?? [], row.model)}</span></div>
+        <div className="schedule-meta"><span>{name(projects, row.project)}</span><span>{name(agents, row.agent)}</span><span>{name(data.models ?? [], row.model)}</span></div>
         <div className="schedule-timing"><CalendarClock size={16} aria-hidden="true" /><span>{row.frequency === "once" ? "One time" : row.frequency === "daily" ? "Every 24 hours" : "Every 7 days"} · {row.enabled && row.nextRunAt ? `Next ${displayTime(row.nextRunAt)}` : "No upcoming run"}</span></div>
         {last && <div className="schedule-last"><span>Last run: {runLabel(last.status)} {last.startedAt ? `· ${displayTime(last.startedAt)}` : ""}</span>{last.error && <p className="notice error">{last.error}</p>}{last.session && <Button disabled={!!busy} onClick={async () => { setBusy(row.id); setError(""); try { await onOpen(row.project, last.session); } catch (error) { setError(message(error)); } finally { setBusy(""); } }}>Open run <ArrowUpRight size={14} /></Button>}</div>}
         <div className="schedule-actions">

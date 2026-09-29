@@ -9,24 +9,24 @@ The UI/application contract is checked against the current
 [`domain/protocol.mjs`](../domain/protocol.mjs). A browser refresh alone cannot
 upgrade the local server. There is no new database server or installer to run.
 
-**History** is under Application settings in the left navigation. The current
-chat's actions also offer **Archive, pin or export…**, preselecting that parent
-conversation. History has Active, Archived and All views, one conversation-content
-search across registered projects, pins, multiple selection, Undo, and progressive
-**Load more history** when browsing a project. Search results use the same selection,
-archive, and export controls; selection is limited to one project at a time.
+The current chat's actions offer **Archive, pin or export…**, preselecting that
+parent conversation. **Export conversations** in Content & Storage opens the same
+conversation-history organizer. It has Active, Archived and All views, pins,
+multiple selection, Undo, and progressive **Load more history** for one selected
+project. Archive and export selection remains limited to one project at a time.
 
-**Application settings → Search files** searches indexed file content across all
-registered projects, including archived ones. Choose a project to narrow results,
-then open a hit in that project's **Project settings → Files** view. Refresh the
-search copy in **Application settings → Content index**; searching never changes
-project files.
+**Project settings → Search project content** searches indexed files and
+conversations only in the selected project. **Application settings → Search all
+content** searches both indexes across all registered projects, including archived
+ones. A result opens either its conversation or its source file in **Project
+settings → Files**. Refresh the search copies in **Application settings → Content &
+Storage**; searching never changes project files or conversations.
 
-**Application settings → Data & Storage** shows actual locations and explains ownership.
+**Application settings → Content & Storage** shows actual locations and explains ownership.
 Use **Put project away** to hide a project from active navigation, and **Restore
 project** to bring it back. Its folder and Git agreement remain untouched.
 
-The backup checklist distinguishes a local copy of project folders and data locations from conversation export. Stop the server and OpenCode before copying live databases, and include SQLite sidecar files. Exports cover selected conversations only; Freelancer export bundles have no restore/import action. Both search indexes are derived data: **Application settings → Content index** refreshes files throughout every registered project root or native OpenCode messages across all registered projects. File indexing includes source code, configuration, documents, and other readable text throughout each root; generated folders, private state, and binary formats without an extractor are skipped. The conversation index includes titles and user/assistant text, including archived chats and workers, with model IDs; it does not copy tool output, reasoning, attachments, or drafts. OpenCode remains the conversation authority. The same page can optimize the full-text indexes, run SQLite quick check, and compact free pages; these jobs do not operate on OpenCode's native database.
+The backup checklist distinguishes a local copy of project folders and data locations from conversation export. Stop the server and OpenCode before copying live databases, and include SQLite sidecar files. Exports cover selected conversations only; Freelancer export bundles have no restore/import action. Both search indexes are derived data: **Application settings → Content & Storage** refreshes files throughout every registered project root or native OpenCode messages across all registered projects. File indexing includes source code, configuration, documents, and other readable text throughout each root; generated folders, private state, and binary formats without an extractor are skipped. The conversation index includes titles and user/assistant text, including archived chats and workers, with model IDs; it does not copy tool output, reasoning, attachments, or drafts. OpenCode remains the conversation authority. The same page can optimize the full-text indexes, run SQLite quick check, and compact free pages; these jobs do not operate on OpenCode's native database.
 
 Unsent drafts save after a short typing pause. **Draft saved on this computer**
 means the server acknowledged that exact revision. A save error leaves the text
@@ -77,7 +77,7 @@ and exports remain accessible. Usage/accounting still includes archived work.
 | Project source and Git history                                                       | Filesystem / Git                       | User-selected folders                                                   | Never moved or deleted here                                          |
 | Native sessions, messages, parts, tools, permissions, todos                          | OpenCode                               | Native engine database, located through the same executable's `db path` | Use native API/CLI; never write its database                         |
 | Provider authentication                                                              | Existing native authentication systems | Existing credential locations                                           | Never copied into this store or exports as a credential collection   |
-| Registered projects, plans, appearance, agent/workflow overrides, remembered choices | Existing Freelancer store              | `backend/.state/webpage/settings.json`                                  | Remains authoritative; no bulk migration                             |
+| Registered projects, plans, appearance, agent overrides, remembered choices | Existing Freelancer store              | `backend/.state/webpage/settings.json`                                  | Remains authoritative; no bulk migration                             |
 | Request receipts and observed usage                                                  | Existing Freelancer store              | `requests.json`, `usage.json` in that directory                         | Not removed or reset by archive                                      |
 | Waiting/uncertain delivery                                                           | Freelancer sender                      | `sender-outbox.json`                                                    | A delivery commitment, not a draft; archive cannot cancel it         |
 | Runtime preferences, delegation receipts, outcomes and quota state                   | Existing runtime writers               | Other directories/files under `backend/.state/`                         | Kept in runtime JSON                                               |
@@ -97,9 +97,9 @@ second copy of its policy in SQLite.
 - A **project** is a folder registration plus its setup; it has conversations.
 - A **conversation** is an OpenCode session or an explicitly imported Codex snapshot. A worker is a native child session.
 - A **request** is one user instruction. Its receipt preserves which agent,
-  workflow, model and execution settings were used at that time.
-- An **agent definition** describes working style; a **workflow definition**
-  describes execution policy. Editing either does not rewrite past receipts.
+  model and execution settings were used at that time. Older receipts may still
+  carry a retired captured workflow value for compatibility.
+- An **agent definition** describes working style. Editing it does not rewrite past receipts.
 - A **worker job** is a particular delegated assignment linked to its native
   child session and parent request, not another editable agent definition.
 - A **usage observation** records native activity; archiving does not erase it.

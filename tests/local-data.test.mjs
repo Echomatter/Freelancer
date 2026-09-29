@@ -288,7 +288,6 @@ test("queued delivery blocks archive and cannot be silently cancelled", async (t
     kind: "queue",
     text: "Next turn",
     model: "opencode/free",
-    workflowID: "build",
     agentID: "inherit",
     variant: "",
   });
@@ -608,7 +607,6 @@ test("archive fences the prompt acknowledgement gap and never cancels native wor
       text: "Request",
       model: "opencode/free",
       variant: "",
-      workflowID: "build",
       agentID: "inherit",
     });
     while (!f.calls.some((c) => c.route.endsWith("/prompt_async")))
@@ -666,6 +664,19 @@ test("native archive acknowledgement without actual state change is not reported
       .organization.archived,
     false,
   );
+});
+
+test("history project HTTP rejects conflicting query and body project IDs", async (t) => {
+  const f = await localDataFixture();
+  t.after(() => f.close());
+  const response = await fetch(`${f.url}/api/history/project?project=${f.project.id}`, {
+    method: "PUT",
+    headers: { "X-Freelancer-Client": "webpage", "Content-Type": "application/json" },
+    body: JSON.stringify({ project: "another-project", archived: true, revision: 0 }),
+  });
+  assert.equal(response.status, 400);
+  assert.match((await response.json()).error, /does not match/);
+  assert.notEqual((await f.api(`history?project=${f.project.id}`)).sessions[0].organization.projectArchived, true);
 });
 
 test("native export and database discovery fail without invented results", async (t) => {

@@ -439,10 +439,8 @@ export function Chat({
   attachmentStore,
   onStop,
   onChild,
-  onWorkflow,
   agentID,
   setAgentID,
-  workflowID,
   syncing = false,
   draftLoading = false,
   captureDraft,
@@ -469,10 +467,8 @@ export function Chat({
   attachmentStore?: Map<string, PendingAttachment[]>;
   onStop: () => void;
   onChild: (s: string) => void;
-  onWorkflow: (w: any) => void;
   agentID: string;
   setAgentID: (id: string) => void;
-  workflowID: string;
   syncing?: boolean;
   draftLoading?: boolean;
   captureDraft?: () => any;
@@ -582,9 +578,6 @@ export function Chat({
     setShowNewActivity(false);
     followLatest();
   };
-  const workflow =
-    data.settings.workflows.find((w) => w.id === workflowID) ??
-    data.settings.workflows[0];
   const models = useMemo(() => workspaceModels(
     data.models ?? [],
     data.providers.connected,
@@ -598,13 +591,8 @@ export function Chat({
     for (const item of models) grouped.set(item.provider, [...(grouped.get(item.provider) ?? []), item]);
     return grouped;
   }, [models]);
-  const inheritedAgent = data.settings.agents.find(
-    (a) => a.id === workflow.agentID,
-  );
-  const selectedAgent =
-    agentID === "inherit"
-      ? inheritedAgent
-      : data.settings.agents.find((a) => a.id === agentID);
+  const selectedAgent = data.settings.agents.find((a) => a.id === agentID)
+    ?? data.settings.agents.find((a) => a.id === "engineer");
   const preferences =
     data.snapshot.preferences?.defaults ??
     data.snapshot.preferences?.preferences;
@@ -638,8 +626,7 @@ export function Chat({
     setDraft,
     parentModel: selectedModel,
     intelligence,
-    agentID,
-    workflowID,
+    agentID: selectedAgent?.id ?? "engineer",
     models,
     onStop,
     onSend: (selectedVariant) => {
@@ -754,12 +741,7 @@ export function Chat({
           <div className="chat-welcome">
             <h1>What shall we make?</h1>
             <div className="suggestions">
-              {(data?.settings.workflows ?? []).slice(0, 3).map((w) => (
-                <button key={w.id} onClick={() => onWorkflow(w)}>
-                  <ArrowUpRight size={18} />
-                  {w.name}
-                </button>
-              ))}
+              <p>Describe a task, question, or plan to get started.</p>
             </div>
           </div>
         ) : requestContent}
@@ -827,47 +809,23 @@ export function Chat({
           <ComposerMenu context={attachmentContext} disabled={syncing || readOnly || draftLoading} onAttach={() => attachmentInput.current?.click()}>
             <div className="composer-selects">
               <label className="composer-choice">
-                <span>Workflow</span>
-                <select
-                  aria-label="Workflow"
-                  disabled={syncing}
-                  value={workflow.id}
-                  onChange={(e) =>
-                    onWorkflow(
-                      data.settings.workflows.find(
-                        (w) => w.id === e.target.value,
-                      ),
-                    )
-                  }
-                >
-                  {data.settings.workflows.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="composer-choice">
                 <span>Agent</span>
                 <select
                   aria-label="Agent"
                   disabled={syncing}
-                  value={agentID}
+                  value={selectedAgent?.id ?? "engineer"}
                   onChange={(e) => {
                     setAgentID(e.target.value);
                     setModel("inherit");
                     setVariant?.("inherit");
                   }}
                 >
-                  <option value="inherit">
-                    {agentID === "inherit"
-                      ? (inheritedAgent?.name ?? "None")
-                      : "Default"}
+                  <option value={selectedAgent?.id ?? "engineer"}>
+                    {selectedAgent?.name ?? "Engineer"}
                   </option>
                   {data.settings.agents
                     .filter(
-                      (a) =>
-                        agentID !== "inherit" || a.id !== inheritedAgent?.id,
+                      (a) => a.id !== selectedAgent?.id,
                     )
                     .map((a) => (
                       <option key={a.id} value={a.id}>
@@ -929,7 +887,7 @@ export function Chat({
             aria-label="Message"
             placeholder={
               session?.imported ? 'Continue in Freelancer to send a new message…' : data?.project
-                ? "Describe what you want to make…"
+                ? "What should the agent do? Describe the outcome, scope, and checks…"
                 : "Open a project to get started…"
             }
             value={draft}
@@ -955,7 +913,7 @@ export function Chat({
               disabled={!selectedModel || !data?.project || syncing || readOnly || draftLoading}
             />
           </div>
-          <div className="composer-context" aria-label="Current message settings"><span>{selectedAgent?.name ?? 'Agent'} · {workflow.name}</span><span title={currentModel?.name}>{currentModel?.name ?? 'Choose a model'}{intelligence ? ` · ${intelligence}` : ''}</span></div>
+          <div className="composer-context" aria-label="Current message settings"><span>{selectedAgent?.name ?? 'Engineer'}</span><span title={currentModel?.name}>{currentModel?.name ?? 'Choose a model'}{intelligence ? ` · ${intelligence}` : ''}</span></div>
           <input ref={attachmentInput} hidden type="file" multiple aria-label="Choose attachments" tabIndex={-1} onChange={(event) => { if (event.target.files) void addAttachments(event.target.files); event.target.value = ""; }} />
 
         </form>

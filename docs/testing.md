@@ -62,7 +62,7 @@ Python, PowerShell and installed-native startup checks remain separate in CI.
 | Todo placement and sender controls | `polish`, `unfinished-work`, `action-feedback`, `send-feedback` |
 | Decision banners and native question constraints | `dialogs`: defer, reopen, answer single/multiple/custom choices, verify native answers |
 | Model options, intelligence controls, session defaults and agent-owned models | `model-defaults`: edit, save and reload through the production UI |
-| Shared sidebar/history activity wiring | `history-search`: observe native worker busy/idle in both views |
+| Shared sidebar/conversation-history activity wiring | `history-search`: observe native worker busy/idle in both views |
 | Quota summaries, disclosures, billing isolation and unknown data | `usage`: rendered geometry, keyboard actions, expiry and failed refresh |
 
 Numerical color contracts still check every palette and custom swatch on every

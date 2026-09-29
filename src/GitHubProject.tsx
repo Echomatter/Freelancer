@@ -228,7 +228,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
       : "Account connected";
   return (
     <div className="page git-project-page">
-      <PageHeading title="GitHub" actions={<>
+      <PageHeading title="GitHub" icon={Github} actions={<>
           <Button
             aria-label="Refresh Git status"
             disabled={pending}

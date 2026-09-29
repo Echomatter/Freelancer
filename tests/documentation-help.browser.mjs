@@ -95,12 +95,11 @@ test('documentation help stays contextual, accessible and sourced from the READM
   });
 
   await test.step('data screens retain navigation and maintenance confirmations', async () => {
-    await setting('Data & Storage');
+    await setting('Content & Storage');
     await page.getByRole('button', { name: 'Help: Local backups', exact: true }).focus();
     await content('local-backup');
     await page.keyboard.press('Escape');
-    await page.screenshot({ path: 'artifacts/documentation-help/storage-desktop.png', fullPage: true });
-    await page.getByRole('button', { name: 'Manage content index', exact: true }).click();
+    await page.screenshot({ path: 'artifacts/documentation-help/content-storage-desktop.png', fullPage: true });
     await page.getByRole('button', { name: 'Help: Index coverage', exact: true }).hover();
     await content('index-coverage');
     await page.keyboard.press('Escape');
@@ -108,12 +107,12 @@ test('documentation help stays contextual, accessible and sourced from the READM
     const dialog = page.getByRole('dialog', { name: 'Confirm clean search indexes' });
     await expect(dialog).toContainText('Project files, OpenCode conversations, settings, and drafts are not changed.');
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await page.screenshot({ path: 'artifacts/documentation-help/index-desktop.png', fullPage: true });
-    await page.getByRole('button', { name: 'Search project files', exact: true }).click();
-    await page.getByRole('button', { name: 'Help: Search project files', exact: true }).focus();
+    await page.screenshot({ path: 'artifacts/documentation-help/content-storage-maintenance.png', fullPage: true });
+    await page.locator('.page-title-actions').getByRole('button', { name: 'Search all content', exact: true }).click();
+    await page.getByRole('button', { name: 'Help: Search indexed content', exact: true }).focus();
     await content('file-search');
     await page.keyboard.press('Escape');
-    await expect(page.getByRole('searchbox', { name: 'Search project files', exact: true })).toBeVisible();
+    await expect(page.getByRole('searchbox', { name: 'Search all content', exact: true })).toBeVisible();
   });
 
   await test.step('help works in a modal and Escape closes only the hint', async () => {
@@ -141,7 +140,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await content('worker-models');
     await page.keyboard.press('Escape');
     await setting('Providers');
-    await page.getByRole('button', { name: 'Help: Provider colors', exact: true }).first().focus();
+    await page.getByRole('button', { name: 'Help: OpenAI color — Provider colors', exact: true }).focus();
     await content('provider-color');
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Save provider settings', exact: true })).toBeVisible();

@@ -48,7 +48,7 @@ export function DelegationSettings({ project, sessionID = '', refresh }: {
   }
   if (!project) return <Panel><h3>Choose a project</h3></Panel>;
   const workerModels = ['balanced', 'any'].includes(draft?.costPreference) ? 'all' : draft?.costPreference;
-  return <Panel title="Delegation budget" help="delegation" className="delegation-settings">
+  return <Panel title="Delegation budget" className="delegation-settings">
     <Field label="Apply to" help="delegation-scope"><select value={scope} disabled={saving} onChange={e => setScope(e.target.value)}>
       <option value="project">This project</option><option value="session" disabled={!sessionID}>Selected chat</option>
     </select></Field>

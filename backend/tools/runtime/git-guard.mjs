@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 
-// Project Git enforcement is intentionally independent from agent/workflow names.
-// The saved GitHub agreement is authority; workflows and skills are guidance.
+// Project Git enforcement is intentionally independent from agent names.
+// The saved GitHub agreement is authority; skills are guidance.
 export async function gitToolGuard({
   toolkitRoot,
   directory,

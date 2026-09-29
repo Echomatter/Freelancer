@@ -172,7 +172,10 @@ try {
             if($receipt.agent.id){
                 $entry.Remove('role')
                 $entry.agent_id=$receipt.agent.id;$entry.agent_name=$receipt.agent.name
-                $entry.workflow_id=$receipt.workflow.id;$entry.work_mode=$receipt.workflow.mode
+                $entry.work_mode='build'
+                # Legacy captured receipts still carry their workflow descriptor;
+                # policy-6 receipts omit it and classify via independent_review/agent.
+                if($receipt.workflow.id){$entry.workflow_id=$receipt.workflow.id}
             }else{$entry.role=$receipt.role} # Historical receipt compatibility only.
             $entry.parent_model=$receipt.parent_model;$entry.attempts=@($receipt.attempts).Count
             $entry.fallback_used=(@($receipt.attempts).Count-gt 1)
@@ -182,7 +185,7 @@ try {
             $entry.parent_session=$receipt.parent_session;$entry.child_session=$attempt.child_session
             $entry.selected_model=$attempt.selected_model;$entry.dispatched_model=$attempt.dispatched_model;$entry.observed_model=$attempt.observed_model
             $entry.execution_attempts=@($receipt.attempts)
-            $entry.observation_kind=if($receipt.workflow.mode-eq'review'-or(-not$receipt.workflow-and$receipt.role-eq'review')){'review'}elseif($receipt.workflow.mode-in@('plan','explore')-or(-not$receipt.workflow-and$receipt.role-eq'researcher')){'research'}else{'implementation'}
+            $entry.observation_kind=if($receipt.independent_review-or$receipt.workflow.mode-eq'review'-or(-not$receipt.workflow-and$receipt.role-eq'review')){'review'}elseif($receipt.agent.id-eq'researcher'-or$receipt.workflow.mode-in@('plan','explore')-or(-not$receipt.workflow-and$receipt.role-eq'researcher')){'research'}else{'implementation'}
             if($operationalReceipt){
                 $entry.observation_kind='operational';$entry.failure_kind=$attempt.failure
                 $entry.model=$attempt.selected_model;$entry.success=$false;$entry.tests_passed=$false

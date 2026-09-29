@@ -52,9 +52,8 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
       delegate: tool({
         description: 'Assign a bounded task to a named agent. A new worker starts in the background. Use workers:true to list this parent conversation’s durable child assignments; use worker alone to read its current native chat transcript and status; use worker with task to continue it. Paid routes use native paid_delegate consent.',
         args: {
-          agent: tool.schema.string().optional().describe('Named agent ID from the supplied catalog. Omit all arguments for catalog details.'),
+          agent: tool.schema.string().optional().describe('Named agent ID from the supplied catalog. Omit all arguments to inspect available agents and budget.'),
           task: tool.schema.string().min(1).optional().describe('A bounded assignment, relevant files and acceptance checks. Give concurrent writers disjoint areas.'),
-          workflow: tool.schema.string().optional().describe('Optional approach; inherits the current workflow.'),
           model: tool.schema.string().optional().describe('Exact provider/model only when explicitly desired. Otherwise the runtime routes automatically.'),
           freeOnly: tool.schema.boolean().optional().describe('Only eligible free capacity, including descendants.'),
           inspectionOnly: tool.schema.boolean().optional().describe('No source modifications.'),
@@ -72,7 +71,6 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
           const output = ['catalog', 'workers', 'worker_transcript'].includes(receipt.status) ? receipt : {
             status: receipt.status, task_id: receipt.task_id, parent_session: receipt.parent_session,
             agent: receipt.agent && { id: receipt.agent.id, name: receipt.agent.name },
-            workflow: receipt.workflow && { id: receipt.workflow.id, mode: receipt.workflow.mode },
             attempts: receipt.attempts?.map((a: any) => ({ child_session: a.child_session, status: a.status,
               selected_model: a.selected_model, dispatched_model: a.dispatched_model, observed_model: a.observed_model, abort_verified: a.abort_verified })),
             worker_result: receipt.worker_result, result: receipt.result, note: receipt.note,

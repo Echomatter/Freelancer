@@ -16,11 +16,6 @@ async function budget(f, patch, scope = 'session') {
     scope, sessionID, revision: saved.revision, preferences: { ...saved.defaults, ...patch },
   });
 }
-async function workflow(f, id, patch) {
-  const current = workspaceCatalog(await f.store.read('settings')).workflows.find(w => w.id === id);
-  return f.app.saveWorkflow({ ...current, ...patch });
-}
-
 test('coordination instructions do not prescribe a team from a legacy strategy preset', () => {
   const p = normalizePreferences({ strategy: 'research-heavy' });
   assert.equal(normalizePreferences({ costPreference: 'balanced' }).costPreference, 'any');
@@ -30,17 +25,17 @@ test('coordination instructions do not prescribe a team from a legacy strategy p
   assert.throws(() => normalizePreferences({ subscriptionDelegation: 'anything' }), /Invalid/);
 });
 
-test('the root budget honors user limits independently of workflow labels and excludes metered routes', () => {
+test('the root budget honors user limits and excludes metered routes', () => {
   const models = [
     { id: 'opencode/free', provider: 'opencode', costClass: 'free', variants: ['high'] },
     { id: 'opencode-go/paid', provider: 'opencode-go', costClass: 'subscription', variants: [] },
     { id: 'openai/api', provider: 'openai', costClass: 'metered', variants: ['high'] },
   ];
   const connected = ['opencode', 'opencode-go', 'openai'];
-  assert.deepEqual(delegationPool(normalizePreferences(), { category: 'connected' }, models, connected), ['opencode/free', 'opencode-go/paid']);
-  assert.deepEqual(delegationPool(normalizePreferences({ costPreference: 'free-only' }), { category: 'subscriptions' }, models, connected), ['opencode/free']);
-  assert.deepEqual(delegationPool(normalizePreferences({ costPreference: 'paid-only' }), { category: 'connected' }, models, connected), ['opencode-go/paid']);
-  assert.deepEqual(delegationPool(normalizePreferences({ excludedModels: ['opencode/free'] }), { category: 'connected' }, models, connected, 'high'), []);
+  assert.deepEqual(delegationPool(normalizePreferences(), models, connected), ['opencode/free', 'opencode-go/paid']);
+  assert.deepEqual(delegationPool(normalizePreferences({ costPreference: 'free-only' }), models, connected), ['opencode/free']);
+  assert.deepEqual(delegationPool(normalizePreferences({ costPreference: 'paid-only' }), models, connected), ['opencode-go/paid']);
+  assert.deepEqual(delegationPool(normalizePreferences({ excludedModels: ['opencode/free'] }), models, connected, 'high'), []);
 });
 
 test('changing a budget cannot expand an active request, but current limits can tighten it', () => {
@@ -74,7 +69,8 @@ test('empty delegation capacity does not prevent a valid parent chat or silently
 test('catalog is optional and an ordinary free assignment starts in one call', async t => {
   const f = await unifiedFixture(t), ctx = await f.send();
   const catalog = await f.delegator.execute({}, ctx);
-  assert.ok(catalog.agents.every(a => a.expertise && Array.isArray(a.allowedModes)));
+  assert.ok(catalog.agents.every(a => a.expertise));
+  assert.equal(Object.hasOwn(catalog, 'workflows'), false);
   const { selectedModel, ...request } = job;
   assert.equal((await f.delegator.execute(request, ctx)).status, 'completed');
   assert.equal(f.permissions.length, 0);
@@ -88,7 +84,7 @@ test('named assignments inherit Build authority, and explicit inspection narrows
   const f = await unifiedFixture(t), ctx = await f.send();
   const r = await f.delegator.execute({ ...job, agentID: 'designer' }, ctx);
   assert.equal(r.status, 'completed');
-  assert.equal(r.workflow.id, 'build');
+  assert.equal(r.mode, 'build');
   assert.equal(r.read_only, false);
   assert.equal(f.selections.at(-1).needsWrites, true);
   const inspected = await f.delegator.execute({ ...job, needsWrites: false, task: 'Inspect a different bounded part.' }, ctx);
@@ -97,38 +93,38 @@ test('named assignments inherit Build authority, and explicit inspection narrows
 });
 
 
-test('Review guides the child without becoming a tool permission boundary', async t => {
-  const f = await unifiedFixture(t), ctx = await f.send({ workflowID: 'review' });
-  const r = await f.delegator.execute({ ...job, agentID: 'designer', task: 'Review the bounded module.' }, ctx);
-  assert.equal(r.workflow.id, 'review');
+test('independent review is an explicit assignment flag, not a workflow mode', async t => {
+  const f = await unifiedFixture(t), ctx = await f.send();
+  const r = await f.delegator.execute({ ...job, agentID: 'designer', independentReview: true, task: 'Review the bounded module.' }, ctx);
+  assert.equal(r.mode, 'build');
   assert.equal(r.read_only, false);
   assert.equal(f.selections.at(-1).needsModelDiversity, true);
-  const writer = await f.delegator.execute({ ...job, workflowID: 'build', needsWrites: true, task: 'Implement the bounded fix.' }, ctx);
+  const writer = await f.delegator.execute({ ...job, needsWrites: true, task: 'Implement the bounded fix.' }, ctx);
   assert.equal(writer.status, 'completed');
   await f.delegator.checkTool({ sessionID: r.attempts[0].child_session, tool: 'delegate' }, { args: job });
   const inspected = await f.delegator.execute({ ...job, needsWrites: false, task: 'Inspect only; do not modify files.' }, ctx);
   assert.equal(inspected.read_only, true);
 });
 
-test('a workflow guides the job without creating a second model or concurrency filter', async t => {
+test('task intent and delegation budget do not introduce a second model pool or concurrency filter', async t => {
   const f = await unifiedFixture(t);
-  await workflow(f, 'review', { category: 'subscriptions', parallel: false, variant: 'high' });
   await budget(f, { costPreference: 'free-only', maxParallel: 4 });
   const ctx = await f.send();
-  const r = await f.delegator.execute({ ...job, workflowID: 'review', task: 'Review src/example.js.' }, ctx);
+  const r = await f.delegator.execute({ ...job, independentReview: true, task: 'Review src/example.js.' }, ctx);
   assert.equal(r.status, 'completed');
+  assert.equal(r.mode, 'build');
   assert.equal(r.runtime_policy.max_parallel, 4);
   assert.equal(r.attempts[0].observed_model, 'opencode/free-b');
   assert.equal(f.prompts.at(-1).body.variant, undefined);
-  const next = await f.send({ workflowID: 'review' });
+  const next = await f.send();
   const pool = (await f.delegator.execute({}, next)).budget.modelPool;
   assert.ok(pool.includes('opencode/free-b'));
-  assert.ok(pool.length > 0, 'workflow category cannot silently empty the root model pool');
+  assert.ok(pool.length > 0);
 });
-test('omitted and explicit inherited workflows coalesce into one child', async t => {
+test('duplicate equivalent named assignments coalesce into one child', async t => {
   const f = await unifiedFixture(t), ctx = await f.send();
   const [a, b] = await Promise.all([
-    f.delegator.execute(job, ctx), f.delegator.execute({ ...job, workflowID: 'build' }, ctx),
+    f.delegator.execute(job, ctx), f.delegator.execute({ ...job }, ctx),
   ]);
   assert.equal(a.status, 'completed');
   assert.equal(b.task_id, a.task_id);
@@ -211,20 +207,18 @@ test('a free-only user instruction prevents a paid default even without a saved 
 });
 
 
-test('Git agreement applies independently of agent and workflow labels', async t => {
-  const f = await unifiedFixture(t), ctx = await f.send({ agentID: 'git', workflowID: 'explore' });
+test('Git agreement applies independently of agent choice', async t => {
+  const f = await unifiedFixture(t), ctx = await f.send({ agentID: 'engineer' });
   await f.delegator.checkTool({ sessionID: f.parent.id, tool: 'delegate' }, { args: job });
   const r = await f.delegator.execute({ ...job, agentID: 'researcher', task: 'Investigate repository conventions.' }, ctx);
   assert.equal(r.status, 'completed');
   assert.equal(r.read_only, false);
   await gitToolGuard({ toolkitRoot: f.root, directory: f.directory, input: { sessionID: f.parent.id, tool: 'delegate' }, args: job, client: f.client });
-  const build = await f.send({ agentID: 'git', workflowID: 'build' });
+  const build = await f.send({ agentID: 'engineer' });
   await assert.rejects(
     f.app.gitAgentAction({ directory: f.directory, sessionID: f.parent.id, messageID: build.messageID, action: 'execute', planID: 'forged' }),
     error => { assert.doesNotMatch(error.message, /Sync workflow/); return true; },
   );
-  const sync = await f.send({ agentID: 'engineer', workflowID: 'sync' });
-  assert.equal((await f.delegator.execute({ ...job, task: 'Coordinate the bounded sync preparation.' }, sync)).status, 'completed');
   await gitToolGuard({ toolkitRoot: f.root, directory: f.directory, input: { sessionID: f.parent.id, tool: 'bash' }, args: { command: 'node --version' }, client: f.client });
   await f.store.update('settings', settings => { settings.gitProjects = { [f.project.id]: { tracking: true, preset: 'main' } }; return settings; });
   await assert.rejects(
@@ -305,6 +299,8 @@ test('legacy captured assignments do not silently gain Build write authority aft
   await f.store.update('requests', s => {
     const record = s.records[userID];
     record.policyVersion = 3;
+    record.workflow = { id: 'review', mode: 'review', category: 'connected', models: [], parallel: true, variant: 'inherit' };
+    record.catalog.workflows = [record.workflow];
     delete record.delegationPool;
     return s;
   });

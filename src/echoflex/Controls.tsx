@@ -3,6 +3,7 @@
 import { X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cloneElement, isValidElement, useId, type ReactElement } from "react";
+import type { LucideIcon } from "lucide-react";
 import { HelpHint } from "../HelpHint";
 import type { HelpTopic } from "../documentation-help";
 export function Button({
@@ -19,7 +20,7 @@ export function PageCloseButton({ onClick, label = "Close settings", disabled = 
   label?: string;
   disabled?: boolean;
 }) {
-  return <Button aria-label={label} disabled={disabled} onClick={onClick}><X size={18} /></Button>;
+  return <Button type="button" className="page-close-button" variant="quiet" aria-label={label} title={label} disabled={disabled} onClick={onClick}><X size={18} /></Button>;
 }
 
 export function Panel({
@@ -36,12 +37,17 @@ export function Panel({
     </section>
   );
 }
-export function PageHeading({ title, actions }: {
+export function PageHeading({ title, actions, icon: Icon, help }: {
   title: string;
   actions?: ReactNode;
+  icon?: LucideIcon;
+  help?: HelpTopic;
 }) {
   return <header className="page-title">
-    <div className="page-title-main"><h1>{title}</h1></div>
+    <div className="page-title-leading">
+      {Icon && <span className="page-title-icon"><Icon size={21} strokeWidth={1.8} aria-hidden="true" /></span>}
+      <div className="page-title-main"><div className="page-title-name"><h1>{title}</h1>{help && <HelpHint topic={help} />}</div></div>
+    </div>
     {actions && <div className="page-title-actions">{actions}</div>}
   </header>;
 }

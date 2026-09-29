@@ -18,16 +18,19 @@ export function GitDefaults({ preset = "review", onClose, refresh }: { preset?: 
     finally { setPending(false); }
   };
   return <>
-    <PageHeading title="Git defaults" actions={<PageCloseButton onClick={onClose} />} />
-    <Panel title="New project working style" help="git-defaults">
-      <label className="field"><span>Working style</span>
-        <select value={choice} disabled={pending} onChange={(e) => setChoice(e.target.value)}>
-          {gitPresets.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
-        </select>
-      </label>
+    <PageHeading title="Git defaults" icon={GitBranch} help="git-defaults" actions={<PageCloseButton onClick={onClose} />} />
+    <Panel title="New project working style">
+      <p>Choose how new projects save and share work. Existing projects keep their working agreement.</p>
+      <fieldset className="git-default-choices" disabled={pending}>
+        <legend>Working style</legend>
+        {gitPresets.map(item => <label key={item.id} className={choice === item.id ? "chosen" : ""}>
+          <input type="radio" name="git-default-preset" value={item.id} checked={choice === item.id} onChange={() => { setChoice(item.id); setSaved(false); }} />
+          <span><strong>{item.name}</strong><small>{item.description}</small></span>
+        </label>)}
+      </fieldset>
       {error && <p className="notice error" role="alert">{error}</p>}
       {saved && <p role="status">Default saved for new projects.</p>}
-      <Button disabled={pending || choice === preset} onClick={() => void save()}><GitBranch size={16} />{pending ? "Saving…" : "Save default"}</Button>
+      <Button variant="primary" disabled={pending || choice === preset} onClick={() => void save()}><GitBranch size={16} />{pending ? "Saving…" : "Save default"}</Button>
     </Panel>
   </>;
 }

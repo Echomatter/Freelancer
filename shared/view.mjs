@@ -65,7 +65,7 @@ export function reconcileActivity(parts = [], receipts = [], now = Date.now()) {
     const a = part.state?.metadata?.freelancer_activity;
     if (part.type !== 'tool' || !a || a.schema_version !== 1) continue;
     const id = part.state.metadata.task_id || part.id;
-    rows.set(id, { id, partID:part.id, agentID:a.agentID || part.state.metadata.agentID || a.role || part.state.metadata.role, agentName:a.agentName || part.state.metadata.agentName || a.role || part.state.metadata.role, workflowID:a.workflowID || part.state.metadata.workflowID, child:a.child_session,
+    rows.set(id, { id, partID:part.id, agentID:a.agentID || part.state.metadata.agentID || a.role || part.state.metadata.role, agentName:a.agentName || part.state.metadata.agentName || a.role || part.state.metadata.role, child:a.child_session,
       selected:a.selected_model, dispatched:a.dispatched_model, observed:a.observed_model,
       phase:a.phase, tool:a.tool, subject:a.subject, completedTools:a.completed_tools ?? 0, elapsedMs:a.elapsed_ms,
       updatedAt:a.updated_at, receipt:false, validation:'pending', surface:null });
@@ -74,7 +74,7 @@ export function reconcileActivity(parts = [], receipts = [], now = Date.now()) {
     const attempt = receipt.attempts?.at(-1), a = receipt.activity || {}, previous = rows.get(receipt.task_id);
     const newer = previous && Date.parse(previous.updatedAt) > Date.parse(a.updated_at || receipt.created_at);
     const active = ['running','awaiting_paid_permission'].includes(receipt.status);
-    rows.set(receipt.task_id, { ...previous, id:receipt.task_id, agentID:receipt.agent?.id ?? receipt.role, agentName:receipt.agent?.name ?? receipt.role, workflowID:receipt.workflow?.id, child:attempt?.child_session || a.child_session,
+    rows.set(receipt.task_id, { ...previous, id:receipt.task_id, agentID:receipt.agent?.id ?? receipt.role, agentName:receipt.agent?.name ?? receipt.role, child:attempt?.child_session || a.child_session,
       selected:attempt?.selected_model || a.selected_model, dispatched:attempt?.dispatched_model, observed:attempt?.observed_model,
       phase:attempt?.status === 'failed' ? 'failed' : receipt.status === 'completed' ? 'completed' : active ? (newer ? previous.phase : a.phase || 'waiting') : receipt.status,
       status:receipt.status, tool:newer ? previous.tool : a.tool, subject:newer ? previous.subject : a.subject,

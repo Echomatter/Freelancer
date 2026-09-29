@@ -3,14 +3,14 @@
 Scheduled prompts are server-side local jobs. The timer runs in the Node server, so closing the browser does not stop an already running server or cancel its schedules.
 
 Open **Application settings → Scheduled prompts → New schedule**. Choose a project,
-write a prompt, choose its agent, workflow and model, then choose a first run and
+write a prompt, choose its agent and model, then choose a first run and
 repeat interval. The time picker uses your browser's local timezone. The schedule
 list shows the next run and latest dispatch, with an **Open run** link to its chat.
 You can edit, pause, resume or delete schedules there; deleting keeps existing chats.
 Keep the computer awake and server running. Restart the server after installing
 this feature; refreshing the browser alone does not update server code.
 
-Schedules are global and persisted in `backend/.state/webpage/schedules.json`. A schedule must choose an existing project plus explicit `agent`, `workflow`, and `model` values from the current catalog. The scheduler validates those choices when saving and again before each run, including that the chosen model is currently connected or a free OpenCode model. It does not grant permissions, alter Git policy, or bypass provider consent; dispatch goes through the normal sender and execution path. Scheduling runs locally; model inference uses the selected provider as usual.
+Schedules are global and persisted in `backend/.state/webpage/schedules.json`. A schedule must choose an existing project plus explicit `agent` and `model` values from the current catalog. Older saved schedules may still carry a retired `workflow` field; the server ignores it and newer saves omit it. The scheduler validates those choices when saving and again before each run, including that the chosen model is currently connected or a free OpenCode model. It does not grant permissions, alter Git policy, or bypass provider consent; dispatch goes through the normal sender and execution path. Scheduling runs locally; model inference uses the selected provider as usual.
 
 API shape:
 
@@ -21,7 +21,6 @@ API shape:
   "prompt": "Review the current project status.",
   "project": "project-id",
   "agent": "engineer",
-  "workflow": "build",
   "model": "provider/model",
   "frequency": "once",
   "firstRunAt": "2026-09-26T12:00:00.000Z",
@@ -39,8 +38,8 @@ API shape:
 Endpoints:
 
 - `GET /api/schedules` returns `{ "schedules": [...] }`.
-- `POST /api/schedules` creates a schedule from `title`, `prompt`, `project`, `agent`, `workflow`, `model`, `frequency`, `firstRunAt`, and optional `enabled`.
-- `PUT /api/schedules` updates a schedule and requires `id` in the body. Partial pause with `{ "id": "...", "enabled": false }` is allowed even if the original project, agent, workflow, or model is no longer available.
+- `POST /api/schedules` creates a schedule from `title`, `prompt`, `project`, `agent`, `model`, `frequency`, `firstRunAt`, and optional `enabled`.
+- `PUT /api/schedules` updates a schedule and requires `id` in the body. Partial pause with `{ "id": "...", "enabled": false }` is allowed even if the original project, agent, or model is no longer available.
 - `DELETE /api/schedules` deletes a schedule and requires `id` in the body. Delete does not validate the original project catalog.
 
 Run behavior:

@@ -6,7 +6,7 @@ import {
   Download,
   Pin,
   LoaderCircle,
-  Search,
+  History as HistoryIcon,
 } from "lucide-react";
 import { api } from "./api";
 import { SessionActivity, useProjectActivity } from "./SessionActivity";
@@ -39,7 +39,6 @@ export function HistoryPage({
   onClose,
   onOpen,
   onChange,
-  onFileSearch,
 }: {
   data: any;
   project: string;
@@ -48,7 +47,6 @@ export function HistoryPage({
   onClose: () => void;
   onOpen: (project: string, session: string) => void;
   onChange: () => Promise<void>;
-  onFileSearch?: () => void;
 }) {
   const [selectedProject, setProject] = useState(project);
   const otherActivity = useProjectActivity(
@@ -72,13 +70,6 @@ export function HistoryPage({
     [includeWorkers, setWorkers] = useState(true);
   const [notice, setNotice] = useState(""),
     [undo, setUndo] = useState<any[]>([]);
-  const [chatQuery, setChatQuery] = useState("");
-  const [chatModel, setChatModel] = useState("");
-  const [chatResults, setChatResults] = useState<any[]>([]);
-  const [chatSearchError, setChatSearchError] = useState("");
-  const [chatSearching, setChatSearching] = useState(false);
-  const [searchRevision, setSearchRevision] = useState(0);
-  const chatSearchVersion = useRef(0);
   const version = useRef(0),
     alive = useRef(true);
   const reload = async () => {
@@ -118,32 +109,7 @@ export function HistoryPage({
       version.current++;
     };
   }, [selectedProject, scope, limit]);
-  useEffect(() => {
-    const current = ++chatSearchVersion.current;
-    if (!chatQuery.trim()) { setChatResults([]); setChatSearchError(""); setChatSearching(false); return; }
-    setChatSearching(true);
-    setChatResults([]);
-    const timer = setTimeout(() => {
-      void api("history/search?" + new URLSearchParams({ q: chatQuery, project: selectedProject, model: chatModel }))
-        .then((result) => {
-          if (current !== chatSearchVersion.current) return;
-          setChatResults(result.results); setChatSearchError("");
-        })
-        .catch((error) => { if (current === chatSearchVersion.current) setChatSearchError(error.message); })
-        .finally(() => { if (current === chatSearchVersion.current) setChatSearching(false); });
-    }, 180);
-    return () => { clearTimeout(timer); chatSearchVersion.current++; };
-  }, [chatQuery, selectedProject, chatModel, searchRevision]);
-  const searching = !!chatQuery.trim();
-  const matches = new Map<string, any>();
-  for (const hit of chatResults) {
-    const key = `${hit.project}:${hit.session}`;
-    if (!matches.has(key)) matches.set(key, { ...hit, id: hit.session });
-  }
-  const rows = searching
-    ? [...matches.values()].filter((row) => scope === "all" || (scope === "archived") === !!row.organization?.archived)
-        .sort((a, b) => Number(!!b.organization?.pinnedAt) - Number(!!a.organization?.pinnedAt) || (b.updatedAt || 0) - (a.updatedAt || 0))
-    : result?.sessions ?? [];
+  const rows = result?.sessions ?? [];
   const selectedRow = rows.find((row) => selected.has(row.id));
   const actionProject = selectedRow?.project ?? selectedProject;
   const projectArchived = !!data.settings.projects.find(
@@ -186,7 +152,6 @@ export function HistoryPage({
       setConfirmation(null);
       setSelected(new Set());
       await reload();
-      setSearchRevision((value) => value + 1);
       await onChange();
       if (failures.length) setError(failures.join("\n"));
     } catch (e) {
@@ -218,7 +183,6 @@ export function HistoryPage({
       setUndo([]);
       setNotice("Undo finished.");
       await reload();
-      setSearchRevision((value) => value + 1);
       await onChange();
       if (failures.length) setError(failures.join("\n"));
     } catch (e) {
@@ -235,7 +199,6 @@ export function HistoryPage({
     setPinning(row.id);
     setError("");
     setResult((current) => current ? ({ ...current, sessions: current.sessions.map((item) => item.id === row.id ? { ...item, organization: { ...item.organization, pinnedAt: pinned ? Date.now() : null } } : item) }) : current);
-    setChatResults((current) => current.map((item) => item.project === targetProject && item.session === row.id ? { ...item, organization: { ...item.organization, pinnedAt: pinned ? Date.now() : null } } : item));
     let saved = false;
     try {
       const annotation = await api(
@@ -250,12 +213,10 @@ export function HistoryPage({
       );
       saved = true;
       setResult((current) => current ? ({ ...current, sessions: current.sessions.map((item) => item.id === row.id ? { ...item, organization: { ...item.organization, ...annotation } } : item) }) : current);
-      setChatResults((current) => current.map((item) => item.project === targetProject && item.session === row.id ? { ...item, organization: { ...item.organization, ...annotation } } : item));
       await Promise.all([reload(), onChange()]);
     } catch (e) {
       if (!saved) {
         setResult((current) => current ? ({ ...current, sessions: current.sessions.map((item) => item.id === row.id ? { ...item, organization: previous } : item) }) : current);
-        setChatResults((current) => current.map((item) => item.project === targetProject && item.session === row.id ? { ...item, organization: previous } : item));
       }
       setError(saved ? `Pin changed, but refresh failed: ${(e as Error).message}` : (e as Error).message);
     } finally {
@@ -292,26 +253,19 @@ export function HistoryPage({
     setNotice("");
     setResult(null);
   };
-  const busy = searching ? chatSearching : loading;
+  const busy = loading;
   return (
     <div
       className="page history-page"
     >
-      <PageHeading title="History" actions={<PageCloseButton label="Close history" disabled={pending} onClick={onClose} />} />
-      <section className="chat-search-panel" aria-label="Search conversations">
-        <div className="chat-search-filters">
-          <label><span><Search size={16} /> Search conversations</span><input autoFocus aria-label="Search conversation content" value={chatQuery} maxLength={200}
-            placeholder="Search messages and titles…" onChange={(e) => { setSelected(new Set()); setChatQuery(e.target.value); }} /></label>
-          <label>Project<select aria-label="History project" value={selectedProject} disabled={pending} onChange={(e) => {
-            reset(); setProject(e.target.value); setLimit(1000);
-          }}>
-            <option value="">All projects</option>
-            {data.settings.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-          </select></label>
-          <label>Model ID (optional)<input aria-label="Search model" value={chatModel} maxLength={200} placeholder="provider/model" onChange={(e) => { setSelected(new Set()); setChatModel(e.target.value); }} /></label>
-        </div>
-        <div className="context-actions"><HelpHint topic="history-search" />{onFileSearch && <button type="button" className="history-search-link" onClick={onFileSearch}>Search indexed project files</button>}</div>
-        {chatSearchError && <p className="notice error" role="alert">{chatSearchError}</p>}
+      <PageHeading title="Conversation history" icon={HistoryIcon} actions={<PageCloseButton label="Close history" disabled={pending} onClick={onClose} />} />
+      <section className="chat-search-panel history-project-filter" aria-label="Conversation history controls">
+        <label>Project<select aria-label="History project" value={selectedProject} disabled={pending} onChange={(e) => {
+          reset(); setProject(e.target.value); setLimit(1000);
+        }}>
+          {data.settings.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select></label>
+        <HelpHint topic="history-search" />
       </section>
       <div className="history-tabs" role="group" aria-label="History filter">
         {["active", "archived", "all"].map((value) => (
@@ -350,10 +304,10 @@ export function HistoryPage({
       >
         {busy && (
           <p role="status">
-            <LoaderCircle size={16} className="spin" /> {searching ? "Searching…" : "Loading history…"}
+            <LoaderCircle size={16} className="spin" /> Loading history…
           </p>
         )}
-        {!busy && !rows.length && <p>{searching ? "No indexed conversations matched in this view." : selectedProject ? "No conversations in this view." : "Choose a project or search across projects."}</p>}
+        {!busy && !rows.length && <p>No conversations in this view.</p>}
         {!busy && rows.map((row) => (
           <div className="history-row" key={`${row.project ?? selectedProject}:${row.id}`}>
             <input
@@ -390,7 +344,7 @@ export function HistoryPage({
                     : row.organization?.projectArchived
                       ? "Archived project · "
                       : ""}
-                {searching ? `${row.projectName} · ${row.excerpt || "Title match"} · ` : row.cached ? "Previously seen · " : ""}
+                {row.cached ? "Previously seen · " : ""}
                 {(row.time?.updated || row.updatedAt)
                   ? new Date(row.time?.updated || row.updatedAt).toLocaleDateString()
                   : "Date unavailable"}
@@ -407,7 +361,7 @@ export function HistoryPage({
           </div>
         ))}
       </section>
-      {!searching && result?.hasMore && (
+      {result?.hasMore && (
         <Button
           disabled={pending || loading}
           onClick={() => setLimit(Math.min(10000, limit * 2))}
@@ -417,7 +371,7 @@ export function HistoryPage({
       )}
       {projectArchived && (
         <p>
-          Restore this project in Application settings → Data &amp; Storage before changing
+          Restore this project in Application settings → Content &amp; Storage before changing
           its conversation archives.
         </p>
       )}

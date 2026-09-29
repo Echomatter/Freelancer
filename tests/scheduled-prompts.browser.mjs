@@ -26,6 +26,7 @@ test('scheduled-prompts', { tag: ["@app"] }, async ({ appBrowser: browser, own }
     await openSettings();
     await page.getByRole("heading", { name: "No scheduled prompts" }).waitFor();
     await page.getByRole("button", { name: "New schedule", exact: true }).click();
+    await expect(page.getByRole("combobox", { name: "Workflow", exact: true })).toHaveCount(0);
     await page.getByLabel("Name", { exact: true }).fill("Morning project review");
     await page.getByLabel("Prompt", { exact: true }).fill("Review the recent changes and summarize any follow-ups.");
     await page.getByLabel("Model", { exact: true }).selectOption("opencode/free");
@@ -35,7 +36,8 @@ test('scheduled-prompts', { tag: ["@app"] }, async ({ appBrowser: browser, own }
     const card = page.getByRole("region", { name: "Morning project review", exact: true });
     await card.waitFor();
     assert.match(await card.innerText(), /Every 24 hours/);
-    assert.match(await card.innerText(), /Engineer · Build/);
+    await expect(card.getByText("Engineer", { exact: true })).toBeVisible();
+    assert.doesNotMatch(await card.innerText(), /Engineer · Build/);
     await card.getByRole("button", { name: "Pause", exact: true }).click();
     await page.getByText("Schedule paused.", { exact: true }).waitFor();
     await page.reload();
@@ -74,7 +76,7 @@ test('scheduled-prompts', { tag: ["@app"] }, async ({ appBrowser: browser, own }
     await page.getByRole("heading", { name: "No scheduled prompts" }).waitFor();
     await page.setViewportSize({ width: 1440, height: 1000 });
     await fixture.api("schedules", { title: "Scheduled native dispatch", prompt: "Summarize this project.",
-      project: fixture.project.id, agent: "engineer", workflow: "review", model: "opencode/free",
+      project: fixture.project.id, agent: "engineer", model: "opencode/free",
       frequency: "once", firstRunAt: new Date(Date.now() + 1500).toISOString(), enabled: true });
     const runCard = page.getByRole("region", { name: "Scheduled native dispatch", exact: true });
     await runCard.getByRole("button", { name: "Open run", exact: true }).click();

@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { helpTopics, type HelpTopic } from "./documentation-help";
 import "./help-hint.css";
 
-export function HelpHint({ topic }: { topic: HelpTopic }) {
+export function HelpHint({ topic, label }: { topic: HelpTopic; label?: string }) {
   const excerpt = helpTopics[topic];
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
@@ -61,7 +61,7 @@ export function HelpHint({ topic }: { topic: HelpTopic }) {
   }, [open, id]);
 
   return <span className="help-hint">
-    <button ref={trigger} type="button" className="help-hint-trigger" aria-label={`Help: ${excerpt.title}`}
+    <button ref={trigger} type="button" className="help-hint-trigger" aria-label={`Help: ${label ? `${label} — ` : ""}${excerpt.title}`}
       aria-expanded={open} aria-describedby={open ? id : undefined}
       onMouseEnter={show} onMouseLeave={leave}
       onFocus={() => { focused.current = true; show(); }} onBlur={() => { focused.current = false; close(); }}

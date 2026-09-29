@@ -41,19 +41,19 @@ export function normalizeIntent(input) {
   if (typeof input.id !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(input.id)) throw Error('Invalid delivery ID.');
   if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 190000) throw Error('Write a message of at most 190,000 characters.');
   if (!(input.kind === 'clarify' && input.model === 'auto') && (typeof input.model !== 'string' || !/^[\w.:-]+\/[^\s]+$/.test(input.model) || input.model.length > 500)) throw Error('Choose an available model.');
-  for (const key of ['workflowID', 'agentID', 'variant']) {
+  for (const key of ['agentID', 'variant']) {
     if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length > 100)) throw Error(`Invalid ${key}.`);
   }
   return { id: input.id, kind: input.kind, text: input.text, model: input.model,
-    workflowID: input.workflowID ?? 'build', agentID: input.agentID ?? 'inherit', variant: input.variant ?? '' };
+    agentID: input.agentID ?? 'engineer', variant: input.variant ?? '' };
 }
 
 export function clarifyPrompt(text, model, id, original = '') {
   return `[Freelancer Delegate handoff ${id}]\n` +
     `The user submitted a bounded concern while the original task continues. This is not a request to stop or replace that task.\n` +
     (model === 'auto'
-      ? `At your next safe tool boundary, use delegate with an appropriate named agent and bounded task from the supplied catalog for the concern below, using its saved model default or normal free-first selection when unpinned. Do not change the parent model.\n`
-      : `At your next safe tool boundary, use delegate with an appropriate agent, task and model=${JSON.stringify(model)} for the concern below. The user explicitly selected this worker model. Do not change the parent model.\n`) +
+      ? `At your next safe tool boundary, use delegate with an appropriate named agent and bounded task from the supplied catalog for the concern below, using its saved model default or normal eligible selection when unpinned. Do not change the parent model.\n`
+      : `At your next safe tool boundary, use delegate with an appropriate named agent and bounded task using model=${JSON.stringify(model)} for the concern below. The user explicitly selected this worker model. Do not change the parent model.\n`) +
     `Keep the assignment narrow, pass the relevant original-task context, preserve its exclusions and permissions, and give concurrent writers disjoint files. Do not infer source-write permission from the Delegate action itself. Continue independent original-task work and integrate the worker's result.\n` +
     `Use the normal delegation eligibility, quota and native permission checks; do not bypass them. Report a blocked/failed handoff honestly instead of claiming a worker started.\n\n` +
     (original ? `Original parent request (context and constraints, not the worker assignment):\n${original}\n\n` : '') +

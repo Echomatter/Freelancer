@@ -12,7 +12,7 @@ export const presets = {
   'free-first': { label: 'Free First', description: 'Keep the parent; prefer qualified free children. Subscription choices still ask.', costPreference: 'prefer-free' },
   balanced: { label: 'Balanced', description: 'Prefer free children for bounded work; compare capability and capacity before escalation.' },
   'quality-first': { label: 'Quality First', description: 'Compare capability-specific evidence without a free-cost preference. Subscription choices still ask.', costPreference: 'any' },
-  'research-heavy': { label: 'Research Heavy', description: 'Use Researcher for evidence, Engineer for edits, and the Review workflow for independent checks.' },
+  'research-heavy': { label: 'Research Heavy', description: 'Use Researcher for evidence, Engineer for edits, and request an independent review when useful.' },
   'minimal-agents': { label: 'Minimal Agents', description: 'Prefer direct work; use one focused worker when useful.', delegation: 'automatic', maxParallel: 1 },
   'premium-parent': { label: 'Selected parent / free children', description: 'Keep your chosen parent. Only qualified free routes may execute children.', costPreference: 'free-only' },
 };

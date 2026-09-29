@@ -48,7 +48,7 @@ test('setup imports exact-folder snapshots once before indexing, shares chat/his
   const continuation = await f.api('chat/imported/continue', { project, session: imported.id });
   assert.equal((await f.api('chat/imported/continue', { project, session: imported.id })).id, continuation.id);
   assert.equal(f.calls.filter(call => call.route === '/session' && call.options.method === 'POST').length, 1);
-  await f.api('send', { project, session: continuation.id, text: 'Please continue', model: 'opencode/free', agentID: 'engineer', workflowID: 'build' });
+  await f.api('send', { project, session: continuation.id, text: 'Please continue', model: 'opencode/free', agentID: 'engineer' });
   const dispatched = f.calls.filter(call => call.route.endsWith('/prompt_async')).at(-1).options.body;
   assert.equal(dispatched.agent, 'engineer');
   assert.equal(dispatched.parts[0].synthetic, true);

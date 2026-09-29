@@ -2,7 +2,7 @@
 
 Freelancer is a local workspace for AI-assisted project work. Open a folder, chat about the work, and review the files, tool activity, questions, checks and decisions alongside it.
 
-It runs on your Windows computer in a browser or Chrome app window. [OpenCode](https://opencode.ai/) provides native conversations, models, authentication, tools, permissions, todos and child sessions. Freelancer adds project navigation, reusable agents and workflows, specialist workers, local file and conversation search, history, usage views, appearance controls, optional Git/GitHub and recovery when work is interrupted.
+It runs on your Windows computer in a browser or Chrome app window. [OpenCode](https://opencode.ai/) provides native conversations, models, authentication, tools, permissions, todos and child sessions. Freelancer adds project navigation, reusable named agents, specialist workers, local file and conversation search, history, usage views, appearance controls, optional Git/GitHub and recovery when work is interrupted.
 
 ![Freelancer application banner](assets/freelancer-banner.svg)
 
@@ -25,7 +25,7 @@ Setup installs or checks Node.js, Git, GitHub CLI and OpenCode, plus Chrome for 
 Freelancer keeps project work and the activity behind it in one local application.
 
 - **Work on a folder:** Ask questions about your project, request changes, attach context and return to past chats.
-- **Choose how to work:** Pick an agent and a workflow, such as Engineer + Build for implementation or Researcher + Explore for investigation. These are starting points, not commands you have to memorize.
+- **Choose how to work:** Pick a named agent, such as Engineer for implementation or Researcher for investigation. Work runs in the fixed Build mode: an implementation request is implemented and verified, while a request for a plan is answered with a plan.
 - **Get another perspective:** Ask the assistant to give a focused task to another model, such as researching an issue or reviewing a change. Follow its progress and inspect its conversation.
 - **Stay in control:** Review questions and permission requests, see task progress, and decide when to save or share changes. GitHub is optional; connecting an account does not automatically upload your project.
 - **Make the space yours:** Adjust the layout and appearance, browse available models, and search project files and conversations.
@@ -53,15 +53,13 @@ The rail at the right edge of a chat combines turn navigation, scrolling and the
 
 The rail color follows the selected palette and deepens with the latest reported model context usage. It does not estimate unsent text. **Project settings → Session defaults → Context window** controls OpenCode's native automatic compaction for that project's chats. The previous manual compact action is no longer in the chat menu.
 
-### Agents, workflows and specialist workers
+### Agents and specialist workers
 
-Agents and workflows are reusable starting points for a request; they are not hidden permission systems.
+Named agents are reusable starting points for a request; they are not hidden permission systems.
 
-**Agents** describe the perspective and working style you want. The built-in catalog includes roles such as Engineer, Researcher and Designer, and you can create your own. Agent settings include instructions, approach, response style, preferred model and reasoning variant.
+**Agents** describe the perspective and working style you want. The built-in catalog includes Engineer, Researcher and Designer, and you can create your own. Agent settings include instructions, approach, response style, preferred model and reasoning variant. There is no separate workflow catalog to configure.
 
-**Workflows** describe how a kind of work should be approached. They can select an agent, mode, eligible model category, model choices, reasoning variant and whether independent work may run in parallel. Built-in workflows can be edited, and custom workflows can be added.
-
-At the start of a chat you can choose an agent, workflow, parent model and supported reasoning variant. Project-level **Session defaults** define the starting choices for new chats without rewriting existing conversations.
+At the start of a chat you can choose an agent, parent model and supported reasoning variant. Project-level **Session defaults** define the starting agent, model and reasoning choices for new chats without rewriting existing conversations. Every request runs in the fixed Build mode with native todos kept in sync; a planning request is ordinary task text, not a separate execution mode.
 
 A parent model can also hand a bounded assignment to a **worker**:
 
@@ -82,7 +80,7 @@ See [Architecture](docs/ARCHITECTURE.md) for the separation between guidance, ca
 
 Freelancer exposes the model layer instead of hiding it behind one generic selector.
 
-**Application settings → Models** provides a browsable model catalog with provider, availability and model information. You can search and sort the catalog, filter to free models, inspect models by provider, and use the catalog when configuring agents and workflows. Model-rating jobs can collect dated comparative information without turning those ratings into automatic routing policy.
+**Application settings → Models** provides a browsable model catalog with provider, availability and model information. You can search and sort the catalog, filter to free models, inspect models by provider, and use the catalog when configuring agents. Model-rating jobs can collect dated comparative information without turning those ratings into automatic routing policy.
 
 **Application settings → Providers** currently supports setup for OpenAI, GitHub Copilot, OpenCode Go and OpenCode Free. Depending on the provider, you can:
 
@@ -116,22 +114,21 @@ Workspace layout is also adjustable. Resizable panels, the Details panel, Files 
 
 ### Files, local search and project knowledge
 
-**Project settings → Files** gives the selected project a file-oriented workspace view.
+**Project settings → Files** gives the selected project a file-oriented workspace view. **Project settings → Search project content** searches indexed files and conversations only in that project. **Application settings → Search all content** searches the same content across every registered project. Results open either the source file in Files or the matching conversation.
 
 Freelancer also maintains a local content index so project knowledge can be searched without making the model rediscover every file for every question. The index covers readable source, configuration and document content throughout registered project roots while skipping generated/private areas and unsupported binary formats.
 
-**Application settings → Content index** lets you inspect and maintain that derived data. You can refresh project-file indexes, refresh the searchable conversation index, optimize full-text indexes, run a SQLite quick check, and compact free database pages.
+**Application settings → Content & Storage** lets you inspect and maintain that derived data. You can refresh project-file indexes, refresh the searchable conversation index, optimize full-text indexes, run a SQLite quick check, and compact free database pages.
 
 The conversation index covers registered projects and can search titles plus user/assistant text, including archived chats and workers. It does not replace OpenCode as conversation authority and does not copy tool output, reasoning, attachments or drafts into the search index.
 
 ### History, imports and local data
 
-**Application settings → History** is a cross-project conversation organizer rather than a simple recent-chat list.
+**Conversation history** is a conversation organizer reached from **Archive, pin or export…** in the current chat or **Export conversations** in Content & Storage. Search is handled by the unified project or application content search instead of this management view.
 
 It supports:
 
 - Active, Archived and All views;
-- conversation-content search across registered projects;
 - pinning;
 - multi-selection;
 - reversible local hiding/archiving where the native API does not provide a reversible archive contract;
@@ -141,7 +138,7 @@ It supports:
 
 New-project setup can optionally perform a **one-time ChatGPT / Codex import** before indexing. Imported snapshots remain separate from OpenCode's native database, use the shared transcript view, and can orient a new native conversation without modifying the source history.
 
-**Application settings → Data & Storage** shows where Freelancer and OpenCode data live, provides backup guidance, and exposes project organization such as **Put project away** / **Restore project**. Putting a project away hides it from active navigation; it does not delete the folder or rewrite its Git history.
+The same **Content & Storage** page shows where Freelancer and OpenCode data live, provides backup guidance, and exposes project organization such as **Put project away** / **Restore project**. Putting a project away hides it from active navigation; it does not delete the folder or rewrite its Git history.
 
 Freelancer's organization/search database is normally stored in `%LOCALAPPDATA%\Freelancer\freelancer.sqlite`. Project files stay in their original folders. OpenCode continues to own its native conversations and provider sign-ins. See [Local data, history and archives](docs/local-data.md) for the exact ownership and backup model.
 
@@ -169,29 +166,28 @@ Freelancer deliberately separates project-specific choices from application-wide
 | Area | Setting | What it controls |
 | --- | --- | --- |
 | **Project** | **Files** | File-oriented view for the selected project |
+|  | **Search project content** | Indexed files and conversations in the selected project |
 |  | **Agents** | Built-in/custom working roles, instructions, model and response preferences |
-|  | **Workflows** | Reusable execution approaches, agent/model eligibility and parallel-work preference |
 |  | **GitHub** | Local Git history, GitHub authentication/linking, checkpoints and reviewed sync |
-|  | **Session defaults** | Starting agent, workflow, model and reasoning choices for new chats in this project |
+|  | **Session defaults** | Starting agent, model and reasoning choices for new chats in this project |
 |  | **Delegation** | Project worker/delegation behavior and orchestration limits |
 | **Application** | **Models** | Searchable model catalog, provider/model information and rating activity |
+|  | **Search all content** | Indexed files and conversations across registered projects |
 |  | **Available Usage** | Remaining provider/model availability and usage observations |
 |  | **Providers** | Authentication, plan type, optional subscription cost, currency and provider colors |
 |  | **Appearance** | 120 application palettes and depleted-model visibility |
-|  | **Data & Storage** | Data locations, backup guidance, project archive/restore and storage information |
-|  | **Content index** | File/chat index refresh, integrity/optimization and local search maintenance |
+|  | **Content & Storage** | Data locations, backup guidance, project archive/restore, index refresh and SQLite maintenance |
 |  | **Remote access** | Remembered-device access on a private network or through an optional HTTPS tunnel |
 |  | **Git defaults** | Default managed-Git agreement for projects |
-|  | **History** | Cross-project conversation search, pins, archive/hide, selection and export |
 
-Settings are intentionally layered: changing an agent definition, workflow, theme or project default affects future behavior or presentation; it does not rewrite historical request receipts or native conversations.
+Settings are intentionally layered: changing an agent definition, theme or project default affects future behavior or presentation; it does not rewrite historical request receipts or native conversations.
 
 ## How the pieces fit together
 
 A normal implementation request can stay simple:
 
 1. Open a project and chat.
-2. Choose an agent/workflow/model, or keep the defaults.
+2. Choose an agent/model, or keep the defaults.
 3. Ask for the change.
 4. The parent model uses native OpenCode tools and permissions.
 5. If useful, it delegates a bounded concern to a specialist worker.
@@ -283,7 +279,25 @@ stay concise. Errors, progress and action confirmations remain visible.
 <!-- help:schedules -->
 ### Scheduled prompts
 
-Schedules start a fresh project chat at the chosen time. Keep the computer awake and the local server running; the browser can be closed. Choose a project, prompt, agent, workflow and model for each schedule.
+Schedules start a fresh project chat at the chosen time. Keep the computer awake and the local server running; the browser can be closed. Choose a project, prompt, agent and model for each schedule.
+<!-- /help -->
+
+<!-- help:agents -->
+### Named agents
+
+An agent is a reusable specialist with its own working instructions and optional model preference. Pick the agent that best fits the request; task direction and constraints belong in the request itself. Agent instructions guide the work but do not grant permissions.
+<!-- /help -->
+
+<!-- help:providers -->
+### Providers
+
+Connect or reconnect a provider through its supported sign-in flow. Billing estimates, provider colors and availability are display preferences; they do not change native authentication, model permissions or usage limits.
+<!-- /help -->
+
+<!-- help:project-files -->
+### Project files
+
+Browse the selected project's files and folders. The browser stays within the registered project directory; opening a file shows a local preview without changing the file.
 <!-- /help -->
 
 <!-- help:schedule-timing -->
@@ -295,19 +309,19 @@ The first run uses your browser's local timezone. Daily and weekly repeats use e
 <!-- help:schedule-execution -->
 ### Scheduled run behavior
 
-Each run uses the selected model and the current agent and workflow instructions. Normal provider usage and native approvals apply. Open the run to answer requests. Pausing or deleting a schedule keeps existing chats and does not stop work already started. Uncertain delivery pauses the schedule for inspection rather than retrying it.
+Each run uses the selected model and the current agent instructions. Normal provider usage and native approvals apply. Open the run to answer requests. Pausing or deleting a schedule keeps existing chats and does not stop work already started. Uncertain delivery pauses the schedule for inspection rather than retrying it.
 <!-- /help -->
 
 <!-- help:file-search -->
-### Search project files
+### Search indexed content
 
-Search looks for your words in the local file index across all registered projects, including archived projects. A result opens the original file in Project settings → Files. Refresh the file index in Content index to include recent changes. Generated folders, credentials and unsupported binary files are excluded.
+Search project content looks for your words in indexed files and conversations for the selected project. Search all content uses the same search across every registered project, including archived content. File results open the original in Project settings → Files; conversation results open the parent conversation. Refresh indexes in Content & Storage to include older or recent changes. Generated folders, credentials, tool output, reasoning, attachments, drafts and unsupported binary files are excluded.
 <!-- /help -->
 
 <!-- help:index-coverage -->
 ### Index coverage
 
-File refresh covers readable source, document, data and configuration files throughout every registered project root, including archived projects. Conversation refresh covers native chats and workers, including archived sessions. Search files in Search files and conversations in History. Project folders and OpenCode conversations remain the originals.
+File refresh covers readable source, document, data and configuration files throughout every registered project root, including archived projects. Conversation refresh covers native chats and workers, including archived sessions. Search both through Search project content or Search all content. Project folders and OpenCode conversations remain the originals.
 <!-- /help -->
 
 <!-- help:index-maintenance -->
@@ -343,7 +357,7 @@ Compact reclaims unused database pages. It needs temporary disk space and can br
 <!-- help:local-data -->
 ### Local data ownership
 
-Project files stay in the folders you chose. Freelancer stores organization, drafts, request records and rebuildable search copies locally. OpenCode owns native conversations, tools, execution and provider sign-in. Agents and workflows are reusable definitions; workers are running assignments linked to their parent chats.
+Project files stay in the folders you chose. Freelancer stores organization, drafts, request records and rebuildable search copies locally. OpenCode owns native conversations, tools, execution and provider sign-in. Agents are reusable definitions; workers are running assignments linked to their parent chats.
 <!-- /help -->
 
 <!-- help:local-backup -->
@@ -355,7 +369,7 @@ Stop Freelancer's server and OpenCode before copying live databases. Copy each p
 <!-- help:storage-freelancer -->
 ### Freelancer database
 
-This database contains organization, drafts and derived project and conversation search text. Freelancer does not encrypt it; local protection relies on your user profile permissions. The displayed size covers the main database file only. Content index contains refresh and maintenance controls.
+This database contains organization, drafts and derived project and conversation search text. Freelancer does not encrypt it; local protection relies on your user profile permissions. The displayed size covers the main database file only. Content & Storage contains refresh and maintenance controls.
 <!-- /help -->
 
 <!-- help:storage-runtime -->
@@ -377,9 +391,9 @@ Putting a project away hides it from active navigation. Its folder, Git agreemen
 <!-- /help -->
 
 <!-- help:history-search -->
-### Conversation search
+### Conversation history
 
-History searches the local conversation index for titles and user/assistant text across registered projects, including imported snapshots. Refresh older chats in Application settings → Content index. Tool output, reasoning, attachments and drafts are excluded. Without a search, History lists the loaded OpenCode window, imports and previously seen references; cached entries are checked when opened. Use Search files for project documents and source files.
+Conversation history lists the loaded OpenCode window, imported snapshots and previously seen references for one selected project. It manages pins, archive state and exports; cached entries are checked when opened. Use Search project content or Search all content to search indexed conversation titles, user/assistant text, project documents and source files. Refresh older content in Application settings → Content & Storage.
 <!-- /help -->
 
 <!-- help:history-export -->
@@ -391,7 +405,7 @@ Export writes the selected conversations as JSON or Markdown, including potentia
 <!-- help:session-defaults -->
 ### Session defaults
 
-These choices start new chats in the selected project. Existing chats keep their choices. The workflow can supply the starting agent; an agent with a saved model supplies the parent model and supported reasoning variant.
+These choices start new chats in the selected project. Existing chats keep their choices. An agent with a saved model supplies the parent model and supported reasoning variant.
 <!-- /help -->
 
 <!-- help:parent-model -->
@@ -403,7 +417,7 @@ Choose the model for the main conversation. An agent's saved model takes precede
 <!-- help:delegation -->
 ### Delegation budget
 
-The main agent can work directly or assign bounded work to named agents. These settings control available resources and worker limits. Agent and workflow choices guide the work; they do not grant permissions or narrow the eligible model pool by themselves.
+The main agent can work directly or assign bounded work to named agents. These settings control available resources and worker limits. Agent choices guide the work; they do not grant permissions or narrow the eligible model pool by themselves.
 <!-- /help -->
 
 <!-- help:delegation-scope -->
@@ -548,12 +562,6 @@ Delegate requests a worker at the parent's next safe boundary; its actual progre
 ### Model rating updates
 
 The selected configuration model researches missing model details in the background using its normal provider allowance. Ratings are dated comparison guidance, not proof of availability or permission to use a model.
-<!-- /help -->
-
-<!-- help:workflows -->
-### Workflow settings
-
-Workflows supply reusable instructions and starting choices for an assignment. They guide the approach; set worker limits and model preferences in Project settings → Delegation. Edits affect future root requests while active assignments keep their captured instructions.
 <!-- /help -->
 
 <!-- help:remote-access -->

@@ -87,11 +87,11 @@ export function createSender(app, { file = app.store?.directory && path.join(app
     const candidate = data.models.find(m => m.id === row.model);
     if (row.model !== 'auto' && (!candidate || !(data.providers.connected.includes(candidate.provider) || (candidate.provider === 'opencode' && candidate.costClass === 'free'))))
       throw Error('The chosen model is no longer available. Cancel this item and choose another model.');
-    if (row.kind !== 'clarify') return { text: row.text, model: row.model, variant: row.variant, workflowID: row.workflowID, agentID: row.agentID };
+    if (row.kind !== 'clarify') return { text: row.text, model: row.model, variant: row.variant, agentID: row.agentID };
     const native = data.sessions.find(s => s.id === row.session);
     const last = [...(chat.receipts ?? [])].reverse().find(r => ['accepted', 'observed'].includes(r.status));
     const assistant = chat.messages.findLast(m => m.info?.role === 'assistant');
-    if (!native || native.parentID || !last?.workflow || (assistant?.info.agent && assistant.info.agent !== last.agent?.id && assistant.info.agent !== 'build'))
+    if (!native || native.parentID || !last?.agent || (assistant?.info.agent && assistant.info.agent !== last.agent?.id && assistant.info.agent !== 'build'))
       throw Error('Delegate needs an established parent chat. Use Queue for worker follow-ups.');
     const preferences = last.preferences ?? {};
     if (row.model !== 'auto' && preferences.allowedModels?.length && !preferences.allowedModels.includes(row.model))
@@ -104,7 +104,7 @@ export function createSender(app, { file = app.store?.directory && path.join(app
     const text = clarifyPrompt(row.text, row.model, row.id, (original?.parts ?? []).filter(p => p.type === 'text').map(p => p.text).join('\n'));
     if (text.length > 200000) throw Error('This concern plus its original request is too long. Shorten the concern or use Queue.');
     return { text, model: `${model.providerID}/${model.modelID}`,
-      variant: user?.info.variant ?? last.variant ?? '', workflowID: last.workflow.id, agentID: last.agent.id };
+      variant: user?.info.variant ?? last.variant ?? '', agentID: last.agent.id };
   }
   async function pumpSession(project, session) {
     return locked(project, session, async () => {

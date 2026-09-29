@@ -1,5 +1,5 @@
 .git-project-page {
-  max-width: 1250px;
+  max-width: none;
   margin: 0 auto;
   display: flex;
   flex-direction: column;

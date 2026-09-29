@@ -25,11 +25,11 @@ OpenCode owns conversations, inference, authentication, native tools, permission
 
 ## Five separate concerns
 
-**Guidance:** `domain/workspace.mjs` plus saved settings owns the Agent and Workflow catalog. Skills add operating knowledge. `server/execution.mjs` composes captured instructions for roots and children. Native profiles carry identity and permissions, not a duplicate persona store. Edits affect future root requests.
+**Guidance:** `domain/workspace.mjs` plus saved settings owns the Agent catalog. Skills add operating knowledge. `server/execution.mjs` composes captured agent instructions for roots and children in the fixed Build mode. Native profiles carry identity and permissions, not a duplicate persona store. Edits affect future root requests.
 
 **Capability:** native tools, connected MCP tools, content_index, delegate and git_project are available where actual permissions allow. Skills are not capability keys. Simple work needs no workers.
 
-**Authority:** native permission, explicit user constraints, paid-model consent and the saved project agreement. Explicit inspection-only assignments narrow children; workflow names do not. Authenticated native identity and durable records establish authority, never model-provided metadata or editable prose.
+**Authority:** native permission, explicit user constraints, paid-model consent and the saved project agreement. Explicit inspection-only assignments narrow children; agent labels do not. Authenticated native identity and durable records establish authority, never model-provided metadata or editable prose.
 
 **Scheduling:** shared concurrency and depth ceilings, native liveness, idempotent assignments and uncertain-delivery safeguards. Concurrent writers should use disjoint scope; overlapping edits need sequencing. There is no filesystem sandbox or automatic worktree isolation.
 
@@ -37,9 +37,9 @@ OpenCode owns conversations, inference, authentication, native tools, permission
 
 ## Request and worker lifecycle
 
-1. Choose a project, optionally a model, and ask for work. Agent, workflow and reasoning choices have usable defaults.
+1. Choose a project, optionally a model, and ask for work. Agent and reasoning choices have usable defaults.
 2. The server validates project/session ownership and native model availability, then captures catalog and resource limits in a private request receipt.
-3. OpenCode executes with a compact catalog in context. `delegate({agent, task, workflow?, model?})` starts an ordinary free assignment in one call. Native paid_delegate consent handles subscription work without a preceding model-choice menu.
+3. OpenCode executes with a compact catalog in context. `delegate({agent, task, model?})` starts an ordinary free assignment in one call. Native paid_delegate consent handles subscription work without a preceding model-choice menu.
 4. Each worker uses its own native session. SDK-observed model and agent identity must match dispatch. The tree shares depth and concurrency limits; native permissions and tighter saved restrictions are revalidated. Native task is disabled as a competing dispatch path.
 5. A bounded `worker_result` carries summary and optional findings, evidence, changed files, checks, attempts, assumptions, risks, questions and next steps. `resultSource` distinguishes structured_completion, final_assistant_fallback and partial. Child checks remain unverified claims until the parent validates them. Full native conversations remain available.
 6. `delegate({worker, task})` continues the same agent/model/context. Ownership, idle state, eligibility and permissions are rechecked. Busy or uncertain children cannot be silently restarted.
@@ -56,7 +56,7 @@ The scroll area spans the workspace beside a sticky composer. Task and delivery 
 
 ## Managed Git
 
-Every agent and workflow can use git_project; there is no Git agent or Sync workflow. The service enforces agreements, exact previews, selected files, unrelated index protection, private-file/credential checks, approval, remote-tip verification and uncertain-operation recovery. An explicit request outside any agreement default uses an exact request preview and a recorded native question answer. This covers agreement edits, merges, branch deletion, visibility and history rewrites using a lease; native permissions and content/identity checks remain in force. Sending a chat never changes branches. Checkpoint is local; connection is not binding, and binding is not upload. [Git safeguards](github-projects.md)
+Every named agent can use git_project; there is no Git agent. The service enforces agreements, exact previews, selected files, unrelated index protection, private-file/credential checks, approval, remote-tip verification and uncertain-operation recovery. An explicit request outside any agreement default uses an exact request preview and a recorded native question answer. This covers agreement edits, merges, branch deletion, visibility and history rewrites using a lease; native permissions and content/identity checks remain in force. Sending a chat never changes branches. Checkpoint is local; connection is not binding, and binding is not upload. [Git safeguards](github-projects.md)
 
 ## Data and startup
 

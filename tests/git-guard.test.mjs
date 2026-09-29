@@ -43,7 +43,7 @@ test("inspect-only project restricts regular agents but allows read-only skills"
   await writeFile(
     path.join(state, "requests.json"),
     JSON.stringify({
-      records: { user: { agent: { id: "engineer" }, workflow: { id: "build" } } },
+      records: { user: { agent: { id: "engineer" }, mode: "build" } },
     }),
   );
   const client = {

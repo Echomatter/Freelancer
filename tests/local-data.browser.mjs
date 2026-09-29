@@ -120,7 +120,9 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     });
   }
   async function openHistory() {
-    await openApplicationTab("History");
+    const appSettings = page.getByRole("button", { name: "Application settings", exact: true });
+    if (await appSettings.getAttribute("aria-expanded") !== "true") await appSettings.click();
+    await page.getByRole("button", { name: "Conversation history", exact: true }).click();
     await history
       .getByRole("checkbox", {
         name: "Select Important conversation",
@@ -260,15 +262,8 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await history.getByRole("button", { name: "Archive", exact: true }).click();
     await page.getByRole("dialog", { name: "Confirm archive change" }).getByRole("button", { name: "Confirm", exact: true }).click();
     await history.getByRole("button", { name: "Undo", exact: true }).waitFor();
-    assert.equal(
-      await history
-        .getByRole("checkbox", {
-          name: "Select Important conversation",
-          exact: true,
-        })
-        .count(),
-      0,
-    );
+    const archived = await f.api("history?project=history_project&scope=archived");
+    assert.equal(archived.sessions.find(session => session.id === "ses_history").organization.archiveScope, "freelancer");
     await history.getByRole("button", { name: "Undo", exact: true }).click();
     await history
       .getByRole("checkbox", {
@@ -329,7 +324,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await history.waitFor({ state: 'detached' });
     assert.equal(await history.count(), 0);
     await page.setViewportSize({ width: 1440, height: 960 });
-    await openApplicationTab("Data & Storage");
+    await openApplicationTab("Content & Storage");
     await page
       .getByRole("heading", {
         name: "Freelancer organization & drafts",
@@ -353,7 +348,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       .getByRole("button", { name: "Put project away", exact: true })
       .waitFor();
     await page
-      .getByRole("heading", { name: "Data & Storage", exact: true })
+      .getByRole("heading", { name: "Content & Storage", exact: true })
       .scrollIntoViewIfNeeded();
     await page.screenshot({
       path: "test-results/local-data-storage.png",

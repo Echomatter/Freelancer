@@ -1,12 +1,11 @@
 import { DelegationSettings } from "./DelegationSettings";
 import { ProviderColorPicker } from "./ProviderColorPicker";
 import { ProviderText, providerAttributes, type ColorPatch } from "./ProviderColors";
-import { DataStorage } from "./DataStorage";
-import { ContentIndex } from "./ContentIndex";
+import { ContentStorage } from "./ContentStorage";
 import { GitDefaults } from "./GitDefaults";
 import { ThemePicker } from "./ThemePicker";
 import { useEffect, useState } from "react";
-import { Check, Link2 } from "lucide-react";
+import { Check, GitFork, Link2, Palette, Wallet } from "lucide-react";
 import { Button, Panel, Field, Badge, PageCloseButton, PageHeading } from "./echoflex/Controls";
 import { api } from "./api";
 import { ProviderConnection } from "./ProviderConnection";
@@ -68,13 +67,12 @@ export function Settings({
       <div className="settings-content">
         {tab === "remote-access" && <RemoteAccess onClose={onClose} />}
         {tab === "schedules" && <ScheduledPrompts data={data} onClose={onClose} onOpen={onOpenChat} />}
-        {tab === "delegation" && <><PageHeading title="Delegation" actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
-        {tab === "storage" && <DataStorage onHistory={() => onHistory?.()} onSearch={() => onSetting("application", "search")} onIndex={() => onSetting("application", "index")} onClose={onClose} onChange={refresh} />}
-        {tab === "index" && <ContentIndex onClose={onClose} onSearch={() => onSetting("application", "search")} onStorage={() => onSetting("application", "storage")} />}
+        {tab === "delegation" && <><PageHeading title="Delegation" icon={GitFork} help="delegation" actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
+        {tab === "content-storage" && <ContentStorage onHistory={() => onHistory?.()} onSearch={() => onSetting("application", "search")} onClose={onClose} onChange={refresh} />}
         {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} onClose={onClose} refresh={refresh} />}
         {tab === "providers" && (
           <>
-            <PageHeading title="Providers" actions={closeAction} />
+            <PageHeading title="Providers" icon={Wallet} help="providers" actions={closeAction} />
             <div className="provider-list">
               {providers.map(([id, name]) => (
                 <Panel key={id} className="provider-card" aria-label={`${name} settings`} {...providerAttributes(id, data.settings.appearance ?? {})}>
@@ -189,7 +187,7 @@ export function Settings({
         )}
         {tab === "appearance" && (
           <>
-            <PageHeading title="Appearance" actions={closeAction} />
+            <PageHeading title="Appearance" icon={Palette} actions={closeAction} />
               <Panel>
                 <label className="check">
                 <input

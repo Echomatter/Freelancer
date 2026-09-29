@@ -1,7 +1,7 @@
 # Freelancer handbook
 
 Freelancer for OpenCode 1.0 is an AI coding harness for OpenCode. The application
-keeps agents, skills, and workflows composable and permissive while native
+keeps agents and skills composable and permissive while native
 permissions, paid consent, delegation ceilings, and the saved GitHub agreement
 remain the hard authority boundaries.
 
@@ -31,7 +31,7 @@ Start with what you are trying to do. These guides describe the **single browser
 | Add a message while work runs; Queue versus Delegate | [State-aware sender](state-aware-sender.md) |
 | Message options, collapsible context cards, and current-turn tool dock | [Composer and tools](composer-design.md) |
 | Turn navigation, scrolling, Details divider and native automatic compaction | [Conversation rail](conversation-rail.md) |
-| One-time and recurring local prompts with project, agent, workflow and model choices | [Scheduled prompts](scheduled-prompts.md) |
+| One-time and recurring local prompts with project, agent and model choices | [Scheduled prompts](scheduled-prompts.md) |
 | Share of work and native todo placement | [Contributions and todos](contributions-and-todos.md) |
 | Agent-directed teams, project/chat budgets, subscription choices and preserved guards | [Delegation budget](delegation-budget.md) |
 | Shared main/delegated agents, custom definitions and captured prompts | [Named agents](named-agents.md) |
@@ -41,7 +41,7 @@ Start with what you are trying to do. These guides describe the **single browser
 | Fixed-port private-network access, QR pairing, and remembered devices | [Remote access](network-access.md) |
 | Palettes, provider identities, semantic colors, and extension points | [Color system](color-system.md) |
 
-For agents versus workflows versus delegated assignments, start with the [component glossary](ARCHITECTURE.md#ownership). For first-chat model selection and project defaults, see [first use](getting-started.md#first-use).
+For named agents and delegated assignments, start with the [component glossary](ARCHITECTURE.md#ownership). For first-chat model selection and project defaults, see [first use](getting-started.md#first-use).
 
 ## Development and verification
 

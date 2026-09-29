@@ -16,6 +16,8 @@ import {
   PanelLeftClose,
   Search,
   LoaderCircle,
+  BrainCircuit,
+  Gauge,
 } from "lucide-react";
 import { api, query, subscribe } from "./api";
 import { Button, Panel, Badge, Empty, Field, PageCloseButton, PageHeading } from "./echoflex/Controls";
@@ -27,14 +29,14 @@ import { applyTheme } from "../domain/theme.mjs";
 const Settings = lazy(() => import('./Settings').then(module => ({ default: module.Settings })));
 import { SettingsNavigation, settingsItemLabel, type SettingsScope } from "./SettingsNavigation";
 import { Details, Files } from "./WorkspacePanels";
-import { ChatActions } from "./ChatActions";
+import { DirectoryBreadcrumb } from "./DirectoryBreadcrumb";
 import { browseModels } from "../shared/view.mjs";
 const WorkspaceCatalog = lazy(() => import('./WorkspaceCatalog').then(module => ({ default: module.WorkspaceCatalog })));
 import { startingChoices } from "../domain/session-defaults.mjs";
 import { compatibleApplication } from "../domain/protocol.mjs";
 import { ProjectProgress } from "./ProjectPicker";
 import { ChatNavigation, ProjectNavigation } from "./NavigationMenus";
-import { IndexedSearch } from "./IndexedSearch";
+import { ContentSearch } from "./IndexedSearch";
 import { Questions } from "./Question";
 import { Permissions } from './Permissions';
 import { Dialog, useConfirmation } from './echoflex/Dialog';
@@ -49,6 +51,11 @@ import { senderState } from "../domain/sender.mjs";
 import { RecentChats } from "./recent-chats.mjs";
 
 const EMPTY_TODOS: any[] = [];
+const parentDirectory = (path: string) => {
+  const normalized = path.replaceAll("\\", "/");
+  const index = normalized.lastIndexOf("/");
+  return index < 0 ? "" : normalized.slice(0, index);
+};
 const compactModelNumber = new Intl.NumberFormat('en-US', { notation: 'compact', maximumFractionDigits: 1 });
 
 function modelStatus(availability: string, used = false) {
@@ -76,6 +83,8 @@ export default function App() {
   const confirmation = useConfirmation();
   const [folderPicker, setFolderPicker] = useState(false), [importPreview, setImportPreview] = useState<any>(null);
   const [indexedFilePath, setIndexedFilePath] = useState("");
+  const [fileFolderPath, setFileFolderPath] = useState("");
+  const [fileNavigation, setFileNavigation] = useState(0);
   const [importBusy, setImportBusy] = useState(false), [importError, setImportError] = useState('');
   const [data, setData] = useState<any>(null),
     [project, setProject] = useState(""),
@@ -133,21 +142,29 @@ export default function App() {
   const historyOpen = view === "history";
   const setView = (next: React.SetStateAction<string>) => startTransition(() => setViewState(next));
   const openHistory = (id?: string) => { setHistorySelection(id); setExpandedSettings("application"); setView("history"); };
-  const closeSettings = () => { setExpandedSettings(null); setHistorySelection(undefined); setIndexedFilePath(""); setView("chat"); };
+  const closeSettings = () => { setExpandedSettings(null); setHistorySelection(undefined); setIndexedFilePath(""); setFileFolderPath(""); setView("chat"); };
   const openSettings = (scope: SettingsScope, item: string) => {
     if (item === "history") { openHistory(); return; }
-    if (item === "files") setIndexedFilePath("");
+    if (item === "files") { setIndexedFilePath(""); setFileFolderPath(""); setFileNavigation(value => value + 1); }
     setSettingsScope(scope);
     setExpandedSettings(scope);
     setTab(item);
-    setView(({ github: "github", models: "models", usage: "overview", agents: "agents", workflows: "workflows", files: "files", search: "search" } as Record<string, string>)[item] ?? "settings");
+    setView(({ github: "github", models: "models", usage: "overview", agents: "agents", files: "files", search: "search" } as Record<string, string>)[item] ?? "settings");
   };
-  const navigationScope: SettingsScope = historyOpen || view === "search" ? "application" : view === "settings" ? settingsScope : view === "models" || view === "overview" ? "application" : "project";
+  const openDirectory = (relativePath: string) => {
+    setFileNavigation(value => value + 1);
+    setIndexedFilePath("");
+    setFileFolderPath(relativePath);
+    setSettingsScope("project");
+    setExpandedSettings("project");
+    setTab("files");
+    setView("files");
+  };
+  const navigationScope: SettingsScope = historyOpen ? "application" : view === "search" ? settingsScope : view === "settings" ? settingsScope : view === "models" || view === "overview" ? "application" : "project";
   const navigationTab = historyOpen ? "history" : view === "settings" ? tab : view === "chat" ? "" : view === "overview" ? "usage" : view;
   const [details, setDetails] = useState(false),
     [detailsSel, setDetailsSel] = useState({ tab: "activity", n: 0 }),
-    [agentID, setAgentID] = useState("inherit"),
-    [workflowID, setWorkflowID] = useState("build");
+    [agentID, setAgentID] = useState("engineer");
   const openDetails = (tab: string) => {
     setDetailsSel((sel) => ({ tab, n: sel.n + 1 }));
     setDetails(true);
@@ -168,22 +185,11 @@ export default function App() {
       : data.sessionDefaults &&
         startingChoices(data.sessionDefaults, data.settings);
     if (choice) {
-      setAgentID(
-        ["inherit"].includes(choice.agentID) ||
-          data.settings.agents.some((a) => a.id === choice.agentID)
-          ? choice.agentID
-          : "inherit",
-      );
-      setWorkflowID(
-        data.settings.workflows.some((w) => w.id === choice.workflowID)
-          ? choice.workflowID
-          : "build",
-      );
+      setAgentID(data.settings.agents.some((a) => a.id === choice.agentID) ? choice.agentID : "engineer");
       setModel(choice.model ?? "inherit");
       setVariant(choice.variant ?? "inherit");
     } else {
-      setAgentID("inherit");
-      setWorkflowID("build");
+      setAgentID("engineer");
       setModel("inherit");
       setVariant("inherit");
     }
@@ -191,28 +197,8 @@ export default function App() {
   }, [data, project, session]);
   useEffect(() => {
     if (!data) return;
-    if (
-      !["inherit"].includes(agentID) &&
-      !data.settings.agents.some((a) => a.id === agentID)
-    )
-      setAgentID("inherit");
-    if (!data.settings.workflows.some((w) => w.id === workflowID))
-      setWorkflowID("build");
-  }, [data?.settings.agents, data?.settings.workflows]);
-  const useWorkflow = (workflow) => {
-    setWorkflowID(workflow.id);
-    setVariant("inherit");
-  };
-  useEffect(() => {
-    if (!data) return;
-    if (
-      !["inherit"].includes(agentID) &&
-      !data.settings.agents.some((a) => a.id === agentID)
-    )
-      setAgentID("inherit");
-    if (!data.settings.workflows.some((w) => w.id === workflowID))
-      setWorkflowID("build");
-  }, [data, agentID, workflowID]);
+    if (!data.settings.agents.some((a) => a.id === agentID)) setAgentID("engineer");
+  }, [data?.settings.agents, agentID]);
   const panelLayout = usePanelLayout(data ? data.settings.appearance ?? {} : undefined, view === "chat" && details);
   const pending = useRef(0);
   const bootstrapVersion = useRef(0),
@@ -432,7 +418,6 @@ export default function App() {
           session: id,
           text: capturedDraft,
           agentID,
-          workflowID,
           model,
           variant: intelligence,
           attachments,
@@ -496,6 +481,8 @@ export default function App() {
         restoredChoices.current = "";
         setData({ ...next, selectionKey: key });
         setProject(p.id);
+        setFileFolderPath("");
+        setIndexedFilePath("");
         let remembered = "";
         try { remembered = localStorage.getItem(`freelancer:last-chat:${p.id}`) ?? ""; }
         catch { /* Fall back to the project with no chat selected. */ }
@@ -518,10 +505,25 @@ export default function App() {
     if (projectID !== project && !await openProject(selected))
       throw Error("The project could not be opened. Check the workspace status and try again.");
     setIndexedFilePath(filePath);
+    setFileNavigation(value => value + 1);
+    setFileFolderPath(parentDirectory(filePath));
     setSettingsScope("project");
     setExpandedSettings("project");
     setTab("files");
     setView("files");
+  }
+  const renameChat = (chat: any, title: string) => run(async () => {
+    await api("chat", { project, session: chat.id, title: title.trim() }, "PATCH");
+    await refresh();
+  });
+  async function openIndexedConversation(projectID: string, id: string) {
+    if (projectID !== project) {
+      const selected = data?.settings.projects.find((item: any) => item.id === projectID);
+      if (!selected) throw Error("This project is no longer registered.");
+      if (!await openProject(selected)) throw Error("The project could not be opened. Check the workspace status and try again.");
+      if (navigation.current !== query(projectID)) return;
+    }
+    selectSession(id);
   }
   async function previewProject() {
     setImportBusy(true); setImportError('');
@@ -631,8 +633,8 @@ export default function App() {
             .map((s) => ({ ...s, activity: sessionActivity?.[s.id] }))}
           selected={session} disabled={!!projectLoading || !data || !compatibleApplication(data)} creating={creatingChat}
           onNew={() => run(createChat)}
-          onSelect={(s) => selectSession(s.id)}
-          onContinue={continueChatInNew} onArchive={archiveChat} onPin={pinChat} onExport={exportChat}
+           onSelect={(s) => selectSession(s.id)}
+           onContinue={continueChatInNew} onArchive={archiveChat} onPin={pinChat} onExport={exportChat} onRename={renameChat}
         />
         <div className="sidebar-bottom usage-dock">
           <SettingsNavigation expanded={expandedSettings} scope={navigationScope} tab={navigationTab}
@@ -646,9 +648,9 @@ export default function App() {
       <main className="main">
         <header className="topbar">
           <div>
-            <span className="breadcrumb">
-              {data?.project?.name ?? "Your workspace"}
-            </span>
+            {data?.project?.directory
+              ? <DirectoryBreadcrumb directory={data.project.directory} relativePath={view === "files" ? fileFolderPath : ""} onNavigate={openDirectory} />
+              : <button type="button" className="directory-root breadcrumb-fallback" disabled={!project} onClick={() => openDirectory("")}>{data?.project?.name ?? "Your workspace"}</button>}
             <span className="slash">/</span>
             {view !== "chat" && view !== "overview" && <><span className="breadcrumb">{navigationScope === "project" ? "Project settings" : "Application settings"}</span><span className="slash">/</span></>}
             <strong>{view === "chat" ? current?.title ?? "New chat" : view === "overview" ? "Available Usage" : settingsItemLabel(navigationScope, navigationTab)}</strong>
@@ -661,18 +663,6 @@ export default function App() {
               >
                 Back to parent chat
               </Button>
-            )}
-            {!!project && (
-              <ChatActions
-                key={project}
-                project={project}
-                session={current}
-                model={model}
-                run={run}
-                refresh={refresh}
-                onSession={selectSession}
-                onHistory={() => openHistory(current?.parentID ?? current?.id)}
-              />
             )}
             {view === "chat" && session && (
               <Button variant="quiet" aria-expanded={details} aria-controls="workspace-details" onClick={() => setDetails(!details)}>
@@ -751,7 +741,7 @@ export default function App() {
                     const next = await api('chat/imported/continue', { project, session }); selectSession(next.id);
                   })}>Continue in Freelancer</Button></div>}
                 {chat.continuation && <div className="imported-chat-notice" role="status"><span>{(sending && !chat.receipts?.length) || (busy && chat.receipts?.at(-1)?.orienting) ? 'Orienting…' : 'Continued from a ChatGPT / Codex snapshot. Saved history provides the starting context.'}</span></div>}
-                {(current?.organization?.archived || data.project?.organization?.archivedAt) && <div className="archive-banner" role="status">This work is archived{current?.organization?.archiveScope === 'freelancer' ? ' in Freelancer only' : ''}. Restore it before sending. <Button onClick={() => { if (data.project?.organization?.archivedAt) openSettings('application', 'storage'); else openHistory(current?.parentID ?? current?.id); }}>Manage archive</Button></div>}
+                {(current?.organization?.archived || data.project?.organization?.archivedAt) && <div className="archive-banner" role="status">This work is archived{current?.organization?.archiveScope === 'freelancer' ? ' in Freelancer only' : ''}. Restore it before sending. <Button onClick={() => { if (data.project?.organization?.archivedAt) openSettings('application', 'content-storage'); else openHistory(current?.parentID ?? current?.id); }}>Manage archive</Button></div>}
                 {draftMemory.error ? <div className="draft-status" role="alert">{draftMemory.error}<><Button onClick={() => run(draftMemory.retry)}>Retry save</Button><Button title="Replace this box with the saved draft. Copy current text first." onClick={async () => { if (await confirmation.ask({ title: 'Load the saved draft?', description: 'Copy your current text first; this replaces the text in the box.', confirmLabel: 'Load saved draft' })) void run(draftMemory.reload); }}>Load saved draft</Button></></div> : null}
                 <div className="requests" ref={decisions} tabIndex={-1} aria-label="Pending decisions">
                   <Permissions key={`permissions-${query(project, session)}`} requests={chat.permissions}
@@ -806,8 +796,6 @@ export default function App() {
                     onChild={selectSession}
                     agentID={agentID}
                     setAgentID={setAgentID}
-                    workflowID={workflowID}
-                    onWorkflow={useWorkflow}
                     changeCount={new Set((chat.diff ?? []).map(file => file.file ?? file.path)).size}
                     pendingDecisions={(chat.permissions ?? []).length + (chat.questions ?? []).length}
                     onReviewDecisions={() => {
@@ -841,7 +829,7 @@ export default function App() {
             }} />}
             {view === "overview" && (
               <div className="page overview">
-                <PageHeading title="Available Usage" actions={<PageCloseButton onClick={closeSettings} />} />
+                <PageHeading title="Available Usage" icon={Gauge} actions={<PageCloseButton onClick={closeSettings} />} />
                 <UsageHero view={availableUsage.view} state={availableUsage.state} onRefresh={availableUsage.refresh} />
                 <div className="overview-grid">
                   <Panel title="Your providers">
@@ -861,7 +849,7 @@ export default function App() {
                   </Panel>
                 </div>
                 {!!data.costs.contributions?.agents.rows.length && (
-                  <Panel title="Agent contributions" help="contributions">
+                  <Panel title="Agent contributions">
                     <ContributionRows breakdown={data.costs.contributions.agents} />
                   </Panel>
                 )}
@@ -887,10 +875,12 @@ export default function App() {
               </div>
             )}
             {view === "files" && project && (
-              <Files project={project} run={run} onClose={closeSettings} initialPath={indexedFilePath} onSearch={() => openSettings("application", "search")} />
+              <Files key={`${project}:${fileNavigation}`} project={project} run={run} onClose={closeSettings} initialPath={indexedFilePath} initialFolder={fileFolderPath} onLocationChange={setFileFolderPath} onSearch={() => openSettings("project", "search")} />
             )}
-            {view === "search" && <IndexedSearch projects={data.settings.projects} onOpen={openIndexedFile} onIndex={() => openSettings("application", "index")} onClose={closeSettings} />}
-            {view === "history" && project && <HistoryPage key={historySelection ?? "all"} data={data} project={project} activity={sessionActivity} initialSession={historySelection} onClose={closeSettings} onChange={refresh} onFileSearch={() => openSettings("application", "search")} onOpen={async (projectID, id) => {
+            {view === "search" && <ContentSearch key={`${settingsScope}:${settingsScope === "project" ? project : "all"}`}
+              project={settingsScope === "project" ? data.project : undefined} onOpenFile={openIndexedFile}
+              onOpenConversation={openIndexedConversation} onIndex={() => openSettings("application", "content-storage")} onClose={closeSettings} />}
+            {view === "history" && project && <HistoryPage key={historySelection ?? "all"} data={data} project={project} activity={sessionActivity} initialSession={historySelection} onClose={closeSettings} onChange={refresh} onOpen={async (projectID, id) => {
               if (projectID !== project) {
                 const selected = data.settings.projects.find(p => p.id === projectID);
                 if (!selected) return;
@@ -899,22 +889,19 @@ export default function App() {
               }
               selectSession(id);
             }} />}
-            {(view === "agents" || view === "workflows") && (
+            {view === "agents" && (
               <WorkspaceCatalog
                 key={view}
-                kind={view}
                  data={data}
                  run={run}
                  refresh={refresh}
                  onClose={closeSettings}
-                 onUse={(item) => {
-                  setVariant("inherit");
-                  if (view === "agents") {
+                  onUse={(item) => {
                     setAgentID(item.id);
                     setModel("inherit");
-                  } else useWorkflow(item);
-                  setView("chat");
-                }}
+                    setVariant("inherit");
+                    setView("chat");
+                  }}
               />
             )}
             {view === "settings" && (
@@ -944,7 +931,7 @@ export default function App() {
             )}
             {view === "models" && (
               <div className="page">
-                <PageHeading title="Models" actions={<>
+                <PageHeading title="Models" icon={BrainCircuit} help="model-ratings" actions={<>
                       <Button disabled={modelRatings.pending} onClick={async () => {
                         if (['starting', 'running'].includes(modelRatings.job?.status)) { modelRatings.reveal(); return; }
                         if (!modelRatings.job || await modelRatings.dismiss()) setRatingDialog(true);

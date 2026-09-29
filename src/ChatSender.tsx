@@ -10,13 +10,13 @@ import { clientID } from './browser-capabilities.mjs';
 import { senderAction } from '../domain/sender.mjs';
 import './chat-sender.css';
 
-type Intent = { id: string; project: string; session: string; text: string; model: string; variant: string; workflowID: string; agentID: string; draftToken?: any };
+type Intent = { id: string; project: string; session: string; text: string; model: string; variant: string; agentID: string; draftToken?: any };
 type Delivery = { id: string; kind: 'queue' | 'clarify' | 'interrupt'; status: string; model: string; text?: string; error?: string; notice?: string };
 type Options = { data: any; session: any; busy: boolean; loading: boolean; draft: string; setDraft: (text: string) => void;
-  parentModel: string; intelligence: string; agentID: string; workflowID: string; models: any[]; onSend: (variant: string) => void; onStop: () => void | Promise<unknown>; disabled?: boolean; hasAttachments?: boolean; captureDraft?: () => any; acceptDraft?: (token: any) => void };
+  parentModel: string; intelligence: string; agentID: string; models: any[]; onSend: (variant: string) => void; onStop: () => void | Promise<unknown>; disabled?: boolean; hasAttachments?: boolean; captureDraft?: () => any; acceptDraft?: (token: any) => void };
 
 export function useChatSender(options: Options) {
-  const { data, busy, loading, draft, parentModel, intelligence, agentID, workflowID } = options;
+  const { data, busy, loading, draft, parentModel, intelligence, agentID } = options;
   const project = data?.project?.id ?? '';
   const session = typeof options.session === 'string' ? options.session : options.session?.id ?? '';
   const context = query(project, session);
@@ -74,7 +74,7 @@ export function useChatSender(options: Options) {
     if (busy || rows.some(r => ['waiting', 'sending', 'submitted'].includes(r.status))) {
       if (!session) return;
       setOverride(''); setError('');
-      setIntent({ id: clientID(), project, session, text: draft, model: parentModel, variant: intelligence, workflowID, agentID, draftToken: options.captureDraft?.() });
+      setIntent({ id: clientID(), project, session, text: draft, model: parentModel, variant: intelligence, agentID, draftToken: options.captureDraft?.() });
     } else options.onSend(intelligence);
   }
   async function choose(kind: 'queue' | 'clarify' | 'interrupt') {

@@ -37,7 +37,6 @@ function normalizeInput(input, previous = {}) {
   const prompt = typeof input.prompt === "string" ? input.prompt.trim() : "";
   const project = typeof input.project === "string" ? input.project : "";
   const agent = typeof input.agent === "string" ? input.agent : "";
-  const workflow = typeof input.workflow === "string" ? input.workflow : "";
   const model = typeof input.model === "string" ? input.model : "";
   const frequency = input.frequency;
   iso(input.firstRunAt, "firstRunAt");
@@ -45,18 +44,17 @@ function normalizeInput(input, previous = {}) {
   if (!prompt || prompt.length > 190000) throw Error("Write a prompt of at most 190,000 characters.");
   if (!project) throw Error("Choose a project for this schedule.");
   if (!agent) throw Error("Choose an agent for this schedule.");
-  if (!workflow) throw Error("Choose a workflow for this schedule.");
   if (!model || model === "auto" || model === "inherit" || !modelPattern.test(model))
     throw Error("Choose an explicit available model for this schedule.");
   if (!frequencies.has(frequency)) throw Error("Choose once, daily, or weekly frequency.");
   if (input.enabled !== undefined && typeof input.enabled !== "boolean") throw Error("Enabled must be true or false.");
+  const { workflow: _retiredWorkflow, ...retained } = previous;
   return {
-    ...previous,
+    ...retained,
     title,
     prompt,
     project,
     agent,
-    workflow,
     model,
     frequency,
     firstRunAt: input.firstRunAt,
@@ -113,7 +111,6 @@ export function createSchedules(app, {
     const boot = await app.bootstrap(row.project);
     if (!boot?.project?.id || boot.project.id !== row.project) throw Error("Choose an existing project.");
     if (!boot.settings?.agents?.some(agent => agent.id === row.agent)) throw Error("Choose an available agent.");
-    if (!boot.settings?.workflows?.some(workflow => workflow.id === row.workflow)) throw Error("Choose an available workflow.");
     const model = boot.models?.find(model => model.id === row.model);
     if (!model) throw Error("Choose an available model.");
     const provider = model.provider ?? row.model.slice(0, row.model.indexOf("/"));
@@ -152,11 +149,18 @@ export function createSchedules(app, {
     try {
       const data = JSON.parse(await readFile(file, "utf8"));
       if (data.version !== 1 || !Array.isArray(data.schedules)) throw Error("Invalid schedules");
-      rows = data.schedules.map(row => ({ ...row, running: false }));
+      let removedWorkflow = false;
+      rows = data.schedules.map((row) => {
+        const { workflow: _workflow, ...current } = row;
+        if (Object.hasOwn(row, "workflow")) removedWorkflow = true;
+        if (current.agent === "git") { current.agent = "engineer"; removedWorkflow = true; }
+        return { ...current, running: false };
+      });
       for (const row of rows) {
         if (!row.id || !idPattern.test(row.id) || !frequencies.has(row.frequency)) throw Error("Invalid schedules");
         if (row.nextRunAt) iso(row.nextRunAt, "nextRunAt");
       }
+      if (removedWorkflow) await save();
       await skipMissed();
     } catch (error) {
       if (error.code !== "ENOENT") throw Error("Cannot read schedules; existing data was preserved.");
@@ -219,7 +223,6 @@ export function createSchedules(app, {
         text: row.prompt,
         model: row.model,
         agentID: row.agent,
-        workflowID: row.workflow,
       });
       addHistory(row, { status: "dispatched", scheduledFor, session: session.id });
       advance(row);

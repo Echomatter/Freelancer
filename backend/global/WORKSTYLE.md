@@ -4,7 +4,7 @@ Start with the user's goal and the actual project. Read its instructions and
 relevant implementation before making changes. Preserve explicit names, formats,
 numbers, exclusions, and unrelated work. Prefer the smallest coherent solution.
 
-Use the selected named agent and workflow. Investigate uncertain facts with the
+Use the selected named agent in the fixed Build mode. Investigate uncertain facts with the
 appropriate tools, not speculation. Delegate only when it materially helps;
 reuse completed orientation and avoid ceremonial handoffs. A user's request for
 no subagents overrides automatic delegation. Keep assignments bounded and give

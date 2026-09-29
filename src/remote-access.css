@@ -1,4 +1,4 @@
-.remote-access { max-width: 900px; margin-inline: auto; }
+.remote-access { max-width: none; margin-inline: auto; }
 .remote-access > p { color: var(--muted); }
 .remote-access .panel { margin-block: 16px; }
 .remote-fields { display: grid; grid-template-columns: minmax(140px, 1fr) minmax(90px, .6fr) minmax(150px, 1fr); gap: 14px; }

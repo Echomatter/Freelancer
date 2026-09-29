@@ -36,8 +36,12 @@ export function runProcess(file, args, { cwd, signal, timeoutMs = 15000, errorOu
   });
 }
 export function selectorArguments(args, script) {
-  const result = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-WorkMode', args.mode,
-    '-TaskType', (args.taskTypes?.length ? args.taskTypes : [args.mode === 'explore' ? 'research' : args.mode === 'plan' ? 'architecture' : args.mode === 'review' ? 'code_review' : 'bounded_feature']).join(',')];
+  // The selector only accepts fixed Build work mode (policy 6). Legacy
+  // captured modes survive only as task-type evidence, never as -WorkMode,
+  // or every legacy plan/explore/review assignment fails validation.
+  const mode = args.mode ?? 'build';
+  const result = ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script, '-WorkMode', 'build',
+    '-TaskType', (args.taskTypes?.length ? args.taskTypes : [mode === 'explore' ? 'research' : mode === 'plan' ? 'architecture' : mode === 'review' ? 'code_review' : 'bounded_feature']).join(',')];
   for (const [arg, key] of Object.entries({ needsWrites: 'NeedsWrites', needsTerminal: 'NeedsTerminal', needsWeb: 'NeedsWeb',
     needsDeepReasoning: 'NeedsDeepReasoning', highConsequenceIfWrong: 'HighConsequence', needsModelDiversity: 'NeedsModelDiversity', freeOnly: 'FreeOnly', hostAssessment: 'HostAssessment' })) {
     if (args[arg]) result.push(`-${key}`, 'true');
@@ -80,7 +84,7 @@ export function createBridge(toolkitRoot) {
       let recordingError;
       if (a?.status === 'failed') {
         try { await invoke('record-task-outcome.ps1', ['-TaskId', receipt.task_id, '-Repo', receipt.directory,
-          '-TaskType', (receipt.task_types?.length ? receipt.task_types : [receipt.workflow?.mode ?? receipt.role]).join(','), '-Operational'], {}, 15000); }
+          '-TaskType', (receipt.task_types?.length ? receipt.task_types : [receipt.mode ?? 'bounded_feature']).join(','), '-Operational'], {}, 15000); }
         catch (error) { recordingError = error; }
       }
       if (!a || a.status !== 'failed' || !['quota', 'auth', 'throttle', 'provider', 'model'].includes(a.failure)) {

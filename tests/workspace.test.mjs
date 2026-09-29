@@ -15,7 +15,7 @@ import {
   loadPreferences,
 } from "../backend/tools/runtime/preferences.mjs";
 
-test("agent defaults override project defaults and legacy none resolves to the workflow agent", () => {
+test("agent defaults override project defaults and legacy empty agent resolves to Engineer", () => {
   const workspace = workspaceCatalog({
     agents: [{ id: "engineer", model: "opencode/parent" }],
   });
@@ -31,16 +31,8 @@ test("agent defaults override project defaults and legacy none resolves to the w
     resolveChoices(workspace, {}, { parentModel: "opencode/default" }).model,
     "opencode/parent",
   );
-  assert.deepEqual(
-    workspace.workflows.map((w) => w.id),
-    ["build", "plan", "explore", "review"],
-  );
-  assert.equal(
-    workspaceCatalog({
-      workflows: [{ id: "custom", name: "User edited legacy workflow" }],
-    }).workflows.at(-1).name,
-    "User edited legacy workflow",
-  );
+  assert.equal(Object.hasOwn(workspace, "workflows"), false);
+  assert.equal(Object.hasOwn(workspaceCatalog({ workflows: [{ id: "custom" }] }), "workflows"), false);
 });
 
 test("only confirmed depleted models are hidden, while unknown and free models remain", () => {
@@ -60,7 +52,7 @@ test("only confirmed depleted models are hidden, while unknown and free models r
   );
 });
 
-test("workflow execution policy never overwrites saved defaults or leaks to another chat", async (t) => {
+test("execution overlays never overwrite saved defaults or leak to another chat", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-policy-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   await savePreferences(root, root, {
@@ -122,12 +114,10 @@ test("agent parent selections must be actual provider-qualified models", () => {
 });
 
 
-test("retired Git and Sync definitions cannot return through saved catalogs or selections", () => {
+test("legacy Git identities and workflow settings do not return to the named agent catalog", () => {
   const catalog = workspaceCatalog({ agents: [{ id: "git", prompt: "old control" }], workflows: [{ id: "sync" }, { id: "release", agentID: "git" }] });
   assert.equal(catalog.agents.some(a => a.id === "git"), false);
-  assert.equal(catalog.workflows.some(w => w.id === "sync"), false);
-  assert.equal(catalog.workflows.find(w => w.id === "release").agentID, "engineer");
-  const choice = resolveChoices(catalog, { agentID: "git", workflowID: "sync" });
+  assert.equal(Object.hasOwn(catalog, "workflows"), false);
+  const choice = resolveChoices(catalog, { agentID: "git" });
   assert.equal(choice.agent.id, "engineer");
-  assert.equal(choice.workflow.id, "build");
 });

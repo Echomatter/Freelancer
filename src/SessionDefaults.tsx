@@ -1,6 +1,6 @@
 import { ProviderText } from "./ProviderColors";
 import { useEffect, useState } from "react";
-import { ArrowUpRight, Check } from "lucide-react";
+import { ArrowUpRight, Check, MessageSquare } from "lucide-react";
 import { Button, PageCloseButton, PageHeading, Panel, Field } from "./echoflex/Controls";
 import { ParentModelFields } from "./ModelSetup";
 import { modelVariant } from "../domain/workspace.mjs";
@@ -39,13 +39,8 @@ export function SessionDefaults({
         <h3>Loading session defaults…</h3>
       </Panel>
     );
-  const workflow = data.settings.workflows.find(
-    (w) => w.id === draft.workflowID,
-  );
   const agent = data.settings.agents.find(
-    (a) =>
-      a.id ===
-      (draft.agentID === "inherit" ? workflow?.agentID : draft.agentID),
+    (a) => a.id === draft.agentID,
   );
   const agentModel =
     agent?.model && agent.model !== "auto" ? agent.model : null;
@@ -76,34 +71,15 @@ export function SessionDefaults({
   }
   return (
     <div className="session-defaults">
-      <PageHeading title="Session defaults" actions={<PageCloseButton onClick={onClose} />} />
+      <PageHeading title="Session defaults" icon={MessageSquare} help="session-defaults" actions={<PageCloseButton onClick={onClose} />} />
       <form onSubmit={save}>
-        <Panel className="session-start" title="Start a new chat" help="session-defaults">
-          <div className="editor-columns">
-            <Field label="Workflow">
-              <select
-                value={draft.workflowID}
-                onChange={(e) => change({ workflowID: e.target.value })}
-              >
-                {data.settings.workflows.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </Field>
+        <Panel className="session-start" title="Start a new chat">
+          <div className="session-agent-field">
             <Field label="Agent">
               <select
                 value={draft.agentID}
                 onChange={(e) => change({ agentID: e.target.value })}
               >
-                <option value="inherit">
-                  Workflow's agent (
-                  {data.settings.agents.find((a) => a.id === workflow?.agentID)
-                    ?.name ?? "None"}
-                  )
-                </option>
-
                 {data.settings.agents.map((a) => (
                   <option key={a.id} value={a.id}>
                     {a.name}
@@ -164,12 +140,6 @@ export function SessionDefaults({
         <button onClick={() => onNavigate("agents")}>
           <span>
             <strong>Agents</strong>
-          </span>
-          <ArrowUpRight size={18} />
-        </button>
-        <button onClick={() => onNavigate("workflows")}>
-          <span>
-            <strong>Workflows</strong>
           </span>
           <ArrowUpRight size={18} />
         </button>

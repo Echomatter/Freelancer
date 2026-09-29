@@ -41,7 +41,6 @@ export async function panelFixture() {
             schema_version: 1,
             agentID: "engineer",
             agentName: "Engineer",
-            workflowID: "build",
             child_session: child.id,
             selected_model: "opencode/free",
             observed_model: "opencode/free",

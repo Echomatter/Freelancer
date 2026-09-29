@@ -8,7 +8,7 @@ export const helpTopicIDs = /** @type {const} */ ([
   "git-defaults", "git-history", "git-main", "git-identity", "git-connection", "git-agreement",
   "git-explicit-request", "git-sync", "git-first-upload", "git-receipts", "theme", "provider-color",
   "usage-estimate", "contributions", "project-import", "project-indexes", "project-name",
-  "message-options", "message-delivery", "model-ratings", "workflows", "remote-access",
+  "message-options", "message-delivery", "model-ratings", "agents", "providers", "project-files", "remote-access",
   "remote-address", "remote-pairing", "remote-devices", "remote-web",
   "turn-rail", "context-compaction",
 ]);

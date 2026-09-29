@@ -1,4 +1,4 @@
-// Application-owned agreement. Editable agent/workflow prose is not authority.
+// Application-owned agreement. Editable agent prose is not authority.
 export const gitPresets = Object.freeze([
   {
     id: "main",
@@ -169,5 +169,5 @@ export function parseGitStatus(raw) {
   return rows;
 }
 export function gitExecutionContract(p) {
-  return `Project history defaults: ${agreementText(p)}\nEvery named agent and workflow can use git_project. Before implementation, inspect the agreement and call prepare to prepare its working branch; chat delivery itself never switches branches. These defaults guide ordinary work; they are not an absolute veto on an explicit user request. For any requested exception, use git_project action request to preview the exact agreement change or Git/GitHub operation, ask the returned native question unchanged, then execute the approved plan. This applies across the agreement, including inspect-only, local-only, branch/main rules, upload approval, branch deletion, history rewrites and visibility. Change saved defaults only when the user requests a lasting change. Native permissions, exact-state checks, credential protection and preservation of unrelated work still apply. Never bypass managed Git with shell publication. Verify local and remote results separately.`;
+  return `Project history defaults: ${agreementText(p)}\nEvery named agent can use git_project. Before implementation, inspect the agreement and call prepare to prepare its working branch; chat delivery itself never switches branches. These defaults guide ordinary work; they are not an absolute veto on an explicit user request. For any requested exception, use git_project action request to preview the exact agreement change or Git/GitHub operation, ask the returned native question unchanged, then execute the approved plan. This applies across the agreement, including inspect-only, local-only, branch/main rules, upload approval, branch deletion, history rewrites and visibility. Change saved defaults only when the user requests a lasting change. Native permissions, exact-state checks, credential protection and preservation of unrelated work still apply. Never bypass managed Git with shell publication. Verify local and remote results separately.`;
 }

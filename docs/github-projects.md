@@ -19,7 +19,7 @@ ask for a local checkpoint so the main version is preserved. That checkpoint is
 on this computer and is separate from GitHub upload.
 Sending a chat never changes branches or blocks a question about the agreement.
 Before implementation, the agent uses the managed `prepare` action to prepare the
-agreed working branch. Every agent and workflow can use this action.
+agreed working branch. Every named agent can use this action.
 
 ## First setup (Windows)
 
@@ -73,7 +73,7 @@ delete .git, commits, files or existing GitHub projects. Working style can be
 saved as a default for newly configured projects; account/repository credentials
 and bindings are never copied into those defaults.
 
-Every agent and workflow can manage project history. The saved agreement supplies defaults. For an explicit user request outside any part of it, `git_project` action `request` previews the exact operation or agreement change, asks a native question, and executes after approval. This covers inspect-only/local-only settings, branch/main rules, upload confirmation, branch deletion, history rewrites and visibility. One-time operations leave saved defaults unchanged.
+Every named agent can manage project history. The saved agreement supplies defaults. For an explicit user request outside any part of it, `git_project` action `request` previews the exact operation or agreement change, asks a native question, and executes after approval. This covers inspect-only/local-only settings, branch/main rules, upload confirmation, branch deletion, history rewrites and visibility. One-time operations leave saved defaults unchanged.
 Both the panel and the native `git_project` tool call the same application
 service. Account setup stays in the panel. Agreement changes can also be confirmed in chat. The agent
 uses one native permission request per approved plan, not one per shell command.
@@ -103,7 +103,7 @@ or unrelated histories need review; the app does not auto-merge/rebase or discar
 work. **Sync** runs Git/content/whitespace checks and a non-forced explicit-ref
 push, verifies the remote tip, then creates/reuses a review request when selected.
 It does not run arbitrary project test scripts: validate source changes in the
-implementation workflow. Git hooks remain in force; failed checks do not become
+implementation work. Git hooks remain in force; failed checks do not become
 successful publication. Protected-branch refusals are not bypassed.
 
 A connection loss is reported separately from a saved checkpoint. Interrupted
@@ -122,7 +122,7 @@ an approved Git action. Git's native ref/index locks and revalidation protect
 ordinary races, but this is not a filesystem transaction or an OS sandbox.
 
 Any agent can use managed history.
-Inspect-only defaults prevent automatic mutations; explicit requests can be confirmed in chat regardless of workflow.
+Inspect-only defaults prevent automatic mutations; explicit requests can be confirmed in chat regardless of agent.
 Native shell permissions remain authoritative; direct git/gh commands
 are guarded, but arbitrary scripts and other programs with the user's filesystem
 or credential access are not a security sandbox. Do not present the agreement

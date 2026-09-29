@@ -5,7 +5,7 @@ description: Model routing, evidence and recovery guidance for bounded workers.
 
 # Model routing
 
-Use `delegate({agent, task, workflow?, model?})` with expertise from the supplied catalog. Omit model for automatic eligible routing; preserve explicitly requested provider/model choices. Free workers start in one call. Catalog discovery is optional.
+Use `delegate({agent, task, model?})` with expertise from the supplied catalog. Omit model for automatic eligible routing; preserve explicitly requested provider/model choices. Free workers start in one call. Catalog discovery is optional.
 
 Use `freeOnly`, `inspectionOnly` or `independentReview` for real assignment constraints. These never grant authority. Native permission, paid consent, user constraints, project agreement and worker limits remain authoritative.
 

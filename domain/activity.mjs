@@ -9,7 +9,6 @@ export function visibleActivity(rows) {
         (other) =>
           other.child &&
           (other.agentID ?? other.role) === (row.agentID ?? row.role) &&
-          (other.workflowID ?? "") === (row.workflowID ?? "") &&
           other.raw?.task_hash === row.raw.task_hash &&
           (other.raw?.user_task_id === row.raw.user_task_id ||
             (row.requestID && other.requestID === row.requestID)) &&

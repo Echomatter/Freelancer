@@ -27,7 +27,7 @@ function fixture() {
   };
   const sender = createSender(app);
   const queue = (id, text) => sender.enqueue('project', 'chat', {
-    id, kind: 'queue', text, model: 'opencode/free', workflowID: 'build', agentID: 'inherit',
+    id, kind: 'queue', text, model: 'opencode/free', agentID: 'engineer',
   });
   return { sender, state, sent, queue, app, get stops() { return stops; } };
 }

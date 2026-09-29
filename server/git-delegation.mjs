@@ -71,7 +71,7 @@ export async function delegatedGitGroup({
     active[0].part.tool === "delegate" &&
     active[0].part.callID === assignment.delegateCallID &&
     active[0].part.state?.input?.agentID === assignment.agent.id &&
-    active[0].part.state?.input?.workflowID === assignment.workflow.id;
+    (!assignment.workflow || active[0].part.state?.input?.workflowID === assignment.workflow.id);
   const latestUser = messages.findLast(
     (message) => message.info?.role === "user",
   );

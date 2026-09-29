@@ -24,11 +24,11 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
     const rows = progress.rows.slice(progress.offset, progress.offset + batchSize);
     const messageID = `msg_${randomUUID().replaceAll('-', '')}`;
     const [providerID, ...rest] = job.model.split('/');
-    const { agent, workflow, workspace, models, connected } = progress;
-    const metadata = { policyVersion, requestID: messageID, projectID: job.project, workflowID: 'explore',
-      agentID: 'researcher', mode: 'explore', configurationTask: 'model-ratings' };
+    const { agent, workspace, models, connected } = progress;
+    const metadata = { policyVersion, requestID: messageID, projectID: job.project,
+      agentID: 'researcher', mode: 'build', configurationTask: 'model-ratings' };
     if (store) await store.recordRequest({ id: messageID, sessionID: job.session, projectID: job.project,
-      createdAt: Date.now(), status: 'prepared', policyVersion, agent, workflow, catalog: workspace,
+      createdAt: Date.now(), status: 'prepared', policyVersion, agent, mode: 'build', catalog: workspace,
       catalogModels: models, catalogConnected: connected, directory: p.directory,
       model: { providerID, modelID: rest.join('/') }, variant: progress.variant ?? '', delegationPool: [] });
     // Persist identity before dispatch. After a crash or ambiguous HTTP result,
@@ -40,7 +40,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
       await request(p, `/session/${job.session}/prompt_async`, { method: 'POST', body: {
         messageID, model: { providerID, modelID: rest.join('/') }, agent: 'researcher',
         ...(progress.variant ? { variant: progress.variant } : {}),
-        system: (store ? executionPrompt(agent, workflow, metadata, workspace) : '') +
+        system: (store ? executionPrompt(agent, metadata, workspace) : '') +
           '\n\nThis background configuration request is read-only research. Do not delegate or modify files, settings, routing policy or credentials. Comparative ratings are presentation estimates. Research with native web tools and return the requested JSON for the app to save.',
         parts: [{ type: 'text', text: ratingsPrompt(rows) }],
       } });
@@ -187,8 +187,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         if (!targets.length) throw Error('There are no models to update.');
         const workspace = store ? checkedCatalog(await store.read('settings')) : null;
         const agent = workspace?.agents.find(item => item.id === 'researcher');
-        const workflow = workspace?.workflows.find(item => item.id === 'explore');
-        if (store && (!agent || !workflow)) throw Error('The research configuration agent is unavailable.');
+        if (store && !agent) throw Error('The research configuration agent is unavailable.');
         const session = await request(p, '/session', { method: 'POST', body: { title: 'Configuration · Update Model Ratings' } });
         const ownDirectory = directory => process.platform === 'win32' ? path.resolve(directory).toLowerCase() : path.resolve(directory);
         if (!/^ses_[\w-]+$/.test(session?.id) || !session.directory || ownDirectory(session.directory) !== ownDirectory(p.directory))
@@ -197,7 +196,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         data().remember(projectID, [session]);
         job = data().saveRatingJob({ id: randomUUID(), project: projectID, session: session.id, model: modelID,
           targets: targets.map(row => row.id), status: 'starting', summary: `Preparing ${targets.length} models…`, createdAt: Date.now(),
-          progress: { rows: targets, offset: 0, updated: [], missing: [], variant, workspace, agent, workflow, models, connected: providers.connected } });
+          progress: { rows: targets, offset: 0, updated: [], missing: [], variant, workspace, agent, models, connected: providers.connected } });
         await submit(job, p);
         return publicJob(data().ratingJob(job.id));
       } catch (error) {

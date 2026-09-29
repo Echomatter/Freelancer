@@ -424,7 +424,7 @@ test("provider connections use native auth and refresh cached instances only whe
   assert.equal(f.calls.at(-1).route, "/global/dispose");
 });
 
-test("agents and workflows compose native execution, preserve user text, and constrain child routes", async (t) => {
+test("named agents compose with fixed Build execution and preserve user task text", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
   const agent = await f.app.saveAgent({
@@ -434,18 +434,9 @@ test("agents and workflows compose native execution, preserve user text, and con
     response: "concise",
     approach: "thorough",
   });
-  const workflow = await f.app.saveWorkflow({
-    name: "Inspect changes",
-    prompt: "Inspect the current diff.",
-    mode: "review",
-    agentID: agent.id,
-    category: "specific",
-    models: ["opencode/free"],
-  });
   await f.app.send(p.id, "ses_owned", {
     text: "Please check this.",
     agentID: agent.id,
-    workflowID: workflow.id,
     model: { providerID: "opencode", modelID: "free" },
   });
   const body = f.calls.find((c) => c.route.endsWith("prompt_async")).options
@@ -453,59 +444,43 @@ test("agents and workflows compose native execution, preserve user text, and con
   assert.equal(body.agent, agent.id);
   assert.deepEqual(body.parts, [{ type: "text", text: "Please check this." }]);
   assert.match(body.system, /Check edge cases first/);
-  assert.match(body.system, /Inspect the current diff/);
+  assert.doesNotMatch(body.system, /Workflow:|Work mode: review/);
+  assert.match(body.system, /Work mode: build/);
   assert.deepEqual(f.saved.preferences.allowedModels, ["opencode/free"]);
   assert.equal(f.saved.sessionID, "ses_owned");
   assert.deepEqual((await f.store.read("settings")).chatChoices.ses_owned, {
     agentID: agent.id,
-    workflowID: workflow.id,
     model: "opencode/free",
   });
-  await f.app.removeAgent(agent.id);
-  assert.equal(
-    (await f.app.bootstrap(p.id)).settings.workflows.find(
-      (w) => w.id === workflow.id,
-    ).agentID,
-    "engineer",
-  );
-  await f.app.removeWorkflow(workflow.id);
+  const receipt = (await f.store.read("requests")).records[body.messageID];
+  assert.equal(receipt.mode, "build");
+  assert.equal(Object.hasOwn(receipt, "workflow"), false);
   await f.app.removeAgent(agent.id);
 });
 
-test("advisory workflow categories do not block a valid named parent request", async (t) => {
+test("legacy workflow fields are ignored and migrate out of saved chat choices", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
-  const workflow = await f.app.saveWorkflow({
-    name: "Subscription work",
-    prompt: "",
-    mode: "build",
-    agentID: "engineer",
-    category: "subscriptions",
-    models: [],
-  });
+  await f.store.update("settings", (s) => ({ ...s,
+    workflows: [{ id: "review", mode: "review", agentID: "researcher" }],
+    chatChoices: { ses_owned: { workflowID: "review", agentID: "inherit", model: "inherit" } },
+    sessionDefaults: { [p.id]: { workflowID: "explore", agentID: "inherit", parentModel: "opencode/free", reasoningVariant: "", revision: 1 } },
+  }));
+  const settings = await f.store.read("settings");
+  assert.equal(Object.hasOwn(settings, "workflows"), false);
+  assert.equal(settings.chatChoices.ses_owned.agentID, "researcher");
+  assert.equal(settings.sessionDefaults[p.id].agentID, "researcher");
+  assert.equal(Object.hasOwn(settings.chatChoices.ses_owned, "workflowID"), false);
+  assert.equal(Object.hasOwn(settings.sessionDefaults[p.id], "workflowID"), false);
   await f.app.send(p.id, "ses_owned", {
-    text: "Hi", workflowID: workflow.id, agentID: "engineer",
+    text: "Hi", workflowID: "review", agentID: "engineer",
     model: { providerID: "opencode", modelID: "free" },
   });
   assert.equal(f.calls.some((c) => c.route.endsWith("prompt_async")), true);
   assert.deepEqual(f.saved.preferences.allowedModels, ["opencode/free"]);
-  await f.app.send(p.id, "ses_owned", {
-    text: "Hi",
-    agentID: "engineer",
-    model: { providerID: "opencode", modelID: "free" },
-  });
-  assert.match(
-    f.calls.find((c) => c.route.endsWith("prompt_async")).options.body.system,
-    /Agent: Engineer/,
-  );
-  await assert.rejects(
-    f.app.saveWorkflow({ ...workflow, mode: "engineer" }),
-    /workflow mode/,
-  );
-  await assert.rejects(f.app.removeWorkflow("build"), /cannot be removed/);
 });
 
-test("workflow and model inheritance is resolved at send time while explicit choices remain intact", async (t) => {
+test("agent and model inheritance is resolved at send time while explicit choices remain intact", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
   const agent = await f.app.saveAgent({
@@ -515,42 +490,31 @@ test("workflow and model inheritance is resolved at send time while explicit cho
     approach: "thorough",
     model: "opencode/free",
   });
-  const workflow = await f.app.saveWorkflow({
-    name: "Evidence",
-    prompt: "Explain the evidence.",
-    mode: "explore",
-    agentID: agent.id,
-    category: "free",
-    models: [],
-  });
   await f.app.send(p.id, "ses_owned", {
     text: "Keep this text intact.",
-    workflowID: workflow.id,
+    agentID: agent.id,
   });
   let body = f.calls.filter((c) => c.route.endsWith("prompt_async")).at(-1)
     .options.body;
   assert.deepEqual(body.model, { providerID: "opencode", modelID: "free" });
   assert.match(body.system, /Inherited researcher/);
   assert.match(body.system, /Check primary evidence/);
-  assert.match(body.system, /Explain the evidence/);
   assert.match(body.system, /Investigate important dependencies/);
   assert.match(body.system, /Explain the relevant reasoning/);
   assert.deepEqual(body.parts, [
     { type: "text", text: "Keep this text intact." },
   ]);
   assert.deepEqual((await f.store.read("settings")).chatChoices.ses_owned, {
-    agentID: "inherit",
-    workflowID: workflow.id,
+    agentID: agent.id,
     model: "inherit",
   });
   await f.app.saveAgent({ ...agent, model: "opencode/unavailable" });
   await assert.rejects(
-    f.app.send(p.id, "ses_owned", { text: "test", workflowID: workflow.id }),
+    f.app.send(p.id, "ses_owned", { text: "test", agentID: agent.id }),
     /unavailable/,
   );
   await f.app.send(p.id, "ses_owned", {
     text: "test",
-    workflowID: workflow.id,
     agentID: "engineer",
     model: "opencode/free",
   });
@@ -619,7 +583,7 @@ test("successful usage collection returns parseable JSON through the real HTTP a
   assert.deepEqual(await response.json(), { refreshed: true });
 });
 
-test("a manual model override changes the parent while preserving workflow choices for children", async (t) => {
+test("a manual model override changes the parent while preserving delegation preferences", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
   f.extraModels = { second: { cost: { input: 0, output: 0 } } };
@@ -630,21 +594,13 @@ test("a manual model override changes the parent while preserving workflow choic
     approach: "practical",
     model: "opencode/second",
   });
-  const workflow = await f.app.saveWorkflow({
-    name: "Restricted defaults",
-    prompt: "Check the request.",
-    mode: "build",
+  await f.app.send(p.id, "ses_owned", {
+    text: "test",
     agentID: agent.id,
-    category: "specific",
-    models: ["opencode/free"],
   });
   await f.app.send(p.id, "ses_owned", {
     text: "test",
-    workflowID: workflow.id,
-  });
-  await f.app.send(p.id, "ses_owned", {
-    text: "test",
-    workflowID: workflow.id,
+    agentID: agent.id,
     model: "opencode/second",
   });
   assert.equal(
@@ -655,41 +611,36 @@ test("a manual model override changes the parent while preserving workflow choic
   assert.deepEqual(f.saved.preferences.allowedModels, ["opencode/free", "opencode/second"]);
 });
 
-test("editable instructions cannot replace built-in work modes or the internal execution contract", async (t) => {
+test("agent instructions compose with the fixed Build execution contract", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
-  const original = (await f.app.bootstrap(p.id)).settings.workflows.find(
-    (w) => w.id === "build",
-  );
-  await assert.rejects(
-    f.app.saveWorkflow({ ...original, name: "Code", mode: "review" }),
-    /original mode/,
-  );
-  const edited = await f.app.saveWorkflow({
-    ...original,
+  const agent = await f.app.saveAgent({
     name: "Code",
+    model: "auto",
     prompt: "Focus on useful results.",
+    response: "balanced",
+    approach: "practical",
   });
   await f.app.send(p.id, "ses_owned", {
     text: "Do the work",
-    workflowID: edited.id,
+    agentID: agent.id,
     model: "opencode/free",
   });
   const body = f.calls.filter((c) => c.route.endsWith("prompt_async")).at(-1)
     .options.body;
-  assert.equal(body.agent, "engineer");
-  assert.match(body.system, /Workflow: Code/);
+  assert.equal(body.agent, agent.id);
   assert.match(body.system, /Focus on useful results/);
+  assert.doesNotMatch(body.system, /Workflow:|workflows/);
   assert.match(body.system, /application-owned/);
   assert.match(body.system, /installed delegate tool/);
   assert.match(body.system, /backend owns quota refresh/);
   assert.match(body.system, /Request context:/);
   const receipt = (await f.store.read("requests")).records[body.messageID];
   assert.equal(receipt.status, "accepted");
-  assert.equal(receipt.workflow.mode, "build");
-  assert.equal(receipt.agent.id, "engineer");
+  assert.equal(receipt.mode, "build");
+  assert.equal(Object.hasOwn(receipt, "workflow"), false);
+  assert.equal(receipt.agent.id, agent.id);
   assert.deepEqual(receipt.preferences.allowedModels, ["opencode/free"]);
-  await assert.rejects(f.app.removeWorkflow("build"), /cannot be removed/);
 });
 
 test("a failed dispatch leaves its request receipt without inventing usage or success", async (t) => {
@@ -707,7 +658,7 @@ test("a failed dispatch leaves its request receipt without inventing usage or su
   assert.deepEqual((await f.store.read("usage")).records, {});
 });
 
-test("intelligence is dispatched separately for the parent and workflow children", async (t) => {
+test("agent intelligence is dispatched separately from the delegation budget", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
   f.extraModels = {
@@ -722,37 +673,26 @@ test("intelligence is dispatched separately for the parent and workflow children
     model: "opencode/parent",
     variant: "high",
   });
-  const workflow = await f.app.saveWorkflow({
-    name: "Sequential",
-    prompt: "",
-    mode: "build",
-    agentID: agent.id,
-    category: "specific",
-    models: ["opencode/child"],
-    variant: "low",
-    parallel: false,
-  });
   await f.app.send(p.id, "ses_owned", {
     text: "Check",
-    workflowID: workflow.id,
+    agentID: agent.id,
   });
   const body = f.calls.filter((c) => c.route.endsWith("prompt_async")).at(-1)
     .options.body;
   assert.equal(body.variant, "high");
   assert.equal(body.model.modelID, "parent");
   assert.equal(f.saved.scope, "execution");
-  assert.equal(f.saved.preferences.childVariant, "low");
+  assert.equal(f.saved.preferences.childVariant, defaults.childVariant);
   assert.equal(f.saved.preferences.maxParallel, defaults.maxParallel);
-  assert.deepEqual(f.saved.preferences.allowedModels, ["opencode/parent", "opencode/child"]);
-  await f.app.saveWorkflow({ ...workflow, parallel: true });
+  assert.deepEqual(f.saved.preferences.allowedModels, ["opencode/free", "opencode/parent", "opencode/child"]);
   await f.app.send(p.id, "ses_owned", {
     text: "Check again",
-    workflowID: workflow.id,
+    agentID: agent.id,
   });
   assert.equal(f.saved.preferences.maxParallel, defaults.maxParallel);
   await f.app.send(p.id, "ses_owned", {
     text: "Workspace override",
-    workflowID: workflow.id,
+    agentID: agent.id,
     variant: "low",
   });
   assert.equal(
@@ -765,10 +705,10 @@ test("intelligence is dispatched separately for the parent and workflow children
       .variant,
     "low",
   );
-  assert.equal(f.saved.preferences.childVariant, "low");
+  assert.equal(f.saved.preferences.childVariant, defaults.childVariant);
   await f.app.send(p.id, "ses_owned", {
     text: "Model default",
-    workflowID: workflow.id,
+    agentID: agent.id,
     variant: "",
   });
   assert.equal(
@@ -779,7 +719,7 @@ test("intelligence is dispatched separately for the parent and workflow children
   await f.app.saveAgent({ ...agent, variant: "unsupported" });
   await f.app.send(p.id, "ses_owned", {
     text: "Old unsupported setting",
-    workflowID: workflow.id,
+    agentID: agent.id,
   });
   assert.equal(
     f.calls.filter((c) => c.route.endsWith("prompt_async")).at(-1).options.body
@@ -789,14 +729,14 @@ test("intelligence is dispatched separately for the parent and workflow children
   await assert.rejects(
     f.app.send(p.id, "ses_owned", {
       text: "Check",
-      workflowID: workflow.id,
+      agentID: agent.id,
       variant: "unsupported",
     }),
     /does not support/,
   );
   await f.app.send(p.id, "ses_owned", {
     text: "No intelligence support",
-    workflowID: workflow.id,
+    agentID: agent.id,
     model: "opencode/free",
   });
   assert.equal(
@@ -806,7 +746,7 @@ test("intelligence is dispatched separately for the parent and workflow children
   );
 });
 
-test("deleting custom entries repairs saved chat choices and preserves built-ins", async (t) => {
+test("deleting custom agents repairs saved chat choices and preserves built-ins", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
   const agent = await f.app.saveAgent({
@@ -816,33 +756,14 @@ test("deleting custom entries repairs saved chat choices and preserves built-ins
     approach: "practical",
     model: "opencode/free",
   });
-  const workflow = await f.app.saveWorkflow({
-    name: "Disposable",
-    prompt: "",
-    mode: "build",
-    agentID: agent.id,
-    category: "connected",
-    models: [],
-  });
   await f.app.send(p.id, "ses_owned", {
     text: "Check",
-    workflowID: workflow.id,
     agentID: agent.id,
   });
   await f.app.removeAgent(agent.id);
-  let boot = await f.app.bootstrap(p.id);
-  assert.equal(boot.settings.chatChoices.ses_owned.agentID, "inherit");
-  assert.equal(
-    boot.settings.workflows.find((w) => w.id === workflow.id).agentID,
-    "engineer",
-  );
-  await f.app.removeWorkflow(workflow.id);
-  boot = await f.app.bootstrap(p.id);
-  assert.equal(boot.settings.chatChoices.ses_owned.workflowID, "build");
-  assert.equal(
-    boot.settings.workflows.some((w) => w.id === "custom"),
-    false,
-  );
+  const boot = await f.app.bootstrap(p.id);
+  assert.equal(boot.settings.chatChoices.ses_owned.agentID, "engineer");
+  assert.equal(Object.hasOwn(boot.settings, "workflows"), false);
   await assert.rejects(f.app.removeAgent("engineer"), /cannot be removed/);
 });
 
@@ -887,7 +808,6 @@ test("new-chat defaults are project scoped and leave existing chats and legacy p
     chatChoices: {
       ses_owned: {
         model: "opencode/free",
-        workflowID: "review",
         agentID: "engineer",
         variant: "",
       },
@@ -899,7 +819,6 @@ test("new-chat defaults are project scoped and leave existing chats and legacy p
   assert.equal(initial.parentModel, "opencode/free");
   const saved = await f.app.saveSessionDefaults(p.id, {
     ...initial,
-    workflowID: "plan",
     agentID: "engineer",
     parentModel: "opencode/reasoning",
     reasoningVariant: "high",
@@ -911,7 +830,6 @@ test("new-chat defaults are project scoped and leave existing chats and legacy p
     "parentModel",
     "reasoningVariant",
     "revision",
-    "workflowID",
   ]);
   assert.deepEqual(
     await loadPreferences(f.root, f.directory, "ses_owned"),
@@ -924,19 +842,15 @@ test("new-chat defaults are project scoped and leave existing chats and legacy p
   const secondDirectory = path.join(f.root, "second");
   await mkdir(secondDirectory);
   const second = await f.app.addProject(secondDirectory);
+  assert.equal((await f.app.bootstrap(second.id)).sessionDefaults.agentID, "engineer");
   assert.equal(
-    (await f.app.bootstrap(second.id)).sessionDefaults.workflowID,
-    "build",
-  );
-  assert.equal(
-    (await f.app.bootstrap(p.id)).sessionDefaults.workflowID,
-    "plan",
+    (await f.app.bootstrap(p.id)).sessionDefaults.agentID,
+    "engineer",
   );
   const chat = await f.app.createChat(p.id, "Fresh chat");
   assert.equal(chat.id, "ses_new");
   const boot = await f.app.bootstrap(p.id);
   assert.deepEqual(boot.settings.chatChoices.ses_new, {
-    workflowID: "plan",
     agentID: "engineer",
     model: "opencode/reasoning",
     variant: "high",
@@ -962,13 +876,11 @@ test("defaults validate real models and native intelligence through the HTTP end
     p = await f.app.addProject(f.directory);
   const input = {
     revision: 0,
-    workflowID: "build",
     agentID: "engineer",
     parentModel: "opencode/free",
     reasoningVariant: "",
   };
   for (const [change, message] of [
-    [{ workflowID: "missing" }, /workflow/],
     [{ agentID: "missing" }, /agent/],
     [{ parentModel: "auto" }, /parent model/],
     [{ parentModel: "" }, /parent model/],
@@ -997,7 +909,7 @@ test("defaults validate real models and native intelligence through the HTTP end
   assert.equal((await f.app.bootstrap(p.id)).sessionDefaults.agentID, "engineer");
 });
 
-test("new chats follow the starting agent and recover when custom defaults are deleted", async (t) => {
+test("new chats follow the starting agent and recover when a custom default is deleted", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
   const agent = await f.app.saveAgent({
@@ -1008,25 +920,15 @@ test("new chats follow the starting agent and recover when custom defaults are d
     approach: "practical",
     variant: "",
   });
-  const workflow = await f.app.saveWorkflow({
-    name: "Default workflow",
-    mode: "build",
-    prompt: "",
-    agentID: agent.id,
-    category: "connected",
-    models: [],
-  });
   await f.app.saveSessionDefaults(p.id, {
     revision: 0,
-    workflowID: workflow.id,
-    agentID: "inherit",
+    agentID: agent.id,
     parentModel: "opencode/free",
     reasoningVariant: "",
   });
   await f.app.createChat(p.id);
   assert.deepEqual((await f.store.read("settings")).chatChoices.ses_new, {
-    workflowID: workflow.id,
-    agentID: "inherit",
+    agentID: agent.id,
     model: "inherit",
     variant: "inherit",
   });
@@ -1036,11 +938,7 @@ test("new chats follow the starting agent and recover when custom defaults are d
     (await f.store.read("settings")).chatChoices.ses_new.model,
     "opencode/free",
   );
-  await f.app.removeWorkflow(workflow.id);
-  assert.equal(
-    (await f.app.bootstrap(p.id)).sessionDefaults.workflowID,
-    "build",
-  );
+  assert.equal((await f.app.bootstrap(p.id)).sessionDefaults.agentID, "engineer");
 });
 
 test("a newly added project reports the current UI contract, session defaults, and native reasoning options", async (t) => {
@@ -1082,7 +980,7 @@ test("state-aware sender queues FIFO, deduplicates IDs, and scopes parent overri
   await sender.ready;
   const request = {
     id: "sender_queue_0001", kind: "queue", text: "Second turn",
-    model: "opencode/free", variant: "", workflowID: "build", agentID: "inherit",
+    model: "opencode/free", variant: "", agentID: "engineer",
   };
   const first = await sender.enqueue(p.id, "ses_owned", request);
   const duplicate = await sender.enqueue(p.id, "ses_owned", request);
@@ -1117,7 +1015,7 @@ test("state-aware sender blocks Queue on pending approvals and cancels waiting w
   const sender = createSender(f.app, { file: path.join(f.root, "outbox.json") });
   await sender.enqueue(p.id, "ses_owned", {
     id: "sender_queue_0002", kind: "queue", text: "Wait for approval",
-    model: "opencode/free", variant: "", workflowID: "build", agentID: "inherit",
+    model: "opencode/free", variant: "", agentID: "engineer",
   });
   await sender.tick();
   assert.equal(f.calls.filter(c => c.route.endsWith("prompt_async")).length, 0);
@@ -1146,7 +1044,7 @@ test("Clarify preserves the parent model and requests a bounded worker with the 
   }];
   await f.store.recordRequest({
     id: "msg_original", sessionID: "ses_owned", projectID: p.id, status: "accepted",
-    workflow: { id: "build", mode: "build", name: "Build" },
+    mode: "build", policyVersion: 6,
     agent: { id: "engineer", name: "Engineer" },
     model: { providerID: "opencode", modelID: "free" },
     variant: "", preferences: { allowedModels: ["opencode/free", "opencode/worker"] },
@@ -1154,12 +1052,12 @@ test("Clarify preserves the parent model and requests a bounded worker with the 
   const sender = createSender(f.app, { file: path.join(f.root, "outbox.json") });
   await sender.enqueue(p.id, "ses_owned", {
     id: "sender_clarify_01", kind: "clarify", text: "Check the edge case",
-    model: "opencode/worker", variant: "", workflowID: "build", agentID: "inherit",
+    model: "opencode/worker", variant: "", agentID: "engineer",
   });
   await sender.tick();
   const call = f.calls.findLast(c => c.route.endsWith("prompt_async"));
   assert.equal(call.options.body.model.modelID, "free", "Clarify must stay on the parent model");
-  assert.match(call.options.body.parts[0].text, /appropriate agent, task and model/);
+  assert.match(call.options.body.parts[0].text, /appropriate named agent and bounded task/);
   assert.match(call.options.body.parts[0].text, /model="opencode\/worker"/);
   assert.match(call.options.body.parts[0].text, /Do not change the parent model/);
   assert.match(call.options.body.parts[0].text, /User concern:\nCheck the edge case/);
@@ -1171,6 +1069,6 @@ test("sending a chat never prepares or switches Git branches before an agreement
   const f = await fixture(t);
   const p = await f.app.addProject(f.directory);
   f.app.gitProjects.prepareTask = async () => { throw Error("Unexpected automatic checkout"); };
-  await f.app.send(p.id, "ses_owned", { text: "Please change the Git agreement", workflowID: "build", agentID: "engineer", model: "opencode/free" });
+  await f.app.send(p.id, "ses_owned", { text: "Please change the Git agreement", agentID: "engineer", model: "opencode/free" });
   assert.ok(f.calls.some(c => String(c.route).includes("prompt_async")));
 });

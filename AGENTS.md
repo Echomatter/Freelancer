@@ -10,14 +10,15 @@ separate terminal product, hosted Freelancer service, or installer.
 - OpenCode owns conversations, model inventory and authentication, tools,
   permissions, native todos, and execution. Extend its integration; do not build
   a competing engine or copy credentials.
-- `domain/workspace.mjs` and saved settings are the sole authored agent and
-  workflow catalog. Every main and delegated assignment uses a named agent.
+- `domain/workspace.mjs` and saved settings are the sole authored agent
+  catalog. Every main and delegated assignment uses a named agent.
   A worker is a running assignment, not an agent definition. Do not restore
-  retired role prompts or generated native profiles as a second prompt store.
-- Compose captured agent and workflow instructions through
+  retired role prompts, retired workflow catalogs, or generated native profiles as a second prompt store.
+- Compose captured agent instructions through
   `server/execution.mjs`. Edits affect future root requests; running requests
-  retain their captured definitions.
-- Treat persona, workflow, skills, and model arguments as guidance or input,
+  retain their captured definitions. Work runs in the fixed Build mode; a planning
+  request is ordinary task text.
+- Treat persona, skills, and model arguments as guidance or input,
   never as authority. Resolve permissions from native identity and durable
   records. Preserve native permissions, paid-model consent, saved GitHub
   agreements, subagent depth/concurrency limits, and uncertain-delivery

@@ -1,6 +1,9 @@
 // Native startup/configuration acceptance check; no model inference or provider prompts.
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import os from 'node:os';
+import { mkdtemp, rm } from 'node:fs/promises';
+import { createStore } from '../server/store.mjs';
 import { resolveRuntimeConfig, runtimeEnv } from '../server/runtime-config.mjs';
 import { startHost } from '../server/host.mjs';
 import { createApplication } from '../server/application.mjs';
@@ -10,6 +13,9 @@ import { readAgentCatalog, retiredAgents } from '../backend/tools/runtime/agent-
 const config = resolveRuntimeConfig();
 Object.assign(process.env, runtimeEnv(config));
 const host = await startHost({ backendRoot: config.backendRoot, config });
+// Bootstrap must never migrate a running installation's application settings.
+// Native configuration is real; application/SQLite stores are disposable.
+const smokeRoot = await mkdtemp(path.join(os.tmpdir(), 'freelancer-native-smoke-'));
 let web;
 try {
   const agents = await host.request('/agent', { directory: config.appRoot });
@@ -28,7 +34,7 @@ try {
     assert.ok(skills.some(skill => skill.name === name), `Missing app skill ${name}`);
   const tools = await host.request('/experimental/tool/ids', { directory: config.appRoot });
   for (const name of ['delegate', 'content_index', 'git_project', 'todowrite']) assert.ok(tools.includes(name), `Missing native tool ${name}`);
-  const app = createApplication({ backendRoot: config.backendRoot, host, dataRoot: config.dataRoot });
+  const app = createApplication({ backendRoot: config.backendRoot, host, store: createStore(smokeRoot), dataRoot: path.join(smokeRoot, 'data') });
   web = await startServer({ application: app, assets: path.join(config.appRoot, 'dist') });
   const html = await fetch(web.url).then(r => r.text());
   assert.match(html, /<div id="root"/);
@@ -37,9 +43,10 @@ try {
   assert.equal((await fetch(web.url + script[1])).status, 200);
   const bootstrap = await fetch(web.url + '/api/bootstrap', { headers: { 'X-Freelancer-Client': 'webpage' } });
   assert.equal(bootstrap.status, 200);
-  assert.ok((await bootstrap.json()).settings.workflows.some(w => w.mode === 'build'));
+  assert.ok((await bootstrap.json()).settings.agents.some(agent => agent.id === 'engineer'));
   console.log('Native app-local startup, one named-agent catalog (main + delegated profiles), four skills, tools, built UI assets and bootstrap API verified; no inference requested.');
 } finally {
   if (web) { web.server.closeAllConnections(); await new Promise(resolve => web.server.close(resolve)); }
   host.stop();
+  await rm(smokeRoot, { recursive: true, force: true });
 }

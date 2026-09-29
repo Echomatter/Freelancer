@@ -22,7 +22,7 @@ const phaseLabel = (status, failure) => {
 export function completionMetadata(receipt, args) {
   const attempt = receipt.attempts?.at(-1);
   const metadata = { sessionId: attempt?.child_session, parentSessionId: receipt.parent_session,
-    agentID: receipt.agent?.id, agentName: receipt.agent?.name, workflowID: receipt.workflow?.id, role: receipt.role, selected_model: attempt?.selected_model, task_id: receipt.task_id,
+    agentID: receipt.agent?.id, agentName: receipt.agent?.name, role: receipt.role, selected_model: attempt?.selected_model, task_id: receipt.task_id,
     freelancer_activity: receipt.activity, freelancer_status: receipt.status };
   if (args.agentID || receipt.agent?.id) return metadata;
   // The host replaces metadata on completion but retains the displayed tool/input.

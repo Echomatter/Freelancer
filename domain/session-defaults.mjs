@@ -1,18 +1,21 @@
-// The starting choices for a new chat, separate from execution policy.
+// Starting model and agent choices for a new chat, separate from execution policy.
+const legacyWorkflowAgent = (id) => ({
+  build: "engineer",
+  plan: "engineer",
+  explore: "researcher",
+  review: "engineer",
+  sync: "engineer",
+}[id] ?? "engineer");
+
 export function sessionDefaults(saved = {}, workspace, fallback = {}) {
-  const workflowID = workspace.workflows.some((w) => w.id === saved.workflowID)
-    ? saved.workflowID
-    : "build";
-  const agentID =
-    saved.agentID === "inherit" ||
-    workspace.agents.some((a) => a.id === saved.agentID)
-      ? saved.agentID
-      : saved.agentID
-        ? "inherit"
-        : "inherit";
+  const legacyAgent = saved.agentID === "inherit"
+    ? legacyWorkflowAgent(saved.workflowID)
+    : saved.agentID;
+  const agentID = workspace.agents.some((agent) => agent.id === legacyAgent)
+    ? legacyAgent
+    : "engineer";
   return {
     revision: saved.revision ?? 0,
-    workflowID,
     agentID,
     parentModel:
       saved.parentModel ??
@@ -23,15 +26,12 @@ export function sessionDefaults(saved = {}, workspace, fallback = {}) {
 }
 
 export function startingChoices(defaults, workspace) {
-  const workflow = workspace.workflows.find(
-    (w) => w.id === defaults.workflowID,
-  );
-  const agentID =
-    defaults.agentID === "inherit" ? workflow?.agentID : defaults.agentID;
-  const agent = workspace.agents.find((a) => a.id === agentID);
+  const agentID = workspace.agents.some((agent) => agent.id === defaults.agentID)
+    ? defaults.agentID
+    : "engineer";
+  const agent = workspace.agents.find((item) => item.id === agentID);
   return {
-    workflowID: defaults.workflowID,
-    agentID: defaults.agentID,
+    agentID,
     model:
       agent?.model && agent.model !== "auto"
         ? "inherit"
@@ -44,12 +44,7 @@ export function startingChoices(defaults, workspace) {
 }
 
 export function normalizeSessionDefaults(value, workspace) {
-  if (!workspace.workflows.some((w) => w.id === value.workflowID))
-    throw Error("Choose a starting workflow");
-  if (
-    !["inherit"].includes(value.agentID) &&
-    !workspace.agents.some((a) => a.id === value.agentID)
-  )
+  if (!workspace.agents.some((agent) => agent.id === value.agentID))
     throw Error("Choose a starting agent");
   if (
     typeof value.parentModel !== "string" ||
@@ -62,19 +57,11 @@ export function normalizeSessionDefaults(value, workspace) {
   )
     throw Error("Choose a reported intelligence level");
   const choices = startingChoices(value, workspace);
-  if (choices.model === "inherit") {
-    const workflow = workspace.workflows.find((w) => w.id === value.workflowID);
-    const agent = workspace.agents.find(
-      (a) =>
-        a.id ===
-        (value.agentID === "inherit" ? workflow.agentID : value.agentID),
-    );
-    if (!agent?.model || agent.model === "auto")
-      throw Error("Choose a parent model");
-  }
+  const agent = workspace.agents.find((item) => item.id === choices.agentID);
+  if (choices.model === "inherit" && (!agent?.model || agent.model === "auto") && !value.parentModel)
+    throw Error("Choose a parent model");
   return {
-    workflowID: value.workflowID,
-    agentID: value.agentID,
+    agentID: choices.agentID,
     parentModel: value.parentModel,
     reasoningVariant: value.reasoningVariant,
   };

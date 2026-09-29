@@ -15,7 +15,7 @@ function fixture({ start = Date.parse("2026-01-01T00:00:00.000Z"), file, bootstr
       return {
         project: { id: project },
         providers: { connected: ["opencode"] },
-        settings: { agents: [{ id: "engineer" }], workflows: [{ id: "build" }] },
+        settings: { agents: [{ id: "engineer" }] },
         models: [{ id: "opencode/free", provider: "opencode", costClass: "free" }],
       };
     }),
@@ -56,7 +56,6 @@ const input = (firstRunAt, extra = {}) => ({
   prompt: "Run the scheduled prompt",
   project: "project",
   agent: "engineer",
-  workflow: "build",
   model: "opencode/free",
   frequency: "daily",
   firstRunAt,
@@ -75,7 +74,6 @@ test("scheduled prompt dispatches through sender with explicit catalog choices",
     text: "Run the scheduled prompt",
     model: "opencode/free",
     agentID: "engineer",
-    workflowID: "build",
   });
   const schedule = (await f.schedules.list()).schedules[0];
   assert.equal(schedule.lastStatus, "dispatched");
@@ -121,6 +119,24 @@ test("restart and sleep/wake skip missed occurrences without catch-up bursts", a
   assert.equal(schedule.nextRunAt, "2026-01-05T00:01:00.000Z");
 });
 
+test("legacy workflow schedule fields migrate away and remain editable", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-schedules-migrate-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const file = path.join(root, "schedules.json");
+  const old = input("2026-01-02T00:00:00.000Z", { workflow: "review", agent: "engineer" });
+  old.id = "sch_legacy01";
+  await writeFile(file, JSON.stringify({ version: 1, schedules: [old] }));
+  const f = fixture({ file });
+  await f.schedules.ready;
+  const migrated = (await f.schedules.list()).schedules[0];
+  assert.equal(Object.hasOwn(migrated, "workflow"), false);
+  assert.equal(JSON.parse(await readFile(file, "utf8")).schedules[0].workflow, undefined);
+  const changed = await f.schedules.update({ id: migrated.id, title: "Updated title" });
+  assert.equal(changed.title, "Updated title");
+  assert.equal(Object.hasOwn(changed, "workflow"), false);
+  await f.schedules.close();
+});
+
 test("validation rejects missing explicit or disconnected model", async () => {
   const f = fixture();
   await f.schedules.ready;
@@ -128,7 +144,7 @@ test("validation rejects missing explicit or disconnected model", async () => {
   const disconnected = fixture({ bootstrap: async () => ({
     project: { id: "project" },
     providers: { connected: [] },
-    settings: { agents: [{ id: "engineer" }], workflows: [{ id: "build" }] },
+    settings: { agents: [{ id: "engineer" }] },
     models: [{ id: "anthropic/claude", provider: "anthropic", costClass: "subscription" }],
   }) });
   await disconnected.schedules.ready;
@@ -140,7 +156,7 @@ test("dispatch uncertainty pauses schedule and is not retried automatically", as
   let clock = Date.parse("2026-01-01T00:00:00.000Z");
   const app = {
     store: {},
-    bootstrap: async () => ({ project: { id: "project" }, providers: { connected: ["opencode"] }, settings: { agents: [{ id: "engineer" }], workflows: [{ id: "build" }] }, models: [{ id: "opencode/free", provider: "opencode", costClass: "free" }] }),
+    bootstrap: async () => ({ project: { id: "project" }, providers: { connected: ["opencode"] }, settings: { agents: [{ id: "engineer" }] }, models: [{ id: "opencode/free", provider: "opencode", costClass: "free" }] }),
     createChat: async () => ({ id: "ses_fail" }),
     chat: async () => ({ messages: [], status: { ses_fail: { type: "idle" } }, permissions: [], questions: [], receipts: [] }),
   };
@@ -181,7 +197,7 @@ test("partial pause and delete do not require current project catalog", async ()
   let valid = true;
   const f = fixture({ bootstrap: async () => {
     if (!valid) throw Error("catalog gone");
-    return { project: { id: "project" }, providers: { connected: ["opencode"] }, settings: { agents: [{ id: "engineer" }], workflows: [{ id: "build" }] }, models: [{ id: "opencode/free", provider: "opencode", costClass: "free" }] };
+    return { project: { id: "project" }, providers: { connected: ["opencode"] }, settings: { agents: [{ id: "engineer" }] }, models: [{ id: "opencode/free", provider: "opencode", costClass: "free" }] };
   } });
   await f.schedules.ready;
   const created = await f.schedules.create(input("2026-01-01T00:01:00.000Z"));

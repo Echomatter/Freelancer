@@ -3,7 +3,7 @@
   align-content: start;
   gap: 15px;
   width: 100%;
-  max-width: 1120px;
+  max-width: none;
   margin-inline: auto;
 }
 .indexed-search-page .page-title { margin-bottom: 2px; }
@@ -20,9 +20,17 @@
 .indexed-search-query { display: grid; gap: 8px; min-width: 0; }
 .indexed-search-query input { width: 100%; min-width: 0; font-size: 14px; }
 .indexed-search-controls .field { margin: 0; }
+.content-search-scope { display: grid; gap: 6px; min-width: 0; padding: 9px 11px; border-left: 2px solid var(--accent); }
+.content-search-scope span { color: var(--muted); font-size: 11px; }
+.content-search-scope strong { overflow-wrap: anywhere; font-size: 13px; }
+.content-search-error { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .indexed-search-status:empty { display: none; }
 .indexed-search-status { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 6px 16px; padding: 0 2px; color: var(--muted); font-size: 11px; }
 .indexed-search-results { display: grid; gap: 9px; }
+.content-search-group { display: grid; gap: 9px; }
+.content-search-group > h2 { display: flex; align-items: center; gap: 7px; margin: 3px 2px 0; font-size: 14px; }
+.content-search-group > h2 svg { color: var(--accent); }
+.content-search-group > h2 span { color: var(--muted); font-size: 11px; font-weight: 500; }
 .indexed-search-result {
   display: grid;
   gap: 6px;
@@ -53,6 +61,8 @@
 .indexed-search-empty p { margin: 0 0 4px; color: var(--muted); font-size: 12px; }
 @media (max-width: 680px) {
   .indexed-search-controls { grid-template-columns: 1fr; }
+  .content-search-scope { border-left: 0; border-top: 2px solid var(--accent); }
+  .content-search-error { align-items: stretch; flex-direction: column; }
   .indexed-search-page .page-title { align-items: flex-start; }
   .indexed-result-heading { align-items: flex-start; }
   .indexed-result-heading small { max-width: 36%; text-align: right; }

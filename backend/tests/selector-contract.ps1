@@ -122,7 +122,7 @@ try {
     Check ($null -eq $noDiversity.selected_model) 'unavailable independent model returns no route'
     $stayRaw=& powershell.exe -NoProfile -ExecutionPolicy Bypass -File (Join-Path $RepoRoot 'scripts\select-model.ps1') -ToolkitRoot $Root -CurrentModel 'openai/other'
     $stay=($stayRaw-join"`n")|ConvertFrom-Json
-    Check ($stay.stay_put-and$stay.selected_model-eq'openai/other'-and$stay.surface-eq'openai-oauth'-and$stay.access-eq'ChatGPT OAuth'-and$stay.phases[0].model-eq$stay.selected_model) 'stay-put phases access and surface describe the final model'
+    Check ($stay.work_mode-eq'build'-and$stay.selected_model-eq'openai/other'-and$stay.surface-eq'openai-oauth'-and$stay.access-eq'ChatGPT OAuth'-and$stay.phases[0].model-eq$stay.selected_model) 'fixed Build phases access and surface describe the final model'
     $models['github-copilot/example']=@{provider='copilot';capabilities=$caps;context=@{input_tokens=128000};benchmarks=@()}
     $aliases['github-copilot/example']='github-copilot/example'
     Json 'routing\model-evidence.json' @{models=$models;alias_index=$aliases}
@@ -160,26 +160,26 @@ try {
     $roster.eligible_models=@(@{id='opencode/free';surface='opencode-free'},@{id='openai/other';surface='openai-oauth'})
     Json 'routing\model-roster.json' $roster
     Json 'routing\model-evidence.json' @{models=$models;alias_index=$aliases}
-    $bounded=Run-Selection @{WorkMode='review';TaskType='code review,token economics';FreeOnly='true';NeedsModelDiversity='true';CurrentModel='openai/other'}
+    $bounded=Run-Selection @{TaskType='code review,token economics';FreeOnly='true';NeedsModelDiversity='true';CurrentModel='openai/other'}
     Check ($bounded.selected_model-eq'opencode/free'-and$bounded.review_basis-eq'bounded_coding_evidence') 'bounded independent review uses known coding evidence and normalizes natural task labels'
-    $specialist=Run-Selection @{WorkMode='review';TaskType='code_review';ReviewMode='specialist';FreeOnly='true'}
-    $consequenceReview=Run-Selection @{WorkMode='review';TaskType='code_review';HighConsequence='true';FreeOnly='true'}
+    $specialist=Run-Selection @{TaskType='code_review';ReviewMode='specialist';FreeOnly='true'}
+    $consequenceReview=Run-Selection @{TaskType='code_review';HighConsequence='true';FreeOnly='true'}
     Check ($null-eq$specialist.selected_model-and$null-eq$consequenceReview.selected_model) 'specialist and consequential review still reject unknown review evidence'
     $orientationCaps=@{coding=@{rating='good';confidence='high';evidence=@('fixture')};tool_use=@{rating='strong';confidence='high';evidence=@('fixture')}}
     $models['opencode/free'].capabilities=$orientationCaps
     Json 'routing\model-evidence.json' @{models=$models;alias_index=$aliases}
-    $orientation=Run-Selection @{WorkMode='explore';TaskType='repo_orientation';FreeOnly='true'}
-    $investigation=Run-Selection @{WorkMode='explore';TaskType='repo_navigation,research';FreeOnly='true'}
+    $orientation=Run-Selection @{TaskType='repo_orientation';FreeOnly='true'}
+    $investigation=Run-Selection @{TaskType='repo_navigation,research';FreeOnly='true'}
     Check ($orientation.selected_model-eq'opencode/free'-and$null-eq$investigation.selected_model) 'routine local orientation qualifies from coding and tool use without fabricating deep research evidence'
     $models['opencode/free'].capabilities=$reviewCaps
     $reviewCaps['coding']=@{rating='unknown';confidence='low'}
     Json 'routing\model-evidence.json' @{models=$models;alias_index=$aliases}
-    $unknownCoding=Run-Selection @{WorkMode='review';TaskType='code_review';FreeOnly='true'}
+    $unknownCoding=Run-Selection @{TaskType='code_review';FreeOnly='true'}
     Check ($null-eq$unknownCoding.selected_model) 'bounded review still rejects unknown coding evidence'
-    $hostChoice=Run-Selection @{WorkMode='review';TaskType='code_review';FreeOnly='true';HostAssessment='true';SelectedModel='opencode/free'}
+    $hostChoice=Run-Selection @{TaskType='code_review';FreeOnly='true';HostAssessment='true';SelectedModel='opencode/free'}
     Check ($hostChoice.selected_model-eq'opencode/free'-and$hostChoice.adequacy-eq'host_assessment_required'-and$hostChoice.candidates[0].capabilities.coding.rating-eq'unknown') 'host can assess a bounded evidence gap without converting unknown into proven adequacy'
     Check ($hostChoice.candidates[0].assessment_notes.Count-gt 0-and$null-ne$hostChoice.candidates[0].cost-and$null-ne$hostChoice.candidates[0].context) 'host receives uncertainty, capacity and cost evidence'
-    $strictHost=Run-Selection @{WorkMode='review';TaskType='code_review';FreeOnly='true';HostAssessment='true';HighConsequence='true';SelectedModel='opencode/free'}
+    $strictHost=Run-Selection @{TaskType='code_review';FreeOnly='true';HostAssessment='true';HighConsequence='true';SelectedModel='opencode/free'}
     Check ($null-eq$strictHost.selected_model) 'host reasoning cannot waive consequential evidence requirements'
     $reviewCaps['coding']=@{rating='good';confidence='medium';evidence=@('fixture')}
     $reviewCaps['tool_use']=@{rating='adequate';confidence='medium';evidence=@('fixture')}
@@ -190,9 +190,9 @@ try {
     $roster.eligible_models+=@{id='opencode/free-alias';surface='opencode-free'}
     Json 'routing\model-roster.json' $roster
     Json 'routing\model-evidence.json' @{models=$models;alias_index=$aliases}
-    $cards=Run-Selection @{WorkMode='review';TaskType='code_review';FreeOnly='true';HostAssessment='true'}
+    $cards=Run-Selection @{TaskType='code_review';FreeOnly='true';HostAssessment='true'}
     Check ($cards.candidates[0].benchmarks[0].harness-eq'fixture only'-and$cards.candidates[0].cautions[0]-eq'Identity uncertain') 'host cards preserve benchmark caveats and identity uncertainty'
-    $aliasesExcluded=Run-Selection @{WorkMode='review';TaskType='code_review';FreeOnly='true';HostAssessment='true';DiversityModels='opencode/free-alias';SelectedModel='opencode/free'}
+    $aliasesExcluded=Run-Selection @{TaskType='code_review';FreeOnly='true';HostAssessment='true';DiversityModels='opencode/free-alias';SelectedModel='opencode/free'}
     Check ($null-eq$aliasesExcluded.selected_model) 'prior reviewer exclusions apply across canonical aliases'
     $hardSpend=Run-Selection @{HostAssessment='true';FreeOnly='true';SelectedModel='openai/other'}
     Check ($null-eq$hardSpend.selected_model-and$hardSpend.choice_unavailable) 'explicit host choice cannot override free-only spending'

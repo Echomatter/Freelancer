@@ -1,5 +1,5 @@
 // Explicit requests outside the saved defaults still use a durable, exact plan.
-// No shell, model-supplied approval flag, or agent/workflow identity grants consent.
+// No shell, model-supplied approval flag, or agent identity grants consent.
 import { createHash, randomUUID } from "node:crypto";
 import path from "node:path";
 import { containsCredential, projectAgreement, safeRelative } from "../domain/git-project.mjs";

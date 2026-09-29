@@ -95,10 +95,8 @@ test('conversation rail: turn tools, statistics, scroll gestures, resize, and st
     await mkdir('artifacts/conversation-rail', { recursive: true });
     await bubble(6).hover(); await page.screenshot({ path: 'artifacts/conversation-rail/desktop.png' });
   });
-  await test.step('Compact action moves out of the chat menu and native settings persist', async () => {
-    await page.getByRole('button', { name: 'More actions' }).click();
-    await expect(page.getByRole('button', { name: 'Compact conversation' })).toHaveCount(0);
-    await page.getByRole('button', { name: 'More actions' }).click();
+  await test.step('Header stays clear and native settings persist', async () => {
+    await expect(page.getByRole('button', { name: 'More actions' })).toHaveCount(0);
     await page.getByRole('button', { name: 'Project settings', exact: true }).click();
     await page.getByRole('button', { name: 'Session defaults', exact: true }).click();
     const checkbox = page.getByRole('checkbox', { name: 'Automatic compaction' });

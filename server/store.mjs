@@ -5,6 +5,49 @@ import { randomUUID } from "node:crypto";
 import { normalizePlans } from "../domain/costs.mjs";
 import { replaceFile } from "./replace-file.mjs";
 
+const legacyWorkflowAgent = (id, workflows = []) => {
+  const custom = workflows.find((workflow) => workflow.id === id)?.agentID;
+  if (custom && !["inherit", "none", "git"].includes(custom)) return custom;
+  return ({ build: "engineer", plan: "engineer", explore: "researcher", review: "engineer", sync: "engineer" })[id] ?? "engineer";
+};
+
+function migrateSettings(settings) {
+  const workflows = Array.isArray(settings.workflows) ? settings.workflows : [];
+  let changed = Object.hasOwn(settings, "workflows");
+  const choices = Object.fromEntries(Object.entries(settings.chatChoices ?? {}).map(([session, choice]) => {
+    if (!choice || typeof choice !== "object") return [session, choice];
+    const next = { ...choice };
+    if (Object.hasOwn(next, "workflowID")) {
+      if (!next.agentID || ["inherit", "none", "git"].includes(next.agentID))
+        next.agentID = legacyWorkflowAgent(next.workflowID, workflows);
+      delete next.workflowID;
+      changed = true;
+    } else if (next.agentID === "git") {
+      next.agentID = "engineer";
+      changed = true;
+    }
+    return [session, next];
+  }));
+  const sessionDefaults = Object.fromEntries(Object.entries(settings.sessionDefaults ?? {}).map(([project, value]) => {
+    if (!value || typeof value !== "object") return [project, value];
+    const next = { ...value };
+    if (Object.hasOwn(next, "workflowID")) {
+      if (!next.agentID || ["inherit", "none", "git"].includes(next.agentID))
+        next.agentID = legacyWorkflowAgent(next.workflowID, workflows);
+      delete next.workflowID;
+      changed = true;
+    } else if (next.agentID === "git") {
+      next.agentID = "engineer";
+      changed = true;
+    }
+    return [project, next];
+  }));
+  if (!changed) return settings;
+  const next = { ...settings, chatChoices: choices, sessionDefaults };
+  delete next.workflows;
+  return next;
+}
+
 // Single application process serializes mutations and atomically replaces files.
 // A malformed existing document is an error, never an invitation to overwrite it.
 export function createStore(root, { replace = replaceFile } = {}) {
@@ -24,7 +67,6 @@ export function createStore(root, { replace = replaceFile } = {}) {
       projects: [],
       plans: normalizePlans(),
       monthlyPlans: {},
-      workflows: [],
     }),
     usage: () => ({ version: 1, records: {} }),
     requests: () => ({ version: 1, records: {} }),
@@ -45,9 +87,7 @@ export function createStore(root, { replace = replaceFile } = {}) {
     if (value.version !== 1) throw Error("Unsupported document");
     if (
       name === "settings" &&
-      (!Array.isArray(value.projects) ||
-        !Array.isArray(value.workflows) ||
-        !Number.isInteger(value.revision))
+      (!Array.isArray(value.projects) || !Number.isInteger(value.revision))
     )
       throw Error("Invalid settings");
     if (
@@ -69,8 +109,13 @@ export function createStore(root, { replace = replaceFile } = {}) {
         cache.set(name, { signature: null, data: value });
         return value;
       }
-      const value = JSON.parse(await readFile(filePath(name), "utf8"));
-      validate(name, value);
+      const parsed = JSON.parse(await readFile(filePath(name), "utf8"));
+      validate(name, parsed);
+      const value = name === "settings" ? migrateSettings(parsed) : parsed;
+      if (value !== parsed) {
+        await writeDocument(name, value);
+        return value;
+      }
       cache.set(name, { signature: seen, data: value });
       return value;
     } catch (e) {
@@ -86,6 +131,7 @@ export function createStore(root, { replace = replaceFile } = {}) {
     return structuredClone(await load(name));
   }
   async function writeDocument(name, next) {
+    if (name === "settings") next = migrateSettings(next);
     validate(name, next);
     await mkdir(directory, { recursive: true });
     const target = filePath(name),
@@ -183,10 +229,9 @@ export function createStore(root, { replace = replaceFile } = {}) {
             }
             const attribution =
               receipt && receipt.sessionID === row.sessionID
-                ? {
+                  ? {
                     agentID: receipt.agent.id,
                     agentName: receipt.agent.name,
-                    workflowID: receipt.workflow.id,
                     requestID: receipt.id,
                   }
                 : {};

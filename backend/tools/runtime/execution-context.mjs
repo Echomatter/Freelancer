@@ -21,7 +21,7 @@ async function json(file) {
 }
 
 // Resolve from native identity and durable application records, never from a
-// model-provided agent/workflow/context blob. Historical receipts are not edited.
+// model-provided agent/context blob. Historical receipts are not edited.
 export async function executionContext(root, directory, session, message) {
   const info = message?.info ?? message;
   if (info?.role !== "assistant") return null;
@@ -30,13 +30,17 @@ export async function executionContext(root, directory, session, message) {
   if (
     request?.sessionID === session?.id &&
     same(request.directory, directory) &&
-    [3, 4, 5].includes(request.policyVersion)
+    [3, 4, 5, 6].includes(request.policyVersion)
   ) {
     if (!info.agent || info.agent !== request.agent?.id)
       throw Error("Agent identity differs from the recorded assignment.");
     return {
       ...request,
-      readOnly: request.policyVersion < 5 ? request.workflow?.mode !== "build" : false,
+      // Old captured requests inferred safety from their recorded mode. New
+      // requests carry explicit readOnly state and no workflow descriptor.
+      readOnly: request.policyVersion < 5
+        ? request.workflow?.mode !== "build"
+        : request.readOnly === true,
       rootSessionID: session.id,
       rootRequestID: request.id ?? info.parentID,
     };
@@ -54,7 +58,7 @@ export async function executionContext(root, directory, session, message) {
   if (
     !attempt ||
     typeof receipt.read_only !== "boolean" ||
-    ![3, 4, 5].includes(receipt.policy_version) ||
+    ![3, 4, 5, 6].includes(receipt.policy_version) ||
     receipt.parent_session !== session.parentID ||
     !same(receipt.directory, directory)
   )

@@ -63,7 +63,7 @@ async function fixture(t) {
     get sender() { return current; },
     get settings() { return settings; },
     queue: (id, text, session = 'parent') => current.enqueue('project', session,
-      { id, kind: 'queue', text, model: 'opencode/free', workflowID: 'build', agentID: 'inherit' }),
+      { id, kind: 'queue', text, model: 'opencode/free', agentID: 'engineer' }),
     async restart(location = file) { await current.close(); await open(location); },
     complete(session = 'parent') {
       const chat = state(session), user = chat.messages.findLast(message => message.info.role === 'user');

@@ -1,10 +1,10 @@
 import { useEffect, useState } from "react";
-import { Database, FileSearch, FolderOpen } from "lucide-react";
+import { Database, FileSearch, FolderOpen, MessageSquare } from "lucide-react";
 import { api } from "./api";
 import { Button, Field, PageCloseButton, PageHeading, Panel } from "./echoflex/Controls";
 import "./indexed-search.css";
 
-type SearchHit = {
+type FileHit = {
   project: string;
   projectName: string;
   projectArchived: boolean;
@@ -16,99 +16,150 @@ type SearchHit = {
   excerpt: string;
 };
 
-export function IndexedSearch({ projects, onOpen, onIndex, onClose }: {
-  projects: any[];
-  onOpen: (project: string, path: string) => Promise<void>;
+type ConversationHit = {
+  project: string;
+  projectName: string;
+  session: string;
+  title: string;
+  excerpt: string;
+  imported?: boolean;
+  organization?: {
+    archiveScope?: string;
+    nativeArchived?: boolean;
+    projectArchived?: boolean;
+  };
+};
+
+type SearchState<T> = {
+  results: T[];
+  error: string;
+  loading: boolean;
+  complete: boolean;
+};
+
+const empty = <T,>(): SearchState<T> => ({ results: [], error: "", loading: false, complete: false });
+
+export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex, onClose }: {
+  project?: { id: string; name: string };
+  onOpenFile: (project: string, path: string) => Promise<void>;
+  onOpenConversation: (project: string, session: string) => Promise<void>;
   onIndex: () => void;
   onClose: () => void;
 }) {
   const [query, setQuery] = useState("");
-  const [project, setProject] = useState("");
-  const [results, setResults] = useState<SearchHit[]>([]);
-  const [searched, setSearched] = useState(false);
-  const [loading, setLoading] = useState(false);
+  const [files, setFiles] = useState<SearchState<FileHit>>(empty);
+  const [conversations, setConversations] = useState<SearchState<ConversationHit>>(empty);
   const [opening, setOpening] = useState("");
-  const [error, setError] = useState("");
+  const [openError, setOpenError] = useState("");
+  const [revision, setRevision] = useState(0);
   const trimmed = query.trim();
+  const scoped = !!project?.id;
+  const params = () => new URLSearchParams({ q: trimmed, ...(project?.id ? { project: project.id } : {}) });
 
   useEffect(() => {
-    setError("");
+    setOpenError("");
     if (!trimmed) {
-      setResults([]);
-      setSearched(false);
-      setLoading(false);
+      setFiles(empty());
+      setConversations(empty());
       return;
     }
     const controller = new AbortController();
-    setResults([]);
-    setLoading(true);
+    setFiles({ results: [], error: "", loading: true, complete: false });
+    setConversations({ results: [], error: "", loading: true, complete: false });
     const timer = setTimeout(() => {
-      const params = new URLSearchParams({ q: trimmed, project });
-      void api(`index/search?${params}`, undefined, undefined, controller.signal)
+      void api(`index/search?${params()}`, undefined, undefined, controller.signal)
+        .then((value) => setFiles({ results: value.results, error: "", loading: false, complete: true }))
+        .catch((failure) => {
+          if (!controller.signal.aborted) setFiles({ results: [], error: (failure as Error).message, loading: false, complete: true });
+        });
+      void api(`history/search?${params()}`, undefined, undefined, controller.signal)
         .then((value) => {
-          setResults(value.results);
-          setSearched(true);
+          const unique = new Map<string, ConversationHit>();
+          for (const hit of value.results) {
+            const key = `${hit.project}:${hit.session}`;
+            if (!unique.has(key)) unique.set(key, hit);
+          }
+          setConversations({ results: [...unique.values()], error: "", loading: false, complete: true });
         })
         .catch((failure) => {
-          if (!controller.signal.aborted) setError((failure as Error).message);
-        })
-        .finally(() => {
-          if (!controller.signal.aborted) setLoading(false);
+          if (!controller.signal.aborted) setConversations({ results: [], error: (failure as Error).message, loading: false, complete: true });
         });
     }, 180);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [trimmed, project]);
+  }, [trimmed, project?.id, revision]);
 
-  async function open(hit: SearchHit) {
-    const key = `${hit.project}/${hit.path}`;
+  async function open(key: string, action: () => Promise<void>) {
     setOpening(key);
-    setError("");
-    try {
-      await onOpen(hit.project, hit.path);
-    } catch (failure) {
-      setError((failure as Error).message);
-      setOpening("");
-    }
+    setOpenError("");
+    try { await action(); }
+    catch (failure) { setOpenError((failure as Error).message); setOpening(""); }
   }
 
+  const loading = files.loading || conversations.loading;
+  const complete = files.complete && conversations.complete;
+  const total = files.results.length + conversations.results.length;
+  const searchLabel = scoped ? "Search project content" : "Search all content";
+
   return <div className="page indexed-search-page">
-    <PageHeading title="Search files" actions={<><Button type="button" onClick={onIndex}><Database size={16} />Index coverage</Button><PageCloseButton onClick={onClose} /></>} />
-    <section className="indexed-search-controls" aria-label="Search indexed project files">
-      <div className="indexed-search-query"><Field label="Search project files" help="file-search">
-        <input autoFocus type="search" maxLength={200} value={query} placeholder="Search words in files, documents, and notes…" onChange={(event) => setQuery(event.target.value)} />
+    <PageHeading title={searchLabel} icon={FileSearch} help="file-search" actions={<><Button type="button" onClick={onIndex}><Database size={16} />Content &amp; Storage</Button><PageCloseButton onClick={onClose} /></>} />
+    <section className="indexed-search-controls" aria-label={searchLabel}>
+      <div className="indexed-search-query"><Field label={searchLabel}>
+        <input autoFocus type="search" maxLength={200} value={query}
+          placeholder={scoped ? `Search files and conversations in ${project.name}…` : "Search files and conversations across every project…"}
+          onChange={(event) => setQuery(event.target.value)} />
       </Field></div>
-      <Field label="Project">
-        <select value={project} onChange={(event) => setProject(event.target.value)}>
-          <option value="">All registered projects</option>
-          {projects.map((item) => <option key={item.id} value={item.id}>{item.name}{item.organization?.archivedAt ? " · archived" : ""}</option>)}
-        </select>
-      </Field>
+      <div className="content-search-scope"><span>Scope</span><strong>{scoped ? project.name : "All registered projects"}</strong></div>
     </section>
-    {error && <p className="notice error" role="alert">{error}</p>}
+
+    {openError && <p className="notice error" role="alert">{openError}</p>}
+    {files.error && <div className="notice error content-search-error" role="alert"><span>Files: {files.error}</span><Button onClick={() => setRevision((value) => value + 1)}>Retry search</Button></div>}
+    {conversations.error && <div className="notice error content-search-error" role="alert"><span>Conversations: {conversations.error}</span><Button onClick={() => setRevision((value) => value + 1)}>Retry search</Button></div>}
+
     <div className="indexed-search-status" aria-live="polite">
-      {loading ? <span role="status">Searching the local index…</span>
-        : searched ? <span>{results.length ? `${results.length} matching ${results.length === 1 ? "section" : "sections"}` : "No indexed files matched."}</span>
+      {loading ? <span role="status">Searching indexed content…</span>
+        : complete ? <span>{total ? `${total} matching ${total === 1 ? "result" : "results"} · ${conversations.results.length} conversations · ${files.results.length} files` : "No indexed content matched."}</span>
           : null}
     </div>
-    {searched && !loading && results.length > 0 && <div className="indexed-search-results" aria-label="Indexed file results">
-      {results.map((hit) => {
-        const key = `${hit.project}/${hit.path}`;
-        return <button type="button" className="indexed-search-result" key={`${key}/${hit.unit}/${hit.locator}`}
-          aria-label={`Open ${hit.projectName}/${hit.path}`} disabled={!!opening} onClick={() => void open(hit)}>
+
+    {!!conversations.results.length && <section className="content-search-group" aria-label="Conversation results">
+      <h2><MessageSquare size={17} />Conversations <span>{conversations.results.length}</span></h2>
+      <div className="indexed-search-results">{conversations.results.map((hit) => {
+        const key = `conversation:${hit.project}:${hit.session}`;
+        const archived = hit.organization?.archiveScope === "freelancer" || hit.organization?.nativeArchived || hit.organization?.projectArchived;
+        return <button type="button" className="indexed-search-result" key={key}
+          aria-label={`Open conversation ${hit.title} in ${hit.projectName}`} disabled={!!opening}
+          onClick={() => void open(key, () => onOpenConversation(hit.project, hit.session))}>
+          <span className="indexed-result-heading"><strong>{hit.title}</strong><small>{opening === key ? "Opening conversation…" : "Conversation"}</small></span>
+          <span className="indexed-result-path"><span>{hit.projectName}</span><span>{hit.imported ? "Imported snapshot" : archived ? "Archived" : "OpenCode conversation"}</span></span>
+          <span className="indexed-result-excerpt">{hit.excerpt || "Title match"}</span>
+          <span className="indexed-result-open"><MessageSquare size={15} />Open conversation</span>
+        </button>;
+      })}</div>
+    </section>}
+
+    {!!files.results.length && <section className="content-search-group" aria-label="File results">
+      <h2><FolderOpen size={17} />Files <span>{files.results.length}</span></h2>
+      <div className="indexed-search-results">{files.results.map((hit) => {
+        const key = `file:${hit.project}:${hit.path}`;
+        return <button type="button" className="indexed-search-result" key={`${key}:${hit.unit}:${hit.locator}`}
+          aria-label={`Open file ${hit.projectName}/${hit.path}`} disabled={!!opening}
+          onClick={() => void open(key, () => onOpenFile(hit.project, hit.path))}>
           <span className="indexed-result-heading"><strong>{hit.heading || hit.path.split(/[\\/]/).at(-1)}</strong><small>{opening === key ? "Opening project file…" : hit.role}</small></span>
           <span className="indexed-result-path"><span>{hit.projectName}{hit.projectArchived ? " · archived" : ""}</span><span>{hit.path}</span></span>
           <span className="indexed-result-excerpt">{hit.excerpt}</span>
           <span className="indexed-result-open"><FolderOpen size={15} />Open in project Files</span>
         </button>;
-      })}
-    </div>}
-    {searched && !loading && !results.length && <Panel className="indexed-search-empty">
+      })}</div>
+    </section>}
+
+    {complete && !total && !files.error && !conversations.error && <Panel className="indexed-search-empty">
       <FileSearch size={22} aria-hidden="true" />
-      <strong>No indexed file sections found</strong>
-      <Button type="button" onClick={onIndex}><Database size={16} />Open Content index</Button>
+      <strong>No indexed content found</strong>
+      <p>Try different words, or refresh file and conversation indexes.</p>
+      <Button type="button" onClick={onIndex}><Database size={16} />Open Content &amp; Storage</Button>
     </Panel>}
   </div>;
 }

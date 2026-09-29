@@ -35,14 +35,12 @@ import { authInputs, connectionMethods } from "../domain/auth.mjs";
 import {
   workspaceCatalog,
   normalizeAgent,
-  normalizeWorkflow,
   modelAllowed,
   resolveChoices,
   resolvedVariant,
   modelVariant,
   normalizeVariant,
   agentDefaults,
-  workflowDefaults,
 } from "../domain/workspace.mjs";
 import { executionPrompt, policyVersion } from "./execution.mjs";
 import { createGitProjects } from "./git-project.mjs";
@@ -574,14 +572,9 @@ export function createApplication({
         continuation: importedSource?.source ?? null,
         receipts: requestRows
           .filter((r) => r.sessionID === session && r.projectID === id)
-          .map(({ agent, workflow, catalog: _catalog, catalogModels: _models, catalogConnected: _connected, ...r }) => ({
+          .map(({ agent, workflow: _legacyWorkflow, catalog: _catalog, catalogModels: _models, catalogConnected: _connected, ...r }) => ({
             ...r,
-            agent: { id: agent.id, name: agent.name },
-            workflow: {
-              id: workflow.id,
-              name: workflow.name,
-              mode: workflow.mode,
-            },
+            agent: agent ? { id: agent.id, name: agent.name } : null,
           })),
         status: displayStatus,
         permissions: scopedDecisions(permissions),
@@ -701,8 +694,7 @@ export function createApplication({
         text,
         model: modelChoice = "inherit",
         variant: variantChoice = "inherit",
-        agentID = "inherit",
-        workflowID = "build",
+        agentID = "engineer",
         attachments,
       },
     ) {
@@ -728,19 +720,18 @@ export function createApplication({
         const choice = resolveChoices(
           workspace,
           {
-            workflowID,
             agentID,
             model: modelChoice,
           },
           defaults,
         );
-        const { workflow, agent } = choice;
+        const { agent } = choice;
         normalizeVariant(variantChoice);
         let variant =
           variantChoice === "inherit"
             ? resolvedVariant(agent?.variant, defaults)
             : variantChoice;
-        const childVariant = resolvedVariant(workflow.variant, defaults);
+        const childVariant = defaults.childVariant ?? "";
         const nativeSession = await ownSession(p, session);
         const gitAgreement = await gitProjects.policy(id);
         const catalog = await providers();
@@ -757,7 +748,7 @@ export function createApplication({
                   : "subscription",
           })),
         );
-        const allowedModels = delegationPool(defaults, workflow, candidates, catalog.connected, childVariant);
+        const allowedModels = delegationPool(defaults, candidates, catalog.connected, childVariant);
         let model;
         const parseModel = (value) => {
           const slash = value.indexOf("/");
@@ -786,11 +777,7 @@ export function createApplication({
                   !candidates.some(
                     (m) =>
                       m.id === id &&
-                      modelAllowed(
-                        { category: "connected" },
-                        m,
-                        catalog.connected,
-                      ),
+                      modelAllowed(m, catalog.connected),
                   ),
               )
             )
@@ -838,7 +825,6 @@ export function createApplication({
           ...defaults,
           allowedModels,
           maxParallel: defaults.maxParallel,
-          childVariant,
         };
         await backend.save({
           scope: "execution",
@@ -851,8 +837,7 @@ export function createApplication({
           chatChoices: {
             ...s.chatChoices,
             [session]: {
-              agentID,
-              workflowID,
+              agentID: agent.id,
               ...(variantChoice !== "inherit"
                 ? { variant: variantChoice }
                 : {}),
@@ -871,9 +856,8 @@ export function createApplication({
           policyVersion,
           requestID: messageID,
           projectID: id,
-          workflowID: workflow.id,
           agentID: agent.id,
-          mode: workflow.mode,
+          mode: "build",
         };
         await store.recordRequest({
           id: messageID,
@@ -882,6 +866,7 @@ export function createApplication({
           createdAt: Date.now(),
           status: "prepared",
           policyVersion,
+          mode: "build",
           agent,
           directory: p.directory,
           catalog: workspace,
@@ -889,7 +874,7 @@ export function createApplication({
           // An empty captured pool means no children, not unrestricted routing.
           delegationPool: allowedModels,
           catalogConnected: catalog.connected,
-          workflow,
+          readOnly: false,
           model: model ?? null,
           variant: variant || null,
           preferences,
@@ -906,7 +891,7 @@ export function createApplication({
                 model,
                 ...(variant ? { variant } : {}),
                 agent: agent.id,
-                system: executionPrompt(agent, workflow, metadata, workspace) +
+                system: executionPrompt(agent, metadata, workspace) +
                   "\n\n" + delegationGuidance(preferences, allowedModels) +
                   (gitAgreement.tracking ? "\n\n" + gitExecutionContract(gitAgreement) : ""),
                 parts: [...(orientation ? [orientation] : []), ...(text.trim() ? [{ type: "text", text }] : []), ...fileParts],
@@ -1152,40 +1137,6 @@ export function createApplication({
         });
       return action === "callback" ? changeCredentials(call) : call();
     },
-    async saveWorkflow(value) {
-      const id = value.id ?? randomUUID();
-      let workflow;
-      await store.update("settings", (s) => {
-        const catalog = workspaceCatalog(s);
-        if (value.id && !catalog.workflows.some((w) => w.id === id))
-          throw Error("Workflow no longer exists");
-        workflow = normalizeWorkflow(value, id, catalog.agents);
-        return {
-          ...s,
-          revision: s.revision + 1,
-          workflows: [...s.workflows.filter((w) => w.id !== id), workflow],
-        };
-      });
-      return workflow;
-    },
-    async removeWorkflow(id) {
-      if (workflowDefaults.some((w) => w.id === id))
-        throw Error("Default workflows cannot be removed");
-      await store.update("settings", (s) => ({
-        ...s,
-        revision: s.revision + 1,
-        workflows: s.workflows.filter((w) => w.id !== id),
-        chatChoices: Object.fromEntries(
-          Object.entries(s.chatChoices ?? {}).map(([session, choice]) => [
-            session,
-            choice.workflowID === id
-              ? { ...choice, workflowID: "build" }
-              : choice,
-          ]),
-        ),
-      }));
-      return { saved: true };
-    },
     async saveAgent(value) {
       const id = value.id ?? randomUUID();
       const agent = normalizeAgent(value, id);
@@ -1208,13 +1159,14 @@ export function createApplication({
           ...s,
           revision: s.revision + 1,
           agents: (s.agents ?? []).filter((a) => a.id !== id),
-          workflows: s.workflows.map((w) =>
-            w.agentID === id ? { ...w, agentID: "engineer" } : w,
-          ),
+          sessionDefaults: Object.fromEntries(Object.entries(s.sessionDefaults ?? {}).map(([projectID, value]) => [
+            projectID,
+            value?.agentID === id ? { ...value, agentID: "engineer", revision: (value.revision ?? 0) + 1 } : value,
+          ])),
           chatChoices: Object.fromEntries(
             Object.entries(s.chatChoices ?? {}).map(([session, choice]) => [
               session,
-              choice.agentID === id ? { ...choice, agentID: "inherit" } : choice,
+              choice.agentID === id ? { ...choice, agentID: "engineer" } : choice,
             ]),
           ),
         };

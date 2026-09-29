@@ -3,7 +3,7 @@
 ## Interaction
 
 Matching controls frame the text box: **Message options** on the left and the
-send action on the right. The flat options panel contains attachments, workflow,
+send action on the right. The flat options panel contains attachments,
 agent, model and intelligence in one view. Escape closes it and returns focus.
 Tasks, attachments and delivery status use collapsible support cards; collapse
 never removes files or cancels work. New delivery errors reveal their details.
@@ -17,13 +17,13 @@ A normal send immediately shows a local message preview, including attachments, 
 
 ## Queue
 
-Queue waits for the native parent turn to finish, including its running tools and pending questions/permissions. Requests fire in FIFO order, one parent turn at a time, even after navigating away. Each request snapshots its own parent model, effort, workflow and agent choices. An override applies to that queued turn, not the running parent or saved defaults. Pending requests are visible and cancellable.
+Queue waits for the native parent turn to finish, including its running tools and pending questions/permissions. Requests fire in FIFO order, one parent turn at a time, even after navigating away. Each request snapshots its own parent model, effort, and agent choices. An override applies to that queued turn, not the running parent or saved defaults. Pending requests are visible and cancellable.
 
 ## Delegate
 
 Delegate submits a bounded concern through the existing OpenCode parent prompt path as soon as it can accept input. The handoff asks the current parent to delegate that concern to a worker using the chosen child model, while continuing the original task. It never aborts the parent, changes its model, or creates a second delegation/permission system. Worker creation and execution remain authoritative in the existing native delegate flow; acceptance of the handoff is not proof that a worker has started. The normal activity cards report actual worker execution.
 
-Delegate requires an established parent chat. Workflow identity does not grant authority; explicit inspection constraints still apply. Existing model eligibility, quota, free-only, task and paid-delegation permissions remain in force. A model dropdown selection is not permission to bypass those controls.
+Delegate requires an established parent chat. Agent labels do not grant authority; explicit inspection constraints still apply. Existing model eligibility, quota, free-only, task and paid-delegation permissions remain in force. A model dropdown selection is not permission to bypass those controls.
 
 The delegate request is a native parent message so the parent can act on it; the user sees it collapsed as a Handoff card. The worker's completed report is collapsed as a Handoff card in the worker chat. The native transcript remains available to agents through the parent/worker relationship.
 

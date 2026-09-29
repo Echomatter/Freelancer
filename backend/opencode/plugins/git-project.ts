@@ -33,7 +33,7 @@ const GitProject: Plugin = async ({ client, directory }) => {
     tool: {
       git_project: tool({
         description:
-          "Managed Git/GitHub for every agent and workflow. Use inspect, preview and execute for ordinary work. Call prepare before implementation to prepare the agreed task branch; chats themselves never switch branches. If the user explicitly requests anything outside the saved agreement, use request with a reason and either agreement changes (tracking, github, preset, mainBranch), or tool git/gh and an exact args array. Ask the native question with the returned questions unchanged, then call request with planID after approval. This includes branch merges/deletions, uploads, history rewrites and visibility changes. Native permission and repository/content checks still apply. Never publish through shell.",
+          "Managed Git/GitHub for every named agent. Use inspect, preview and execute for ordinary work. Call prepare before implementation to prepare the agreed task branch; chats themselves never switch branches. If the user explicitly requests anything outside the saved agreement, use request with a reason and either agreement changes (tracking, github, preset, mainBranch), or tool git/gh and an exact args array. Ask the native question with the returned questions unchanged, then call request with planID after approval. This includes branch merges/deletions, uploads, history rewrites and visibility changes. Native permission and repository/content checks still apply. Never publish through shell.",
         args: {
           action: tool.schema.enum(["inspect", "preview", "execute", "merge", "request", "prepare"]),
           reason: tool.schema.string().max(2000).optional(),

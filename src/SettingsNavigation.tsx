@@ -1,4 +1,4 @@
-import { Bot, BrainCircuit, CalendarClock, ChevronDown, Database, FileSearch, Files, FolderOpen, Gauge, GitBranch, GitFork, Github, HardDrive, History, MessageSquare, Palette, Settings2, Smartphone, Wallet, Workflow } from "lucide-react";
+import { Bot, BrainCircuit, CalendarClock, ChevronDown, FileSearch, Files, FolderOpen, Gauge, GitBranch, GitFork, Github, HardDrive, History, MessageSquare, Palette, Settings2, Smartphone, Wallet } from "lucide-react";
 
 export type SettingsScope = "project" | "application";
 
@@ -8,8 +8,8 @@ const groups = {
     icon: FolderOpen,
     items: [
       { id: "files", label: "Files", icon: Files },
+      { id: "search", label: "Search project content", icon: FileSearch },
       { id: "agents", label: "Agents", icon: Bot },
-      { id: "workflows", label: "Workflows", icon: Workflow },
       { id: "sessions", label: "Session defaults", icon: MessageSquare },
       { id: "delegation", label: "Delegation", icon: GitFork },
       { id: "github", label: "GitHub", icon: Github },
@@ -21,20 +21,20 @@ const groups = {
     items: [
       { id: "models", label: "Models", icon: BrainCircuit },
       { id: "usage", label: "Available Usage", icon: Gauge },
+      { id: "history", label: "Conversation history", icon: History },
       { id: "providers", label: "Providers", icon: Wallet },
       { id: "appearance", label: "Appearance", icon: Palette },
       { id: "remote-access", label: "Remote access", icon: Smartphone },
       { id: "schedules", label: "Scheduled prompts", icon: CalendarClock },
-      { id: "search", label: "Search files", icon: FileSearch },
-      { id: "index", label: "Content index", icon: Database },
-      { id: "storage", label: "Data & Storage", icon: HardDrive },
+      { id: "search", label: "Search all content", icon: FileSearch },
+      { id: "content-storage", label: "Content & Storage", icon: HardDrive },
       { id: "git-defaults", label: "Git defaults", icon: GitBranch },
-      { id: "history", label: "History", icon: History },
     ],
   },
 } as const;
 
 export function settingsItemLabel(scope: SettingsScope, id: string) {
+  if (id === "history") return "Conversation history";
   return groups[scope].items.find((item) => item.id === id)?.label ?? "Settings";
 }
 

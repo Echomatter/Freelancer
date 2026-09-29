@@ -7,7 +7,7 @@ written by atomic replacement, and corrupt or unsupported documents fail closed
 instead of being repaired or overwritten.
 
 The request receipt file can be large because every request keeps immutable
-captured agent and workflow definitions. The server store now keeps an internal
+captured agent definitions. Older receipts may retain a retired captured workflow value for compatibility. The server store now keeps an internal
 validated cache for each JSON document and invalidates it with file metadata
 before use. Public `read()` returns a clone so callers cannot mutate the cached
 copy. Mutations still run through one in-process queue, and a changed file is

@@ -49,14 +49,12 @@ test("usage stays attached to the agent snapshot for its request across rescans 
     sessionID: "ses_one",
     status: "prepared",
     agent: { id: "engineer", name: "Engineer" },
-    workflow: { id: "build" },
   });
   await store.recordRequest({
     id: "msg_request2",
     sessionID: "ses_one",
     status: "prepared",
     agent: { id: "designer", name: "Designer" },
-    workflow: { id: "build" },
   });
   const rows = [
     {
@@ -115,7 +113,6 @@ test("request observations reuse the request snapshot and skip no-op rewrites", 
     sessionID: "ses_one",
     status: "prepared",
     agent: { id: "engineer", name: "Engineer" },
-    workflow: { id: "build" },
     catalog: Object.fromEntries(
       Array.from({ length: 1000 }, (_, index) => [
         `agent-${index}`,
@@ -154,7 +151,6 @@ test("cached reads are isolated, stat-invalidated and fail closed on corrupt rep
     id: "msg_request",
     sessionID: "ses_one",
     agent: { id: "engineer", name: "Engineer" },
-    workflow: { id: "build" },
   });
   const first = await store.read("requests");
   first.records.msg_request.agent.name = "Mutated";
@@ -172,7 +168,6 @@ test("cached reads are isolated, stat-invalidated and fail closed on corrupt rep
           id: "msg_request",
           sessionID: "ses_one",
           agent: { id: "designer", name: "Designer" },
-          workflow: { id: "build" },
         },
       },
     }),

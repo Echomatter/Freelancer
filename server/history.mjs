@@ -311,7 +311,7 @@ export function createHistoryService({
           const project = byKey.get(projectKey);
           return project ? [{ ...hit, project: project.id, projectName: project.name, projectArchived: project.archived }] : [];
         }),
-        coverage: "Search uses the local file index for registered projects, including archived projects. Refresh Content index to include recent file changes; results are derived search copies, not project files.",
+        coverage: "Search uses the local file index for registered projects, including archived projects. Open Content & Storage to refresh recent file changes; results are derived search copies, not project files.",
       };
     },
     async indexStats() {
@@ -415,7 +415,7 @@ export function createHistoryService({
         limit,
         hasMore: rows.length >= limit && limit < 10000,
         coverage:
-          "History searches the loaded OpenCode window, imported snapshots and previously seen references. It is not a complete backup. Cached entries are checked when opened.",
+          "Conversation history lists the loaded OpenCode window, imported snapshots and previously seen references. It is not a complete backup. Cached entries are checked when opened.",
         archive: await archiveMode(),
       };
     },
@@ -443,7 +443,7 @@ export function createHistoryService({
       return fence(projectID, async (pending) => {
         if (data().projects()[projectID]?.archivedAt)
           throw Error(
-            "Restore this project in Data & Storage before changing conversation archives.",
+            "Restore this project in Content & Storage before changing conversation archives.",
           );
         const sessions = await group(project, id),
           ids = new Set(sessions.map((s) => s.id));

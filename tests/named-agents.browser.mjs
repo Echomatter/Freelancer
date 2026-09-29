@@ -180,7 +180,8 @@ test('named-agents', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => 
       ctx = f.context(parentID);
     const args = {
       agentID: agent.id,
-      workflowID: "review",
+      independentReview: true,
+      needsWrites: false,
       task: "Check the focus order in this bounded assignment.",
       selectedModel: "opencode/free-b",
     };

@@ -1,10 +1,10 @@
 import { modelAllowed } from './workspace.mjs';
 
-// Delegation eligibility comes from the user/resource budget, not the selected
-// workflow. Workflow model/category fields are advisory UI metadata in v5+.
-export function delegationPool(preferences, _workflow, models, connected, variant = '') {
+// Delegation eligibility comes from the user's resource budget and named agent,
+// never a separate work-mode/model catalog.
+export function delegationPool(preferences, models, connected, variant = '') {
   return models.filter(model =>
-    modelAllowed({ category: 'connected' }, model, connected) &&
+    modelAllowed(model, connected) &&
     (!preferences.allowedModels.length || preferences.allowedModels.includes(model.id)) &&
     !preferences.excludedModels.includes(model.id) &&
     !preferences.excludedProviders.includes(model.provider) &&
@@ -22,8 +22,7 @@ export function capturedDelegationPool(execution, current, effective, variant = 
   const legacy = execution.preferences?.allowedModels;
   const rootPool = execution.delegationPool ?? (legacy?.length ? legacy : null);
   return (execution.catalogModels ?? []).filter(model =>
-    // Connected-only on purpose: the child workflow is a job, not a second model pool.
-    modelAllowed({ category: 'connected' }, model, execution.catalogConnected ?? []) &&
+    modelAllowed(model, execution.catalogConnected ?? []) &&
     (!Array.isArray(rootPool) || rootPool.includes(model.id)) &&
     (!current.allowedModels.length || current.allowedModels.includes(model.id)) &&
     !effective.excludedModels.includes(model.id) &&
@@ -56,7 +55,7 @@ export function effectiveDelegationPreferences(current, captured = current) {
 }
 
 export function delegationGuidance(preferences, allowedModels) {
-  const behavior = 'Decide whether to work directly, use tools, skills, or delegate to suitable named agents. No helper or team shape is mandatory; agent/workflow identity is guidance, not authority.';
+  const behavior = 'Decide whether to work directly, use tools, skills, or delegate to suitable named agents. No helper or team shape is mandatory; agent identity is guidance, not authority.';
   return [
     preferences.delegation === 'manual' ? 'Work directly. The user has disabled workers.' : behavior,
     `Up to ${preferences.maxParallel} simultaneous delegated assignments. This is a ceiling, not a target.`,

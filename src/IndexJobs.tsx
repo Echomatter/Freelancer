@@ -46,7 +46,7 @@ export function useIndexJobs() {
       current = (await api('index/jobs')).job;
       setJob(current);
     }
-    if (!current || current.id !== id) throw Error('Index preparation status changed. Check Content index.');
+    if (!current || current.id !== id) throw Error('Index preparation status changed. Check Content & Storage.');
     if (current.status === 'completed') { await mutate('index/jobs/dismiss', { id }); }
     // Partial/failed preparation stays visible in the shared bar, with Retry.
   };

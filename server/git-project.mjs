@@ -1679,7 +1679,7 @@ export function createGitProjects({
     });
   }
   async function prepareTask(id, session) {
-    // Explicit tool action; agent/workflow names never trigger checkout changes.
+    // Explicit tool action; agent names never trigger checkout changes.
     const agreement = await policy(id);
     if (!agreement.tracking) return;
     if (agreement.preset === "inspect") return;

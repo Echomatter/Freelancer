@@ -12,7 +12,7 @@ import { effectiveDelegationPreferences, delegationGuidance, capturedDelegationP
 import { policyInputs } from '../../../shared/strategy.mjs';
 
 import { executionContext, workerBindingFile } from './execution-context.mjs';
-import { modelAllowed } from '../../../domain/workspace.mjs';
+import { legacyModelAllowed } from '../../../domain/workspace.mjs';
 import { agentAssignmentAllowed, legacyTaskPatterns } from '../../../domain/agent-policy.mjs';
 import { executionPrompt, policyVersion } from '../../../server/execution.mjs';
 import { replaceFile } from '../../../server/replace-file.mjs';
@@ -268,7 +268,9 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       if (part.type !== 'tool' || !['delegate', 'task'].includes(part.tool) || part.state?.status !== 'completed') continue;
       try {
         const receipt = JSON.parse(part.state.output);
-        if (receipt.parent_session !== ctx.sessionID || (receipt.workflow?.mode ?? receipt.role) !== 'review' || receipt.status !== 'completed') continue;
+        if (receipt.parent_session !== ctx.sessionID ||
+            !(receipt.independent_review === true || receipt.workflow?.mode === 'review' || receipt.role === 'review') ||
+            receipt.status !== 'completed') continue;
         for (const attempt of receipt.attempts || []) {
           if (attempt.status === 'completed' && attempt.observed_model) previousReviewModels.push(attempt.observed_model);
         }
@@ -370,11 +372,18 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         error: row.info?.error, parts: parts(row) })) };
   }
   async function run(args, ctx, resolvedParent) {
-    if (args.role !== undefined) throw fault('InvalidAssignment', 'Helper roles are retired. Use agentID and workflowID from delegate with no arguments.');
+    if (args.role !== undefined) throw fault('InvalidAssignment', 'Choose a named agentID and bounded task.');
     const { parent, parentModel, config, assignment, userMessageID, execution, previousReviewModels } = resolvedParent;
     const legacyContract = execution.policyVersion < 5;
+    const legacyWorkflowID = args.workflowID ?? execution.workflow?.id;
+    const legacyWorkflow = legacyContract
+      ? execution.catalog?.workflows?.find((item) => item.id === legacyWorkflowID) ??
+        (execution.workflow?.id === legacyWorkflowID ? execution.workflow : null)
+      : null;
+    if (legacyContract && !legacyWorkflow) throw fault('PermissionError', 'Legacy execution metadata is incomplete.');
+    const mode = legacyWorkflow?.mode ?? 'build';
     if (legacyContract && parent.parentID) throw fault('PermissionError', 'Nested delegation is disabled for this already-captured legacy request.');
-    if (legacyContract && execution.workflow.id === 'sync') throw fault('PermissionError', 'Legacy Git/Sync requests use the managed Git tool directly.');
+    if (legacyContract && legacyWorkflow?.id === 'sync') throw fault('PermissionError', 'Legacy Git/Sync requests use the managed Git tool directly.');
     const loaded = await loadPreferences(toolkitRoot, ctx.directory || directory, ctx.sessionID);
     const current = loaded.defaults;
     const captured = execution.preferences ?? current;
@@ -387,10 +396,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     if (!Object.keys(args).length) return {
       status: 'catalog',
       agents: catalog.agents.map(({ id, name, model, prompt }) => ({ id, name, defaultModel: model, expertise: prompt.slice(0, 400),
-        allowedModes: legacyContract
-          ? ["build", "plan", "explore", "review"].filter(mode => agentAssignmentAllowed(current, id, mode) && agentAssignmentAllowed(captured, id, mode) && (!execution.readOnly || mode !== "build"))
-          : ["build", "plan", "explore", "review"] })),
-      workflows: catalog.workflows.map(({ id, name, mode }) => ({ id, name, mode })),
+        ...(legacyContract ? { allowed: agentAssignmentAllowed(current, id, mode) && agentAssignmentAllowed(captured, id, mode) } : {}) })),
       budget: { delegation: savedPreferences.delegation, subscriptionDelegation: savedPreferences.subscriptionDelegation, maxParallel: savedPreferences.maxParallel, freeOnly: savedPreferences.costPreference === 'free-only',
         modelPool: pool(savedPreferences.childVariant) },
       note: delegationGuidance(savedPreferences, pool(savedPreferences.childVariant)) + ' Edits apply to the next main request, not work already in progress.',
@@ -411,37 +417,34 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       if (!statuses || statuses[args.worker]?.type && statuses[args.worker].type !== 'idle') throw fault('WorkerBusy', 'Worker has not reached an idle boundary.');
       if (args.agentID && args.agentID !== prior.agent.id || args.selectedModel && args.selectedModel !== attempt.selected_model)
         throw fault('BindingFailure', 'Continuation preserves the worker agent and model.');
-      args = { ...args, agentID: prior.agent.id, workflowID: args.workflowID ?? prior.workflow.id, selectedModel: attempt.selected_model,
+      args = { ...args, agentID: prior.agent.id, selectedModel: attempt.selected_model,
+        independentReview: args.independentReview ?? prior.independent_review,
         ...(prior.read_only ? { needsWrites: false } : {}), ...(prior.free_only ? { freeOnly: true } : {}) };
       continued = child;
     }
-    // The caller chooses who helps. Omitting the workflow inherits the current
-    // job. In v5+, the workflow guides the child; it is not a tool-authority gate.
-    args = { ...args, workflowID: args.workflowID ?? execution.workflow.id };
     const agent = catalog.agents.find(agent => agent.id === args.agentID);
-    const workflow = catalog.workflows.find(workflow => workflow.id === args.workflowID);
-    if (!agent || !workflow || typeof args.task !== 'string' || !args.task.trim()) throw fault('InvalidAssignment', 'Choose a named agentID, workflowID, and bounded task from the catalog.');
+    if (!agent || typeof args.task !== 'string' || !args.task.trim()) throw fault('InvalidAssignment', 'Choose a named agentID and bounded task from the catalog.');
     if (savedPreferences.delegation === 'manual' || /\b(?:do not delegate|don.t delegate|handle (?:it|this) yourself|no (?:workers|delegation))\b/i.test(assignment)) throw fault('PreferenceConstraint', 'Delegation is disabled by the user. Work directly with permitted tools.');
-    if (legacyContract && (!agentAssignmentAllowed(savedPreferences, agent.id, workflow.mode) || !agentAssignmentAllowed(captured, agent.id, workflow.mode))) throw fault('PreferenceConstraint', 'This named agent/workflow assignment is disabled by the captured legacy policy.');
+    if (legacyContract && (!agentAssignmentAllowed(savedPreferences, agent.id, mode) || !agentAssignmentAllowed(captured, agent.id, mode))) throw fault('PreferenceConstraint', 'This named agent assignment is disabled by the captured legacy policy.');
     const inherited = await lookup(ctx.sessionID, ctx.directory);
-    // Preserve captured v3/v4 semantics. New v5 requests treat workflows as guidance.
+    // Preserve captured legacy mode semantics. New policy-v6 requests are fixed Build.
     const writesNotAuthorized = execution.policyVersion === 3 ? args.needsWrites !== true : args.needsWrites === false;
-    const readOnly = inherited?.readOnly || execution.readOnly || (legacyContract && workflow.mode !== 'build') || writesNotAuthorized || noWriteAssignment(args.task) || noWriteAssignment(assignment);
+    const readOnly = inherited?.readOnly || execution.readOnly || (legacyContract && mode !== 'build') || writesNotAuthorized || noWriteAssignment(args.task) || noWriteAssignment(assignment);
     if ((inherited?.readOnly || execution.readOnly) && args.needsWrites) throw fault('PermissionError', 'Read-only parent cannot create a writer');
     const explicitModel = Boolean(args.selectedModel);
-    const variant = args.variant ?? (agent.variant && agent.variant !== 'inherit' ? agent.variant : legacyContract && workflow.variant && workflow.variant !== 'inherit' ? workflow.variant : savedPreferences.childVariant);
+    const variant = args.variant ?? (agent.variant && agent.variant !== 'inherit' ? agent.variant : legacyContract && legacyWorkflow.variant && legacyWorkflow.variant !== 'inherit' ? legacyWorkflow.variant : savedPreferences.childVariant);
     if (variant && !/^[\w-]{1,80}$/.test(variant)) throw fault('InvalidAssignment', 'Choose a reported child intelligence level');
     // Workflow model restrictions belong only to legacy captured requests.
-    const allowedModels = pool(variant).filter(id => !legacyContract || modelAllowed(workflow, execution.catalogModels.find(m => m.id === id), execution.catalogConnected ?? []));
+    const allowedModels = pool(variant).filter(id => !legacyContract || legacyModelAllowed(legacyWorkflow, execution.catalogModels.find(m => m.id === id), execution.catalogConnected ?? []));
     if (args.selectedModel && !allowedModels.includes(args.selectedModel))
-      throw fault('PreferenceConstraint', 'Selected model is excluded by the request budget, user preferences, or workflow restrictions. No child started.');
+      throw fault('PreferenceConstraint', 'Selected model is excluded by the request budget or user preferences. No child started.');
     if (!allowedModels.length) return { status: 'delegation_unavailable', failure_class: 'unavailable',
       agent: { id: agent.id, name: agent.name }, model_selection: null, attempts: [],
       routing_diagnostics: { eligible_model_count: 0, free_only: inherited?.freeOnly === true || args.freeOnly === true || savedPreferences.costPreference === 'free-only' || freeOnlyAssignment(assignment),
         cost_preference: savedPreferences.costPreference, requested_variant: variant || null },
       result: 'No agent started. No model satisfies the current delegation budget and provider rules. Continue directly in the parent chat when allowed, or report this as unresolved if the user required a separate worker or independent review. Do not relax the user limits or retry unchanged.' };
     const preferences = { ...savedPreferences, allowedModels,
-      maxParallel: legacyContract && workflow.parallel === false ? 1 : savedPreferences.maxParallel };
+      maxParallel: legacyContract && legacyWorkflow.parallel === false ? 1 : savedPreferences.maxParallel };
     const defaultModel = agent.model && agent.model !== 'auto' ? agent.model : null;
     // Agent defaults are preferences, not an extra lock. Unavailable defaults
     // return to normal candidate assessment; explicit assignment choices do not.
@@ -449,16 +452,16 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     const defaultEligible = defaultModel && allowedModels.includes(defaultModel) &&
       (!requiresFree || execution.catalogModels.find(m => m.id === defaultModel)?.costClass === 'free');
     args = { ...args, ...(args.selectedModel || !defaultEligible ? {} : { selectedModel: defaultModel }) };
-    const effectiveArgs = policyInputs(preferences, { ...args, mode: workflow.mode });
+    const effectiveArgs = policyInputs(preferences, { ...args, mode });
     const userDirectedModel = Boolean(explicitModel && userDirectedModelAssignment(assignment, args.selectedModel));
     const nativeAgents = await call('app', 'agents', { query: query(ctx.directory) }, ctx.abort);
     const nativeAgent = nativeAgents?.find(a => a.name === agent.id);
     if (!nativeAgent || !Array.isArray(nativeAgent.permission)) throw fault('UnsupportedRuntime', 'Named agent execution profile unavailable. Start a new request after the current work finishes.');
     if (nativeAgent.model) throw fault('PinnedAgent', 'Native model pins are not supported; choose the agent default in Freelancer.');
     const freeOnly = inherited?.freeOnly === true || effectiveArgs.freeOnly === true || freeOnlyAssignment(assignment);
-    const needsModelDiversity = args.needsModelDiversity ?? workflow.mode === 'review';
+    const needsModelDiversity = args.independentReview === true || args.needsModelDiversity === true;
     const excludeModels = [...new Set([...(effectiveArgs.excludeModels || []),
-      ...(workflow.mode === 'review' && needsModelDiversity ? previousReviewModels : [])])];
+      ...(args.independentReview === true && needsModelDiversity ? previousReviewModels : [])])];
     const policy = await readJson(path.join(toolkitRoot, 'routing', 'policy.json'));
     const allowed = new Set(policy?.allowed_surfaces || []);
     const { decisionId: suppliedDecisionId, ...assignmentArgs } = args;
@@ -501,7 +504,9 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     // prevented even disjoint assignments from using that native scheduling.
     // Build owns file/task boundaries; receipts and cancellation stay per child.
     const receipt = { task_id: id, user_task_id: args.userTaskId || `${ctx.sessionID}/${ctx.messageID}`, parent_session: ctx.sessionID, root_session: execution.rootSessionID ?? ctx.sessionID, parent_model: parentModel,
-      agent: structuredClone(agent), workflow: structuredClone(workflow), agent_id: agent.id,
+      agent: structuredClone(agent), agent_id: agent.id, mode,
+      ...(args.independentReview === true || args.needsModelDiversity === true ? { independent_review: true } : {}),
+      ...(legacyContract && legacyWorkflow ? { workflow: structuredClone(legacyWorkflow) } : {}),
       project_id: execution.projectID, parent_message_id: execution.id, parent_assistant_id: ctx.messageID, delegate_call_id: ctx.callID,
       read_only: readOnly, policy_version: execution.policyVersion,
       root_request_id: execution.rootRequestID ?? execution.id,
@@ -517,7 +522,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       const failureDetail = last?.status === 'failed'
         ? `${last.failure || 'unknown'} (${last.error_type || 'Error'}, abort_verified=${last.abort_verified ?? 'unknown'}${last.error ? `, ${last.error.slice(0, 160)}` : ''})`
         : last?.failure;
-      const decision = makeDecision({ id, args: assignmentArgs, agentName: agent.name, workMode: workflow.mode, selection, parentModel, sessionID: ctx.sessionID, userMessageID, createdAt: stamp(), allowParent, failure: failureDetail });
+      const decision = makeDecision({ id, args: assignmentArgs, agentName: agent.name, workMode: mode, selection, parentModel, sessionID: ctx.sessionID, userMessageID, createdAt: stamp(), allowParent, failure: failureDetail });
       await atomicJson(path.join(stateDir, 'decisions', `${id}.json`), decision);
       receipt.execution_status = receipt.status;
       receipt.status = 'decision_required';
@@ -596,11 +601,11 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         // them to choose the same model again. Eligibility, quota/surface policy,
         // native task permission and paid_delegate permission still apply.
         if (legacyContract && !choice && (preferences.delegation === 'ask' || (!userDirectedModel && selection.surface !== 'opencode-free' && preferences.subscriptionDelegation !== 'automatic'))) return propose(selection);
-        // Legacy requests retain the old task-permission ceremony. New v5
+        // Legacy requests retain the old task-permission ceremony. New requests
         // requests rely on the delegate tool call itself and stop only for paid use.
         if (legacyContract) {
           if (typeof ctx.ask !== 'function') throw fault('UnsupportedRuntime', 'Native task permission check unavailable');
-          await ctx.ask({ permission: 'task', patterns: legacyTaskPatterns(agent.id, workflow.mode), always: ['*'], metadata: { agentID: agent.id, workflowID: workflow.id } });
+          await ctx.ask({ permission: 'task', patterns: legacyTaskPatterns(agent.id, mode), always: ['*'], metadata: { agentID: agent.id } });
         }
         if (selection.surface !== 'opencode-free') {
           receipt.status = 'awaiting_paid_permission';
@@ -610,7 +615,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           try {
             if (typeof ctx.ask !== 'function') throw fault('UnsupportedRuntime', 'Paid-model permission check unavailable');
             await ctx.ask({ permission: 'paid_delegate', patterns: [selected], always: [selected],
-              metadata: { model: selected, surface: selection.surface, agentID: agent.id, workflowID: workflow.id,
+              metadata: { model: selected, surface: selection.surface, agentID: agent.id,
                 reason: (selection.reason_codes || []).join('; '),
                 consumption_estimate: selection.consumption_estimate || null,
                 note: 'Uses subscription capacity. Provider price proxies are not a cash charge estimate.' } });
@@ -660,8 +665,8 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
             return receipt;
           }
           child = continued ?? await call('session', 'create', { query: query(ctx.directory), body: {
-            parentID: ctx.sessionID, title: `${agent.name} · ${workflow.name}`, agent: agent.id, permission: permissions,
-            metadata: { freelancer: { selected, readOnly, freeOnly, agentID: agent.id, workflowID: workflow.id, taskID: id } },
+            parentID: ctx.sessionID, title: `${agent.name} · ${args.task.trim().replace(/\s+/g, ' ').slice(0, 80)}`, agent: agent.id, permission: permissions,
+            metadata: { freelancer: { selected, readOnly, freeOnly, agentID: agent.id, mode, taskID: id } },
           } }, ctx.abort);
           if (!child?.id || child.id === ctx.sessionID) throw fault('UnsupportedRuntime', 'Child session was not created');
           reservation.childID = child.id;
@@ -675,13 +680,13 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           await atomicJson(workerFile(child.id), { taskID: id });
           await atomicJson(workerBindingFile(toolkitRoot, child.id, attempt.user_message_id), { taskID: id });
           live.set(child.id, { selected, readOnly, freeOnly, directory: ctx.directory });
-          const displayMetadata = { sessionId: child.id, parentSessionId: ctx.sessionID, agentID: agent.id, agentName: agent.name, workflowID: workflow.id, selected_model: selected, model, task_id: id };
+          const displayMetadata = { sessionId: child.id, parentSessionId: ctx.sessionID, agentID: agent.id, agentName: agent.name, mode, selected_model: selected, model, task_id: id };
           await ctx.metadata?.({ title: `@${agent.name} · ${selected}`, metadata: displayMetadata });
           submitted = true;
           attempt.dispatched_model = selected;
           await call('session', 'promptAsync', { ...sessionArgs(child.id, ctx.directory), body: {
             agent: agent.id, model, messageID: attempt.user_message_id, ...(variant ? { variant } : {}),
-            system: executionPrompt(agent, workflow, { policyVersion, agentID: agent.id, workflowID: workflow.id, mode: workflow.mode, delegated: true }, catalog) + '\n\n' + workerResultInstruction,
+            system: executionPrompt(agent, { policyVersion, agentID: agent.id, mode: 'build', delegated: true }, catalog) + '\n\n' + workerResultInstruction,
             parts: [{ type: 'text', text: `${args.task}\n\nWorking directory: ${ctx.directory || directory}. Resolve assignment paths from this root; use glob to locate a missing path before retrying.\nWork directly unless an independent specialist materially helps. Nested delegation shares the configured depth and concurrency ceilings.\nUse content_index status/search for project documentation, plans and mixed data when useful; verify decisive hits against originals. Use grep/glob/read or native code search for code. Missing/stale index coverage never blocks source search.\n${readOnly ? 'READ-ONLY: do not change source files. content_index status/search/rebuild and git_project inspect/preview are permitted retrieval maintenance; use them when useful. Native shell checks are available subject to inherited OpenCode permissions: use inspection commands only, never writes, installs, redirects or tests that create artifacts. Return mutating validation and source writes to the main conversation. Direct edit tools remain unavailable. This is a task contract, not a shell sandbox.' : 'Preserve unrelated work. Validate changes; report unverified checks honestly.'}\nIf any tool is denied or unavailable, do not retry variants to bypass it. Continue with permitted tools and return the exact unresolved check. Prioritize targeted reads and concrete probes over whole-file surveys; stop with supported findings and explicit coverage gaps.` }],
           } }, ctx.abort);
           acknowledged = true;
@@ -696,7 +701,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
               child_session: child.id, selected_model: selected, last_meaningful_at: stamp(),
               assignment: args.task.slice(0, 240), requested_by: ctx.sessionID,
               dispatched_model: attempt.dispatched_model, observed_model: null,
-              agentID: agent.id, agentName: agent.name, workflowID: workflow.id };
+              agentID: agent.id, agentName: agent.name, mode };
             await atomicJson(receiptFile, receipt);
             await ctx.metadata?.({ title: `@${agent.name} · Worker started`,
               metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: 'running' } });
@@ -732,7 +737,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                     receipt.activity = { ...activity, child_session: child.id, selected_model: selected,
                       last_meaningful_at: meaningfulAt, assignment: args.task.slice(0, 240), requested_by: ctx.sessionID,
                       dispatched_model: attempt.dispatched_model, observed_model: observation.observed,
-                      agentID: agent.id, agentName: agent.name, workflowID: workflow.id };
+                       agentID: agent.id, agentName: agent.name, mode };
                     await atomicJson(receiptFile, receipt);
                     await ctx.metadata?.({ title: `@${agent.name} · ${activity.label}`,
                       metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: 'running' } });
@@ -807,7 +812,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
               activityKey = nextKey; activityAt = now();
               receipt.activity = { ...activity, child_session: child.id, selected_model: selected,
                 last_meaningful_at: meaningfulAt, assignment: args.task.slice(0, 240), requested_by: ctx.sessionID,
-                dispatched_model: attempt.dispatched_model, observed_model: observation.observed, agentID: agent.id, agentName: agent.name, workflowID: workflow.id };
+                dispatched_model: attempt.dispatched_model, observed_model: observation.observed, agentID: agent.id, agentName: agent.name, mode };
               await atomicJson(receiptFile, receipt);
               // OpenCode emits a native part update; the presenter updates the
               // same clickable card. Status is never a second agent transcript.
@@ -879,17 +884,14 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
   return {
     async execute(args, ctx) {
       // A small public API; operational fields remain internal for diagnostics.
-      const { agent, workflow, model, inspectionOnly, independentReview, ...rest } = args;
-      args = { ...rest, ...(agent ? { agentID: agent } : {}), ...(workflow ? { workflowID: workflow } : {}), ...(model ? { selectedModel: model } : {}), ...(inspectionOnly ? { needsWrites: false } : {}), ...(independentReview ? { needsModelDiversity: true } : {}) };
+      const { agent, model, inspectionOnly, ...rest } = args;
+      args = { ...rest, ...(agent ? { agentID: agent } : {}), ...(model ? { selectedModel: model } : {}), ...(inspectionOnly ? { needsWrites: false } : {}), ...(rest.independentReview ? { needsModelDiversity: true } : {}) };
       if (args.workers === true || args.worker && !args.task) {
-        if (args.task || args.agentID || args.workflowID || args.selectedModel || args.inspectionOnly || args.independentReview)
+        if (args.task || args.agentID || args.selectedModel || args.inspectionOnly || args.independentReview)
           throw fault('InvalidAssignment', 'Worker reads cannot include an assignment.');
         return inspectWorkers(args, ctx);
       }
       const resolvedParent = await parentContext(ctx);
-      // Normalize inherited workflow BEFORE deduplication. An omitted workflow
-      // and its explicit equivalent must not start two copies of the same job.
-      if (Object.keys(args).length) args = { ...args, workflowID: args.workflowID ?? resolvedParent.execution.workflow.id };
       const coalesceArgs = {
         ...decisionAssignment(args),
         ...(args.selectedModel ? { selectedModel: args.selectedModel } : {}),
@@ -921,11 +923,11 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         rows.findLast(m => m.info?.role === 'assistant');
       const execution = await executionContext(toolkitRoot, d, session, message);
       const inherited = await lookup(input.sessionID, d);
-      if (input.tool === 'task') throw fault('PermissionError', 'Use delegate with a named agentID and workflowID; native task is not a second execution path.');
+      if (input.tool === 'task') throw fault('PermissionError', 'Use delegate with a named agentID and bounded task; native task is not a second execution path.');
       if (input.tool === 'delegate') {
         if (!execution) throw fault('PermissionError', 'A current named-agent execution contract is required.');
         if (execution.policyVersion < 5 && session?.parentID) throw fault('PermissionError', 'Nested delegation is disabled for this already-captured legacy request.');
-        if (execution.policyVersion < 5 && execution.workflow.id === 'sync') throw fault('PermissionError', 'Legacy Git/Sync requests use the managed Git tool directly.');
+        if (execution.policyVersion < 5 && execution.workflow?.id === 'sync') throw fault('PermissionError', 'Legacy Git/Sync requests use the managed Git tool directly.');
         return;
       }
       if (!execution && !inherited) throw fault('PermissionError', 'Execution contract unavailable. Start a new request in Freelancer; historical conversations remain readable.');

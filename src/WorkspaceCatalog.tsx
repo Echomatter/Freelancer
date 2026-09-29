@@ -5,55 +5,45 @@ import {
   Code2,
   Search,
   Palette,
-  Workflow,
   Plus,
   Pencil,
   ArrowUpRight,
-  X,
   Trash2,
 } from "lucide-react";
 import { Button, PageCloseButton, PageHeading, Panel, Field, Badge } from "./echoflex/Controls";
 import { api } from "./api";
 import {
   agentDefaults,
-  workflowDefaults,
-  modelCategories,
-  modelAllowed,
-  commonVariants,
   modelVariant,
 } from "../domain/workspace.mjs";
 
-import { ParentModelFields, Intelligence, agentModelID } from "./ModelSetup";
+import { ParentModelFields, agentModelID } from "./ModelSetup";
 
 const icons = { engineer: Code2, researcher: Search, designer: Palette };
 export function WorkspaceCatalog({
-  kind,
   data,
   run,
   refresh,
   onUse,
   onClose,
 }: {
-  kind: "agents" | "workflows";
   data: any;
   run: (fn: () => Promise<any>) => Promise<void>;
   refresh: () => Promise<void>;
   onUse: (item: any) => void;
   onClose: () => void;
 }) {
-  const isAgent = kind === "agents";
+  const kind = "agents";
   const [edit, setEdit] = useState<any>(null),
     [search, setSearch] = useState(""),
-    [modelSearch, setModelSearch] = useState(""),
     [saving, setSaving] = useState(false),
     [error, setError] = useState("");
   const nameInput = useRef<HTMLInputElement>(null);
   useEffect(() => {
     setError("");
-    setModelSearch("");
     if (edit) nameInput.current?.focus();
   }, [!!edit]);
-  const rows = data.settings[kind].filter((x) =>
+  const rows = data.settings.agents.filter((x) =>
     `${x.name} ${x.prompt}`.toLowerCase().includes(search.toLowerCase()),
   );
   const update = (key, value) =>
@@ -62,41 +52,19 @@ export function WorkspaceCatalog({
       [key]: value,
       ...(key === "models" ? { variant: "inherit" } : {}),
     }));
-  const defaults = isAgent ? agentDefaults : workflowDefaults;
-  const eligible = data.models.filter((m) =>
-    modelAllowed(
-      edit ?? { category: "connected" },
-      m,
-      data.providers.connected,
-    ),
-  );
-  const variants =
-    edit?.category === "specific"
-      ? commonVariants(eligible)
-      : [...new Set<string>(eligible.flatMap((m) => m.variants ?? []))];
+  const defaults = agentDefaults;
   async function save() {
     setSaving(true);
     try {
-      const preferences =
-        data.snapshot.preferences?.defaults ??
-        data.snapshot.preferences?.preferences;
-      await api(
-        kind,
-        isAgent
-          ? {
-              ...edit,
-              variant: edit.model === "auto" ? "inherit" : modelVariant(
-                data.models.find((m) => m.id === edit.model)?.variants,
-                edit.variant,
-                preferences?.reasoningVariant,
-              ),
-            }
-          : {
-              ...edit,
-              variant: edit.variant === "inherit" ? "" : edit.variant,
-            },
-        "PUT",
-      );
+      const preferences = data.snapshot.preferences?.defaults ?? data.snapshot.preferences?.preferences;
+      await api(kind, {
+        ...edit,
+        variant: edit.model === "auto" ? "inherit" : modelVariant(
+          data.models.find((m) => m.id === edit.model)?.variants,
+          edit.variant,
+          preferences?.reasoningVariant,
+        ),
+      }, "PUT");
       await refresh();
       setEdit(null);
     } catch (e) {
@@ -118,52 +86,38 @@ export function WorkspaceCatalog({
   return (
     <div className="page catalog-page" key={kind}>
       {!edit && <>
-      <PageHeading title={isAgent ? "Agents" : "Workflows"}
+      <PageHeading title="Agents" icon={Bot} help="agents"
         actions={<>
           <Button
             variant="primary"
             onClick={() =>
-              setEdit(
-                isAgent
-                  ? {
-                      name: "",
-                      prompt: "",
-                      response: "balanced",
-                      approach: "practical",
-                      model: agentModelID(),
-                      variant: "inherit",
-                    }
-                  : {
-                      name: "",
-                      prompt: "",
-                      mode: "build",
-                      agentID: "engineer",
-                      category: "connected",
-                      models: [],
-                      parallel: true,
-                      variant: "inherit",
-                    },
-              )
+              setEdit({
+                name: "",
+                prompt: "",
+                response: "balanced",
+                approach: "practical",
+                model: agentModelID(),
+                variant: "inherit",
+              })
             }
           >
             <Plus size={17} />
-            {isAgent ? "Add agent" : "Add workflow"}
+            Add agent
           </Button>
           <PageCloseButton onClick={onClose} />
         </>} />
       <label className="search catalog-search">
         <Search size={16} />
         <input
-          aria-label={isAgent ? "Find agents" : "Find workflows"}
-          placeholder={isAgent ? "Find an agent…" : "Find a workflow…"}
+          aria-label="Find agents"
+          placeholder="Find an agent…"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
         />
       </label>
       <div className="model-grid catalog-grid">
         {rows.map((item) => {
-          const Icon = isAgent ? (icons[item.id] ?? Bot) : Workflow;
-          const agent = data.settings.agents.find((a) => a.id === item.agentID);
+          const Icon = icons[item.id] ?? Bot;
           return (
             <Panel className="catalog-card" key={item.id}>
               <div className="balance-row">
@@ -181,27 +135,16 @@ export function WorkspaceCatalog({
                 {item.prompt || "Start with your own instructions."}
               </p>
               <div className="catalog-tags">
-                {isAgent ? (
-                  <>
-                    <Badge>{item.approach}</Badge>
-                    <Badge>{item.response}</Badge>
-                    <Badge><ProviderText provider={agentModelID(item.model)}>
-                      {data.models.find(
-                        (m) => m.id === agentModelID(item.model),
-                      )?.name ??
-                        (agentModelID(item.model) === "auto" ? "Choose per assignment" : agentModelID(item.model))}
-                    </ProviderText></Badge>
-                  </>
-                ) : (
-                  <>
-                    <Badge>{agent?.name ?? "None"}</Badge>
-                    <Badge>{item.mode}</Badge>
-                  </>
-                )}
+                  <Badge>{item.approach}</Badge>
+                  <Badge>{item.response}</Badge>
+                  <Badge><ProviderText provider={agentModelID(item.model)}>
+                    {data.models.find((m) => m.id === agentModelID(item.model))?.name ??
+                      (agentModelID(item.model) === "auto" ? "Choose per assignment" : agentModelID(item.model))}
+                  </ProviderText></Badge>
               </div>
               <div className="action-row">
                 <Button onClick={() => onUse(item)}>
-                  Use {isAgent ? "agent" : "workflow"}
+                  Use agent
                   <ArrowUpRight size={14} />
                 </Button>
                 <Button
@@ -210,9 +153,7 @@ export function WorkspaceCatalog({
                   onClick={() =>
                     setEdit({
                       ...structuredClone(item),
-                      ...(isAgent
-                        ? { model: agentModelID(item.model) }
-                        : {}),
+                      model: agentModelID(item.model),
                     })
                   }
                 >
@@ -229,7 +170,7 @@ export function WorkspaceCatalog({
       )}
       </>}
       {edit && <section
-        aria-label={isAgent ? "Agent editor" : "Workflow editor"}
+        aria-label="Agent editor"
         className="catalog-editor"
       >
           <form
@@ -238,15 +179,8 @@ export function WorkspaceCatalog({
               void save();
             }}
           >
-            <PageHeading title={`${edit.id ? "Edit" : "New"} ${isAgent ? "agent" : "workflow"}`}
-              actions={<Button
-                type="button"
-                variant="quiet"
-                aria-label="Close editor"
-                onClick={() => setEdit(null)}
-              >
-                <X size={18} />
-              </Button>} />
+            <PageHeading title={`${edit.id ? "Edit" : "New"} agent`} icon={Bot} help="agents"
+              actions={<PageCloseButton label="Close editor" onClick={() => setEdit(null)} />} />
             {error && (
               <p className="notice error" role="alert">
                 {error}
@@ -262,22 +196,16 @@ export function WorkspaceCatalog({
                 onChange={(e) => update("name", e.target.value)}
               />
             </Field>
-            <Field label={isAgent ? "Prompt" : "Instructions"} help={isAgent ? undefined : "workflows"}>
+            <Field label="Prompt">
               <textarea
-                required={isAgent}
+                required
                 rows={6}
                 maxLength={20000}
                 value={edit.prompt}
                 onChange={(e) => update("prompt", e.target.value)}
-                placeholder={
-                  isAgent
-                    ? "What should this agent bring to the work?"
-                    : "What should happen during this workflow?"
-                }
+                placeholder="What should this agent bring to the work?"
               />
             </Field>
-            {isAgent ? (
-              <>
                 <ParentModelFields
                   allowAutomatic
                   data={data}
@@ -314,47 +242,6 @@ export function WorkspaceCatalog({
                     </select>
                   </Field>
                 </div>
-              </>
-            ) : (
-              <>
-                <div className="editor-columns">
-                  <Field label="Agent">
-                    <select
-                      value={edit.agentID}
-                      onChange={(e) => update("agentID", e.target.value)}
-                    >
-
-                      {data.settings.agents.map((a) => (
-                        <option key={a.id} value={a.id}>
-                          {a.name}
-                        </option>
-                      ))}
-                    </select>
-                  </Field>
-                  <Field label="Mode">
-                    {workflowDefaults.some(
-                      (w) => w.id === edit.id && w.id !== "custom",
-                    ) ? (
-                      <Badge>{edit.mode}</Badge>
-                    ) : (
-                      <select
-                        disabled={workflowDefaults.some(
-                          (w) => w.id === edit.id && w.id !== "custom",
-                        )}
-                        value={edit.mode}
-                        onChange={(e) => update("mode", e.target.value)}
-                      >
-                        {["build", "plan", "explore", "review"].map((x) => (
-                          <option key={x} value={x}>
-                            {x[0].toUpperCase() + x.slice(1)}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-                  </Field>
-                </div>
-              </>
-            )}
             <div className="editor-footer">
               {edit.id && !defaults.some((d) => d.id === edit.id) && (
                 <Button
@@ -374,7 +261,7 @@ export function WorkspaceCatalog({
                 Cancel
               </Button>
               <Button variant="primary" type="submit" disabled={saving}>
-                {saving ? "Saving…" : `Save ${isAgent ? "agent" : "workflow"}`}
+                {saving ? "Saving…" : "Save agent"}
               </Button>
             </div>
           </form>

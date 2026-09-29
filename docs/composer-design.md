@@ -2,7 +2,7 @@
 
 The composer uses matching 44px controls: message options on the left and the
 send action on the right. The text field grows to 160px, then scrolls. A quiet
-line shows the current agent, workflow, model and intelligence without adding
+line shows the current agent, model and intelligence without adding
 another toolbar.
 
 ## Alternatives tried

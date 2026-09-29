@@ -211,79 +211,72 @@ export function Details({
   );
 }
 
-export function Files({ project, run, onClose, onSearch, initialPath }: { project: string; run: any; onClose: () => void; onSearch?: () => void; initialPath?: string }) {
-  const [folder, setFolder] = useState(""),
-    [loading, setLoading] = useState(true),
-    [openingPath, setOpeningPath] = useState(""),
+export function Files({ project, run, onClose, onSearch, initialPath, initialFolder = "", onLocationChange }: { project: string; run: any; onClose: () => void; onSearch?: () => void; initialPath?: string; initialFolder?: string; onLocationChange?: (path: string) => void }) {
+  const folder = initialFolder;
+  const [loading, setLoading] = useState(true),
+    [selectedPath, setSelectedPath] = useState(initialPath ?? ""),
+    [error, setError] = useState(""),
+    [revision, setRevision] = useState(0),
     [nodes, setNodes] = useState<any[]>([]),
     [file, setFile] = useState<any>(null);
+  const parentDirectory = (value: string) => {
+    const normalized = value.replaceAll("\\", "/");
+    const index = normalized.lastIndexOf("/");
+    return index < 0 ? "" : normalized.slice(0, index);
+  };
   useEffect(() => {
-    let cancelled = false;
+    const controller = new AbortController();
     setFile(null);
+    setNodes([]);
+    setError("");
     setLoading(true);
-    void run(async () => {
-      try {
-        const rows = await api(
-          "files?" + query(project) + "&path=" + encodeURIComponent(folder),
-        );
-        if (!cancelled) setNodes(rows);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [project, folder]);
-  useEffect(() => {
-    if (!initialPath) return;
-    let cancelled = false;
-    setFile(null);
-    setOpeningPath(initialPath);
-    void run(async () => {
+    void (async () => {
       try {
         const value = await api(
-          "files?" + query(project) + "&content=true&path=" + encodeURIComponent(initialPath),
+          "files?" + query(project) + (selectedPath ? "&content=true" : "") + "&path=" + encodeURIComponent(selectedPath || folder),
+          undefined, "GET", controller.signal,
         );
-        if (!cancelled) setFile({ ...value, path: initialPath });
+        if (!controller.signal.aborted) {
+          if (selectedPath) setFile({ ...value, path: selectedPath });
+          else setNodes(value);
+        }
+      } catch (failure) {
+        if (!controller.signal.aborted) setError((failure as Error).message);
       } finally {
-        if (!cancelled) setOpeningPath("");
+        if (!controller.signal.aborted) setLoading(false);
       }
-    });
-    return () => { cancelled = true; };
-  }, [project, initialPath]);
-  async function open(node) {
+    })();
+    return () => controller.abort();
+  }, [project, folder, selectedPath, revision]);
+  function open(node) {
     if (node.type === "directory") {
-      setFolder(node.path);
+      setSelectedPath("");
+      onLocationChange?.(node.path);
       return;
     }
-    const value = await api(
-      "files?" +
-        query(project) +
-        "&content=true&path=" +
-        encodeURIComponent(node.path),
-    );
-    setFile({ ...value, path: node.path });
+    setSelectedPath(node.path);
+    onLocationChange?.(parentDirectory(node.path));
   }
   return (
     <div className="page files-page">
-      <PageHeading title="Files" actions={<>
-          {(folder || file) && (
+      <PageHeading title="Files" icon={Folder} help="project-files" actions={<>
+          {(folder || selectedPath) && (
             <Button
               onClick={() =>
-                file
-                  ? setFile(null)
-                  : setFolder(folder.replace(/\/?[^/]+\/?$/, ""))
+                selectedPath
+                  ? setSelectedPath("")
+                  : onLocationChange?.(parentDirectory(folder))
               }
             >
               <ArrowLeft size={15} />
               Back
             </Button>
           )}
-          {onSearch && <Button variant="quiet" onClick={onSearch}><Search size={15} />Search all project files</Button>}
+          {onSearch && <Button variant="quiet" onClick={onSearch}><Search size={15} />Search project content</Button>}
           <PageCloseButton onClick={onClose} />
         </>} />
-      <p className="files-location" aria-label="Current location">{file?.path || openingPath || folder || "Your project"}</p>
+      <p className="files-location" aria-label="Current location">{selectedPath || folder || "Your project"}</p>
+      {error && <div className="notice error" role="alert">{error} <Button onClick={() => setRevision(value => value + 1)}>Retry files</Button></div>}
       {file ? (
         <Panel>
           {file.type === "binary" || file.encoding === "base64" ? (
@@ -295,7 +288,7 @@ export function Files({ project, run, onClose, onSearch, initialPath }: { projec
         </Panel>
       ) : (
         <Panel>
-          {openingPath ? (
+          {loading && selectedPath ? (
             <p role="status">Opening selected file…</p>
           ) : loading ? (
             <p>Loading files…</p>
@@ -304,7 +297,7 @@ export function Files({ project, run, onClose, onSearch, initialPath }: { projec
               <button
                 className="file-row"
                 key={node.path}
-                onClick={() => run(() => open(node))}
+                onClick={() => open(node)}
               >
                 {node.type === "directory" ? (
                   <Folder size={17} />
@@ -316,7 +309,7 @@ export function Files({ project, run, onClose, onSearch, initialPath }: { projec
               </button>
             ))
           )}
-          {!loading && !nodes.length && <p>This folder is empty.</p>}
+          {!loading && !error && !selectedPath && !nodes.length && <p>This folder is empty.</p>}
         </Panel>
       )}
     </div>

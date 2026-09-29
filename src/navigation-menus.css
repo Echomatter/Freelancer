@@ -66,6 +66,10 @@
 .nav-chat-menu button { display: flex; align-items: center; gap: 8px; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; font-size: 11px; }
 .nav-chat-menu button:hover:not(:disabled) { background: var(--hover); }
 .nav-chat-menu button:disabled { opacity: .5; }
+.nav-chat-rename { display: grid; gap: 5px; padding: 7px 6px; border-bottom: 1px solid var(--line); }
+.nav-chat-rename label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; }
+.nav-chat-rename input { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.nav-chat-rename button { justify-content: center; background: var(--tint); color: var(--accent); }
 .nav-empty { display: block; padding: 9px 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 @media (max-width: 720px) {
   .chat-navigation { flex: 0 0 auto; }

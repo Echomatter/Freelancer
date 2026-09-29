@@ -15,7 +15,8 @@ async function fixture(t, options = {}) {
   await writeFile(path.join(root, 'routing', 'policy.json'), JSON.stringify({ allowed_surfaces: ['opencode-go', 'opencode-free'], allow_overage: false }));
   const requests = [], sessions = new Map([['parent', { id: 'parent', permission: [{ permission: 'secret-tool', pattern: '*', action: 'deny' }] }]]);
   const catalog = checkedCatalog({ agents: options.agents ?? [] });
-  let parentAgent = options.parentAgent ?? 'engineer', parentMode = options.parentMode ?? 'build';
+  const legacyWorkflows = ['build', 'plan', 'explore', 'review'].map(mode => ({ id: mode, name: mode[0].toUpperCase() + mode.slice(1), mode, agentID: mode === 'explore' ? 'researcher' : 'engineer', category: 'connected', models: [], parallel: true, variant: 'inherit' }));
+  let parentAgent = options.parentAgent ?? 'engineer';
   const rootAssistant = () => ({ role: 'assistant', parentID: 'user1', agent: parentAgent, ...splitModel(options.parentModel || 'opencode/free-parent') });
   // Real native rows always carry IDs and user ancestry. Tests may still supply
   // explicit mismatched identities to exercise fail-closed behavior.
@@ -31,15 +32,18 @@ async function fixture(t, options = {}) {
   const messages = new NativeMessages(), states = {}, records = [];
   messages.set('parent', [{info:rootAssistant(),parts:[]}]);
   const routes = [...new Set([...(options.models ?? ['opencode-go/model-b']), ...(options.candidates ?? []).map(m => m.id)])];
-  const rootRecord = { id:'user1', projectID:'project', directory:root, sessionID:'parent', policyVersion:3,
+  const rootRecord = { id:'user1', projectID:'project', directory:root, sessionID:'parent', policyVersion:options.policyVersion ?? 6, mode:'build', readOnly:false,
     catalog, catalogConnected: ['opencode','opencode-go'],
     catalogModels: routes.map(id=>({id,provider:id.split('/')[0],costClass:id.startsWith('opencode/')?'free':'subscription',variants:['low','high']})) };
   const requestFile = path.join(root,'.state/webpage/requests.json');
   await mkdir(path.dirname(requestFile),{recursive:true});
-  async function setContext(agentID = parentAgent, workflowID = parentMode) {
-    parentAgent = agentID; parentMode = workflowID;
+  async function setContext(agentID = parentAgent) {
+    parentAgent = agentID;
     rootRecord.agent = catalog.agents.find(a=>a.id===agentID);
-    rootRecord.workflow = catalog.workflows.find(w=>w.id===workflowID);
+    rootRecord.policyVersion = options.policyVersion ?? 6;
+    rootRecord.catalog = options.policyVersion < 5 ? { ...catalog, workflows: legacyWorkflows } : catalog;
+    if (options.policyVersion < 5) rootRecord.workflow = legacyWorkflows.find(w=>w.id===(options.parentMode ?? 'build'));
+    else delete rootRecord.workflow;
     await writeFile(requestFile, JSON.stringify({version:1,records:{user1:rootRecord}}));
     messages.set('parent',[{info:rootAssistant(),parts:[]}]);
   }
@@ -111,13 +115,14 @@ function assistant(id, model, extra = {}) {
     tokens: { input: 10, output: 5, reasoning: 0, cache: { read: 3, write: 1 } }, ...extra },
     parts: [{ type: 'text', text: 'A verified fixture result, not a live provider result.' }] };
 }
-const args = { agentID: 'engineer', workflowID: 'build', task: 'Perform a bounded task; preserve user changes.', needsWrites: true };
-test('worker system prompt includes captured agent and workflow instructions', async t => {
+const args = { agentID: 'engineer', task: 'Perform a bounded task; preserve user changes.', needsWrites: true };
+test('worker system prompt includes captured agent and fixed Build contract', async t => {
   const f = await fixture(t, { agents: [{ id: 'engineer', name: 'Engineer', prompt: 'Inspect edge cases before editing.', response: 'concise', approach: 'practical' }] });
   await f.service.execute(args, f.ctx);
   const prompt = f.requests.find(row => row.kind === 'prompt');
   assert.match(prompt.body.system, /Inspect edge cases before editing/);
-  assert.match(prompt.body.system, /Workflow:/);
+  assert.match(prompt.body.system, /Work mode: build/);
+  assert.doesNotMatch(prompt.body.system, /Workflow:/);
   assert.match(prompt.body.system, /Freelancer execution contract/);
 });
 test('delegation receipts replace an existing JSON file without discarding it', async t => {
@@ -157,17 +162,17 @@ test('parent rediscovers workers and reads current native child chat after contr
   await assert.rejects(restarted.execute({ worker: childID }, { ...f.ctx, sessionID: 'other' }), /does not belong/);
   await assert.rejects(restarted.execute({ worker: childID }, { ...f.ctx, directory: path.join(f.root, 'other') }), /does not belong/);
 });
-test('todos work for every managed role without granting source writes', async t => {
-  for (const [agentID, workflowID] of [['engineer','build'],['engineer','plan'],['researcher','explore'],['engineer','review'],['designer','build']]) {
+test('todos work for every named agent without granting source writes', async t => {
+  for (const agentID of ['engineer','researcher','designer']) {
     for (const needsWrites of [false, true]) {
       const f = await fixture(t, { surface: 'opencode-free', models: ['opencode/free'] });
-      const result = await f.service.execute({ ...args, agentID, workflowID, needsWrites }, f.ctx);
+      const result = await f.service.execute({ ...args, agentID, needsWrites }, f.ctx);
       assert.equal(result.status, 'completed');
       const permission = f.sessions.get('child1').permission;
       assert.equal(permission.some(r => r.permission === 'todowrite'), false, 'no injected deny');
       await f.service.checkTool({ sessionID: 'child1', tool: 'todowrite' }, { args: { todos: [] } });
       await f.service.checkTool({ sessionID: 'child1', tool: 'todoread' }, { args: {} });
-      if (!needsWrites || workflowID !== 'build') {
+      if (!needsWrites) {
         for (const tool of ['edit', 'write', 'apply_patch', 'unknown_mutator'])
           await assert.rejects(f.service.checkTool({ sessionID: 'child1', tool }, { args: {} }), /Read-only/);
         // Read-only blocks source writes, not retrieval maintenance.
@@ -176,24 +181,22 @@ test('todos work for every managed role without granting source writes', async t
     }
   }
 });
-test('direct reader roles can track todos while explicit parent native denial survives', async t => {
-  for (const mode of ['explore', 'review']) {
-    const f = await fixture(t, {parentMode:mode});
-    await f.service.checkTool({ sessionID: 'parent', tool: 'todowrite' }, { args: { todos: [] } });
-    await assert.rejects(f.service.checkTool({ sessionID: 'parent', tool: 'edit' }, { args: {} }), /Read-only/);
-  }
+test('agents can track todos while explicit parent native denial survives', async t => {
+  const reader = await fixture(t, { parentAgent: 'researcher' });
+  await reader.service.checkTool({ sessionID: 'parent', tool: 'todowrite' }, { args: { todos: [] } });
   const f = await fixture(t, { surface: 'opencode-free', models: ['opencode/free'] });
   f.sessions.get('parent').permission.push({ permission: 'todowrite', action: 'deny', pattern: '*' });
   assert.equal((await f.service.execute(args, f.ctx)).status, 'completed');
   assert.ok(f.sessions.get('child1').permission.some(r => r.permission === 'todowrite' && r.action === 'deny'));
 });
-test('workflow intelligence reaches the native child without changing its parent', async t => {
+test('agent intelligence reaches the native child without changing its parent', async t => {
   const f = await fixture(t, { surface: 'opencode-free', models: ['opencode/free'] });
   await savePreferences(f.root, f.root, { scope: 'project', preferences: { ...defaults, childVariant: 'high' } });
   const result = await f.service.execute({ ...args, variant: 'low' }, f.ctx);
   assert.equal(result.status, 'completed', JSON.stringify({ result }));
   const prompt = f.requests.find(r => r.kind === 'prompt');
   assert.equal(prompt.body.variant, 'low');
+  assert.doesNotMatch(prompt.body.system, /Workflow:/);
   assert.equal(prompt.body.model.modelID, 'free');
   assert.equal(result.parent_model, 'opencode/free-parent');
 });
@@ -210,7 +213,7 @@ test('historical no-edit reports do not turn an authorized writer into a read-on
 
 test('manual, disabled role and excluded model preferences prevent execution in the shared backend', async t => {
   for (const preferences of [preset('manual'),{...defaults,agentAccess:{engineer:['review']}},{...defaults,excludedModels:['opencode-go/model-b']},{...defaults,excludedProviders:['opencode-go']},{...defaults,allowedModels:['opencode/free-only-choice']}]) {
-    const f=await fixture(t);
+    const f=await fixture(t,{policyVersion:3});
     await savePreferences(f.root,f.root,{preferences,scope:'project'});
     await assert.rejects(f.service.execute(args,f.ctx),/disabled|excluded|workflow restrictions/);
     assert.equal(f.requests.filter(r=>r.kind==='create'||r.kind==='prompt').length,0);
@@ -225,7 +228,7 @@ test('free-only and context preferences constrain the selector even if caller om
   assert.equal(selected.freeOnly,true);assert.equal(selected.minimumContext,192000);
 });
 test('ask strategy requires a recorded native choice even for free children', async t => {
-  const f=await fixture(t,{surface:'opencode-free',models:['opencode/free'],rawChoice:true});
+  const f=await fixture(t,{policyVersion:3,surface:'opencode-free',models:['opencode/free'],rawChoice:true});
   await savePreferences(f.root,f.root,{preferences:{...preset('minimal-agents'),delegation:'ask'},scope:'project'});
   const result=await f.service.execute(args,f.ctx);
   assert.equal(result.status,'decision_required');assert.equal(f.requests.filter(r=>r.kind==='create').length,0);
@@ -271,7 +274,7 @@ test('host inspects rich candidates without inference and chooses a different fr
     {id:'opencode/a',surface:'opencode-free',context:{input_tokens:1000000},cost:{note:'free'},assessment_notes:[]},
     {id:'opencode/b',surface:'opencode-free',context:{input_tokens:200000},capabilities:{coding:{rating:'good'}},assessment_notes:['Below heuristic floor']},
   ];
-  const f=await fixture(t,{rawSelection:true,rawChoice:true,models:['opencode/a','opencode/b'],surface:'opencode-free',candidates,adequacy:'host_assessment_required'});
+  const f=await fixture(t,{policyVersion:3,rawSelection:true,rawChoice:true,models:['opencode/a','opencode/b'],surface:'opencode-free',candidates,adequacy:'host_assessment_required'});
   const proposal=await f.service.execute({...args,needsWrites:false},f.ctx);
   assert.equal(proposal.status,'selection_required');
   assert.deepEqual(proposal.candidates,candidates);
@@ -304,7 +307,7 @@ test('user-directed subscription model skips duplicate model-choice question but
 });
 
 test('host-selected subscription model still requires the native model-choice decision', async t => {
-  const f=await fixture(t,{rawChoice:true,models:['opencode-go/mimo-v2.5-pro'],surface:'opencode-go'});
+  const f=await fixture(t,{policyVersion:3,rawChoice:true,models:['opencode-go/mimo-v2.5-pro'],surface:'opencode-go'});
   f.messages.set('parent',[{info:{id:'user1',role:'user'},parts:[{type:'text',text:'Delegate the core fixes to a strong engineer.'}]}]);
   const result=await f.service.execute({...args,selectedModel:'opencode-go/mimo-v2.5-pro'},f.ctx);
   assert.equal(result.status,'decision_required');
@@ -314,22 +317,21 @@ test('host-selected subscription model still requires the native model-choice de
 });
 
 test('another review excludes prior observed reviewers, even from restored native cards', async t => {
-  const f=await fixture(t,{rawSelection:true,rawChoice:true,surface:'opencode-free'});
-  f.messages.set('parent',[{info:{role:'assistant'},parts:[{type:'tool',tool:'task',state:{status:'completed',output:JSON.stringify({parent_session:'parent',role:'review',status:'completed',attempts:[{status:'completed',observed_model:'opencode/prior'}]})}}]}]);
-  const proposal=await f.service.execute({...args,agentID:'engineer', workflowID:'review',needsWrites:false,excludeModels:['openai/implementation']},f.ctx);
+  const f=await fixture(t,{policyVersion:3,rawSelection:true,rawChoice:true,surface:'opencode-free'});
+  f.messages.set('parent',[{info:{role:'assistant'},parts:[{type:'tool',tool:'delegate',state:{status:'completed',output:JSON.stringify({parent_session:'parent',agent:{id:'engineer'},workflow:{id:'review',mode:'review'},independent_review:true,status:'completed',attempts:[{status:'completed',observed_model:'opencode/prior'}]})}}]}]);
+  const proposal=await f.service.execute({...args,agentID:'engineer', workflowID:'review',independentReview:true,needsWrites:false,excludeModels:['openai/implementation']},f.ctx);
   assert.equal(proposal.status,'selection_required');
   assert.deepEqual(f.requests.find(r=>r.kind==='select').args.excludeModels,['openai/implementation','opencode/prior']);
 });
 
-test('nested delegate and helper task blocked for writers and after runtime restart', async t => {
+test('native task stays blocked after runtime restart while delegation remains the named-agent route', async t => {
   const f=await fixture(t); await f.service.execute(args,f.ctx);
   const restarted=createDelegator({client:f.client,toolkitRoot:f.root,directory:f.root});
   for (const service of [f.service,restarted]) {
-    await assert.rejects(service.checkTool({sessionID:'child1',tool:'delegate'},{args:{agentID:'engineer',workflowID:'review'}}),/Nested/);
+    await service.checkTool({sessionID:'child1',tool:'delegate'},{args:{agentID:'engineer',task:'bounded follow-up'}});
     await assert.rejects(service.checkTool({sessionID:'child1',tool:'task'},{args:{subagent_type:'researcher'}}),/named agentID/);
     await assert.rejects(service.checkTool({sessionID:'child1',tool:'task'},{args:{subagent_type:'explore'}}),/named agentID/);
   }
-  assert.ok(f.sessions.get('child1').permission.some(r=>r.permission==='delegate'&&r.action==='deny'));
 });
 
 test('read-only user wording does not replace Build native shell permissions', async t => {
@@ -340,7 +342,7 @@ test('read-only user wording does not replace Build native shell permissions', a
 });
 
 test('subscription proposal starts nothing, rejects fabricated consent and honors native cancel', async t => {
-  const f=await fixture(t,{rawChoice:true});
+  const f=await fixture(t,{policyVersion:3,rawChoice:true});
   const proposal=await f.service.execute(args,f.ctx);
   assert.equal(proposal.status,'decision_required');
   assert.equal(f.requests.filter(r=>r.kind==='create'||r.req?.permission==='paid_delegate').length,0);
@@ -355,7 +357,7 @@ test('subscription proposal starts nothing, rejects fabricated consent and honor
 });
 
 test('recorded native recommendation resumes with or without decisionId and dispatches once', async t => {
-  const f=await fixture(t,{rawChoice:true});
+  const f=await fixture(t,{policyVersion:3,rawChoice:true});
   const p=await f.service.execute(args,f.ctx);
   f.messages.set('parent',[{info:{role:'assistant'},parts:[{type:'tool',tool:'question',callID:'native-choice',state:{status:'completed',time:{start:0},input:{questions:p.decision.questions},metadata:{answers:[['Recommended child']]}}}]}]);
   const resume={...args,decisionId:p.decision.id,selectionReason:'Harmless changed audit note'};
@@ -417,20 +419,21 @@ test('subscription permission precedes creation and rejection never dispatches o
   assert.deepEqual(g.requests.find(r => r.req?.permission === 'paid_delegate').req.patterns, ['opencode-go/model-b']);
 });
 
-test('review defaults to model diversity and no-route cannot imply completed review', async t => {
+test('independent review explicitly requests model diversity and no-route cannot imply success', async t => {
   const f = await fixture(t, { noRoute: true });
-  const result = await f.service.execute({ ...args, agentID:'engineer', workflowID:'review', freeOnly: true }, f.ctx);
+  const result = await f.service.execute({ ...args, agentID:'engineer', independentReview:true, freeOnly: true }, f.ctx);
   assert.equal(f.requests.find(r => r.kind === 'select').args.needsModelDiversity, true);
   assert.equal(result.validation, 'pending');
-  assert.equal(result.status, 'decision_required');
+  assert.equal(result.status, 'no_qualified_route');
   assert.equal(result.routing_diagnostics.free_only, true);
 });
 
-test('CLI bridge forwards hard free constraint and specialist review mode', async () => {
+test('CLI bridge forwards hard free and independent-review constraints with fixed Build mode', async () => {
   const { selectorArguments } = await import('../tools/runtime/bridge.mjs');
-  const flags = selectorArguments({ mode: 'review', freeOnly: true, reviewMode: 'specialist' }, 'select-model.ps1');
+  const flags = selectorArguments({ mode: 'build', freeOnly: true, needsModelDiversity: true }, 'select-model.ps1');
   assert.equal(flags[flags.indexOf('-FreeOnly') + 1], 'true');
-  assert.equal(flags[flags.indexOf('-ReviewMode') + 1], 'specialist');
+  assert.equal(flags[flags.indexOf('-WorkMode') + 1], 'build');
+  assert.equal(flags[flags.indexOf('-NeedsModelDiversity') + 1], 'true');
 });
 
 test('model parser keeps provider identity and nested model id', () => {
@@ -438,7 +441,7 @@ test('model parser keeps provider identity and nested model id', () => {
   assert.throws(() => splitModel('missing-provider'));
 });
 test('decision resume ignores advisory model fields but preserves bounded task constraints', () => {
-  const base = { agentID:'engineer',workflowID:'build', task:'Fix only src/a.ts', needsWrites:true, taskTypes:['bounded_feature'] };
+  const base = { agentID:'engineer', task:'Fix only src/a.ts', needsWrites:true, taskTypes:['bounded_feature'] };
   assert.equal(sameDecisionAssignment(
     { ...base, selectedModel:'opencode/a', selectionReason:'first rationale' },
     { ...base, selectedModel:'opencode/b' },
@@ -462,7 +465,7 @@ test('selected B is dispatched and independently observed, parent A unchanged', 
 });
 test('wrong-model adapter negative control fails and does not earn selected-model success', async t => {
   const f = await fixture(t, { wrongModel: true }); const result = await f.service.execute(args, f.ctx);
-  assert.equal(result.execution_status, 'failed'); assert.equal(result.attempts[0].failure, 'binding');
+  assert.equal(result.status, 'failed'); assert.equal(result.attempts[0].failure, 'binding');
   assert.equal(result.attempts[0].observed_model, 'opencode/free-parent'); assert.equal(f.requests.filter(r => r.kind === 'prompt').length, 1);
   assert.ok(f.requests.some(r => r.kind === 'abort'));
 });
@@ -470,8 +473,8 @@ test('SDK must echo preserved session permission rules before inference', async 
   const f = await fixture(t, { stripPermission: true }); const result = await f.service.execute(args, f.ctx);
   assert.notEqual(result.status, 'completed'); assert.equal(f.requests.filter(r => r.kind === 'prompt').length, 0);
 });
-test('task permission rejection prevents session creation', async t => {
-  const f = await fixture(t, { deny: true }); await assert.rejects(f.service.execute(args, f.ctx), /denied/);
+test('legacy task permission rejection prevents session creation', async t => {
+  const f = await fixture(t, { policyVersion:3, deny: true }); await assert.rejects(f.service.execute(args, f.ctx), /denied/);
   assert.equal(f.requests.filter(r => r.kind === 'create').length, 0);
 });
 test('configured depth respected before creation', async t => {
@@ -508,14 +511,14 @@ test('background delegation returns after dispatch while the worker is observed 
 });
 test('timeout aborts actual session, no automatic replacement writer', async t => {
   const f = await fixture(t, { hang: true }); const result = await f.service.execute(args, f.ctx);
-  assert.equal(result.execution_status, 'failed'); assert.equal(result.attempts[0].abort_verified, true);
+  assert.equal(result.status, 'failed'); assert.equal(result.attempts[0].abort_verified, true);
   assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
 });
 test('unverified abort retains evidence and never automatically replaces the writer', async t => {
   const f = await fixture(t, { hang: true, abortFails: true }); const result = await f.service.execute(args, f.ctx);
-  assert.equal(result.execution_status, 'stop_unverified');
+  assert.equal(result.status, 'stop_unverified');
   const names = await readdir(path.join(f.root, '.state', 'delegation')); assert.ok(!names.some(n => n.endsWith('.lock')));
-  assert.equal(JSON.parse(await readFile(path.join(f.root, '.state', 'delegation', `${result.task_id}.json`))).execution_status, 'stop_unverified');
+  assert.equal(JSON.parse(await readFile(path.join(f.root, '.state', 'delegation', `${result.task_id}.json`))).status, 'stop_unverified');
   assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
 });
 
@@ -541,10 +544,10 @@ test('independent writers in one worktree dispatch before either finishes', asyn
 });
 test('ambiguous prompt submission cannot release writer for an unsafe replacement', async t => {
   const f = await fixture(t, { submitTimeout: true }); const result = await f.service.execute(args, f.ctx);
-  assert.equal(result.execution_status, 'stop_unverified'); assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
+  assert.equal(result.status, 'stop_unverified'); assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
 });
-test('read-only role forces write restrictions even when caller asks for writes', async t => {
-  const f = await fixture(t); await f.service.execute({ ...args, agentID:'researcher', workflowID:'explore' }, f.ctx);
+test('explicit inspection constraint forces write restrictions', async t => {
+  const f = await fixture(t); await f.service.execute({ ...args, agentID:'researcher', needsWrites:false }, f.ctx);
   const p = f.sessions.get('child1').permission;
   assert.ok(!p.some(r => r.permission === 'bash' && r.action === 'deny'));
   await f.service.checkTool({ sessionID: 'child1', tool: 'bash' }, { args: { command: 'git diff --stat' } });
@@ -559,7 +562,7 @@ test('unapproved overage and weak selection never execute', async t => {
   const f = await fixture(t, { overage: true }); const r = await f.service.execute(args, f.ctx);
   assert.equal(r.status, 'overage_not_authorized'); assert.equal(f.requests.filter(x => x.kind === 'create').length, 0);
   const g = await fixture(t, { adequacy: 'weak' }); const q = await g.service.execute(args, g.ctx);
-  assert.equal(q.execution_status, 'no_qualified_route');
+  assert.equal(q.status, 'no_qualified_route');
 });
 test('all assistant tool continuations must retain selected binding', () => {
   const b = { providerID: 'go', modelID: 'b' };
@@ -614,7 +617,7 @@ test('paid parent to free child retains provider-qualified identity', async t =>
 });
 
 test('free provider failure returns to host instead of mechanically choosing the next model', async t => {
-  const f=await fixture(t,{failFirst:true,models:['opencode/a','opencode/b'],surface:'opencode-free'});
+  const f=await fixture(t,{policyVersion:3,failFirst:true,models:['opencode/a','opencode/b'],surface:'opencode-free'});
   const r=await f.service.execute({...args,needsWrites:false},f.ctx);
   assert.equal(r.status,'decision_required');assert.equal(r.attempts.length,1);
   assert.equal(r.attempts[0].failure,'provider');assert.equal(r.attempts[0].abort_verified,true);
@@ -624,33 +627,33 @@ test('free provider failure returns to host instead of mechanically choosing the
 test('free failure never silently falls through to a subscription route', async t => {
   const f=await fixture(t,{failFirst:true,models:['opencode/a','opencode-go/b'],surfaces:['opencode-free','opencode-go']});
   const r=await f.service.execute({...args,needsWrites:false},f.ctx);
-  assert.equal(r.execution_status,'failed');assert.equal(r.attempts.length,1);
+   assert.equal(r.status,'failed');assert.equal(r.attempts.length,1);
   assert.equal(f.requests.filter(r=>r.kind==='prompt').length,1);
 });
 
 test('subscription provider failure returns to parent without a retry', async t => {
   const f=await fixture(t,{failFirst:true});
   const r=await f.service.execute({...args,needsWrites:false},f.ctx);
-  assert.equal(r.execution_status,'failed');assert.equal(r.attempts.length,1);
+   assert.equal(r.status,'failed');assert.equal(r.attempts.length,1);
   assert.equal(f.requests.filter(r=>r.kind==='prompt').length,1);
 });
-test('independent review executes the selected different model as a read-only reviewer', async t => {
+test('explicit independent review executes a different model as a read-only reviewer', async t => {
   const f=await fixture(t,{models:['opencode-go/independent-reviewer']});
-  const r=await f.service.execute({...args,agentID:'engineer', workflowID:'review',needsWrites:false,needsModelDiversity:true,excludeModel:'opencode/free-parent'},f.ctx);
-  assert.equal(r.agent.id,'engineer');assert.equal(r.workflow.mode,'review');assert.equal(r.role,undefined);assert.equal(r.attempts[0].observed_model,'opencode-go/independent-reviewer');
+  const r=await f.service.execute({...args,agentID:'engineer', independentReview:true,needsWrites:false,needsModelDiversity:true,excludeModel:'opencode/free-parent'},f.ctx);
+  assert.equal(r.agent.id,'engineer');assert.equal(r.mode,'build');assert.equal(Object.hasOwn(r,'workflow'),false);assert.equal(r.attempts[0].observed_model,'opencode-go/independent-reviewer');
   assert.notEqual(r.parent_model,r.attempts[0].observed_model);
   await assert.rejects(f.service.checkTool({sessionID:'child1',tool:'edit'},{args:{}}),/Read-only/);
 });
 test('null route cannot create a child or become an empty model id', async t => {
   const f = await fixture(t, { noRoute: true });
   const r = await f.service.execute(args, f.ctx);
-  assert.equal(r.execution_status, 'no_qualified_route'); assert.equal(r.attempts.length, 0);
+  assert.equal(r.status, 'no_qualified_route'); assert.equal(r.attempts.length, 0);
   assert.equal(f.requests.filter(r => r.kind === 'create').length, 0);
 });
-test('worker cannot create another worker even if a permissive host approves task', async t => {
-  const f = await fixture(t);
+test('native subagent depth bounds nested delegation', async t => {
+  const f = await fixture(t, { depth: 1 });
   f.sessions.set('grandparent',{id:'grandparent'});f.sessions.get('parent').parentID='grandparent';
-  await assert.rejects(f.service.execute(args, f.ctx), /Nested/);
+  await assert.rejects(f.service.execute(args, f.ctx), /depth/i);
 });
 test('explicit no-write user assignment overrides a mistaken writer request', async t => {
   const f = await fixture(t);
@@ -677,12 +680,12 @@ test('read-only guard and binding survive controller restart through session met
   await assert.rejects(restarted.checkTool({sessionID:'child1',tool:'write'},{args:{}}),/Read-only/);
   await assert.rejects(restarted.checkModel({sessionID:'child1',model:{providerID:'wrong',id:'model'}}),/binding/);
 });
-test('nested researcher blocked even when host depth would permit it', async t => {
-  const f = await fixture(t, {depth:2});
+test('native subagent depth blocks an over-depth nested assignment', async t => {
+  const f = await fixture(t, {depth:1});
   f.sessions.set('grandparent',{id:'grandparent'}); f.sessions.get('parent').parentID='grandparent';
-  await assert.rejects(f.service.execute({...args,agentID:'researcher', workflowID:'explore',needsWrites:false},f.ctx),/Nested/);
+  await assert.rejects(f.service.execute({...args,agentID:'researcher',needsWrites:false},f.ctx),/depth/i);
   assert.equal(f.requests.filter(r=>r.kind==='create'||r.kind==='select').length,0);
   const limited=await fixture(t,{depth:1});
   limited.sessions.set('grandparent',{id:'grandparent'}); limited.sessions.get('parent').parentID='grandparent';
-  await assert.rejects(limited.service.execute({...args,agentID:'researcher', workflowID:'explore',needsWrites:false},limited.ctx),/depth/);
+  await assert.rejects(limited.service.execute({...args,agentID:'researcher',needsWrites:false},limited.ctx),/depth/);
 });

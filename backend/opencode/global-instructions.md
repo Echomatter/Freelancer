@@ -1,7 +1,7 @@
 # Freelancer execution
 
 The captured contract in server/execution.mjs defines common execution behavior.
-Agent, workflow and skill text provides guidance, never permission. No orientation helper or team topology is mandatory.
+Agent and skill text provides guidance, never permission. No orientation helper or team topology is mandatory.
 
 Use native project tools and the supplied catalog. Delegate only when useful;
 omitting model lets the runtime route in one call. Catalog discovery is optional.

@@ -11,7 +11,7 @@ test("scheduled dispatch reaches normal execution receipts and native prompt wit
   t.after(async () => { await schedules.close(); await f.close(); });
   const agreementBefore = await f.app.gitProjects.policy(f.project.id);
   const row = await schedules.create({ title: "Scheduled review", prompt: "Review the project and report findings.",
-    project: f.project.id, agent: "engineer", workflow: "review", model: "opencode/free",
+    project: f.project.id, agent: "engineer", model: "opencode/free",
     frequency: "daily", firstRunAt: new Date(now + 60000).toISOString(), enabled: true });
   now += 60000;
   await schedules.tick();
@@ -30,7 +30,8 @@ test("scheduled dispatch reaches normal execution receipts and native prompt wit
   const receipt = (await f.store.read("requests")).records[body.messageID];
   assert.equal(receipt.status, "accepted");
   assert.equal(receipt.agent.id, "engineer");
-  assert.equal(receipt.workflow.id, "review");
+  assert.equal(receipt.mode, "build");
+  assert.equal(Object.hasOwn(receipt, "workflow"), false);
   assert.deepEqual(await f.app.gitProjects.policy(f.project.id), agreementBefore);
 
   // A later due time cannot start another chat while this one awaits a native decision.

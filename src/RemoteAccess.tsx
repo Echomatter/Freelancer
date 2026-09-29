@@ -40,12 +40,12 @@ export function RemoteAccess({ onClose }: { onClose: () => void }) {
   ];
   const selectedTransport = transports.some(item => item.id === transport) ? transport : transports[0]?.id ?? 'lan';
   return <div className="remote-access">
-    <PageHeading title="Remote access" actions={<PageCloseButton onClick={onClose} />} />
+    <PageHeading title="Remote access" icon={Smartphone} help="remote-access" actions={<PageCloseButton onClick={onClose} />} />
     {error && <p className="notice error" role="alert">{error}</p>}
     {notice && <p className="notice" role="status">{notice}</p>}
     {!data && !error && <p role="status">Loading remote access…</p>}
     {data && draft && webDraft && <>
-      <Panel title="Private network" help="remote-access">
+      <Panel title="Private network">
         <form onSubmit={event => { event.preventDefault(); void run(async () => {
           apply(await api('remote-access', draft, 'PUT')); setPairing(null); setNotice(draft.enabled ? 'Remote access saved.' : 'Private-network access is off. Remembered devices are retained.');
         }); }}>

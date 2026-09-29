@@ -33,7 +33,7 @@ function baseline(root) {
         const receipt = requests.records[row.parentMessageID];
         s.records[row.id] = { ...s.records[row.id], ...row,
           agentID: receipt.agent.id, agentName: receipt.agent.name,
-          workflowID: receipt.workflow.id, requestID: receipt.id };
+          requestID: receipt.id };
       }
       return s;
     });
@@ -45,7 +45,7 @@ try {
   const snapshot = 'captured '.repeat(35000);
   const requests = { version: 1, records: Object.fromEntries(Array.from({ length: 100 }, (_, i) => [`req${i}`, {
     id: `req${i}`, sessionID: 'session', status: 'accepted',
-    agent: { id: 'engineer', name: 'Engineer' }, workflow: { id: 'build' },
+    agent: { id: 'engineer', name: 'Engineer' }, mode: 'build',
     catalogModels: [{ id: 'provider/model', description: snapshot }],
   }])) };
   const serialized = JSON.stringify(requests, null, 2);

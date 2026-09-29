@@ -4,6 +4,16 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { createBridge, selectorArguments } from '../backend/tools/runtime/bridge.mjs';
 
+test('legacy captured modes map to task evidence while selector execution remains Build', () => {
+  for (const [mode, task] of [['plan', 'architecture'], ['explore', 'research'], ['review', 'code_review'], ['build', 'bounded_feature']]) {
+    const cli = selectorArguments({ mode }, 'select-model.ps1');
+    assert.equal(cli[cli.indexOf('-WorkMode') + 1], 'build');
+    assert.equal(cli[cli.indexOf('-TaskType') + 1], task);
+  }
+  const cli = selectorArguments({ mode: 'review', taskTypes: ['debugging'] }, 'select-model.ps1');
+  assert.equal(cli[cli.indexOf('-TaskType') + 1], 'debugging');
+});
+
 test('selector retains authoritative inputs when legacy role state is removed', () => {
   const source = readFileSync(new URL('../backend/scripts/select-model.ps1', import.meta.url), 'utf8');
   for (const [variable, input] of [['policy', 'policyPath'], ['roster', 'rosterPath'], ['ev', 'evidencePath']]) {
@@ -13,7 +23,7 @@ test('selector retains authoritative inputs when legacy role state is removed', 
 });
 
 test('captured native models reach the selector, including a paid route absent from the researched roster', async t => {
-  const args = { mode: 'review', taskTypes: ['code_review'], selectedModel: 'openai/gpt-6-luna',
+  const args = { mode: 'build', taskTypes: ['code_review'], selectedModel: 'openai/gpt-6-luna',
     runtimeModels: ['openai/gpt-6-luna'], hostAssessment: true };
   const cli = selectorArguments(args, 'select-model.ps1');
   assert.deepEqual(cli.slice(cli.indexOf('-RuntimeModels'), cli.indexOf('-RuntimeModels') + 2), ['-RuntimeModels', 'openai/gpt-6-luna']);
@@ -24,9 +34,9 @@ test('captured native models reach the selector, including a paid route absent f
   assert.equal(result.selected_model, 'openai/gpt-6-luna');
   assert.equal(result.surface, 'openai-oauth');
   assert.equal(result.adequacy, 'host_assessment_required');
-  assert.match(result.reason_codes.join(' '), /incomplete capability evidence/);
+  assert.match(result.reason_codes.join(' '), /explicitly selected alternative/);
   const paidOnly = await createBridge(fileURLToPath(new URL('../backend/', import.meta.url))).select({
-    mode: 'review', taskTypes: ['code_review'], runtimeModels: ['openai/gpt-6-luna', 'opencode/muse-spark-1.3-contributor-free'],
+    mode: 'build', taskTypes: ['code_review'], runtimeModels: ['openai/gpt-6-luna', 'opencode/muse-spark-1.3-contributor-free'],
     hostAssessment: true, costPreference: 'paid-only',
   }, {});
   assert.equal(paidOnly.selected_model, 'openai/gpt-6-luna');

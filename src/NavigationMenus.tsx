@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, ChevronDown, Download, FolderKanban, FolderPlus, Pin, Plus, MessageSquareText, Settings, WandSparkles } from "lucide-react";
+import { Archive, Check, ChevronDown, Download, FolderKanban, FolderPlus, Pin, Plus, MessageSquareText, Settings, WandSparkles } from "lucide-react";
 import { SessionActivity } from "./SessionActivity";
 import "./navigation-menus.css";
 
@@ -40,12 +40,13 @@ export function ProjectNavigation({ projects, selected, disabled, onSelect, onAd
   </section>;
 }
 
-export function ChatNavigation({ sessions, selected, disabled, creating, onNew, onSelect, onContinue, onArchive, onPin, onExport }: {
+export function ChatNavigation({ sessions, selected, disabled, creating, onNew, onSelect, onContinue, onArchive, onPin, onExport, onRename }: {
   sessions: any[]; selected: string; disabled?: boolean; creating?: boolean;
   onNew: () => void; onSelect: (session: any) => void; onContinue: (session: any) => void;
   onArchive: (session: any) => void; onPin: (session: any) => void; onExport: (session: any) => void;
+  onRename: (session: any, title: string) => void;
 }) {
-  const [expanded, setExpanded] = useState(false), [menu, setMenu] = useState("");
+  const [expanded, setExpanded] = useState(false), [menu, setMenu] = useState(""), [renameTitle, setRenameTitle] = useState("");
   useCompactCollapse(setExpanded, setMenu);
   const root = useRef<HTMLElement>(null);
   useEffect(() => {
@@ -75,8 +76,12 @@ export function ChatNavigation({ sessions, selected, disabled, creating, onNew, 
             {session.organization?.pinnedAt && <Pin className="nav-chat-pinned" size={13} aria-label="Pinned" />}
           </button>
           <button type="button" className="nav-chat-manage-trigger" aria-label={`Manage ${session.title || "New chat"}`} title={`Manage ${session.title || "New chat"}`} aria-expanded={menu === session.id} disabled={disabled}
-            onClick={() => setMenu((value) => value === session.id ? "" : session.id)}><Settings size={15} aria-hidden="true" /></button>
+           onClick={() => { setRenameTitle(session.title ?? ""); setMenu((value) => value === session.id ? "" : session.id); }}><Settings size={15} aria-hidden="true" /></button>
           {menu === session.id && <div className="nav-chat-menu" role="group" aria-label={`Manage ${session.title || "New chat"}`}>
+            {!session.imported && <form className="nav-chat-rename" onSubmit={(event) => { event.preventDefault(); setMenu(""); onRename(session, renameTitle); }}>
+              <label><span>Chat name</span><input aria-label="Chat name" value={renameTitle} maxLength={160} onChange={(event) => setRenameTitle(event.target.value)} /></label>
+              <button type="submit" disabled={disabled || !renameTitle.trim() || renameTitle.trim() === session.title}><Check size={14} />Rename</button>
+            </form>}
             <button type="button" disabled={disabled} onClick={() => { setMenu(""); onContinue(session); }}><WandSparkles size={14} />Continue in new chat</button>
             <button type="button" disabled={disabled || !!session.organization?.archived} onClick={() => { setMenu(""); onArchive(session); }}><Archive size={14} />Archive</button>
             <button type="button" disabled={disabled} aria-pressed={!!session.organization?.pinnedAt} onClick={() => { setMenu(""); onPin(session); }}><Pin size={14} />{session.organization?.pinnedAt ? "Unpin" : "Pin"}</button>

@@ -18,8 +18,9 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
     assert.equal(left.width, right.width); assert.equal(left.height, right.height);
     assert.ok(left.width >= 44);
     await options.click();
-    for (const name of ['Workflow', 'Agent', 'Parent model', 'Intelligence'])
+    for (const name of ['Agent', 'Parent model', 'Intelligence'])
       await expect(menu.getByRole('combobox', { name, exact: true })).toBeVisible();
+    await expect(menu.getByRole('combobox', { name: 'Workflow', exact: true })).toHaveCount(0);
     await expect(menu.getByRole('button', { name: /Attach files/ })).toBeFocused();
     await menu.getByRole('combobox', { name: 'Intelligence', exact: true }).selectOption('high');
     await page.keyboard.press('Escape');

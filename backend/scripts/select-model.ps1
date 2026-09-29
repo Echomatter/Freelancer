@@ -22,7 +22,7 @@ param(
     [string]$CurrentModel = '',
     [string]$ExcludeModel = '',
     [string]$LaneHint = '',
-    [ValidateSet('', 'build', 'plan', 'explore', 'review')][string]$WorkMode = '',
+    [ValidateSet('build')][string]$WorkMode = 'build',
     [string]$PreferredCostClass = '',
     [ValidateSet('', 'free-only', 'prefer-free', 'balanced', 'any', 'paid-only')][string]$CostPreference = '',
     $FreeOnly = $false,
@@ -249,17 +249,6 @@ if ($bNeedsDeep) { Add-W 'long_horizon_engineering' 2.0; Add-W 'deep_reasoning' 
 if ($bNeedsWeb) { Add-W 'research' 1.0; Add-W 'tool_use' 1.0 }
 if ($bHighConseq) { Add-W 'debugging' 1.0; Add-W 'architecture' 1.0 }
 if ($NeedsLargeContextTokens -gt 0) { Add-W 'long_context' 0.5 }
-# Assignment mode influences weights without replacing task types.
-# Task/workflow semantics drive qualification; agent names never select a model.
-# Review adds verification weights; Explore adds light retrieval weights.
-if ($modeNorm -eq 'review') {
-    if (($tasks -notcontains 'code_review') -and ($tasks -notcontains 'independent_verification')) {
-        Add-W 'code_review' 3.0; Add-W 'coding' 0.5
-    }
-} elseif ($modeNorm -eq 'explore') {
-    if ($tasks -notcontains 'repo_orientation') { Add-W 'research' 1.0; Add-W 'repo_understanding' 1.0 }
-}
-
 # Trivial-task detection: inexpensive default must win without research.
 $nonTrivialTypes = @('architecture','large_refactor','debugging','terminal_heavy','ml','dsp','firmware','reverse_engineering','code_review','independent_verification','long_context_reading')
 $isTrivial = $true
@@ -274,11 +263,9 @@ if ($bNeedsDeep -or $bNeedsTerminal -or ($NeedsLargeContextTokens -gt 0) -or $bH
 }
 $isConsequential = ($bNeedsDeep -or $bHighConseq -or ($NeedsLargeContextTokens -ge 200000) -or ($tasks -contains 'architecture') -or ($tasks -contains 'large_refactor') -or (($tasks -contains 'debugging') -and ($tasks -contains 'terminal_heavy')))
 
-# A bounded second opinion requires coding evidence, not an unpopulated review
-# benchmark field. Keep specialist and consequential review requirements strict.
-# This is a task qualification policy, never invented code_review evidence.
+# Review task evidence is independent of the fixed execution mode and model diversity.
 $reviewBasis = $null
-if ($modeNorm -eq 'review') {
+if ($tasks -contains 'code_review' -or $tasks -contains 'independent_verification') {
     $reviewBasis = 'specialist_review_evidence'
     if ($ReviewMode -eq 'bounded' -and -not $isConsequential) {
         $weights.Remove('code_review')
@@ -688,9 +675,8 @@ foreach ($rm in $routeModels) {
     $histAvgAttempts = $null
     if ($historyEntries.Count -gt 0) {
         $rel = @($historyEntries | Where-Object { $_.model -eq $rid -and $_.synthetic -ne $true -and $_.observation_kind -ne 'operational' -and $_.failure_kind -notin @('quota','provider','binding','auth','timeout') })
-        # Related retries/children are one user-task observation per agent/workflow/model,
-        # not multiple fabricated first-pass successes. Old rows retain TaskId.
-        $rel = @($rel | Group-Object { if ($_.user_task_id) { if ($_.agent_id) { "$($_.user_task_id)/$($_.agent_id)/$($_.workflow_id)" } else { "$($_.user_task_id)/$($_.role)" } } else { $_.task_id } } | ForEach-Object { $_.Group | Sort-Object timestamp -Descending | Select-Object -First 1 })
+        # Related retries/children count once per user-task, agent and task type.
+        $rel = @($rel | Group-Object { if ($_.user_task_id) { if ($_.agent_id) { "$($_.user_task_id)/$($_.agent_id)/$($_.task_type -join ',')" } else { "$($_.user_task_id)/$($_.role)" } } else { $_.task_id } } | ForEach-Object { $_.Group | Sort-Object timestamp -Descending | Select-Object -First 1 })
         # Prefer task-overlapping history when enough samples exist.
         $overlap = @($rel | Where-Object {
             $hit = $false
@@ -940,7 +926,7 @@ if ($SelectedModel) {
 # Build, not by silently changing the required assignment or inventing a reviewer.
 $fallback = $null
 if ($ranked.Count -gt 1) { $fallback = @($ranked | Where-Object { $_.id -ne $top.id })[0] }
-$isReviewTask = ($modeNorm -eq 'review' -or $tasks -contains 'code_review' -or $tasks -contains 'independent_verification')
+$isReviewTask = ($bNeedsDiversity -or $tasks -contains 'code_review' -or $tasks -contains 'independent_verification')
 $execSurface = Get-ExecutionSurface $top.id 'implementation'
 $phases = @([ordered]@{ phase=1; name=$modeNorm; surface=$execSurface; model=$top.id })
 $diagnosisModel = $null

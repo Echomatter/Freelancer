@@ -123,7 +123,10 @@ export async function startServer({ application: app, assets, port = 0, readActi
           if (route === '/api/remote-access/devices' && req.method === 'DELETE') return send(200, await remote.revoke(body.id));
           return send(404, { error: 'Action not found' });
         }
-        const project = url.searchParams.get("project") ?? body.project;
+        const queryProject = url.searchParams.get("project");
+        if (queryProject && body.project && queryProject !== body.project)
+          return send(400, { error: "Project does not match request body" });
+        const project = queryProject ?? body.project;
         if (route === "/api/git/agent") {
           if (!agentBridge || req.method !== "POST") return send(403, { error: "Native Git tool only" });
           return send(200, await app.gitAgentAction(body));
@@ -310,14 +313,10 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(200, await app.authMethods());
         if (req.method === "POST" && route === "/api/auth")
           return send(200, await app.auth(body.provider, body.action, body));
-        if (req.method === "PUT" && route === "/api/workflows")
-          return send(200, await app.saveWorkflow(body));
         if (req.method === "PUT" && route === "/api/agents")
           return send(200, await app.saveAgent(body));
         if (req.method === "DELETE" && route === "/api/agents")
           return send(200, await app.removeAgent(body.id));
-        if (req.method === "DELETE" && route === "/api/workflows")
-          return send(200, await app.removeWorkflow(body.id));
         if (req.method === "GET" && route === "/api/events") {
           const abort = new AbortController();
           res.on("close", () => abort.abort());

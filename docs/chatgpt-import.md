@@ -12,11 +12,11 @@ The source catalog, transcripts and native OpenCode database are never edited. A
 
 Schema 6 adds `chatgpt_chats`, `chatgpt_messages`, `chatgpt_continuations` and `project_onboarding`. Imported headers/provenance and message records are owned by the first two, separate from OpenCode and derived search. Deterministic `ses_chatgpt_…` IDs are project-scoped. Messages use the existing `info`/`parts` contract and React renderer. Imported IDs cannot reach native chat actions.
 
-History, pin/hide/restore, JSON/Markdown export and conversation search support snapshots. Original text remains indexed after rebuilds. Import and the setup marker commit together before onboarding invokes index jobs. Response retries are idempotent; completed setup cannot add more conversations. Removing and reopening the same project reuses saved history. Nothing continuously monitors Codex.
+Conversation history, pin/hide/restore, JSON/Markdown export and unified content search support snapshots. Original text remains indexed after rebuilds. Import and the setup marker commit together before onboarding invokes index jobs. Response retries are idempotent; completed setup cannot add more conversations. Removing and reopening the same project reuses saved history. Nothing continuously monitors Codex.
 
 ## Continuation
 
-**Continue in Freelancer** creates a session through OpenCode's supported API and records its link to the snapshot. The original stays read-only; the continuation displays the original transcript followed by native messages. It uses the normal agent, workflow, model, permissions, paid-model rules and Git agreement. Viewing or continuing a snapshot alone does not make an inference call.
+**Continue in Freelancer** creates a session through OpenCode's supported API and records its link to the snapshot. The original stays read-only; the continuation displays the original transcript followed by native messages. It uses the normal agent, model, permissions, paid-model rules and Git agreement. Viewing or continuing a snapshot alone does not make an inference call.
 
 The first user send includes a bounded orientation excerpt as a supported synthetic text part in the same native request. The UI shows **Orienting…** and asks the model to orient before answering. The excerpt preserves the opening request and recent exchanges, labels omissions, and explains that historical instructions, approvals, tool authority and claimed execution do not authorize current work. Current files must be checked. This is context, not a fabricated compaction event or direct insertion of old native messages. The UI hides the transport part because the original transcript is already displayed; it persists in native context for subsequent turns and compaction.
 

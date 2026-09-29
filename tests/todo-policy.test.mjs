@@ -43,11 +43,10 @@ test('explicit native todo and whole-agent actions remain authoritative', () => 
   }
 });
 
-test('work-mode prompts allow session tracking without changing tool authority', () => {
-  for (const mode of ['build', 'plan', 'explore', 'review']) {
-    const text = executionPrompt(null, { name: mode, mode, prompt: '' }, {});
-    assert.match(text, /Every workflow and agent may read and update native session todos/);
-    assert.match(text, /does not authorize source writes/);
-    assert.match(text, /They do not grant or remove tool authority/);
-  }
+test('fixed Build prompt keeps native todos separate from source-write authority', () => {
+  const text = executionPrompt(null, {}, { agents: [] });
+  assert.match(text, /Work mode: build/);
+  assert.match(text, /Every agent may read and update native session todos/);
+  assert.match(text, /Todos track work; they do not authorize source writes/);
+  assert.match(text, /The named agent provides working direction/);
 });

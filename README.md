@@ -53,6 +53,8 @@ The rail at the right edge of a chat combines turn navigation and scrolling besi
 
 The rail color follows the selected palette and deepens with the latest reported model context usage. It does not estimate unsent text. **Project settings → Session defaults → Context window** controls OpenCode's native automatic compaction for that project's chats. The previous manual compact action is no longer in the chat menu.
 
+The question-mark button below the context percentage explains the dots, scroll handle and context indicator. Open it with hover, keyboard focus or a tap; Escape closes it without changing your selected turn or draft.
+
 ### Agents and specialist workers
 
 Named agents are reusable starting points for a request; they are not hidden permission systems.
@@ -155,6 +157,8 @@ GitHub is optional. A project can use Freelancer without being connected to GitH
 
 Managed Git operations protect unrelated staged work, reject unsupported/conflicted selections, check common credential/private-file patterns, avoid force push, verify remote state, and record uncertain operations rather than replaying them blindly. Checkpoint means local history; connection means an account/repository relationship; neither means upload.
 
+The GitHub panel keeps its heading and close control available while loading. A failed refresh preserves the last loaded status and unsaved form values, marks that status as stale, and requires a successful refresh before another Git action. Closing the panel or a read reaching its deadline does not stop native work or replay an action.
+
 **Application settings → Git defaults** controls the starting Git agreement for newly configured projects. Each project can still have its own agreement. If you explicitly request an operation outside that agreement, Freelancer can show an operation-specific preview and ask for native confirmation. Confirming a one-time request does not change the saved agreement.
 
 See [Git and GitHub projects](docs/github-projects.md) for safeguards and boundaries.
@@ -175,7 +179,7 @@ Freelancer deliberately separates project-specific choices from application-wide
 |  | **Search all content** | Indexed files and conversations across registered projects |
 |  | **Available Usage** | Remaining provider/model availability and usage observations |
 |  | **Providers** | Authentication, plan type, optional subscription cost, currency and provider colors |
-|  | **Appearance** | 120 application palettes and depleted-model visibility |
+|  | **Appearance** | 300 built-in palettes, custom themes and depleted-model visibility |
 |  | **Content & Storage** | Data locations, backup guidance, project archive/restore, index refresh and SQLite maintenance |
 |  | **Remote access** | Remembered-device access on a private network or through an optional HTTPS tunnel |
 |  | **Git defaults** | Default managed-Git agreement for projects |
@@ -272,11 +276,12 @@ Save while this project's chats and pending decisions are idle so OpenCode can r
 
 Each card gathers its help into one small question-mark bubble at the lower
 right. Related field topics share a topic selector. Page help sits in the lower-right
-corner; headings and the conversation rail stay clear. Bubbles show these
-excerpts on hover, keyboard focus, or tap. Press Escape or tap elsewhere to close
-one. The application reads the marked sections from this README at build time;
-edit the documentation here to update the in-app guidance. Page titles and menus
-stay concise. Errors, progress and action confirmations remain visible.
+corner; headings stay clear, and the conversation rail has help below its context
+percentage. Bubbles show these excerpts on hover, keyboard focus, or tap. Press
+Escape or tap elsewhere to close one. The application reads the marked sections
+from this README at build time; edit the documentation here to update the in-app
+guidance. Page titles and menus stay concise. Errors, progress and action
+confirmations remain visible.
 
 <!-- help:schedules -->
 ### Scheduled prompts

@@ -237,6 +237,30 @@ test("same part id updated from running to completed reflects the latest", () =>
   assert.equal(summary.done, 1);
 });
 
+test("same-turn worker continuation collapses before completion metadata arrives", () => {
+  const first = { id: "first", callID: "call-1", type: "tool", tool: "delegate", state: {
+    status: "completed", input: { agent: "researcher", task: "Inspect this." },
+    metadata: { sessionId: "child-1", agentName: "Researcher", selected_model: "opencode/free", freelancer_status: "completed" },
+  } };
+  const followup = { id: "followup", callID: "call-2", type: "tool", tool: "delegate", state: {
+    status: "running", input: { worker: "child-1", task: "Check the remaining edge case." }, metadata: {},
+  } };
+  const messages = [{ info: { id: "a1", role: "assistant" }, parts: [first, followup] }];
+  assert.deepEqual(latestToolParts(messages).map(part => part.id), ["followup"]);
+  const summary = summarizeRequestWork(messages);
+  assert.equal(summary.workerCount, 1);
+  assert.equal(summary.workers.running, 1);
+});
+
+test("public agent argument remains visible in worker summaries before metadata arrives", () => {
+  const delegated = { id: "delegate", callID: "call-1", type: "tool", tool: "delegate", state: {
+    status: "running", input: { agent: "researcher", task: "Inspect this." }, metadata: {},
+  } };
+  const summary = summarizeRequestWork([{ info: { id: "a1", role: "assistant" }, parts: [delegated] }]);
+  assert.equal(summary.workerCount, 1);
+  assert.equal(summary.workers.total, 1);
+});
+
 test("delegate callbacks for one child render as one current worker with its recorded model", () => {
   const first = { id: "first", callID: "call-1", type: "tool", tool: "delegate", state: {
     status: "completed", input: { agentID: "researcher" },

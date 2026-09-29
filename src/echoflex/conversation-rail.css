@@ -7,6 +7,9 @@
 .conversation-rail-line { position: absolute; inset: -12px auto -16px 16px; width: 2px; border-radius: 3px; background: var(--rail-ink); opacity: .65; pointer-events: none; transition: background-color .6s ease; }
 .conversation-rail-turns { position: absolute; inset: 0; pointer-events: none; }
 .conversation-rail-turn { position: absolute; left: 9px; width: 16px; height: var(--turn-target); min-height: 0; transform: translateY(-50%); border: 0; padding: 0; display: grid; place-items: center; border-radius: 10px; color: inherit; background: none; cursor: pointer; pointer-events: auto; z-index: 3; }
+/* The general button press transform must not replace this centered anchor and
+   move the hit target out from under the pointer between down and up. */
+.conversation-rail-turn:active:not(:disabled) { transform: translateY(-50%); }
 .conversation-rail-turn > span { display: block; width: var(--turn-size); height: var(--turn-size); box-sizing: border-box; border: 1.5px solid var(--accent); border-radius: 50%; background: var(--bg); transition: transform .14s ease, background-color .4s ease; }
 .conversation-rail-turn[aria-current] > span { background: var(--rail-ink); box-shadow: 0 0 0 3px var(--tint); }
 .conversation-rail-turn:hover > span, .conversation-rail-turn:focus-visible > span { transform: scale(1.45); background: var(--accent); }

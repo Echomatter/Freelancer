@@ -49,8 +49,8 @@ test('progress-jobs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =>
     await page.reload();
     await page.getByRole('button', { name: 'Application settings', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Application settings', exact: true }).click();
-    await page.getByRole('button', { name: 'Content index', exact: true }).click();
-    await page.getByRole('heading', { name: 'Content index', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Content & Storage', exact: true }).click();
+    await page.getByRole('heading', { name: 'Content & Storage', exact: true }).waitFor();
     assert.equal(builds, 1, 'first-open indexes are reused on reload');
     files = gate();
     await page.getByRole('button', { name: 'Refresh File Index', exact: true }).click();
@@ -67,7 +67,7 @@ test('progress-jobs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =>
     assert.equal(await status.getAttribute('data-state'), 'success');
     await status.getByRole('button', { name: 'Dismiss index status' }).click();
     await status.waitFor({ state: 'hidden' });
-    await page.getByRole('button', { name: 'Content index', exact: true }).click();
+    await page.getByRole('button', { name: 'Content & Storage', exact: true }).click();
     await page.getByRole('button', { name: 'Check', exact: true }).click();
     await status.getByText('SQLite quick check passed.', { exact: true }).waitFor();
     await status.getByRole('button', { name: 'Dismiss index status' }).click();

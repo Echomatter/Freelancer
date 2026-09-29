@@ -108,23 +108,30 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       await page.getByLabel("Name on checkpoints").inputValue(),
       "Browser Tester",
     );
-    let oldReadReady = false, initialized = false, oldResponse;
+    let oldReadReady = false, initialized = false, oldRequest, oldCancelled;
     if (!offline) {
-      // Hold a real background read across setup, then deliver its stale failure.
-      // A successful mutation must invalidate it, not show a false repair warning.
+      // Hold a real background read across setup. Starting the mutation cancels
+      // that obsolete browser read; a response from it must not be required.
       const readGate = new Promise(resolve => { releaseInspection = resolve; });
       const initGate = new Promise(resolve => { releaseInitialize = resolve; });
       let holdRead = true;
       await page.route('**/api/git?**', async route => {
         if (!holdRead) return route.continue();
         holdRead = false;
+        oldRequest = route.request();
         const response = await route.fetch();
         oldReadReady = true;
         await readGate;
-        await route.fulfill({ response, json: { ...await response.json(), issue: 'Outdated inspection must not replace setup' } });
+        try {
+          await route.fulfill({ response, json: { ...await response.json(), issue: 'Outdated inspection must not replace setup' } });
+        } catch (error) {
+          // The deliberately cancelled client may no longer accept fulfillment.
+          // Do not swallow a failure on any still-live request.
+          if (!oldRequest.failure()) throw error;
+        }
       });
       await expect.poll(() => oldReadReady, { message: 'Capture a background Git inspection' }).toBe(true);
-      oldResponse = page.waitForResponse(response => response.url().includes('/api/git?'));
+      oldCancelled = page.waitForEvent('requestfailed', request => request === oldRequest);
       await page.route('**/api/git/initialize', async route => {
         const response = await route.fetch();
         initialized = true;
@@ -138,8 +145,9 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     if (!offline) {
       await expect.poll(() => initialized, { message: 'Real Git initialization completes' }).toBe(true);
+      const cancelled = await oldCancelled;
+      assert.match(cancelled.failure().errorText, /abort|cancel/i, 'the obsolete inspection is cancelled, not the mutation');
       releaseInspection();
-      await (await oldResponse).finished();
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       await expect(page.getByText('Outdated inspection must not replace setup')).toHaveCount(0);
       releaseInitialize();

@@ -31,7 +31,10 @@ test('long chat stays responsive while another chat streams', { tag: ['@app', '@
   await expect(page.locator('.request-group')).toHaveCount(250);
   const input = page.getByRole('textbox', { name: 'Message', exact: true });
   await expect(input).toBeEnabled();
-  await expect(page.locator('.conversation-rail .help-hint')).toHaveCount(0);
+  // One closed guide outside the track, never a help component per turn.
+  await expect(page.locator('.conversation-rail .help-hint')).toHaveCount(1);
+  await expect(page.locator('.conversation-rail-track .help-hint')).toHaveCount(0);
+  await expect(page.locator('.help-hint-popover')).toHaveCount(0);
   const cdp = await page.context().newCDPSession(page);
   await cdp.send('Performance.enable');
   const metrics = async () => {

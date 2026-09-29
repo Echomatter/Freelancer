@@ -35,7 +35,7 @@ Freelancer keeps project work and the activity behind it in one local applicatio
 
 Each project is a folder you choose. Its chats stay grouped with that project, and Freelancer remembers the working context around them.
 
-- **Persistent project navigation** keeps projects, chats and recent work accessible without turning every task into a new setup flow.
+- **Persistent project navigation** keeps projects, chats and recent work accessible. Use the top-bar navigation control to collapse it on desktop or hide it on a phone; swipe right from the phone screen’s left edge to restore it. Project indexing can continue in the background while you enter the workspace.
 - **Attachments and saved drafts** let you prepare a request before sending it. Draft revisions are saved locally and protected against stale-window overwrites and lost acknowledgements.
 - **Immediate send feedback** shows a submitted request while chat creation or native dispatch is still completing, without pretending that transport acceptance means the work has finished.
 - **Queued follow-ups** can wait for a safe boundary instead of colliding with active work.
@@ -49,7 +49,7 @@ Closing the browser window does not stop the local server or work already runnin
 
 ### Turn navigation and context
 
-The rail at the right edge of a chat combines turn navigation, scrolling and the Details divider. Select a turn bubble to jump to its messages and show that turn's tool activity in the floating dock. Hover or focus a bubble for the recorded prompt, status, model and usage details. Drag the pulsing handle to scroll; drag empty rail space sideways to resize Details.
+The rail at the right edge of a chat combines turn navigation and scrolling beside the Details divider. Select a turn bubble to jump to its messages and show that turn's tool activity in the floating dock. Hover or focus a bubble for the recorded prompt, status, model and usage details. Drag the pulsing handle to scroll; drag the separate panel divider sideways to resize Details.
 
 The rail color follows the selected palette and deepens with the latest reported model context usage. It does not estimate unsent text. **Project settings → Session defaults → Context window** controls OpenCode's native automatic compaction for that project's chats. The previous manual compact action is no longer in the chat menu.
 
@@ -100,7 +100,7 @@ The workspace model picker can optionally hide depleted models. That preference 
 
 Appearance is a first-class part of the application rather than a light/dark toggle.
 
-Freelancer currently ships with **120 named palettes: 60 light and 60 dark**. Palettes use shared semantic tokens so the workspace, navigation, panels, controls and text change together instead of accumulating one-off colors. The catalog includes perceptual-separation checks in addition to contrast and CSS contract tests.
+Freelancer currently ships with **300 named palettes: 150 light and 150 dark**. Palettes use shared semantic tokens so the workspace, navigation, panels, controls and text change together instead of accumulating one-off colors. The catalog includes perceptual-separation checks in addition to contrast and CSS contract tests.
 
 Under **Application settings → Appearance** you can:
 
@@ -138,7 +138,7 @@ It supports:
 
 New-project setup can optionally perform a **one-time ChatGPT / Codex import** before indexing. Imported snapshots remain separate from OpenCode's native database, use the shared transcript view, and can orient a new native conversation without modifying the source history.
 
-The same **Content & Storage** page shows where Freelancer and OpenCode data live, provides backup guidance, and exposes project organization such as **Put project away** / **Restore project**. Putting a project away hides it from active navigation; it does not delete the folder or rewrite its Git history.
+The same **Content & Storage** page shows where Freelancer and OpenCode data live, provides backup guidance, and exposes project organization such as **Put project away** / **Restore project**. Putting a project away refreshes its search indexes, then hides it from active navigation; it does not delete the folder or rewrite its Git history. Global index refreshes skip put-away projects until you restore them.
 
 Freelancer's organization/search database is normally stored in `%LOCALAPPDATA%\Freelancer\freelancer.sqlite`. Project files stay in their original folders. OpenCode continues to own its native conversations and provider sign-ins. See [Local data, history and archives](docs/local-data.md) for the exact ownership and backup model.
 
@@ -257,7 +257,7 @@ The full suite is `npm.cmd test`; after a build, `npm.cmd run test:browser` exer
 
 Each dot is a turn. Select one to jump to its messages and open its tools in the floating dock. Hover or focus a dot for recorded turn statistics. Arrow keys move between dots; Enter selects one. Regular transcript scrolling keeps your chosen tools in view.
 
-Drag the pulsing ring to scroll. Its outer edge stays grabbable when it crosses a turn dot. With Details open, drag empty rail space left or right to resize it; double-click resets its width. Escape cancels a drag. The scroll handle also supports arrow keys, Page Up, Page Down, Home and End.
+Drag the pulsing ring to scroll. Its outer edge stays grabbable when it crosses a turn dot. With Details open, drag the separate divider at the panel edge left or right to resize it; double-click resets its width. Escape cancels a drag. The scroll handle also supports arrow keys, Page Up, Page Down, Home and End.
 
 The rail becomes more saturated as the last reported model call fills its context window. The percentage includes cached input and output; it is not a live estimate of unsent text or a sum of the whole chat. A dash means usage or the model limit is unavailable. Automatic compaction is in Project settings, Session defaults, Context window.
 <!-- /help -->
@@ -270,7 +270,9 @@ OpenCode can automatically summarize older context when the model's window fills
 Save while this project's chats and pending decisions are idle so OpenCode can refresh the setting without interrupting work. The preference is kept in Freelancer's local settings and restored after a server restart. Other native compaction options are preserved.
 <!-- /help -->
 
-The small question-mark buttons beside controls and section labels show these
+Each card gathers its help into one small question-mark bubble at the lower
+right. Related field topics share a topic selector. Page help sits in the lower-right
+corner; headings and the conversation rail stay clear. Bubbles show these
 excerpts on hover, keyboard focus, or tap. Press Escape or tap elsewhere to close
 one. The application reads the marked sections from this README at build time;
 edit the documentation here to update the in-app guidance. Page titles and menus
@@ -321,7 +323,7 @@ Search project content looks for your words in indexed files and conversations f
 <!-- help:index-coverage -->
 ### Index coverage
 
-File refresh covers readable source, document, data and configuration files throughout every registered project root, including archived projects. Conversation refresh covers native chats and workers, including archived sessions. Search both through Search project content or Search all content. Project folders and OpenCode conversations remain the originals.
+File refresh covers readable source, document, data and configuration files throughout active registered project roots. Putting a project away refreshes its indexes first; global refreshes then skip it until restored. Conversation refresh covers native chats and workers, including archived sessions. Search both through Search project content or Search all content. Project folders and OpenCode conversations remain the originals.
 <!-- /help -->
 
 <!-- help:index-maintenance -->
@@ -451,9 +453,9 @@ This working style is the starting agreement for newly configured projects. Exis
 <!-- /help -->
 
 <!-- help:git-history -->
-### Local project history
+### Local history
 
-Checkpoints save Git history on this computer. Turning on tracking can adopt existing history or initialize the selected folder. Stopping tracking automation keeps existing history and files. Checkpoints are uploaded only through a separate sync action.
+Checkpoints save Git history on this computer. Turning on tracking can adopt existing history or initialize the selected folder. Stopping tracking automation keeps existing history and files. Use Edit to change your project identity. Checkpoints are uploaded only through a separate Cloud sync action.
 <!-- /help -->
 
 <!-- help:git-main -->
@@ -465,11 +467,11 @@ Select the existing branch that the agreement should treat as the main version. 
 <!-- help:git-identity -->
 ### Checkpoint identity
 
-The name and email appear in Git history. They are saved in this project's Git configuration only. Use your own identity and your preferred public or GitHub private email before creating history.
+Choose Edit on Local history to change the name and email under Make changes as. They appear in future Git history. They are saved in this project's Git configuration only. Use your own identity and your preferred public or GitHub private email before creating history.
 <!-- /help -->
 
 <!-- help:git-connection -->
-### GitHub connection
+### Cloud sync
 
 Account sign-in and linking a project to a repository are separate steps. Sign in through the browser; credentials stay in the system credential store. Turn on local history before linking a repository. Connecting or creating a private repository does not upload files.
 <!-- /help -->
@@ -508,6 +510,8 @@ Local checkpoints and completed uploads are separate records. A preview has not 
 ### Themes
 
 Choose a palette to apply it across the application. Light and dark groups are ordered by accent color. Provider colors are configured separately in Providers; status colors retain their meaning.
+
+Custom themes lets you roll a fresh palette. Choose Surprise me, Light, or Dark and click Regenerate until you find one you like. The preview stays unsaved until you choose Save & use. A name is optional. Generated colors pass readability checks and differ from the built-in and saved collections. Your saved themes are available after restarting Freelancer.
 <!-- /help -->
 
 <!-- help:provider-color -->

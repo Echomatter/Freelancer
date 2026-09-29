@@ -20,7 +20,9 @@ conversations only in the selected project. **Application settings → Search al
 content** searches both indexes across all registered projects, including archived
 ones. A result opens either its conversation or its source file in **Project
 settings → Files**. Refresh the search copies in **Application settings → Content &
-Storage**; searching never changes project files or conversations.
+Storage**; searching never changes project files or conversations. Putting a
+project away first refreshes that project's file and conversation indexes. Later
+global refreshes skip it until it is restored.
 
 **Application settings → Content & Storage** shows actual locations and explains ownership.
 Use **Put project away** to hide a project from active navigation, and **Restore
@@ -65,10 +67,13 @@ cancelled. A project fence also waits for an already-started prompt acceptance
 before examining activity. Native work started by another process is outside
 that fence; this is not a distributed lock over all OpenCode clients.
 
-Project archiving is a separate annotation. It hides all of the project's chats
-from active navigation but does not rewrite their individual archive state.
-Restore the project before changing individual conversation archives. Drafts
-and exports remain accessible. Usage/accounting still includes archived work.
+Project archiving is a separate annotation. Before it is saved, Freelancer
+refreshes that project's file and conversation indexes; if either index cannot
+be refreshed, the project remains active. It then hides all of the project's
+chats from active navigation but does not rewrite their individual archive
+state. Global index rebuilds omit put-away projects until restored. Restore the
+project before changing individual conversation archives. Drafts and exports
+remain accessible. Usage/accounting still includes archived work.
 
 ## What is stored where?
 

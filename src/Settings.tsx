@@ -205,7 +205,7 @@ export function Settings({
                 />
                 Show depleted usage models in the workspace picker
               </label>
-              <ThemePicker theme={data.settings.appearance?.theme} refresh={refresh} onSaved={onColorsSaved} />
+              <ThemePicker theme={data.settings.appearance?.theme} customThemes={data.settings.appearance?.customThemes} refresh={refresh} onSaved={onColorsSaved} />
             </Panel>
           </>
         )}

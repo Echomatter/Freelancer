@@ -327,7 +327,12 @@ export function createLocalDataStore(directory) {
       return job?.status === 'dismissed' ? null : job;
     },
     systemSessions(project) {
-      return new Set(db.prepare('SELECT session_id FROM model_rating_jobs WHERE project_id=?').all(project).map(row => row.session_id));
+      const sessions = new Set();
+      for (const row of db.prepare('SELECT session_id, progress_json FROM model_rating_jobs WHERE project_id=?').all(project)) {
+        sessions.add(row.session_id);
+        for (const worker of JSON.parse(row.progress_json ?? '{}').workers ?? []) if (worker.session) sessions.add(worker.session);
+      }
+      return sessions;
     },
     saveRatingJob(job) {
       db.prepare(`INSERT INTO model_rating_jobs VALUES(?,?,?,?,?,?,?,?,?,?,?)

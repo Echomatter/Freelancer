@@ -145,8 +145,19 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       releaseInitialize();
     }
     await page
-      .getByRole("button", { name: "Stop tracking automation", exact: true })
+      .getByRole("button", { name: "Edit local history", exact: true })
       .waitFor();
+    await expect(page.locator('.git-local-identity')).toContainText('Browser Tester');
+    await expect(page.locator('.git-local-identity')).toContainText('browser@example.invalid');
+    await page.getByRole('button', { name: 'Edit local history', exact: true }).click();
+    await page.getByLabel('Name on checkpoints').fill('Updated Browser Tester');
+    await page.getByRole('button', { name: 'Save checkpoint identity', exact: true }).click();
+    await expect(page.locator('.git-local-identity')).toContainText('Updated Browser Tester');
+    assert.equal((await fixture.app.gitProjects.inspect(fixture.project.id)).local.identity.name, 'Updated Browser Tester');
+    const localCard = page.locator('.git-setup-card').filter({ has: page.getByRole('heading', { name: 'Local history', exact: true }) });
+    const helpBox = await localCard.locator('.card-help').boundingBox(), cardBox = await localCard.boundingBox();
+    assert.ok(helpBox.x + helpBox.width > cardBox.x + cardBox.width - 40, 'Help aligns with the card right edge');
+    assert.equal(await localCard.locator('h2 .help-hint').count(), 0);
     await page.getByRole('button', { name: 'Refresh Git status', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Refresh Git status', exact: true })).toBeEnabled();
     await expect(page.locator('.git-project-page .notice.error')).toHaveCount(0);
@@ -191,9 +202,10 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       await response.finished();
     }
     await expect(page.getByRole('button', { name: 'Save agreement', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Help: Explicit Git requests', exact: true }).focus();
-    await expect(page.getByRole('tooltip')).toContainText('You can explicitly request a different Git action in chat and confirm it there.');
-    await expect(page.getByRole('tooltip')).toContainText('A one-time request leaves the saved defaults unchanged.');
+    await page.locator('.git-agreement > .card-help').getByRole('button').focus();
+    await page.getByRole('combobox', { name: 'Help topic' }).selectOption('git-explicit-request');
+    await expect(page.getByRole('dialog', { name: 'Card help' })).toContainText('You can explicitly request a different Git action in chat and confirm it there.');
+    await expect(page.getByRole('dialog', { name: 'Card help' })).toContainText('A one-time request leaves the saved defaults unchanged.');
     await page.keyboard.press('Escape');
     await expect(page.getByRole('button', { name: 'Ask in chat', exact: true })).toBeVisible();
     assert.equal(
@@ -219,6 +231,7 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       path: "artifacts/git-project/narrow.png",
       fullPage: true,
     });
+    await page.getByRole("button", { name: "Edit local history", exact: true }).click();
     await page
       .getByRole("button", { name: "Stop tracking automation", exact: true })
       .click();

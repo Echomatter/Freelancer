@@ -20,6 +20,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
   page.on("pageerror", (e) => errors.push(e.message));
   const offline = process.env.PANEL_OFFLINE === "1";
   let draftFault = false;
+  let releasePrompt = () => {};
   if (offline) {
     await page.exposeBinding("dataFetch", async (_, route, options) => {
       if (route === "/api/drafts" && options.method === "PUT" && draftFault)
@@ -183,32 +184,31 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await assertSaved("Keep text through a failed save");
     report("failed autosave preserves text and retry recovers");
 
-    // Dispatch is held after native acceptance begins while typing continues.
-    let release;
+    // Dispatch holds an empty disabled composer until acknowledgement.
     f.state.holdPrompt = new Promise((resolve) => {
-      release = resolve;
+      releasePrompt = resolve;
     });
     await page.getByRole("button", { name: "Message options", exact: true }).click();
     await page
       .getByRole("combobox", { name: "Parent model", exact: true })
       .selectOption("opencode/free");
     await page.getByRole("button", { name: "Send message", exact: true }).click();
-    await page.waitForFunction(() =>
-      document.querySelector('[aria-label="Choose Delegate, Queue, or Interrupt"]'),
-    );
-    await box.fill("Typed while the earlier request was being accepted");
-    release();
+    await expect(box).toBeDisabled();
+    await expect(box).toHaveValue('');
+    releasePrompt();
     f.state.holdPrompt = null;
+    await expect(box).toBeEnabled();
+    await box.fill("Typed after the earlier request was accepted");
     // Draft persistence and native dispatch are independent; wait for the actual
     // native receipt before inspecting it, including under concurrent Git tests.
     for (let attempt = 0; attempt < 300 && !f.state.messages.ses_history?.length; attempt++) await delay(50);
     assert.ok(f.state.messages.ses_history?.length, 'native dispatch must finish');
-    await assertSaved("Typed while the earlier request was being accepted");
+    await assertSaved("Typed after the earlier request was accepted");
     assert.equal(
       f.state.messages.ses_history[0].parts[0].text,
       "Keep text through a failed save",
     );
-    report("send acknowledgment preserves newer typing");
+    report("send acknowledgment restores the composer for a new draft");
 
     await page
       .getByRole("button", { name: "Choose Delegate, Queue, or Interrupt", exact: true })
@@ -332,12 +332,24 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       })
       .waitFor();
     await page.getByText(f.nativeFile, { exact: true }).waitFor();
+    const archiveIndexCalls = [];
+    f.app.rebuildContentIndex = async options => {
+      archiveIndexCalls.push(["files", options.projectID, await f.app.history.isProjectArchived(options.projectID)]);
+      return { sources: 1, failures: [] };
+    };
+    f.app.history.rebuildChatSearch = async options => {
+      archiveIndexCalls.push(["chats", options.projectID, await f.app.history.isProjectArchived(options.projectID)]);
+      return { projects: 1, conversations: 2, messages: 3, failures: [] };
+    };
     await page
       .getByRole("button", { name: "Put project away", exact: true })
       .click();
     await page
       .getByRole("button", { name: "Confirm project change", exact: true })
       .click();
+    await page.getByRole("button", { name: "Restore project", exact: true }).waitFor();
+    assert.deepEqual(archiveIndexCalls, [["files", f.project.id, false], ["chats", f.project.id, false]],
+      "both final indexes refresh while the project is still active");
     await page
       .getByRole("button", { name: "Restore project", exact: true })
       .click();
@@ -381,6 +393,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     });
     throw error;
   } finally {
+    releasePrompt();
     await browser.close();
     await f.close();
   }

@@ -46,8 +46,12 @@ test('send-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, o
         exact: true,
       })
       .waitFor({ timeout: 1000 });
+    assert.equal(await box.inputValue(), '', 'submitted text is shown only in the pending message');
+    assert.equal(await box.isDisabled(), true, 'composer is disabled while the message is sending');
     // Showing the preview does not depend on draft flushing reaching HTTP yet.
     await creationStarted;
+    await expect(box).toBeDisabled();
+    await expect(box).toHaveValue('');
     assert.equal(createCalls, 1);
     assert.equal(sendCalls, 0);
     assert.equal(await page.locator('.pending-message').getByText('brief.txt', { exact: true }).count(), 1);
@@ -58,6 +62,8 @@ test('send-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, o
     });
     releaseCreate();
     await dispatchStarted;
+    await expect(box).toBeDisabled();
+    await expect(box).toHaveValue('');
     // Creation completes but native dispatch stays held. No empty/loading flash.
     assert.equal(await page.locator(".pending-message").count(), 1);
     releaseSend();
@@ -67,6 +73,8 @@ test('send-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, o
       'Show this immediately while the new chat opens', { exact: true },
     ).waitFor();
     assert.equal(await page.locator('.chat-loading-stage').count(), 0);
+    await expect(box).toBeDisabled();
+    await expect(box).toHaveValue('');
     releaseAcknowledgement();
     await page.waitForFunction(() => !document.querySelector(".pending-message"));
     assert.equal(
@@ -116,6 +124,7 @@ test('send-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, o
       )
       .waitFor();
     assert.equal(await box.inputValue(), "Preserve this draft on failure");
+    await expect(box).toBeEnabled();
     const nav = page.locator(".chat-navigation");
     const trigger = nav.getByRole("button", { name: "Chats", exact: true });
     if ((await trigger.getAttribute("aria-expanded")) !== "true")

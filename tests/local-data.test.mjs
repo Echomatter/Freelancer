@@ -324,12 +324,31 @@ test("project archive is reversible without changing the project registration or
     },
     "PUT",
   );
+  const rebuildFiles = f.app.rebuildContentIndex.bind(f.app);
+  const rebuildChats = f.app.history.rebuildChatSearch.bind(f.app.history);
+  f.app.rebuildContentIndex = options => options?.includeArchivedProject
+    ? Promise.resolve({ projects: 1, sources: 0, units: 0, failures: [] }) : rebuildFiles(options);
+  f.app.history.rebuildChatSearch = options => options?.includeArchivedProject
+    ? Promise.resolve({ projects: 1, conversations: 0, messages: 0, failures: [] }) : rebuildChats(options);
   const before = await f.store.read("settings");
   await f.api(
     "history/project",
     { project: f.project.id, archived: true, revision: 0 },
     "PUT",
   );
+  const registered = (await f.store.read("settings")).projects;
+  assert.deepEqual(f.app.history.projectsToIndex(registered), [], 'global refreshes omit put-away projects');
+  assert.throws(() => f.app.history.projectsToIndex(registered, f.project.id), /Restore this project/);
+  assert.deepEqual(f.app.history.projectsToIndex(registered, f.project.id, true).map(row => row.id), [f.project.id],
+    'the final pre-archive indexing pass may include its target');
+  assert.equal((await f.app.rebuildContentIndex()).projects, 0, 'global file rebuild skips archived projects');
+  assert.equal((await f.app.history.rebuildChatSearch()).projects, 0, 'global conversation rebuild skips archived projects');
+  await assert.rejects(f.app.rebuildContentIndex({ projectID: f.project.id }), /Restore this project/);
+  await assert.rejects(f.app.history.rebuildChatSearch({ projectID: f.project.id }), /Restore this project/);
+  const beforeArchivedChatRead = f.app.localData.get().indexStats().chatMessages.messages;
+  assert.equal(await f.app.history.indexCurrent(f.project.id, "ses_history", f.state.messages.ses_history), false,
+    'opening an archived chat does not refresh its search copy');
+  assert.equal(f.app.localData.get().indexStats().chatMessages.messages, beforeArchivedChatRead);
   await assert.rejects(
     f.api("chats", { project: f.project.id }),
     /Restore this project/,
@@ -344,6 +363,8 @@ test("project archive is reversible without changing the project registration or
     { project: f.project.id, archived: false, revision: 1 },
     "PUT",
   );
+  assert.deepEqual(f.app.history.projectsToIndex(registered).map(row => row.id), [f.project.id],
+    'restored projects rejoin future refreshes');
   assert.equal(
     (await f.api(historyQuery("archived"))).sessions[0].id,
     "ses_history",

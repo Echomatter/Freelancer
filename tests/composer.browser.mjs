@@ -5,6 +5,11 @@ import { test, expect } from './support/browser-test.mjs';
 
 test('composer: symmetric controls, one menu, collapsible context and tools', { tag: ['@app', '@chat'] }, async ({ appBrowser: browser, own }) => {
   const f = await own(composerFixture());
+  f.state.messages.ses_history.at(-1).parts.unshift({ id: 'worker-route', type: 'tool', tool: 'delegate', state: {
+    status: 'completed', input: { agentID: 'engineer' },
+    output: JSON.stringify({ status: 'no_qualified_route', result: `No route ${'X'.repeat(600)}` }),
+    metadata: { freelancer_status: 'no_qualified_route', agentName: `Engineer ${'Y'.repeat(240)}` },
+  } });
   const page = await browser.newPage({ viewport: { width: 1440, height: 960 } });
   await page.goto(f.url);
   await page.getByRole('button', { name: 'Chats', exact: true }).click();
@@ -65,12 +70,35 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
   await test.step('Phone controls and menu fit, and multiline typing stays bounded', async () => {
     await page.keyboard.press('Escape');
     await page.setViewportSize({ width: 430, height: 780 });
+    await expect(input).not.toHaveAttribute('placeholder');
+    await expect(input).toHaveAttribute('enterkeyhint', 'send');
     await input.fill('A longer message\n'.repeat(16));
-    assert.ok((await input.boundingBox()).height <= 160);
+    const inputRect = await input.boundingBox();
+    assert.ok(inputRect.height > 44 && inputRect.height <= 240);
+    assert.equal(await input.evaluate(el => getComputedStyle(el).fontSize), '16px');
+    await expect(page.locator('.composer-context')).toHaveCount(0);
+    expect(await page.locator('.composer').evaluate(el => getComputedStyle(el).borderBottomWidth)).toBe('1px');
+    const currentWork = page.locator('.request-dock .request-working');
+    if (await currentWork.getAttribute('open') === null) await currentWork.locator('summary').first().click();
+    const routeCard = page.locator('.agent-route-unavailable'), routeRect = await routeCard.boundingBox();
+    const viewRect = await page.locator('.chat-view').boundingBox();
+    assert.ok(routeRect.x >= viewRect.x && routeRect.x + routeRect.width <= viewRect.x + viewRect.width, 'long worker failures stay inside the chat');
+    await page.evaluate(() => {
+      const banner = document.createElement('div');
+      banner.className = 'error-banner overflow-probe'; banner.setAttribute('role', 'alert');
+      banner.append(`${'unbroken-provider-error'.repeat(120)}`);
+      const dismiss = document.createElement('button'); dismiss.textContent = 'Close'; banner.append(dismiss);
+      document.querySelector('.main')?.prepend(banner);
+    });
+    const errorRect = await page.locator('.overflow-probe').boundingBox();
+    assert.ok(errorRect.x >= 0 && errorRect.x + errorRect.width <= 430, 'large errors stay inside the viewport');
+    assert.ok(await page.locator('.overflow-probe button').isVisible(), 'large errors keep their action visible');
+    await page.locator('.overflow-probe').evaluate(el => el.remove());
     await options.click();
     const rect = await menu.boundingBox();
     assert.ok(rect.x >= 0 && rect.x + rect.width <= 430 && rect.y >= 0);
     await expect(menu.getByRole('combobox', { name: 'Parent model', exact: true })).toBeVisible();
+    assert.equal(await menu.getByRole('combobox', { name: 'Parent model', exact: true }).evaluate(el => getComputedStyle(el).fontSize), '16px');
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
     await page.screenshot({ path: 'artifacts/composer/phone-menu.png' });
     await page.keyboard.press('Escape');
@@ -91,6 +119,8 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
       return el.contains(document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2));
     }), 'the menu is not clipped by the transcript or covered by the dock');
     await menu.getByRole('combobox', { name: 'Intelligence', exact: true }).focus();
+    await page.keyboard.press('Tab');
+    await expect(menu.getByRole('button', { name: /^Help:/ })).toBeFocused();
     await page.keyboard.press('Tab');
     await expect(menu).not.toBeVisible();
     await expect(input).toBeFocused();

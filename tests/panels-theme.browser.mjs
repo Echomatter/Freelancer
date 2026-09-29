@@ -134,7 +134,8 @@ test('panels-theme', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => 
     report("clamping, compact layout, and restoration after window resize");
     await page.getByRole("button", { name: "Application settings", exact: true }).click();
     await page.getByRole("button", { name: "Appearance", exact: true }).click();
-    assert.equal(await page.locator(".palette-picker select").count(), 0);
+    await page.getByLabel('Generated theme style').waitFor({ state: 'attached' });
+    assert.equal(await page.getByLabel('Generated theme style').count(), 1);
     const lightPalette = page.getByRole("button", { name: `Use ${themePalette('light').name} palette`, exact: true });
     const darkPalette = page.getByRole("button", { name: `Use ${themePalette('dark').name} palette`, exact: true });
     const darkCategory = page.getByRole("button", { name: `Dark themes (${palettes.filter(p => p.mode === "dark").length})` });

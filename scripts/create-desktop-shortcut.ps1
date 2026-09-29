@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([switch]$RefreshPublicAssets)
 $ErrorActionPreference = 'Stop'
 $appRoot = Split-Path -Parent $PSScriptRoot
 $assets = Join-Path $appRoot 'backend\.state\launcher'
@@ -7,13 +7,15 @@ New-Item -ItemType Directory -Force -Path $assets | Out-Null
 Add-Type -AssemblyName System.Drawing
 # Draw at each native icon size so the Freelancer F mark stays crisp.
 $frames = @()
-foreach ($size in @(16, 24, 32, 48, 64, 128, 256)) {
+$sizes = @(16, 24, 32, 48, 64, 128, 256)
+if ($RefreshPublicAssets) { $sizes += @(192, 512) }
+foreach ($size in $sizes) {
     $bitmap = New-Object Drawing.Bitmap($size, $size)
     $g = [Drawing.Graphics]::FromImage($bitmap)
     $g.SmoothingMode = 'AntiAlias'
     $g.ScaleTransform(($size / 24.0), ($size / 24.0))
     $bg = New-Object Drawing.SolidBrush([Drawing.ColorTranslator]::FromHtml('#183D32'))
-    $route = New-Object Drawing.Pen([Drawing.ColorTranslator]::FromHtml('#F5F1D8'), 1.8)
+    $route = New-Object Drawing.Pen([Drawing.ColorTranslator]::FromHtml('#F5F1D8'), 2.2)
     $route.StartCap = 'Round'; $route.EndCap = 'Round'; $route.LineJoin = 'Round'
     $tile = New-Object Drawing.Drawing2D.GraphicsPath
     $tile.AddArc(0, 0, 12, 12, 180, 90); $tile.AddArc(12, 0, 12, 12, 270, 90)
@@ -21,18 +23,19 @@ foreach ($size in @(16, 24, 32, 48, 64, 128, 256)) {
     $tile.CloseFigure()
     $g.FillPath($bg, $tile)
     # Use the same F geometry as the sidebar and public SVG.
-    $g.DrawLine($route, 6, 17.5, 6, 5)
-    $g.DrawLine($route, 6, 5, 16.5, 5)
-    $g.DrawLine($route, 6, 12, 14.5, 12)
-    $g.DrawEllipse($route, 16.5, 3, 4, 4)
-    $g.DrawEllipse($route, 14.5, 10, 4, 4)
-    $g.DrawEllipse($route, 4, 17.5, 4, 4)
-    $g.DrawEllipse($route, 15, 2, 6, 6)
+    $g.DrawLine($route, [single]6.5, [single]16, [single]6.5, [single]5.5)
+    $g.DrawLine($route, [single]6.5, [single]5.5, [single]15, [single]5.5)
+    $g.DrawLine($route, [single]6.5, [single]12, [single]13, [single]12)
+    $node = New-Object Drawing.Pen([Drawing.ColorTranslator]::FromHtml('#F5F1D8'), 1.6)
+    $g.DrawEllipse($node, [single]15.6, [single]3.1, [single]4.8, [single]4.8)
+    $g.DrawEllipse($node, [single]13.6, [single]9.6, [single]4.8, [single]4.8)
+    $g.DrawEllipse($node, [single]4.1, [single]16.6, [single]4.8, [single]4.8)
     $stream = New-Object IO.MemoryStream
     $bitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png)
-    $frames += ,@{ Size = $size; Bytes = $stream.ToArray() }
+    if ($size -ne 192 -and $size -le 256) { $frames += ,@{ Size = $size; Bytes = $stream.ToArray() } }
+    if ($RefreshPublicAssets -and $size -in @(192, 512)) { $bitmap.Save((Join-Path $appRoot "public\freelancer-$size.png"), [Drawing.Imaging.ImageFormat]::Png) }
     if ($size -eq 256) { $bitmap.Save((Join-Path $assets 'freelancer.png'), [Drawing.Imaging.ImageFormat]::Png) }
-    $stream.Dispose(); $tile.Dispose(); $route.Dispose(); $bg.Dispose(); $g.Dispose(); $bitmap.Dispose()
+    $stream.Dispose(); $tile.Dispose(); $route.Dispose(); $node.Dispose(); $bg.Dispose(); $g.Dispose(); $bitmap.Dispose()
 }
 $iconPath = Join-Path $assets 'freelancer.ico'
 $output = [IO.File]::Create($iconPath)

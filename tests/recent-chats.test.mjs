@@ -1,6 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { RecentChats } from '../src/recent-chats.mjs';
+import { chatWarmTargets, RecentChats } from '../src/recent-chats.mjs';
+
+test('chat warmup prioritizes every active parent/child before the newest parent chats', () => {
+  const sessions = [
+    { id: 'old', title: 'Old chat', time: { updated: 1 } },
+    { id: 'newer', title: 'Recent chat', time: { updated: 9 } },
+    { id: 'active-parent', title: 'Working parent', time: { updated: 5 } },
+    { id: 'active-child', parentID: 'active-parent', title: 'Working child', time: { updated: 4 } },
+    { id: 'waiting', title: 'Needs input', time: { updated: 3 } },
+  ];
+  const targets = chatWarmTargets(sessions, {
+    'active-parent': { active: true }, 'active-child': { active: true }, 'waiting': { waiting: true },
+  }, 2);
+  assert.deepEqual(targets.map(row => row.id), ['active-parent', 'active-child', 'waiting', 'newer']);
+});
 
 test('recent chats are project scoped, bounded, and never replay live decisions', () => {
   let time = 0;

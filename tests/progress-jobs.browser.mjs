@@ -33,16 +33,21 @@ test('progress-jobs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =>
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(f.url);
-    const loading = page.getByRole('dialog', { name: 'Preparing your workspace' });
+    const loading = page.locator('.chat-loading-stage');
     await loading.waitFor();
-    await loading.locator('[aria-current="step"]').getByText('Build the project file index').waitFor();
-    assert.equal(await loading.getByRole('progressbar').getAttribute('aria-valuenow'), null, 'unknown durations do not invent a percentage');
+    await loading.getByText('Preparing project indexes…', { exact: true }).waitFor();
+    await expect(page.getByRole('dialog')).toHaveCount(0);
     const shots = process.env.FREELANCER_QA_SHOTS;
     if (shots) { await mkdir(shots, { recursive: true }); await page.screenshot({ path: path.join(shots, 'project-loading.png') }); }
     files.release();
-    await loading.locator('[aria-current="step"]').getByText('Build the conversation index').waitFor();
-    chats.release();
+    await expect.poll(async () => (await f.api('index/jobs')).job.step).toBe('chats');
+    await loading.getByRole('button', { name: 'Continue in background' }).click();
     await loading.waitFor({ state: 'hidden' });
+    await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeVisible();
+    await expect(page.locator('.index-job-progress')).toBeVisible();
+    assert.equal((await f.api('index/jobs')).job.status, 'running', 'opening the workspace does not cancel indexing');
+    chats.release();
+    await expect.poll(async () => (await f.api('index/stats')).projects[0].chats.conversations).toBe(3);
     const stats = await f.api('index/stats');
     assert.equal(stats.projects[0].files.sources, 1);
     assert.equal(stats.projects[0].chats.conversations, 3);

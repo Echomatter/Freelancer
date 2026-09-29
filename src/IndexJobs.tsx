@@ -68,6 +68,7 @@ export function IndexJobProgress({ jobs }: { jobs: ReturnType<typeof useIndexJob
     state={error || job.status === 'failed' ? 'error' : running ? 'running' : job.status === 'completed' ? 'success' : 'warning'}
     disabled={pending} onDismiss={safe(jobs.dismiss)} dismissLabel={running ? 'Hide index progress' : 'Dismiss index status'}
     action={running ? job.stoppable ? { label: 'Stop', onClick: safe(jobs.stop) } : undefined
+      : job.kind === 'archive' ? undefined
       : job.status === 'completed' && job.kind === 'compact' ? undefined
       : { label: job.status === 'completed' ? ['check', 'optimize'].includes(job.kind) ? 'Run again' : 'Refresh again' : 'Retry', onClick: safe(jobs.retry) }} />;
 }

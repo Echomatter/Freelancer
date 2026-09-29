@@ -35,7 +35,17 @@ export function createHistoryService({
 }) {
   let capabilities, databaseLocation;
   const indexing = new Map();
+  let projectArchiveIndexer;
   const data = () => localData.get();
+  const projectsToIndex = (projects, projectID, includeArchivedProject = false) => {
+    const annotations = data().projects();
+    const targets = projectID ? projects.filter(project => project.id === projectID) : projects;
+    if (projectID && !targets.length) throw Error("Choose a registered project.");
+    if (projectID && annotations[projectID]?.archivedAt && !includeArchivedProject)
+      throw Error("Restore this project before refreshing its search indexes.");
+    return targets.filter(project => !annotations[project.id]?.archivedAt ||
+      includeArchivedProject && project.id === projectID);
+  };
   const request = (project, route, options = {}) =>
     host.request(route, { ...options, directory: project.directory });
   async function own(project, id) {
@@ -195,15 +205,23 @@ export function createHistoryService({
   return {
     ensureWritable,
     async indexCurrent(projectID, id, messages) {
+      if (data().projects()[projectID]?.archivedAt || app.indexJobs?.isArchiving(projectID)) return false;
       const project = await app.project(projectID);
       const session = await own(project, id);
+      if (data().projects()[projectID]?.archivedAt || app.indexJobs?.isArchiving(projectID)) return false;
       if (Array.isArray(messages)) data().indexChat(projectID, session, messages);
+      return true;
     },
-    async rebuildChatSearch({ projectID, onProgress = () => {}, signal } = {}) {
+    async rebuildChatSearch({ projectID, includeArchivedProject = false, onProgress = () => {}, signal } = {}) {
+      if (app.indexJobs?.isArchiving() && !includeArchivedProject)
+        throw Object.assign(Error('A project is being put away. General index refresh is paused.'), { status: 409 });
       const key = projectID ?? '*';
       if (indexing.has(key)) return indexing.get(key);
       const refresh = (async () => {
-        const projects = projectID ? [await app.project(projectID)] : (await app.store.read("settings")).projects;
+        const registered = (await app.store.read("settings")).projects;
+        const projects = projectsToIndex(registered, projectID, includeArchivedProject);
+        if (app.indexJobs?.isArchiving() && !includeArchivedProject)
+          throw Object.assign(Error('A project is being put away. General index refresh is paused.'), { status: 409 });
         const summary = { projects: 0, conversations: 0, messages: 0, failures: [] };
         for (const project of projects) {
           signal?.throwIfAborted();
@@ -221,10 +239,12 @@ export function createHistoryService({
               current++;
               signal?.throwIfAborted();
               onProgress(`Indexing conversations · ${project.name} (${current}/${valid.length})`);
-              try {
-                const messages = await request(project, `/session/${encodeURIComponent(session.id)}/message`);
-                if (!Array.isArray(messages)) throw Error("OpenCode did not return messages.");
-                data().indexChat(project.id, session, messages);
+            try {
+              const messages = await request(project, `/session/${encodeURIComponent(session.id)}/message`);
+              if (!Array.isArray(messages)) throw Error("OpenCode did not return messages.");
+              if (!includeArchivedProject && (app.indexJobs?.isArchiving(project.id) || data().projects()[project.id]?.archivedAt))
+                throw Error("The project was put away during indexing; its archived search copy was left unchanged.");
+              data().indexChat(project.id, session, messages);
                 summary.conversations++;
                 summary.messages += messages.length;
               } catch (error) {
@@ -342,6 +362,10 @@ export function createHistoryService({
       return { ...result, stats: await this.indexStats() };
     },
     close() {},
+    setProjectArchiveIndexer(indexer) { projectArchiveIndexer = indexer; },
+    isProjectArchived(projectID) { return !!data().projects()[projectID]?.archivedAt; },
+    projectArchiveRevision(projectID) { return data().projects()[projectID]?.revision ?? 0; },
+    projectsToIndex,
     async decorateBootstrap(result) {
       try {
         if (result.localDataError) throw Object.assign(new Error(result.localDataError), { code: "ERR_SQLITE_UNAVAILABLE" });
@@ -509,7 +533,12 @@ export function createHistoryService({
             "Resolve queued or uncertain messages before putting this project away.",
           );
         await idle(project); // all native sessions in this directory, not a bounded history list
-        return data().archiveProject(projectID, body.archived, body.revision);
+        const commit = () => data().archiveProject(projectID, body.archived, body.revision);
+        if (body.archived) {
+          if (!projectArchiveIndexer) throw Error("Project indexes are unavailable. Nothing was put away.");
+          return projectArchiveIndexer(projectID, body.revision, commit);
+        }
+        return commit();
       });
     },
     async draft(projectID, id = "") {

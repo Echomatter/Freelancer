@@ -156,7 +156,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         if (req.method === "GET" && route === "/api/models/ratings")
           return send(200, { job: app.modelRatings.status() });
         if (req.method === "POST" && route === "/api/models/ratings")
-          return send(200, { job: await app.modelRatings.start(project, body.model, body.retry, body.variant) });
+          return send(200, { job: await app.modelRatings.start(project, body.model, body.retry, body.variant, body.free === true) });
         if (req.method === 'POST' && route === '/api/models/ratings/stop')
           return send(200, { job: await app.modelRatings.stop(body.id) });
         if (req.method === "POST" && route === "/api/models/ratings/dismiss")
@@ -201,13 +201,16 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(200, await app.selectProject(body.project));
         if (req.method === "GET" && route === "/api/chat") {
           const id = url.searchParams.get("session");
+          const timings = [];
           let result;
-          try { result = await app.chat(project, id); }
+          if (url.searchParams.get("preview") === "1") result = await app.chatPreview(project, id);
+          else try { result = await app.chat(project, id, { onTiming: (name, ms) => timings.push(`${name};dur=${ms.toFixed(1)}`) }); }
           catch (error) {
             if (!isLocalDataUnavailable(error)) throw error;
             result = await app.chatTranscript(project, id, error.message);
           }
           if (history && id) void history.indexCurrent(project, id, result.messages).catch(() => {});
+          if (timings.length) res.setHeader('Server-Timing', timings.join(', '));
           return send(200, result);
         }
         if (req.method === "POST" && route === "/api/chats") {

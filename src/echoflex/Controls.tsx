@@ -4,7 +4,7 @@ import { X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
 import { cloneElement, isValidElement, useId, type ReactElement } from "react";
 import type { LucideIcon } from "lucide-react";
-import { HelpHint } from "../HelpHint";
+import { HelpHint, HelpScope } from "../HelpHint";
 import type { HelpTopic } from "../documentation-help";
 export function Button({
   variant = "secondary",
@@ -32,8 +32,10 @@ export function Panel({
 }: HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic }) {
   return (
     <section className={`panel ${className}`} {...props}>
-      {title && <h3 aria-label={help ? title : undefined}>{title}{help && <HelpHint topic={help} />}</h3>}
+      <HelpScope topic={help}>
+      {title && <h3>{title}</h3>}
       {children}
+      </HelpScope>
     </section>
   );
 }
@@ -43,13 +45,13 @@ export function PageHeading({ title, actions, icon: Icon, help }: {
   icon?: LucideIcon;
   help?: HelpTopic;
 }) {
-  return <header className="page-title">
+  return <><header className="page-title">
     <div className="page-title-leading">
       {Icon && <span className="page-title-icon"><Icon size={21} strokeWidth={1.8} aria-hidden="true" /></span>}
-      <div className="page-title-main"><div className="page-title-name"><h1>{title}</h1>{help && <HelpHint topic={help} />}</div></div>
+      <div className="page-title-main"><div className="page-title-name"><h1>{title}</h1></div></div>
     </div>
     {actions && <div className="page-title-actions">{actions}</div>}
-  </header>;
+  </header>{help && <div className="page-help"><HelpHint topic={help} /></div>}</>;
 }
 export function Field({
   label,
@@ -65,8 +67,9 @@ export function Field({
     const child = isValidElement(children) ? children as ReactElement<any> : null;
     const controlID = child?.props.id ?? `${labelID}-control`;
     return <div className="field">
-      <span className="field-label"><label id={labelID} htmlFor={controlID}>{label}</label><HelpHint topic={help} /></span>
+      <span className="field-label"><label id={labelID} htmlFor={controlID}>{label}</label></span>
       {child ? cloneElement(child, { id: controlID, "aria-labelledby": labelID }) : children}
+      <div className="field-help"><HelpHint topic={help} /></div>
     </div>;
   }
   return (

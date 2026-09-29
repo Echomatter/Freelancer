@@ -5,8 +5,8 @@ import { Paperclip, Plus, X } from 'lucide-react';
 import './composer.css';
 
 // A single flat sheet: every existing choice is one level from the composer.
-export function ComposerMenu({ children, disabled, onAttach, context }: {
-  children: ReactNode; disabled: boolean; onAttach: () => void; context: string;
+export function ComposerMenu({ children, disabled, onAttach, context, summary }: {
+  children: ReactNode; disabled: boolean; onAttach: () => void; context: string; summary?: string;
 }) {
   const [open, setOpen] = useState(false);
   const root = useRef<HTMLDivElement>(null), trigger = useRef<HTMLButtonElement>(null);
@@ -36,8 +36,15 @@ export function ComposerMenu({ children, disabled, onAttach, context }: {
     };
     place();
     window.addEventListener('resize', place);
+    window.visualViewport?.addEventListener('resize', place);
+    window.visualViewport?.addEventListener('scroll', place);
     document.addEventListener('scroll', place, true);
-    return () => { window.removeEventListener('resize', place); document.removeEventListener('scroll', place, true); };
+    return () => {
+      window.removeEventListener('resize', place);
+      window.visualViewport?.removeEventListener('resize', place);
+      window.visualViewport?.removeEventListener('scroll', place);
+      document.removeEventListener('scroll', place, true);
+    };
   }, [open]);
   return <div className="composer-menu" ref={root} onKeyDown={event => {
     if (event.key === 'Escape' && open) { event.preventDefault(); event.stopPropagation(); close(); }
@@ -50,14 +57,15 @@ export function ComposerMenu({ children, disabled, onAttach, context }: {
     }
   }}>
     <button ref={trigger} type="button" className="composer-menu-trigger" aria-label="Message options"
-      title="Attachments and message settings" aria-expanded={open} aria-controls={id}
+      title={`Attachments and message settings${summary ? ` · ${summary}` : ''}`} aria-expanded={open} aria-controls={id}
       onClick={() => setOpen(value => !value)}><Plus size={22} aria-hidden="true" /></button>
-    {createPortal(<div ref={panel} id={id} hidden={!open} className="composer-menu-panel" role="region" aria-label="Message options">
+    {open && createPortal(<div ref={panel} id={id} className="composer-menu-panel" role="region" aria-label="Message options">
       <header><strong>Message options</strong><button type="button" aria-label="Close message options" onClick={close}><X size={17} /></button></header>
       <div className="composer-attach-row"><button type="button" className="composer-menu-attach" disabled={disabled} onClick={() => { onAttach(); setOpen(false); }}>
         <span className="work-icon"><Paperclip size={18} /></span><span><strong>Attach files</strong></span>
-      </button>{open && <HelpHint topic="message-options" />}</div>
+      </button></div>
       {children}
+      <div className="card-help"><HelpHint topic="message-options" /></div>
     </div>, document.body)}
   </div>;
 }

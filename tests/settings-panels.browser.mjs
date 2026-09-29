@@ -34,7 +34,10 @@ test("settings panels share framing, aligned forms, help placement and clickable
     await expect(heading.getByRole("heading", { name: title, exact: true })).toBeVisible();
     await expect(heading.locator(".page-title-icon svg")).toBeVisible();
     await expect(heading.getByRole("button", { name: closeLabel, exact: true })).toBeVisible();
-    if (help) await expect(heading.locator(".help-hint-trigger")).toBeVisible();
+    await expect(heading.locator(".help-hint-trigger")).toHaveCount(0);
+    if (help) await expect(page.locator(".page-help .help-hint-trigger")).toBeVisible();
+    expect(await page.locator('.panel').evaluateAll(cards => cards.every(card =>
+      card.querySelectorAll(':scope > .card-help .help-hint-trigger').length <= 1))).toBe(true);
     const helpNames = await page.locator(".help-hint-trigger").evaluateAll(buttons => buttons.map(button => button.getAttribute("aria-label")));
     assert.equal(helpNames.length, new Set(helpNames).size, `${title} help buttons have distinct accessible names`);
     const frame = await page.locator(".page").boundingBox();

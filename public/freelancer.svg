@@ -1,10 +1,12 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" role="img" aria-label="Freelancer">
   <title>Freelancer</title>
   <rect width="24" height="24" rx="6" fill="#183D32"/>
-  <g fill="none" stroke="#F5F1D8" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-    <path d="M6 17.5V5h10.5M6 12h8.5"/>
-    <circle cx="18.5" cy="5" r="2"/>
-    <circle cx="16.5" cy="12" r="2"/>
-    <circle cx="6" cy="19.5" r="2"/>
+  <g fill="none" stroke="#F5F1D8" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6.5 16V5.5H15M6.5 12H13"/>
+  </g>
+  <g fill="none" stroke="#F5F1D8" stroke-width="1.6">
+    <circle cx="18" cy="5.5" r="2.4"/>
+    <circle cx="16" cy="12" r="2.4"/>
+    <circle cx="6.5" cy="19" r="2.4"/>
   </g>
 </svg>

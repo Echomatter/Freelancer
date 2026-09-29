@@ -28,7 +28,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await expect(page.getByRole('heading', { name, exact: true }).first()).toBeVisible();
   }
   async function content(topic) {
-    const tip = page.getByRole('tooltip');
+    const tip = page.locator('.help-hint-popover');
     await expect(tip).toBeVisible();
     await expect(tip.locator('p')).toHaveText(documented(topic));
     await expect(tip).toContainText('README');
@@ -53,6 +53,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await expect(cards).toHaveCount(4);
     await expect(cards.locator('.help-hint')).toHaveCount(0);
     const hint = page.getByRole('button', { name: 'Help: Scheduled prompts', exact: true });
+    await expect(page.locator('h1 .help-hint, h2 .help-hint, h3 .help-hint, .page-title .help-hint')).toHaveCount(0);
     await hint.hover();
     const tip = await content('schedules');
     const after = await heading.boundingBox();
@@ -79,8 +80,10 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await page.getByLabel('Name', { exact: true }).fill('Keep this unsaved schedule');
     await page.getByLabel('Repeat', { exact: true }).selectOption('daily');
     await page.setViewportSize({ width: 390, height: 844 });
-    const timing = page.getByRole('button', { name: 'Help: Schedule timing', exact: true });
+    await expect(page.locator('.schedule-editor .help-hint-trigger')).toHaveCount(1);
+    const timing = page.locator('.schedule-editor .card-help').getByRole('button', { name: /^Help:/ });
     await timing.tap();
+    await page.getByRole('combobox', { name: 'Help topic' }).selectOption('schedule-timing');
     const tip = await content('schedule-timing');
     await insideViewport(tip);
     await page.screenshot({ path: 'artifacts/documentation-help/schedule-mobile.png', fullPage: true });
@@ -136,7 +139,8 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await page.keyboard.press('Escape');
     await setting('Delegation', 'Project settings');
     await page.getByLabel('Apply to', { exact: true }).selectOption('project');
-    await page.getByRole('button', { name: 'Help: Worker models', exact: true }).focus();
+    await page.getByRole('button', { name: 'Help: Delegation scope', exact: true }).focus();
+    await page.getByRole('combobox', { name: 'Help topic' }).selectOption('worker-models');
     await content('worker-models');
     await page.keyboard.press('Escape');
     await setting('Providers');

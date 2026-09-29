@@ -6,22 +6,32 @@ export async function api(
   method = body === undefined ? "GET" : "POST",
   signal?: AbortSignal,
 ) {
-  const response = await fetch("/api/" + route, {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "X-Freelancer-Client": "webpage",
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-    signal,
-  });
-  const value = await response.json();
-  if (!response.ok)
-    throw Object.assign(Error(value.error || "Could not complete that action"), {
-      status: response.status,
-      code: typeof value.code === "string" ? value.code : "REQUEST_FAILED",
+  // A stalled read must release its caller's loading/single-flight guard.
+  // Mutations retain their existing uncertain-delivery semantics.
+  const readTimeout = method === 'GET' ? AbortSignal.timeout(30_000) : undefined;
+  const requestSignal = readTimeout ? signal ? AbortSignal.any([signal, readTimeout]) : readTimeout : signal;
+  try {
+    const response = await fetch("/api/" + route, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        "X-Freelancer-Client": "webpage",
+      },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal: requestSignal,
     });
-  return value;
+    const value = await response.json();
+    if (!response.ok)
+      throw Object.assign(Error(value.error || "Could not complete that action"), {
+        status: response.status,
+        code: typeof value.code === "string" ? value.code : "REQUEST_FAILED",
+      });
+    return value;
+  } catch (error) {
+    if (readTimeout?.aborted && !signal?.aborted)
+      throw Error('Loading took too long. Try Refresh; running work has not been stopped.');
+    throw error;
+  }
 }
 export const query = (project?: string, session?: string) =>
   new URLSearchParams({
@@ -30,7 +40,7 @@ export const query = (project?: string, session?: string) =>
   }).toString();
 export async function subscribe(
   project: string,
-  onChange: () => void,
+  onChange: (events: any[]) => void,
   signal: AbortSignal,
 ) {
   while (!signal.aborted) {

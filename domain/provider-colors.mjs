@@ -43,7 +43,7 @@ const cache = new Map();
 export function providerTokens(id, appearance = {}) {
   const base = providerColor(id, appearance.providerColors);
   if (!base) return null;
-  const p = themePalette(appearance.theme), key = `${p.id}/${base}`;
+  const p = themePalette(appearance.theme, appearance.customThemes), key = `${p.id}/${base}/${p.tokens.bg}/${p.tokens.paper}/${p.tokens.sidebar}/${p.tokens.hover}/${p.tokens.tint}`;
   if (cache.has(key)) return cache.get(key);
   const tint = mixColor(p.tokens.paper, base, p.mode === 'dark' ? 0.15 : 0.08);
   const surfaces = [p.tokens.bg, p.tokens.paper, p.tokens.sidebar, p.tokens.hover, p.tokens.tint, tint];

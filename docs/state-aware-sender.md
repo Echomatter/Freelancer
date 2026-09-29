@@ -13,7 +13,7 @@ The composer has one dynamic action: Send when idle with content, Stop when a re
 
 The dialog captures the originating project, chat and draft. It offers a model override without changing global defaults. Cancelling preserves the draft. A successful submission clears only the exact captured draft, never text typed later or a draft in another chat.
 
-A normal send immediately shows a local message preview, including attachments, before draft flushing, new-chat creation or native dispatch completes. It says **Sending…**, then **Sent · Waiting for conversation…** after acceptance, and disappears when the matching native message arrives. The preview is scoped to its originating conversation and is not stored as native history. A failed acknowledgement keeps the draft and labels delivery unconfirmed; it never triggers an automatic resend. Existing chats remain editable while acceptance is pending, and a navigation change during creation is respected.
+A normal send immediately shows a local message preview, including attachments, before draft flushing, new-chat creation or native dispatch completes. It says **Sending…**, then **Sent · Waiting for conversation…** after acceptance, and disappears when the matching native message arrives. The preview is scoped to its originating conversation and is not stored as native history. While acceptance is pending, that chat's input displays an empty, disabled field; the captured draft remains saved until acceptance. A failed acknowledgement restores the draft and labels delivery unconfirmed; it never triggers an automatic resend. Other chats remain editable, and a navigation change during creation is respected.
 
 ## Queue
 

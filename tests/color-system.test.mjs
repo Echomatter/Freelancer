@@ -28,6 +28,7 @@ test('palette registry keeps legacy identities and adds bespoke palettes', () =>
   assert.equal(darkPalettes.length, 150);
   assert.equal(new Set(palettes.map(p => p.id)).size, palettes.length);
   assert.equal(new Set(palettes.map(p => p.name)).size, palettes.length);
+  for (const palette of palettes) assert.match(palette.name, /^[A-Z][a-z]+ [A-Z][a-z]+$/, `${palette.id} has two readable words`);
   const nameWords = palettes.flatMap(p => p.name.toLowerCase().split(' '));
   assert.equal(nameWords.length, palettes.length * 2);
   assert.equal(new Set(nameWords).size, nameWords.length);

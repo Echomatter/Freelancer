@@ -83,7 +83,9 @@ test('dialogs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await page.getByRole('button', { name: 'New project', exact: true }).click();
     const openProject = page.getByRole('dialog', { name: 'Open project', exact: true });
     await openProject.waitFor();
-    assert.equal(await openProject.locator('.ef-dialog-body').getAttribute('data-layout'), 'split');
+    assert.equal(await openProject.locator('.ef-dialog-body').getAttribute('data-layout'), 'stack');
+    assert.equal(await openProject.getByRole('heading', { name: 'Recent projects', exact: true }).count(), 0,
+      'project switching lives in navigation; the add dialog is only for registering a folder');
     await screenshot('project-dialog-wide');
     await page.setViewportSize({ width: 390, height: 700 });
     assert.equal((await openProject.locator('.ef-dialog-body').evaluate(node => getComputedStyle(node).gridTemplateColumns)).split(' ').length, 1);

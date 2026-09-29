@@ -6,7 +6,8 @@
 }
 .work-icon > svg { flex: 0 0 auto; }
 .chat-view .request-dock { position: relative; inset: auto; z-index: 5; flex: 0 0 auto; margin: 0 20px; padding: 8px 0; pointer-events: auto; will-change: auto; background: var(--bg); }
-.request-dock-context { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 3px 6px; font-size: 10px; color: var(--muted); }
+.request-dock-context { display: flex; justify-content: space-between; align-items: center; gap: 8px; min-width: 0; padding: 0 3px 6px; font-size: 10px; color: var(--muted); }
+.request-dock-context > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .request-dock-context button { display: inline-flex; gap: 4px; align-items: center; padding: 0; border: 0; background: none; color: var(--accent); font-size: 11px; }
 .chat-view .request-dock .request-working { border: 1px solid var(--accent); border-radius: 12px; box-shadow: none; overflow: hidden; }
 .chat-view .request-working-head { padding: 8px 10px; min-height: 46px; gap: 10px; }
@@ -17,18 +18,15 @@
 .request-marker:hover, .request-marker[aria-expanded=true] { border-color: var(--accent); background: var(--tint); }
 .request-marker > svg { color: var(--accent); margin-left: auto; flex: 0 0 auto; }
 .chat-view .composer-wrap { padding-top: 8px; z-index: 6; }
-.chat-view .composer { position: relative; padding: 10px; border: 1px solid var(--border-strong); border-bottom: 0; border-radius: 18px 18px 0 0; box-shadow: 0 -4px 20px var(--shadow-soft); }
+.chat-view .composer { position: relative; padding: 6px 8px max(6px, env(safe-area-inset-bottom)); border: 1px solid var(--line); border-radius: 14px 14px 0 0; box-shadow: none; background: var(--paper); }
 .chat-view .composer:focus-within, .chat-view .composer.dragging { border-color: var(--accent); }
 .composer-entry { display: grid; grid-template-columns: 44px minmax(0, 1fr) 44px; align-items: end; gap: 10px; }
-.composer .composer-entry textarea { min-height: 44px; max-height: 160px; padding: 11px 0; line-height: 22px; overflow-y: auto; resize: none; font-size: 14px; }
+.composer .composer-entry textarea { width: 100%; min-height: 44px; max-height: min(32dvh, 240px); padding: 11px 0; line-height: 22px; overflow-y: auto; resize: none; font-size: 15px; }
 .composer-entry .sender-controls { grid-column: auto; grid-row: auto; }
-.composer-entry .sender-main, .composer-menu-trigger { width: 44px; height: 44px; border-radius: 13px; display: grid; place-items: center; flex-shrink: 0; }
+.composer-entry .sender-main, .composer-menu-trigger { width: 44px; height: 44px; border-radius: 50%; display: grid; place-items: center; flex-shrink: 0; }
 .composer-entry .sender-main.handoff { box-shadow: none; }
-.composer-menu-trigger { border: 1px solid var(--border-strong); background: var(--tint); color: var(--accent); cursor: pointer; }
+.composer-menu-trigger { border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; touch-action: manipulation; }
 .composer-menu-trigger[aria-expanded=true], .composer-menu-trigger:hover { border-color: var(--accent); background: var(--hover); }
-.composer-context { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 54px 2px; color: var(--muted); font-size: 10px; min-width: 0; }
-.composer-context > span { min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
-.composer-context > span:last-child { text-align: right; }
 .composer-menu { position: static; }
 .composer-menu-panel { position: fixed; bottom: calc(100% + 6px); left: 0; width: min(440px, 100%); max-height: min(60dvh, 520px); overflow-y: auto; overscroll-behavior: contain; padding: 14px; border: 1px solid var(--accent); border-radius: 16px; background: var(--paper); color: var(--text); box-shadow: 0 -8px 28px var(--shadow); z-index: 40; }
 .composer-menu-panel[hidden] { display: none; }
@@ -66,11 +64,11 @@
 .sender-preview { padding: 10px 12px; margin: 4px 0 12px; max-height: 90px; font-size: 13px; }
 @media(max-width: 760px) {
   .chat-view .request-dock { margin-inline: 12px; }
+  .composer .composer-entry textarea, .composer-menu-panel select { font-size: 16px; }
 }
 @media(max-width: 520px) {
   .chat-view .request-dock { margin-inline: 10px; }
   .composer-entry { gap: 8px; }
-  .composer-context { padding-inline: 2px; font-size: 10px; }
   .composer-menu-panel { padding: 12px; }
   .composer-menu-panel .composer-selects { gap: 10px; }
   .composer-menu-panel .composer-model-pair { grid-template-columns: minmax(0, 1fr); }

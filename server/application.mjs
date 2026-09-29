@@ -59,6 +59,7 @@ import { validatePanelWidths } from "../domain/panel-widths.mjs";
 import { visibleTodosForRequest } from "../domain/todos.mjs";
 
 import { isTheme } from "../domain/theme.mjs";
+import { validateNewTheme } from '../domain/custom-themes.mjs';
 import { normalizeProviderPatch, mergeProviderColors } from "../domain/provider-colors.mjs";
 
 import { uiContract } from "../domain/protocol.mjs";
@@ -87,6 +88,7 @@ export function createApplication({
   let refreshingContext = false;
   let refreshingUsage;
   let providerFlight;
+  let providerSnapshot;
   async function changeCredentials(change) {
     if (connecting || sending || refreshingContext)
       throw Error("Wait for the current action to finish before connecting.");
@@ -114,6 +116,7 @@ export function createApplication({
       await host.request("/global/dispose", { method: "POST" });
       return result;
     } finally {
+      providerSnapshot = undefined;
       connecting = false;
     }
   }
@@ -136,8 +139,8 @@ export function createApplication({
       throw Error("This chat belongs to another project");
     return value;
   }
-  async function messages(p, id) {
-    const session = await ownSession(p, id);
+  async function messages(p, id, knownSession) {
+    const session = knownSession ?? await ownSession(p, id);
     const rows = await request(p, `/session/${part(sessionID(id))}/message`);
     await store.observe(
       rows.map((m) => usageRecord(m, p.directory, session.parentID)),
@@ -145,9 +148,14 @@ export function createApplication({
     );
     return rows;
   }
-  async function providers() {
+  async function providers({ display = false } = {}) {
+    // Streaming chat summaries only need catalog metadata. Bootstrap and every
+    // execution/connection path still ask native OpenCode for current inventory.
+    if (display && providerSnapshot && performance.now() - providerSnapshot.at < 30_000)
+      return providerSnapshot.value;
     providerFlight ??= host.request("/provider")
       .then(publicCatalog)
+      .then(value => { providerSnapshot = { value, at: performance.now() }; return value; })
       .finally(() => { providerFlight = undefined; });
     return providerFlight;
   }
@@ -204,14 +212,22 @@ export function createApplication({
     gitProjects,
     modelRatings,
     listProjectFolders,
-    async rebuildContentIndex({ projectID, onProgress = () => {}, signal } = {}) {
+    async rebuildContentIndex({ projectID, includeArchivedProject = false, onProgress = () => {}, signal } = {}) {
+      if (app.indexJobs?.isArchiving() && !includeArchivedProject)
+        throw Object.assign(Error('A project is being put away. General index refresh is paused.'), { status: 409 });
       const key = projectID ?? '*';
       if (contentIndexRefresh.has(key)) return contentIndexRefresh.get(key);
       const refresh = (async () => {
-        const projects = projectID ? [await project(projectID)] : (await store.read("settings")).projects;
+        const registered = (await store.read("settings")).projects;
+        const projects = app.history?.projectsToIndex
+          ? app.history.projectsToIndex(registered, projectID, includeArchivedProject)
+          : projectID ? [await project(projectID)] : registered;
+        if (app.indexJobs?.isArchiving() && !includeArchivedProject)
+          throw Object.assign(Error('A project is being put away. General index refresh is paused.'), { status: 409 });
         const summary = { projects: 0, sources: 0, units: 0, failures: [] };
         for (const item of projects) {
           signal?.throwIfAborted();
+          if (!includeArchivedProject && app.history?.isProjectArchived && await app.history.isProjectArchived(item.id)) continue;
           onProgress(`Indexing files · ${item.name} (${summary.projects + 1}/${projects.length})`);
           try {
             const result = await rebuildContentIndex({ project: await project(item.id), backendRoot, dataRoot, signal, onProgress });
@@ -460,7 +476,12 @@ export function createApplication({
       }));
       return { selected: id };
     },
-    async chat(id, session) {
+    async chat(id, session, { onTiming } = {}) {
+      const timed = async (name, read) => {
+        const start = performance.now();
+        try { return await read(); }
+        finally { onTiming?.(name, performance.now() - start); }
+      };
       const p = await project(id);
       if (importedChatID(session)) {
         const imported = app.chatgpt.get(id, session);
@@ -468,17 +489,17 @@ export function createApplication({
         return { title: imported.title, messages: imported.messages, imported: imported.source,
           receipts: [], status: {}, permissions: [], questions: [], activity: [], summary: sessionSummary(), todos: [], diff: [] };
       }
-      const nativeSession = await ownSession(p, session);
+      const nativeSession = await timed('session', () => ownSession(p, session));
       const reads = await Promise.allSettled([
-        messages(p, session),
-        request(p, "/session/status"),
-        request(p, "/permission"),
-        request(p, "/question"),
-        backendFactory(backendRoot, p.directory).snapshot(session),
-        providers(),
-        request(p, `/session/${part(session)}/todo`),
-        request(p, `/session/${part(session)}/diff`),
-        gitProjects.changedFiles(id).then(files => ({ files }), () => ({ files: [], unavailable: true })),
+        timed('transcript', () => messages(p, session, nativeSession)),
+        timed('status', () => request(p, "/session/status")),
+        timed('permissions', () => request(p, "/permission")),
+        timed('questions', () => request(p, "/question")),
+        timed('local', () => backendFactory(backendRoot, p.directory).snapshot(session, { chatOnly: true })),
+        timed('providers', () => providers({ display: true })),
+        timed('todos', () => request(p, `/session/${part(session)}/todo`)),
+        timed('diff', () => request(p, `/session/${part(session)}/diff`)),
+        timed('files', () => gitProjects.changedFiles(id)).then(files => ({ files }), () => ({ files: [], unavailable: true })),
       ]);
       const availabilityWarnings = [];
       const value = (index, label, fallback, valid = () => true) => {
@@ -499,22 +520,21 @@ export function createApplication({
       const todos = value(6, "Todos", [], Array.isArray);
       const diff = value(7, "Diff", [], Array.isArray);
       const fileStatus = value(8, "Project changes", { files: [], unavailable: true }, result => Array.isArray(result?.files));
+      const messageByID = new Map(rows.map(row => [row.info.id, row]));
+      const outcomes = new Map();
+      for (const entry of snapshot.history?.entries ?? []) {
+        const key = JSON.stringify([entry.task_id, entry.model]);
+        if (entry.observation_kind !== 'operational' && !outcomes.has(key)) outcomes.set(key, entry);
+      }
       const activity = reconcileActivity(
         rows.flatMap((m) => m.parts ?? []),
         snapshot.receipts,
       ).map((row) => {
         row = {
           ...row,
-          requestID: rows.find(
-            (m) => m.info.id === row.raw?.user_task_id?.split("/").at(-1),
-          )?.info.parentID,
+          requestID: messageByID.get(row.raw?.user_task_id?.split("/").at(-1))?.info.parentID,
         };
-        const outcome = snapshot.history?.entries?.find(
-          (entry) =>
-            entry.task_id === row.id &&
-            entry.model === row.observed &&
-            entry.observation_kind !== "operational",
-        );
+        const outcome = outcomes.get(JSON.stringify([row.id, row.observed]));
         return outcome
           ? {
               ...row,
@@ -559,7 +579,8 @@ export function createApplication({
       }));
       const importedSource = app.chatgpt.source(id, session);
       let requestRows = [];
-      try { requestRows = Object.values((await store.read("requests")).records); }
+      try { requestRows = await timed('receipts', () => store.requestSummaries ? store.requestSummaries(id, session)
+        : store.read("requests").then(value => Object.values(value.records))); }
       catch (error) { availabilityWarnings.push(`Request receipts: ${error.message}`); }
       return {
         title: nativeSession.title || "New chat",
@@ -613,6 +634,25 @@ export function createApplication({
         receipts: [], status: {}, permissions: [], questions: [], activity: [],
         summary: sessionSummary(rows.map(row => row.info), [], []), todos: [], diff: [],
         availabilityWarnings: [`Chat details unavailable: ${reason}`],
+      };
+    },
+    async chatPreview(id, session) {
+      const p = await project(id);
+      if (importedChatID(session)) {
+        const imported = app.chatgpt.get(id, session);
+        if (!imported) throw Error('This imported chat belongs to another project or is unavailable.');
+        return { title: imported.title, session: { id: session, title: imported.title }, messages: imported.messages,
+          receipts: [], status: {}, permissions: [], questions: [], activity: [], summary: sessionSummary(), todos: [], diff: [], preview: true };
+      }
+      const nativeSession = await ownSession(p, session);
+      const rows = await request(p, `/session/${part(session)}/message`);
+      if (!Array.isArray(rows)) throw Error('OpenCode returned no chat transcript.');
+      return {
+        title: nativeSession.title || "New chat",
+        session: { id: nativeSession.id, title: nativeSession.title || "New chat", parentID: nativeSession.parentID, time: nativeSession.time },
+        messages: rows.map(row => ({ ...row, parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) })),
+        continuation: null, receipts: [], status: {}, permissions: [], questions: [], activity: [],
+        summary: sessionSummary(rows.map(row => row.info), [], []), todos: [], diff: [], preview: true,
       };
     },
     async saveSessionDefaults(id, input) {
@@ -1069,11 +1109,10 @@ export function createApplication({
       await store.savePlans(plans);
       return { saved: true };
     },
-    async saveAppearance({ theme, showDepletedModels, todoLayout, panelWidths, providerColors }) {
+    async saveAppearance({ theme, customTheme, removeCustomTheme, showDepletedModels, todoLayout, panelWidths, providerColors }) {
       const colors = providerColors === undefined ? undefined : normalizeProviderPatch(providerColors);
       const widths = panelWidths === undefined ? undefined : validatePanelWidths(panelWidths);
-      if (theme !== undefined && !isTheme(theme))
-        throw Error("Choose a theme");
+      if (customTheme !== undefined && removeCustomTheme !== undefined) throw Error('Save or remove one custom theme at a time.');
       if (
         showDepletedModels !== undefined &&
         typeof showDepletedModels !== "boolean"
@@ -1081,18 +1120,32 @@ export function createApplication({
         throw Error("Choose model visibility");
       if (todoLayout !== undefined && !["inline", "docked"].includes(todoLayout))
         throw Error("Choose todo placement");
-      const saved = await store.update("settings", (s) => ({
-        ...s,
-        appearance: {
-          ...s.appearance,
-          ...(widths ? { panelWidths: { ...s.appearance?.panelWidths, ...widths } } : {}),
-          ...(theme !== undefined ? { theme } : {}),
-          ...(colors ? { providerColors: mergeProviderColors(s.appearance?.providerColors, colors) } : {}),
-          ...(showDepletedModels !== undefined ? { showDepletedModels } : {}),
-          ...(todoLayout !== undefined ? { todoLayout } : {}),
-        },
-      }));
-      return { saved: true, ...(theme !== undefined ? { theme: saved.appearance.theme } : {}),
+      const saved = await store.update("settings", (s) => {
+        let customThemes = s.appearance?.customThemes ?? [];
+        let selected = theme ?? s.appearance?.theme ?? 'light';
+        if (customTheme !== undefined) customThemes = [...customThemes, validateNewTheme(customTheme, customThemes)];
+        if (removeCustomTheme !== undefined) {
+          const removed = customThemes.find(p => p.id === removeCustomTheme);
+          if (!removed) throw Error('This custom theme is no longer saved.');
+          customThemes = customThemes.filter(p => p.id !== removeCustomTheme);
+          if (selected === removeCustomTheme) selected = removed.mode;
+        }
+        if (theme !== undefined && !isTheme(selected, customThemes)) throw Error('Choose a theme');
+        return {
+          ...s,
+          appearance: {
+            ...s.appearance,
+            ...(widths ? { panelWidths: { ...s.appearance?.panelWidths, ...widths } } : {}),
+            ...((theme !== undefined || removeCustomTheme !== undefined) ? { theme: selected } : {}),
+            ...((customTheme !== undefined || removeCustomTheme !== undefined) ? { customThemes } : {}),
+            ...(colors ? { providerColors: mergeProviderColors(s.appearance?.providerColors, colors) } : {}),
+            ...(showDepletedModels !== undefined ? { showDepletedModels } : {}),
+            ...(todoLayout !== undefined ? { todoLayout } : {}),
+          },
+        };
+      });
+      return { saved: true, ...((theme !== undefined || removeCustomTheme !== undefined) ? { theme: saved.appearance.theme } : {}),
+        ...((customTheme !== undefined || removeCustomTheme !== undefined) ? { customThemes: saved.appearance.customThemes } : {}),
         ...(widths ? { panelWidths: saved.appearance.panelWidths } : {}),
         ...(colors ? { providerColors: saved.appearance.providerColors } : {}) };
     },
@@ -1181,5 +1234,7 @@ export function createApplication({
   app.history = createHistoryService({ app, host, backendRoot, dataRoot, localData });
   app.chatgpt = createChatGPTImport({ app, backendRoot, dataRoot, localData, ...importOptions });
   app.indexJobs = createIndexJobs({ app, backendRoot, dataRoot, localData });
+  app.history.setProjectArchiveIndexer((projectID, revision, commit) =>
+    app.indexJobs.archiveProject(projectID, revision, commit));
   return app;
 }

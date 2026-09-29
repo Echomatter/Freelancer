@@ -2,15 +2,16 @@
 
 ## User guide
 
-The right edge of a chat combines turn navigation, scrolling and the Details
-divider. Each dot represents one turn. Select it to jump to that turn and open
+The right edge of a chat combines turn navigation and scrolling beside a
+separate Details divider. Each dot represents one turn. Select it to jump to that turn and open
 its tool dock. Hover or keyboard-focus a dot for the prompt excerpt, status,
 action/helper counts, reported input and output, model and elapsed time when
 available. Missing native statistics are labeled rather than estimated.
 
-Drag the pulsing ring to scroll. The ring's rim remains draggable when its
-center crosses a turn dot. With Details open, drag empty rail space horizontally
-to change its width. Double-click empty space resets the width. Escape cancels
+Drag the pulsing ring to scroll, or select empty track space to move it directly.
+The ring's rim remains draggable when its center crosses a turn dot. With Details
+open, drag the narrow divider at the panel edge horizontally to change its width.
+Double-click the divider resets the width. Escape cancels
 either drag; the previous width survives failed saves. The rail replaces the
 chat's native scrollbar and runs to the bottom of the workspace.
 
@@ -36,8 +37,8 @@ menu. The underlying native action API is retained for compatibility.
 ## Technical guide
 
 `src/echoflex/ConversationRail.tsx` is the shared React object. It takes target
-IDs, read-only turn metadata, scroll/content refs, a selected key and an optional
-resize control. `Chat.tsx` owns turn/tool selection; `PanelResize.tsx` retains
+IDs, read-only turn metadata, scroll/content refs and a selected key.
+`Chat.tsx` owns turn/tool selection; `PanelResize.tsx` retains
 width persistence and rollback. This avoids introducing a second scroll store,
 turn store, or execution model. Hidden native scrollbar chrome leaves native
 wheel, touch and programmatic scrolling intact.
@@ -47,7 +48,8 @@ long response. The thumb interpolates actual transcript offsets between those
 turns. Dense histories retain one dot and keyboard target per turn. Resize
 observers measure the transcript and viewport, never the dock or tooltip;
 measurements are batched in animation frames and unchanged metrics do not
-render again. Stream updates do not switch a historical dock selection. A new
+render again. Normal scrolling reuses the measured anchors; only viewport or
+transcript size changes trigger a new geometry pass. The top help icon is removed. Stream updates do not switch a historical dock selection. A new
 turn resets it to current work.
 
 `GET/PUT /api/context-settings` reads the effective native configuration and

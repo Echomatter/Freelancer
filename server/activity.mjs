@@ -21,6 +21,12 @@ export function createActivityReader({ project, host }) {
       ? path.resolve(directory).toLowerCase() : path.resolve(directory);
     const sessions = all.filter((s) => s?.id && typeof s.directory === "string" &&
       normalize(s.directory) === normalize(selected.directory));
-    return { project: projectID, sessions: projectActivity(sessions, status, questions, permissions) };
+    const activity = projectActivity(sessions, status, questions, permissions);
+    const recent = [...new Map([
+      ...sessions.filter(row => activity[row.id]?.active || activity[row.id]?.waiting),
+      ...sessions.toSorted((a, b) => Number(b.time?.updated ?? b.time?.created ?? 0) - Number(a.time?.updated ?? a.time?.created ?? 0)).slice(0, 40),
+    ].map(row => [row.id, row])).values()]
+      .map(({ id, parentID, title, time }) => ({ id, parentID, title, time }));
+    return { project: projectID, sessions: activity, recent };
   };
 }

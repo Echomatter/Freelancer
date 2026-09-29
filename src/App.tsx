@@ -1,9 +1,10 @@
 const HistoryPage = lazy(() => import('./History').then(module => ({ default: module.HistoryPage })));
 import { ModelRatingDialog, ModelRatingProgress, useModelRatings } from './ModelRatings';
 import { IndexJobsContext, IndexJobProgress, useIndexJobs } from './IndexJobs';
-import { ProgressStatus } from './echoflex/ProgressStatus';
 import { useDrafts } from "./useDrafts";
 import { lazy, Suspense, startTransition, useEffect, useMemo, useRef, useState } from "react";
+import { shareSnapshot } from './snapshot-sharing.mjs';
+import { eventRefreshScope } from './live-events.mjs';
 import {
   Plus,
   FolderOpen,
@@ -13,11 +14,12 @@ import {
   Activity,
   Check,
   X,
-  PanelLeftClose,
   Search,
   LoaderCircle,
   BrainCircuit,
   Gauge,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import { api, query, subscribe } from "./api";
 import { Button, Panel, Badge, Empty, Field, PageCloseButton, PageHeading } from "./echoflex/Controls";
@@ -34,7 +36,6 @@ import { browseModels } from "../shared/view.mjs";
 const WorkspaceCatalog = lazy(() => import('./WorkspaceCatalog').then(module => ({ default: module.WorkspaceCatalog })));
 import { startingChoices } from "../domain/session-defaults.mjs";
 import { compatibleApplication } from "../domain/protocol.mjs";
-import { ProjectProgress } from "./ProjectPicker";
 import { ChatNavigation, ProjectNavigation } from "./NavigationMenus";
 import { ContentSearch } from "./IndexedSearch";
 import { Questions } from "./Question";
@@ -48,7 +49,8 @@ import { ContributionRows } from "./Contributions";
 import { AppearanceContext, ProviderText, ProviderSelect, providerAttributes, type ColorPatch } from "./ProviderColors";
 import { mergeProviderColors } from "../domain/provider-colors.mjs";
 import { senderState } from "../domain/sender.mjs";
-import { RecentChats } from "./recent-chats.mjs";
+import { chatWarmTargets, RecentChats } from "./recent-chats.mjs";
+import { delegateChildSession } from "../domain/chat-view.mjs";
 
 const EMPTY_TODOS: any[] = [];
 const parentDirectory = (path: string) => {
@@ -69,18 +71,43 @@ function modelQuantity(value: number) {
   return compactModelNumber.format(value);
 }
 
-function ChatLoading({ label }: { label: string }) {
+function ChatLoading({ label, title = 'Opening your chat', children }: { label: string; title?: string; children?: React.ReactNode }) {
   return <div className="chat-loading-stage" role="status" aria-live="polite" aria-label={label}>
     <div className="chat-loading-content">
       <div className="chat-loading-halo" aria-hidden="true"><LoaderCircle size={34} strokeWidth={1.6} /></div>
-      <strong>Opening your chat</strong>
+      <strong>{title}</strong>
       <span>{label}</span>
+      {children}
     </div>
   </div>;
 }
 
 export default function App() {
   const confirmation = useConfirmation();
+  const [navigationCollapsed, setNavigationCollapsed] = useState(() => {
+    try { return localStorage.getItem("freelancer:navigation-collapsed") === "true"; }
+    catch { return false; }
+  });
+  const [navigationHiddenMobile, setNavigationHiddenMobile] = useState(false);
+  const [narrowViewport, setNarrowViewport] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches);
+  const navigationTouch = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 720px)");
+    const update = () => setNarrowViewport(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  const toggleNavigation = () => {
+    if (narrowViewport) setNavigationHiddenMobile(value => !value);
+    else {
+      const next = !navigationCollapsed;
+      try { localStorage.setItem("freelancer:navigation-collapsed", String(next)); } catch { /* The session control still works if storage is unavailable. */ }
+      setNavigationCollapsed(next);
+    }
+  };
+  const navigationControlLabel = narrowViewport
+    ? navigationHiddenMobile ? "Show navigation" : "Hide navigation"
+    : navigationCollapsed ? "Expand navigation" : "Collapse navigation";
   const [folderPicker, setFolderPicker] = useState(false), [importPreview, setImportPreview] = useState<any>(null);
   const [indexedFilePath, setIndexedFilePath] = useState("");
   const [fileFolderPath, setFileFolderPath] = useState("");
@@ -119,6 +146,7 @@ export default function App() {
   } | null>(null);
   const projectTransition = useRef(false);
   const initialProject = useRef(false);
+  const continuePreparation = useRef<(() => void) | null>(null);
   const indexJobs = useIndexJobs();
   const decisions = useRef<HTMLDivElement>(null);
   const [modelQuery, setModelQuery] = useState("");
@@ -127,6 +155,7 @@ export default function App() {
     [modelSort, setModelSort] = useState("cost"),
     [freeOnly, setFreeOnly] = useState(false);
   const [sending, setSending] = useState(false);
+  const [sendingKey, setSendingKey] = useState('');
   const sendFlight = useRef(false);
   const stopFlight = useRef(false);
   const [pendingSend, setPendingSend] = useState<{
@@ -137,6 +166,11 @@ export default function App() {
   const [creatingChat, setCreatingChat] = useState(false);
   const [startingSession, setStartingSession] = useState("");
   const recentChats = useRef(new RecentChats());
+  const cacheVersion = useRef(0);
+  const warmQueue = useRef<{ project: string; session: string; depth: number; refresh: boolean }[]>([]);
+  const warmQueued = useRef(new Set<string>()), warming = useRef(new Set<string>());
+  const warmRetryAfter = useRef(new Map<string, number>());
+  const warmRunning = useRef(0), otherProjectActivityAt = useRef(new Map<string, number>());
   const [choicesKey, setChoicesKey] = useState("");
   const [historySelection, setHistorySelection] = useState<string | undefined>();
   const historyOpen = view === "history";
@@ -210,6 +244,20 @@ export default function App() {
   const draftSaving = draftMemory.status === "Saving draft…";
   const draft = draftMemory.text, setDraft = draftMemory.setText;
   navigation.current = query(project, session);
+  const prepareProject = async (target: { id: string; name: string }) => {
+    let waiting = true;
+    const preparation = indexJobs.prepare(target.id, job => {
+      if (waiting) setProjectLoading({ name: target.name, phase: job.label, step: job.step });
+    }).catch(e => {
+      setError(`Index preparation for ${target.name} needs attention: ${(e as Error).message}`);
+    });
+    try {
+      await Promise.race([preparation, new Promise<void>(resolve => { continuePreparation.current = resolve; })]);
+    } finally {
+      waiting = false;
+      continuePreparation.current = null;
+    }
+  };
   const refresh = async (signal?: AbortSignal) => {
     if (projectTransition.current) return;
     const key = query(project, session),
@@ -220,18 +268,19 @@ export default function App() {
       projectTransition.current = true;
       setProjectLoading({ name: next.project.name, phase: 'Checking project indexes…', step: 'files' });
       try {
-        await indexJobs.prepare(next.project.id, job => setProjectLoading({ name: next.project.name, phase: job.label, step: job.step }));
+        await prepareProject(next.project);
       } catch (e) { setError(`Workspace opened; index preparation needs attention: ${(e as Error).message}`); }
       finally { projectTransition.current = false; setProjectLoading(null); }
     }
     if (id === bootstrapVersion.current && navigation.current === key)
-      setData({ ...next, selectionKey: key });
+      setData(previous => shareSnapshot(previous, { ...next, selectionKey: key }));
   };
   const availableUsage = useAvailability(data, refresh);
   const colorsSaved = (patch: ColorPatch) => {
     bootstrapVersion.current++;
     setData(current => current ? ({ ...current, settings: { ...current.settings, appearance: {
       ...current.settings.appearance, ...(patch.theme ? { theme: patch.theme } : {}),
+      ...(patch.customThemes ? { customThemes: patch.customThemes } : {}),
       ...(patch.providerColors ? { providerColors: mergeProviderColors(current.settings.appearance?.providerColors, patch.providerColors) } : {}),
     } } }) : current);
   };
@@ -244,8 +293,9 @@ export default function App() {
         id = reusable ? existing.version : ++chatVersion.current;
       let request = reusable ? existing : undefined;
       if (!request) {
+        const cacheID = ++cacheVersion.current;
         const promise = api("chat?" + key).then(next => {
-          recentChats.current.put(targetProject, targetSession, next, id);
+          recentChats.current.put(targetProject, targetSession, next, cacheID);
           return next;
         }).finally(() => {
           if (chatRequests.current.get(key)?.version === id) chatRequests.current.delete(key);
@@ -254,15 +304,79 @@ export default function App() {
         chatRequests.current.set(key, request);
       }
       const next = await request.promise;
+      queueLinkedChildren(targetProject, next, 0);
       if (id === chatVersion.current && (navigation.current === key || navigation.current === originKey)) {
-        setChat({ ...next, loaded: true, selectionKey: key });
+        setChat(previous => shareSnapshot(previous, { ...next, loaded: true, selectionKey: key }));
       }
     }
   };
+  const drainWarmQueue = () => {
+    while (!document.hidden && warmRunning.current < 2 && warmQueue.current.length) {
+      const target = warmQueue.current.shift()!, key = query(target.project, target.session);
+      warmQueued.current.delete(key);
+      const cached = recentChats.current.get(target.project, target.session);
+      if ((cached && (!target.refresh || recentChats.current.isFresh(target.project, target.session, 15_000))) ||
+          chatRequests.current.has(key) || warming.current.has(key)) continue;
+      warming.current.add(key);
+      warmRunning.current++;
+      const version = ++cacheVersion.current;
+      void api(`chat?${key}&preview=1`).then(preview => {
+        warmRetryAfter.current.delete(key);
+        recentChats.current.put(target.project, target.session, preview, version);
+        queueLinkedChildren(target.project, preview, target.depth, target.refresh);
+      }).catch(() => {
+        warmRetryAfter.current.delete(key);
+        warmRetryAfter.current.set(key, Date.now() + 30_000);
+        while (warmRetryAfter.current.size > 128) warmRetryAfter.current.delete(warmRetryAfter.current.keys().next().value!);
+      }).finally(() => {
+        warming.current.delete(key);
+        warmRunning.current--;
+        drainWarmQueue();
+      });
+    }
+  };
+  const queueWarmChat = (targetProject: string, targetSession: string, depth = 0, refreshWarm = false) => {
+    if (!targetProject || !targetSession || document.hidden || warmQueue.current.length >= 32) return;
+    const key = query(targetProject, targetSession);
+    const cached = recentChats.current.get(targetProject, targetSession);
+    const retryAfter = warmRetryAfter.current.get(key) ?? 0;
+    if (retryAfter > Date.now()) return;
+    if (retryAfter) warmRetryAfter.current.delete(key);
+    if ((cached && (!refreshWarm || recentChats.current.isFresh(targetProject, targetSession, 15_000))) || chatRequests.current.has(key) ||
+        warmQueued.current.has(key) || warming.current.has(key)) return;
+    warmQueued.current.add(key);
+    warmQueue.current.push({ project: targetProject, session: targetSession, depth, refresh: refreshWarm });
+    drainWarmQueue();
+  };
+  const queueLinkedChildren = (targetProject: string, chat: any, depth: number, refreshWarm = false) => {
+    if (depth >= 2) return;
+    const children = new Set<string>();
+    for (const message of chat.messages ?? []) for (const part of message.parts ?? []) {
+      const child = delegateChildSession(part);
+      if (child) children.add(child);
+    }
+    for (const child of children) queueWarmChat(targetProject, child, depth + 1, refreshWarm);
+  };
+  const queueProjectWarmup = (targetProject: string, sessions: any[], activity: Record<string, any>) => {
+    for (const target of chatWarmTargets(sessions, activity, 3).slice(0, 8))
+      if (!(targetProject === project && target.id === session)) {
+        const state = activity[target.id];
+        queueWarmChat(targetProject, target.id, 0, !!(state?.active || state?.waiting || state?.retry));
+      }
+  };
   const modelRatings = useModelRatings(() => refresh());
   const browsedModels = useMemo(() => browseModels(data?.models ?? [], { query: modelQuery, provider: modelProvider, sort: modelSort, freeOnly }), [data?.models, modelQuery, modelProvider, modelSort, freeOnly]);
-  const refreshCurrent = useRef<() => Promise<unknown>>(() => Promise.resolve());
-  refreshCurrent.current = () => Promise.all([refreshChat(), refresh()]);
+  const refreshCurrent = useRef<(scope: { chat: boolean; bootstrap: boolean }) => Promise<unknown>>(() => Promise.resolve());
+  refreshCurrent.current = scope => Promise.all([scope.chat && refreshChat(), scope.bootstrap && refresh()]);
+  const eventSessions = useRef(new Set<string>());
+  eventSessions.current = useMemo(() => {
+    const related = new Set([session]);
+    for (const message of chatState.messages ?? []) for (const part of message.parts ?? []) {
+      const child = delegateChildSession(part);
+      if (child) related.add(child);
+    }
+    return related;
+  }, [session, chatState.messages]);
   async function run(fn: () => Promise<any>) {
     pending.current++;
     setWorking(true);
@@ -288,13 +402,41 @@ export default function App() {
   }, [data?.project?.id]);
   useEffect(() => {
     const theme = data?.settings.appearance?.theme;
-    if (theme) applyTheme(theme);
-  }, [data?.settings.appearance?.theme]);
+    if (theme) applyTheme(theme, document.documentElement, data.settings.appearance?.customThemes);
+  }, [data?.settings.appearance?.theme, data?.settings.appearance?.customThemes]);
   useEffect(() => {
     chatVersion.current++;
     setChat({ messages: [], status: {}, permissions: [], questions: [] });
     if (project && session) void run(refreshChat);
   }, [project, session]);
+  useEffect(() => {
+    if (data?.project?.id !== project || !project) return;
+    queueProjectWarmup(project, data.sessions ?? [], sessionActivity ?? {});
+  }, [data?.selectionKey, data?.sessions, project, session, sessionActivity]);
+  const warmProjects = [...new Set([project, ...(data?.settings.projects ?? [])
+    .filter((item: any) => !item.organization?.archivedAt)
+    .toSorted((a: any, b: any) => Date.parse(b.openedAt ?? "") - Date.parse(a.openedAt ?? ""))
+    .slice(0, 3).map((item: any) => item.id)])].filter(Boolean).slice(0, 3);
+  const warmProjectKey = warmProjects.join("\0");
+  useEffect(() => {
+    if (!project || !data || data.project?.id !== project) return;
+    const otherProjects = warmProjects.filter(id => id !== project);
+    const refreshOtherProjects = () => {
+      if (document.hidden) return;
+      for (const id of otherProjects) {
+        const last = otherProjectActivityAt.current.get(id) ?? 0;
+        if (Date.now() - last < 45_000) continue;
+        otherProjectActivityAt.current.set(id, Date.now());
+        void api("activity?" + query(id)).then(result => {
+          if (result?.project === id)
+            queueProjectWarmup(id, result.recent ?? [], result.sessions ?? {});
+        }).catch(() => { otherProjectActivityAt.current.delete(id); });
+      }
+    };
+    refreshOtherProjects();
+    const timer = window.setInterval(refreshOtherProjects, 60_000);
+    return () => window.clearInterval(timer);
+  }, [project, data?.project?.id, warmProjectKey]);
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -309,33 +451,40 @@ export default function App() {
   useEffect(() => {
     if (!project) return;
     const abort = new AbortController();
-    let refreshing = false,
-      dirty = false;
-    const update = () => {
+    let refreshing = false;
+    let dirty = { chat: false, bootstrap: false };
+    const update = (events?: any[]) => {
       if (abort.signal.aborted) return;
-      if (refreshing) {
-        dirty = true;
-        return;
+      if (events) {
+        const scope = eventRefreshScope(events, eventSessions.current);
+        dirty.chat ||= scope.chat;
+        dirty.bootstrap ||= scope.bootstrap;
       }
-      if (timer.current) return;
+      if (document.hidden || refreshing || timer.current || (!dirty.chat && !dirty.bootstrap)) return;
       timer.current = setTimeout(async () => {
         timer.current = undefined;
+        if (document.hidden || abort.signal.aborted) return;
+        // Keep notifications queued while navigation suppresses reads. If the
+        // project fails to open, the old chat still needs its final updates.
+        if (projectTransition.current) { update(); return; }
         refreshing = true;
+        const scope = dirty;
+        dirty = { chat: false, bootstrap: false };
         try {
-          await refreshCurrent.current();
+          await refreshCurrent.current(scope);
         } catch {
         } finally {
           refreshing = false;
-          if (dirty) {
-            dirty = false;
-            update();
-          }
+          update();
         }
       }, 500);
     };
+    const visible = () => { if (!document.hidden) update([null]); };
+    document.addEventListener('visibilitychange', visible);
     void subscribe(project, update, abort.signal);
     return () => {
       abort.abort();
+      document.removeEventListener('visibilitychange', visible);
       if (timer.current) clearTimeout(timer.current);
       timer.current = undefined;
     };
@@ -349,7 +498,7 @@ export default function App() {
   const current = data?.sessions.find((s) => s.id === session) ??
       (session && chat.selectionKey === selectedKey ? chat.session : undefined),
     turnState = session ? senderState(chat, session) : { busy: false },
-    busy = sending || turnState.busy;
+    busy = sending && sendingKey === selectedKey || liveChatReady && turnState.busy;
   const selectedChoicesKey = session
     ? selectedKey
     : `${selectedKey}:${data?.sessionDefaults?.revision ?? 0}`;
@@ -394,6 +543,7 @@ export default function App() {
     const origin = query(project, session);
     sendFlight.current = true;
     setSending(true);
+    setSendingKey(origin);
     setPendingSend({ key: origin, text: capturedDraft, attachments, previousIDs: chat.messages.map(message => message.info?.id), state: 'sending' });
     if (!session) setStartingSession("__new__");
     let createdSession = "";
@@ -409,6 +559,7 @@ export default function App() {
           restoredChoices.current = query(project, id);
           setChoicesKey(restoredChoices.current);
           createdSession = id;
+          setSendingKey(query(project, id));
           setStartingSession(id);
           setPendingSend(value => value?.key === origin ? { ...value, key: query(project, id) } : value);
           if (navigation.current === origin) selectSession(id);
@@ -441,11 +592,15 @@ export default function App() {
       sendFlight.current = false;
       setStartingSession("");
       setSending(false);
+      setSendingKey('');
     }
     return { accepted, sessionID: createdSession || session };
   }
   async function openProject(existing?: any) {
     if (projectTransition.current) return false;
+    setFolderOpen(false);
+    setFolderPicker(false);
+    setImportPreview(null);
     let opened = false;
     projectTransition.current = true;
     bootstrapVersion.current++;
@@ -473,7 +628,7 @@ export default function App() {
         initialProject.current = true;
         setProjectLoading({ name: p.name, phase: 'Checking project indexes…', step: 'files' });
         try {
-          if (next.indexPreparation) await indexJobs.prepare(p.id, job => setProjectLoading({ name: p.name, phase: job.label, step: job.step }));
+          if (next.indexPreparation) await prepareProject(p);
         } catch (e) { setError(`Workspace opened; index preparation needs attention: ${(e as Error).message}`); }
         bootstrapVersion.current++;
         chatVersion.current++;
@@ -601,15 +756,33 @@ export default function App() {
   return (
     <AppearanceContext.Provider value={data?.settings.appearance ?? {}}>
     <IndexJobsContext.Provider value={indexJobs}>
-    <div className="workspace resizable-workspace" style={panelLayout.style}>
+    <div className={`workspace resizable-workspace${navigationCollapsed ? " navigation-collapsed" : ""}${narrowViewport && navigationHiddenMobile ? " navigation-hidden" : ""}`} style={panelLayout.style}
+      onTouchStart={event => {
+        const touch = event.touches[0];
+        navigationTouch.current = touch ? { x: touch.clientX, y: touch.clientY } : null;
+      }}
+      onTouchEnd={event => {
+        const start = navigationTouch.current, touch = event.changedTouches[0];
+        navigationTouch.current = null;
+        if (!start || !touch || !narrowViewport) return;
+        const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
+        if (Math.abs(dx) < 54 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
+        if (!navigationHiddenMobile && start.x < 76 && dx < 0) setNavigationHiddenMobile(true);
+        else if (navigationHiddenMobile && start.x < 28 && dx > 0) setNavigationHiddenMobile(false);
+      }}
+      onTouchCancel={() => { navigationTouch.current = null; }}>
       <aside className="sidebar" id="workspace-navigation">
         <div className="brand">
           <span>
-            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M6 17.5V5h10.5M6 12h8.5" />
-              <circle cx="18.5" cy="5" r="2" />
-              <circle cx="16.5" cy="12" r="2" />
-              <circle cx="6" cy="19.5" r="2" />
+            <svg width="21" height="21" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <g stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M6.5 16V5.5H15M6.5 12H13" />
+              </g>
+              <g stroke="currentColor" strokeWidth="1.6">
+                <circle cx="18" cy="5.5" r="2.4" />
+                <circle cx="16" cy="12" r="2.4" />
+                <circle cx="6.5" cy="19" r="2.4" />
+              </g>
             </svg>
           </span>
           Freelancer
@@ -656,6 +829,12 @@ export default function App() {
             <strong>{view === "chat" ? current?.title ?? "New chat" : view === "overview" ? "Available Usage" : settingsItemLabel(navigationScope, navigationTab)}</strong>
           </div>
           <div className="topbar-right">
+            <Button variant="quiet" className="navigation-layout-toggle" aria-label={navigationControlLabel} title={navigationControlLabel}
+              aria-expanded={narrowViewport ? !navigationHiddenMobile : !navigationCollapsed} aria-controls="workspace-navigation"
+              onClick={toggleNavigation}>
+              {narrowViewport ? navigationHiddenMobile ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />
+                : navigationCollapsed ? <PanelLeftOpen size={17} /> : <PanelLeftClose size={17} />}
+            </Button>
             {view === "chat" && current?.parentID && (
               <Button
                 variant="quiet"
@@ -666,7 +845,6 @@ export default function App() {
             )}
             {view === "chat" && session && (
               <Button variant="quiet" aria-expanded={details} aria-controls="workspace-details" onClick={() => setDetails(!details)}>
-                <PanelLeftClose size={16} />
                 Details
               </Button>
             )}
@@ -716,23 +894,22 @@ export default function App() {
             This chat loaded with incomplete live data: {chat.availabilityWarnings.join(" · ")}
           </div>
         )}
-        {!data ? (
-          <Empty
-            icon={LoaderCircle}
+        {projectLoading ? (
+          <ChatLoading title={`Opening ${projectLoading.name}`} label={projectLoading.phase}>
+            {['files', 'chats'].includes(projectLoading.step ?? '') && <Button onClick={() => continuePreparation.current?.()}>Continue in background</Button>}
+          </ChatLoading>
+        ) : !data ? (
+          <ChatLoading
             title="Opening your workspace…"
-            action={
-              error ? (
-                <Button onClick={() => run(refresh)}>Try again</Button>
-              ) : undefined
-            }
-          ><ProgressStatus label="Connecting to OpenCode and loading projects, models and saved settings…" /></Empty>
+            label="Connecting to OpenCode and loading projects, models and saved settings…"
+          >{error && <Button onClick={() => run(refresh)}>Try again</Button>}</ChatLoading>
         ) : !compatibleApplication(data) ? (
           <Empty icon={RefreshCw} title="Restart Freelancer to finish updating">
             The app has been updated. Close and reopen Freelancer to load its
             new settings and model choices.
           </Empty>
         ) : project && data.project?.id !== project ? (
-          <Empty icon={LoaderCircle} title="Loading project…" />
+          <ChatLoading title="Opening your project" label="Loading the workspace…" />
         ) : (
           <Suspense fallback={<Empty icon={LoaderCircle} title="Opening page…" />}>
               <div className="chat-workspace" hidden={view !== "chat"}>
@@ -770,6 +947,7 @@ export default function App() {
                     data={data}
                     syncing={chatSyncing || chatLoading}
                     pendingSend={sendObserved ? null : visibleSend}
+                    sending={sending && sendingKey === selectedKey}
                     messages={chat.messages}
                     todos={chat.todos ?? EMPTY_TODOS}
                     session={current ?? (session ? { id: session } : undefined)}
@@ -806,8 +984,8 @@ export default function App() {
                       next?.click();
                     }}
                     onOpenDetails={openDetails}
-                    detailsDivider={panelLayout.fitted.detailsResizable ? <PanelResize panel="details" layout={panelLayout} className="conversation-rail-divider" /> : undefined}
                   /></RenderBoundary>
+                  {panelLayout.fitted.detailsResizable && <PanelResize panel="details" layout={panelLayout} />}
                   {details && (
                     <Details
                       chat={chat}
@@ -1027,12 +1205,10 @@ export default function App() {
       {confirmation.ui}
       {ratingDialog && data && <ModelRatingDialog models={data.models} connected={data.providers.connected} project={project}
         pending={modelRatings.pending} error={modelRatings.error} onClose={() => setRatingDialog(false)} onStart={modelRatings.start} />}
-      {projectLoading && <ProjectProgress {...projectLoading} onStop={indexJobs.job?.status === 'running' && indexJobs.job?.stoppable
-        ? () => { void indexJobs.stop().catch(() => {}); } : undefined} />}
-      {folderOpen && (
+        {folderOpen && !projectLoading && (
             <Dialog title="Open project" ariaLabel="Open project"
             icon={<FolderOpen />} onClose={() => setFolderOpen(false)} busy={!!projectLoading || importBusy} initialFocus="first"
-            size={data?.settings.projects.length ? 'wide' : 'compact'} layout={data?.settings.projects.length ? 'split' : 'stack'}
+            size="compact" layout="stack"
             footer={<>
               <Button
                 type="button"
@@ -1069,26 +1245,7 @@ export default function App() {
               </p>
             )}
             </div>
-            {!!data?.settings.projects.length && <section className="project-choices"><h3>Recent projects</h3>
-            {data?.settings.projects.filter(p => !p.organization?.archivedAt).map((p) => (
-              <button
-                type="button"
-                className="recent-project"
-                key={p.id}
-                disabled={!!projectLoading || importBusy}
-                onClick={() => {
-                  void openProject(p);
-                }}
-              >
-                <FolderOpen size={16} />
-                <span>
-                  <strong>{p.name}</strong>
-                  <small>{p.directory}</small>
-                </span>
-              </button>
-            ))}
-            </section>}
-          </Dialog>
+            </Dialog>
       )}
       {folderPicker && <FolderPicker initial={folder.trim()} onClose={() => setFolderPicker(false)} onPick={directory => { setFolder(directory); setFolderPicker(false); }} />}
       {importPreview && <ProjectImport preview={importPreview} busy={importBusy} error={importError} onClose={() => setImportPreview(null)} onComplete={selected => void finishProjectSetup(selected)} />}

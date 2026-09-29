@@ -1,4 +1,4 @@
-import { contrast, mixColor, onColor, readableColor } from './color.mjs';
+import { contrast, luminance, mixColor, onColor, readableColor } from './color.mjs';
 
 // One small application-owned palette catalog, not an editable style engine.
 // A palette's mode also drives the browser's built-in widgets.
@@ -604,48 +604,194 @@ const definitions = [
   { id: 'pitch-vermilion', name: 'Pitch Vermilion', mode: 'dark', description: 'Pitch black lifted by a vermilion sidebar.',
     bg: '#0c0f16', paper: '#181c26', sidebar: '#1a2130', text: '#edeff4', muted: '#a6adbc', line: '#2b313e', accent: '#ff5c39', tint: '#4c2a24', hover: '#181d28' },
 ];
-// A distinct descriptive word for each palette, in catalog order. Reuse a
-// color phrase's final word when it is unique; otherwise its compound form
-// keeps the color story while making every displayed name exactly two words.
-const epithets = `Verdure Silvan Sirocco Cerulean Seabreeze Luminance Firelight Canopy Rime Rouge
-Sencha Solstice Cinderspark Velour Boreal Roast White Petals Herbal Cream Tropical Adobe
-Airy Clean Cooled Aqua Inky Alpine Midnight Garnet Baked Sprout Marine Magenta Dune
-Shallow Vivid Birch Scarlet Emerald Void Coral Green Spice Trench Moss Neon Molten
+// Palette names pair one distinct title with one distinct, standalone descriptor.
+const epithets = `Sage Forest Sirocco Cerulean Seaglass Amethyst Ember Evergreen Porcelain Garnet
+Matcha Solstice Graphite Suede Boreal Espresso Glacial Cherrywood Herbarium Custard Tropical Adobe
+Airy Clean Ashen Aqua Inky Alpine Midnight Ruby Baked Sprout Marine Magenta Sahara
+Shallow Vivid Birch Scarlet Emerald Void Coral Benthic Spice Trench Moss Neon Molten
 Lightning Electric Pistachio Bramble Spring Fuchsia Apricot Lemon Ultramarine Copper Saffron
 Rosemary Icewater Pine Honey Pepper Aubergine Buttercup Chalk Fern Peacock Parchment Opal
 Almond Burgundy Magnolia Verbena Sorbet Cornflower Wheat Hydrangea Dewdrop Terracotta
 Chamomile Lotus Sepia Milkglass Blossom Cloudberry Obsidian Petrol Chartreuse Navy Mahogany
 Lantern Citron Oxblood Firefly Supernova Cacao Basalt Jade Moon Cypress Persimmon Celadon
 Flame Champagne Ionized Papaya Glacier Cinder Moonstone Nocturne Sable Blackberry Hibiscus
-Spruce Seafoam Comet Olive Eclipse Crisp Pastoral Preserved Yuzu Porcelain Peach Tailored
-Mineral Mulberry Barkcloth Skylit Shell Gentle Thyme Alabaster Banana Disciplined Oxidized
-Dusky Arctic Assertive Heather Glinting Rain Warmth Earthen Cucumber Ricepaper Sunlit
-Seagrass Nightshade Dusty Sharpened Cherry Kelp Azalea Smoky Mint Auburn Pomegranate
-Periwinkle Iron Balanced Polished Nebula Estuarine Cave Brightness Abyssal Luminous Slate
+Spruce Seafoam Comet Olive Eclipse Crisp Oatmeal Frosted Yuzu China Peach Tailored
+Mineral Mulberry Linen Skylit Shell Gentle Thyme Alabaster Banana Disciplined Oxidized
+Dusky Arctic Royal Heather Glinting Rain Warmth Earthen Cucumber Rice Sunlit
+Seagrass Nightshade Dusty Sharpened Cherry Tangle Azalea Smoky Mint Auburn Pomegranate
+Periwinkle Iron Port Blackened Nebula Estuarine Cave Brightness Abyssal Luminous Slate
 Toasted Raven Honeyed Walnut Voltage Sunrise Murex Navigation Celery Embered Leaf Weathered
 River Orchard Ginkgo Heron Frost Kestrel Pond Chalky Northern Oatmilk Quince Sedge
 Lichen Waterlogged Sparked Furnace Dusklit Coffee Gilt Claret Meteoric Blooming Aged Mangrove
-Smelted Port Stack Cured Zesty Tempered Silvered Shamrock Garden Ringed Nautical Skerry
+Smelted Quay Littoral Amber Zesty Tempered Silvered Shamrock Garden Ringed Nautical Skerry
 Indigo Heliotrope Dragonfruit Blood Chili Mossy Bearded Arbor Damson Spires Thicket
 Flamingo Bubblegum Rosehip Paprika Pumpkin Lighthouse Butter Camellia Chocolate Kite
 Inkwell Strawberries Campfire Spiced Pebbles Flesh Pencil Gully Rows Desert Mimosa
-Seal Sloe Rhubarb Golden Roasted Edging Salmon Mauve Khaki Steel Eggplant Jungle
-Kiln Mosslight Slice Evening Bronze Incandescent Carved Lifted Crimson Crushed Worked Flare
+Seal Sloe Rhubarb Golden Roasted Edging Salmon Mauve Khaki Steel Eggplant Canopy
+Kiln Black Slice Evening Sky Incandescent Carved Lifted Crimson Crushed Worked Flare
 Woods Sakura Cognac Torch Chromatic Cellar Undergrowth Hazy Blush Needle Powder Moonlit
-Abyss Bordeaux Ember Lane Woodland Zest Arbour Sienna Reef Fruit Holly Rosewater Pitch`.trim().split(/\s+/);
+Abyss Bordeaux Kindled Lagoon Woodland Zest Arbour Sienna Reef Fruit Holly Rosewater Pitch`.trim().split(/\s+/);
 if (epithets.length !== definitions.length) throw Error('Every palette needs one distinct name epithet.');
-const lastWords = definitions.map(definition => definition.name.split(' ').at(-1));
-const lastWordCounts = new Map();
-for (const word of lastWords) {
-  const key = word.toLowerCase();
-  lastWordCounts.set(key, (lastWordCounts.get(key) ?? 0) + 1);
-}
 const epithetWords = new Set(epithets.map(word => word.toLowerCase()));
-const paletteNames = definitions.map((definition, index) =>
-  `${epithets[index]} ${lastWordCounts.get(lastWords[index].toLowerCase()) === 1 && !epithetWords.has(lastWords[index].toLowerCase())
-    ? lastWords[index] : definition.name.replace(/[^a-zA-Z]+(.)?/g, (_, initial) => initial?.toUpperCase() ?? '')}`);
-if (new Set(paletteNames.flatMap(name => name.toLowerCase().split(' '))).size !== definitions.length * 2)
-  throw Error('Palette name words must be unique across the catalog.');
+const nameFallbacks = {
+  'seafoam-copper': 'patina', 'celadon-aubergine': 'porcelain', 'buttercup-navy': 'sailcloth',
+  'parchment-plum': 'vellum', 'opal-persimmon': 'cameo', 'magnolia-jade': 'teahouse',
+  'sorbet-spruce': 'glacier', 'dewdrop-iris': 'bluebell', 'lotus-indigo': 'inkwell',
+  'silver-sepia': 'pewter', 'aubergine-chartreuse': 'nightshade', 'pine-lantern': 'conifer',
+  'indigo-citron': 'sorbet', 'plum-firefly': 'glowworm', 'cacao-periwinkle': 'truffle',
+  'raven-jade': 'malachite', 'bronze-moon': 'harvest', 'ink-persimmon': 'calligraphy',
+  'port-celadon': 'viridian', 'plum-champagne': 'velvet', 'slate-electric': 'lightning',
+  'midnight-papaya': 'sunrise', 'cinder-azalea': 'camellia', 'nocturne-lilac': 'twilight',
+  'sable-mint': 'spearmint', 'blackberry-lemon': 'zest', 'abyss-hibiscus': 'coral',
+  'spruce-apricot': 'orchard', 'iron-seafoam': 'pearl', 'carmine-comet': 'meteor',
+  'olive-opal': 'mossstone', 'eclipse-silver': 'moonstone', 'cream-juniper': 'thicket',
+  'cucumber-orchid': 'basil', 'sunlit-plum': 'dusk', 'deep-petrol-rose': 'murex',
+  'abyss-chartreuse': 'firefly', 'mahogany-opal': 'garnet', 'raven-orchid': 'iris',
+  'spruce-fuchsia': 'bougainvillea', 'ginkgo-gold': 'sundrop', 'kestrel-rust': 'feather',
+  'harbor-flare': 'beacon', 'kiln-ice': 'glaze', 'slate-bloom': 'petunia',
+  'sage-velvet': 'moss', 'heliotrope-haze': 'mauve', 'inkwell-cream': 'calla',
+  'lavender-honey': 'nectar', 'mauve-seafoam': 'lagoon', 'eggplant-leaf': 'solanum',
+  'jungle-tangerine': 'mangrove', 'slate-apricot': 'brume', 'brick-jade': 'nephrite',
+  'grape-mint': 'fizz', 'petrol-iris': 'cyan', 'orchid-frost': 'icing',
+  'olive-sakura': 'camellia', 'plum-marigold': 'saffron', 'graphite-orchid': 'carbon',
+  'forest-coral': 'reef', 'lagoon-blush': 'hibiscus', 'slate-mint': 'alpine',
+  'lagoon-aqua': 'tide', 'emerald-lime': 'citrus', 'grape-marigold': 'vine',
+  'reef-papaya': 'atoll', 'fig-rose': 'jam', 'pitch-vermilion': 'signal',
+  'celadon-aubergine': 'satin', 'sorbet-spruce': 'balsam', 'chamomile-amethyst': 'sumi',
+  'lotus-indigo': 'absinthe', 'aubergine-chartreuse': 'madder', 'indigo-citron': 'current',
+  'slate-electric': 'tropic', 'midnight-papaya': 'floe', 'velvet-glacier': 'tart',
+  'cinder-azalea': 'limonene', 'blackberry-lemon': 'kernel', 'abyss-hibiscus': 'brine',
+  'spruce-apricot': 'lunar', 'iron-seafoam': 'pollen', 'eclipse-silver': 'trellis',
+  'magnolia-forest': 'marquetry', 'cucumber-orchid': 'corvid', 'deep-petrol-rose': 'plume',
+  'abyss-chartreuse': 'cask', 'mahogany-opal': 'cashmere', 'raven-orchid': 'floret',
+  'spruce-fuchsia': 'drift', 'ginkgo-gold': 'understory', 'kestrel-rust': 'petiole',
+  'harbor-flare': 'soundings', 'kiln-ice': 'porcelain', 'slate-bloom': 'gossamer',
+  'sage-velvet': 'stonecrop', 'heliotrope-haze': 'periwinkle', 'inkwell-cream': 'calla',
+  'lavender-honey': 'nectarine', 'mauve-seafoam': 'shoal', 'eggplant-leaf': 'nightshade',
+  'jungle-tangerine': 'understory', 'slate-apricot': 'limestone', 'brick-jade': 'nephrite',
+  'grape-mint': 'spearmint', 'petrol-iris': 'lapis', 'orchid-frost': 'hoarfrost',
+  'olive-sakura': 'hanami', 'plum-marigold': 'sundown', 'graphite-orchid': 'charcoal',
+  'forest-coral': 'tideline', 'lagoon-blush': 'gossamer', 'slate-mint': 'moonstone',
+  'lagoon-aqua': 'brackish', 'emerald-lime': 'sorrel', 'grape-marigold': 'trellis',
+  'reef-papaya': 'mangrove', 'fig-rose': 'petiole', 'pitch-vermilion': 'signal',
+  'heron-grey': 'egret', 'kiln-ice': 'glaze', 'port-ember': 'tavern',
+  'heliotrope-haze': 'bellflower', 'eggplant-leaf': 'solanum', 'jungle-tangerine': 'rainforest',
+  'grape-mint': 'verjuice', 'graphite-orchid': 'anthracite', 'lagoon-blush': 'estuary',
+  'slate-mint': 'flint', 'grape-marigold': 'winepress', 'reef-papaya': 'tidal',
+  'fig-rose': 'roselle', 'pitch-vermilion': 'beacon',
+  'oatmilk-espresso': 'latte',
+  'cobalt': 'royal', 'kelp': 'seaweed', 'copper': 'ore', 'lemon-verbena': 'balm',
+  'peach-ultramarine': 'pigment', 'lilac-saffron': 'crocus', 'honey-iris': 'perennial',
+  'milkglass-charcoal': 'ivory', 'lime-blossom': 'citron', 'navy-rose': 'garnet',
+  'teal-supernova': 'cosmic', 'plum-champagne': 'bubbly', 'frost-berry': 'snowberry',
+  'yuzu-slate': 'shale', 'porcelain-moss': 'moss', 'violet-olive': 'lilac',
+  'pearl-lagoon': 'tidal', 'thyme-coral': 'herbage', 'alabaster-iris': 'regal',
+  'blush-navy': 'sailor', 'cream-juniper': 'bough', 'papaya-cobalt': 'royalty',
+  'seagrass-carmine': 'seaweed', 'ink-azalea': 'indigo', 'midnight-mint': 'spearmint',
+  'cave-bluebell': 'granite', 'slate-hibiscus': 'tropical', 'black-forest-apricot': 'canopy',
+  'cobalt-honey': 'ambrosia', 'murex-seafoam': 'foam', 'arctic-night-red': 'signal',
+  'graphite-celery': 'pistachio', 'juniper-frost': 'woodland', 'claret-sage': 'wine',
+  'olive-comet': 'meteor', 'mangrove-flare': 'luminous', 'shamrock-mist': 'clover',
+  'chili-chocolate': 'cacao', 'camellia-grove': 'bloom', 'moss-gilt': 'olive',
+  'khaki-cornflower': 'indigo', 'steel-signal': 'crimson', 'brick-gold': 'kiln',
+  'teal-lemon': 'zest', 'cobalt-ember': 'flare', 'cognac-cyan': 'brandy',
+  'olive-lavender': 'violet', 'pine-sky': 'fir', 'abyss-tangerine': 'citrus',
+  'olive-ember': 'soot',
+};
+const nameChoices = definitions.map(definition => [...new Set([
+  ...definition.name.toLowerCase().match(/[a-z]+/g),
+  ...definition.description.toLowerCase().match(/[a-z]+/g),
+  ...definition.id.split('-'),
+].filter(word => word.length > 2 && !/^(a|an|and|the|with|of|to|on|in|by|from|as|for|is|are|into|their|this|that|there)$/.test(word) && !epithetWords.has(word)))]);
+for (const definition of definitions) {
+  const fallback = nameFallbacks[definition.id];
+  if (fallback && !epithetWords.has(fallback)) nameChoices[definitions.indexOf(definition)].push(fallback);
+}
+const preferredDescriptors = {
+  dark: 'charcoal', coast: 'shoreline', rosewater: 'petal', matcha: 'ceremony', graphite: 'ash',
+  mulberry: 'orchid', glacier: 'floe', sakura: 'bloom', sage: 'grove', citrus: 'clementine',
+  periwinkle: 'azure', onyx: 'silver', volcanic: 'magma', pine: 'conifer', orchid: 'petunia',
+  dune: 'sandstone', blossom: 'rosette', mint: 'dew', crimson: 'merlot', kelp: 'seaweed',
+  moss: 'understory', neon: 'bougainvillea', copper: 'foundry', pistachio: 'nutmeg', mauve: 'lilac',
+  verdant: 'foliage', fuchsia: 'cyclamen',
+  'cloudberry-azure': 'bilberry', 'pine-lantern': 'sconce', 'midnight-papaya': 'guava',
+  ember: 'hearth', 'seafoam-copper': 'patina', 'silver-fern': 'frond',
+  midnight: 'blue', coast: 'current', sage: 'sagebrush', lagoon: 'atoll', clay: 'russet',
+  deepsea: 'oceanic', ruby: 'cardinal', cedar: 'bark', saffron: 'anise', moss: 'mossland',
+  storm: 'squall', ultraviolet: 'spectral', pistachio: 'lime', pine: 'fir', harbor: 'beacon',
+  fuchsia: 'bouquet',
+  kelp: 'seaweed', dune: 'sandstone', 'seastack-lime': 'seastack', 'papaya-cobalt': 'sapphire',
+  'jungle-tangerine': 'tangerine', 'petrol-tangerine': 'citrus', 'plum-firefly': 'glimmer', porcelain: 'glaze',
+  'lime-blossom': 'marigold', 'indigo-citron': 'satsuma', 'fern-gully': 'bracken',
+  'basalt-marigold': 'pyrite',
+  sandstone: 'sand',
+  'chalk-carmine': 'carmine', 'verbena-raspberry': 'raspberry', 'yuzu-slate': 'shale',
+  'porcelain-moss': 'bonsai', 'peach-spruce': 'cedar', 'linen-cypress': 'canvas',
+  'violet-olive': 'thistle', 'banana-leaf': 'botanical', 'papaya-cobalt': 'sapphire',
+  'celery-garnet': 'berry', 'bluebell-ochre': 'safflower', 'nightshade-gold': 'citrine',
+  'black-cherry-ice': 'rime', 'void-pomegranate': 'aril', 'plum-tide': 'teal',
+  'espresso-raspberry': 'crema', 'black-forest-apricot': 'underbrush', 'walnut-aqua': 'stream',
+  'graphite-celery': 'verdigris', 'lotus-pond': 'waterlily', 'lichen-basalt': 'granite',
+  'fern-gilt': 'laurel', 'claret-sage': 'verdure', 'olive-comet': 'celestial',
+  'campfire-ash': 'kindling', 'mauve-seafoam': 'tidal', 'graphite-cream': 'ivory',
+  'plum-marigold': 'sundown', 'forest-coral': 'estuary',
+  'icewater-vermilion': 'vermilion', 'milkglass-charcoal': 'bone', 'smoke-citrine': 'citrine',
+  'iron-amber': 'glint', 'cobalt-honey': 'nectar', 'juniper-frost': 'snowfall',
+  'quince-orchard': 'straw', 'kiln-ice': 'crystal', 'port-ember': 'tavern',
+  'eggplant-leaf': 'solanum', 'bronze-sky': 'stratus', 'lagoon-blush': 'rose',
+  'abyss-tangerine': 'rind', 'bordeaux-ice': 'ice', 'lagoon-aqua': 'ripple',
+  'terracotta-lagoon': 'waterline', 'navy-rose': 'carnation', 'mahogany-ice': 'tundra',
+  'nightshade-gold': 'sundial',
+  lilac: 'lavender', cobalt: 'cobalt', 'linen-peacock': 'loom', 'port-sage': 'herb',
+  'raven-orchid': 'violet', 'arctic-night-red': 'red', 'heron-grey': 'feather',
+  'inkwell-cream': 'cream', 'slate-apricot': 'sunset', 'orchid-frost': 'hoarfrost',
+  plum: 'plum', 'lavender-pine': 'sprig', 'frost-berry': 'gooseberry',
+  'blush-navy': 'sailor', 'steel-signal': 'signal', 'grape-marigold': 'vine',
+  nebula: 'cosmos', 'pearl-burgundy': 'pearl', 'cucumber-orchid': 'trellis', 'bark-gold': 'sun',
+  'fir-periwinkle': 'bluebell',
+  midnight: 'azure', periwinkle: 'iris', 'oatmeadow-blue': 'blue',
+  'blueblack-copper': 'oxide', 'blackgreen-lilac': 'wisteria', 'northsea-glass': 'glass',
+  'seastack-lime': 'stack', 'ink-azalea': 'quill', 'eclipse-silver': 'chrome',
+  'apricot-ink': 'ink', 'dewdrop-iris': 'iris', 'mineral-rust': 'rust',
+  'amber-field': 'field', 'dewdrop-iris': 'dawn',
+  'hydrangea-brick': 'brick', 'olive-sakura': 'night', 'olive-lavender': 'purple',
+};
+const lockedDescriptors = new Set();
+const descriptorOwners = new Map();
+for (const [id, word] of Object.entries(preferredDescriptors)) {
+  if (epithetWords.has(word)) throw Error(`Preferred descriptor ${word} repeats a palette epithet.`);
+  const index = definitions.findIndex(definition => definition.id === id);
+  if (index < 0) throw Error(`Unknown palette for preferred descriptor: ${id}`);
+  descriptorOwners.set(word, index);
+  lockedDescriptors.add(word);
+}
+function assignDescriptor(index, visited) {
+  for (const word of nameChoices[index]) {
+    if (visited.has(word)) continue;
+    visited.add(word);
+    const owner = descriptorOwners.get(word);
+    if (owner === undefined || (!lockedDescriptors.has(word) && assignDescriptor(owner, visited))) {
+      descriptorOwners.set(word, index);
+      return true;
+    }
+  }
+  return false;
+}
+const unmatchedDescriptors = [];
+for (let index = 0; index < definitions.length; index++) {
+  if (!Object.hasOwn(preferredDescriptors, definitions[index].id) && !assignDescriptor(index, new Set())) unmatchedDescriptors.push(definitions[index].id);
+}
+if (unmatchedDescriptors.length) throw Error(`Palette names need distinct descriptors: ${unmatchedDescriptors.join(', ')}`);
+const descriptors = Array(definitions.length);
+for (const [word, index] of descriptorOwners) descriptors[index] = word[0].toUpperCase() + word.slice(1);
+const missingNameDescriptors = definitions.filter((_, index) => !descriptors[index]).map(definition => definition.id);
+if (missingNameDescriptors.length) throw Error(`Palette names have missing descriptors: ${missingNameDescriptors.join(', ')}`);
+const paletteNames = definitions.map((definition, index) => `${epithets[index]} ${descriptors[index]}`);
+const allNameWords = paletteNames.flatMap(name => name.toLowerCase().split(' '));
+if (new Set(allNameWords).size !== definitions.length * 2) {
+  const duplicateWords = [...new Set(allNameWords.filter((word, index) => allNameWords.indexOf(word) !== index))];
+  throw Error(`Palette name words must be unique across the catalog: ${duplicateWords.join(', ')}`);
+}
 function visibleStateColor(base, background, foreground, minimum = 1.12) {
   if (contrast(base, background) >= minimum) return base;
   const source = base.slice(1).match(/../g).map(channel => parseInt(channel, 16));
@@ -740,24 +886,56 @@ function comparePalettesByColor(a, b) {
 export const sortedPalettes = Object.freeze([...palettes].sort(comparePalettesByColor));
 export const lightPalettes = Object.freeze(sortedPalettes.filter(p => p.mode === 'light'));
 export const darkPalettes = Object.freeze(sortedPalettes.filter(p => p.mode === 'dark'));
-export const isTheme = value => palettes.some(p => p.id === value);
-export const resolveTheme = value => isTheme(value) ? value : 'light';
-export const themePalette = value => {
-  const id = resolveTheme(value);
-  return palettes.find(p => p.id === id);
-};
-export const themeMode = value => themePalette(value).mode;
+export const customColorKeys = Object.freeze(['bg', 'paper', 'sidebar', 'text', 'muted', 'line', 'accent', 'tint', 'hover']);
+const customCache = new WeakMap();
+export function normalizeCustomTheme(input) {
+  if (!input || !/^custom-[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/.test(input.id ?? '') ||
+      !['light', 'dark'].includes(input.mode) || typeof input.name !== 'string' ||
+      !input.name.trim() || input.name.trim().length > 48 || /[\u0000-\u001f\u007f]/.test(input.name)) throw Error('Choose a valid custom theme name and mode.');
+  if (!input.colors || Object.keys(input.colors).length !== customColorKeys.length ||
+      customColorKeys.some(key => !/^#[0-9a-f]{6}$/.test(input.colors[key] ?? ''))) throw Error('Custom themes need a complete set of hex colors.');
+  const value = { id: input.id, name: input.name.trim(), mode: input.mode,
+    colors: Object.fromEntries(customColorKeys.map(key => [key, input.colors[key]])) };
+  const p = palette({ id: value.id, name: value.name, mode: value.mode, ...value.colors });
+  const t = p.tokens, surfaces = [t.bg, t.paper, t.sidebar, t.tint, t.hover];
+  if (value.mode === 'light' ? luminance(t.bg) < .5 : luminance(t.bg) > .2)
+    throw Error('Choose colors that match the theme mode.');
+  const meets = (color, backgrounds, minimum) => backgrounds.every(bg => contrast(color, bg) >= minimum);
+  if (!['text', 'muted', 'accent', 'link'].every(key => meets(t[key], surfaces, 4.5)) ||
+      !meets(t.focus, surfaces, 3) || !meets(t['border-strong'], [t.bg, t.paper, t.sidebar], 3) ||
+      !meets(t['accent-contrast'], [t.accent, t['accent-hover']], 4.5) ||
+      contrast(t.text, t.muted) < 1.04 || contrast(t.tint, t.bg) < 1.12 || contrast(t.hover, t.bg) < 1.12 ||
+      !['success', 'danger', 'warning', 'info'].every(role => meets(t[role + '-tint'], [t[role], t.text], 4.5)))
+    throw Error('This theme does not meet the readability requirements. Roll again.');
+  customCache.set(value, p);
+  return value;
+}
+export function customThemePalette(value) {
+  if (customCache.has(value)) return customCache.get(value);
+  const clean = normalizeCustomTheme(value), p = customCache.get(clean);
+  customCache.set(value, p);
+  return p;
+}
+function findCustom(value, customThemes) {
+  const candidate = Array.isArray(customThemes) && customThemes.find(p => p?.id === value);
+  if (candidate) try { return customThemePalette(candidate); } catch { /* Damaged appearance falls back safely. */ }
+}
+export const isTheme = (value, customThemes = []) => palettes.some(p => p.id === value) || !!findCustom(value, customThemes);
+export const resolveTheme = (value, customThemes = []) => isTheme(value, customThemes) ? value : 'light';
+export const themePalette = (value, customThemes = []) => palettes.find(p => p.id === value) ?? findCustom(value, customThemes) ?? palettes[0];
+export const themeMode = (value, customThemes = []) => themePalette(value, customThemes).mode;
 export const themeColors = Object.freeze(Object.fromEntries(palettes.map(p => [p.id, p.tokens.bg])));
 export const paletteStyles = Object.freeze(Object.fromEntries(palettes.map(p => [p.id,
   Object.freeze(Object.fromEntries(Object.entries(p.tokens).map(([key, color]) => ['--' + key, color]))),
 ])));
-export function themeStyle(value) { return paletteStyles[themePalette(value).id]; }
-export function applyTheme(value, root = document.documentElement) {
-  const p = themePalette(value);
+export const paletteStyle = p => Object.fromEntries(Object.entries(p.tokens).map(([key, color]) => ['--' + key, color]));
+export function themeStyle(value, customThemes = []) { const p = themePalette(value, customThemes); return paletteStyles[p.id] ?? paletteStyle(p); }
+export function applyTheme(value, root = document.documentElement, customThemes = []) {
+  const p = themePalette(value, customThemes);
   root.dataset.theme = p.id;
   root.style.backgroundColor = p.tokens.bg;
   root.style.colorScheme = p.mode;
-  for (const [key, color] of Object.entries(themeStyle(p.id))) root.style.setProperty(key, color);
+  for (const [key, color] of Object.entries(themeStyle(p.id, customThemes))) root.style.setProperty(key, color);
 }
 // Checked-in fallback CSS is generated from exactly these same tokens. It also
 // makes Vite development and server-rendered fixtures independent of JavaScript.

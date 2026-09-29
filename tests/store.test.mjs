@@ -1,9 +1,26 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, readFile } from "node:fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createStore } from "../server/store.mjs";
+test('request summaries scope display data before cloning captured catalogs', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-summaries-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = createStore(root);
+  await store.recordRequest({ id: 'one', projectID: 'project', sessionID: 'chat', status: 'accepted',
+    agent: { id: 'engineer', name: 'Engineer', instructions: 'captured' },
+    catalog: { instructions: 'large capture'.repeat(100000) }, catalogModels: ['private'], catalogConnected: ['provider'] });
+  await store.recordRequest({ id: 'two', projectID: 'another', sessionID: 'chat' });
+  const rows = await store.requestSummaries('project', 'chat');
+  assert.equal(rows.length, 1);
+  assert.deepEqual(rows[0].agent, { id: 'engineer', name: 'Engineer' });
+  assert.equal(rows[0].catalog, undefined);
+  assert.equal(rows[0].catalogModels, undefined);
+  rows[0].agent.name = 'Changed';
+  assert.equal((await store.requestSummaries('project', 'chat'))[0].agent.name, 'Engineer');
+  assert.equal((await store.read('requests')).records.one.catalog.instructions.length, 1300000);
+});
 test("concurrent observations persist exactly once and prices can be edited", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-web-"));
   t.after(() => rm(root, { recursive: true, force: true }));
@@ -180,6 +197,31 @@ test("cached reads are isolated, stat-invalidated and fail closed on corrupt rep
   await assert.rejects(store.read("requests"), /Cannot read requests/);
   await assert.rejects(store.recordRequest({ id: "new" }), /Cannot read requests/);
   assert.equal(await readFile(file, "utf8"), "{broken");
+});
+
+test('worker usage attribution retains native identity checks with the shared request reader', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-worker-usage-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const store = createStore(root);
+  const taskID = 'a'.repeat(64);
+  await store.recordRequest({ id: 'msg_root', sessionID: 'ses_root', directory: root,
+    policyVersion: 6, agent: { id: 'engineer', name: 'Engineer' } });
+  const dir = path.join(root, '.state', 'delegation');
+  await mkdir(dir, { recursive: true });
+  await writeFile(path.join(dir, `${taskID}.json`), JSON.stringify({
+    parent_session: 'ses_root', root_session: 'ses_root', root_request_id: 'msg_root',
+    directory: root, policy_version: 6, read_only: false,
+    agent: { id: 'engineer', name: 'Engineer' },
+    attempts: [{ child_session: 'ses_worker', user_message_id: 'msg_worker' }],
+  }));
+  const session = { id: 'ses_worker', parentID: 'ses_root', metadata: { freelancer: { taskID } } };
+  const row = { id: 'msg_answer', parentMessageID: 'msg_worker', sessionID: 'ses_worker', directory: root,
+    nativeAgent: 'engineer', providerID: 'opencode', modelID: 'free', tokens: 1 };
+  await store.observe([row, { ...row, id: 'msg_answer2' }], { session });
+  assert.equal((await store.read('usage')).records.msg_answer.agentID, 'engineer');
+  await assert.rejects(store.observe([{ ...row, nativeAgent: 'designer' }], { session }), /Agent identity differs/);
+  await writeFile(path.join(store.directory, 'requests.json'), '{broken');
+  await assert.rejects(store.observe([row], { session }), /Cannot read requests/);
 });
 
 test("update inputs and results cannot mutate cached durable snapshots", async t => {

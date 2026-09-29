@@ -47,6 +47,8 @@ For named agents and delegated assignments, start with the [component glossary](
 
 Use [testing](testing.md) for interactive journeys, focused runs and coverage boundaries, [development and checks](getting-started.md#development-and-checks) for setup, and [the source map](ARCHITECTURE.md#code-map-and-validation) to find the owning module before editing.
 
+[Local chat performance](local-performance.md) describes caching, scoped reads, and measurement limits.
+
 [Local-data smoke checks](local-data-smoke.md) cover installed-runtime observations. The feature guides above include their focused checks. The [unified verification workflow](../.github/workflows/verify.yml) runs contracts and browser journeys on Windows and Ubuntu.
 
 A green fixture test, named-profile startup smoke, installed-runtime smoke check, and visible Windows window test are different evidence. Do not replace one with another, or turn a historical test count into a current release badge.

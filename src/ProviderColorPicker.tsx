@@ -39,7 +39,7 @@ export function ProviderColorPicker({ provider, name, onSaved }: {
     finally { saving.current = false; if (mounted.current) setPending(false); }
   }
   return <fieldset className="provider-color-picker" disabled={pending}>
-    <legend>{name} color<HelpHint topic="provider-color" label={`${name} color`} /></legend>
+    <legend>{name} color</legend>
     <div className="provider-color-presets" role="group" aria-label={`${name} color presets`}>
       {providerColorPresets.map(p => <button type="button" key={p.name} aria-label={`${name}: ${p.name}`} aria-pressed={valid === p.color}
         onClick={() => choose(p.color)} className="color-preset">
@@ -61,5 +61,6 @@ export function ProviderColorPicker({ provider, name, onSaved }: {
       <span role="status">{pending ? 'Saving color…' : message}</span>
     </div>
     {error && <p className="notice error" role="alert">{error}</p>}
+    <div className="card-help"><HelpHint topic="provider-color" label={`${name} color`} /></div>
   </fieldset>;
 }

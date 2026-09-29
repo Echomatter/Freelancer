@@ -84,7 +84,7 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await load(); await settings();
     await page.getByRole('button', { name: /^Use .* palette$/ }).first().waitFor();
     assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), palettes.length);
-    assert.equal(await page.locator('.palette-picker select').count(), 0);
+    assert.equal(await page.getByLabel('Generated theme style').count(), 1);
     for (const p of browserPalettes) {
       await test.step(`${p.name}: shell, selection, focus and contrast`, async () => {
         await chooseTheme(p.id);

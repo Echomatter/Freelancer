@@ -373,8 +373,8 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
         .locator(".chat-scroll")
         .evaluate((e) => e.scrollTop),
       selection = await page
-        .getByLabel("Parent model", { exact: true })
-        .inputValue();
+        .getByRole('button', { name: 'Message options', exact: true })
+        .getAttribute('title');
     const requests = f.refreshCount();
     await toggle().focus();
     assert.equal(await toggle().getAttribute("aria-expanded"), "false");
@@ -392,7 +392,7 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       scroll,
     );
     assert.equal(
-      await page.getByLabel("Parent model", { exact: true }).inputValue(),
+      await page.getByRole('button', { name: 'Message options', exact: true }).getAttribute('title'),
       selection,
     );
     await page.locator(".usage-open").focus();

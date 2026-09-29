@@ -103,6 +103,27 @@
 .git-destination small {
   flex-basis: 100%;
 }
+.git-local-identity {
+  display: grid;
+  gap: 4px;
+  width: 100%;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  overflow-wrap: anywhere;
+}
+.git-local-identity small {
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.git-local-identity strong {
+  font-size: 14px;
+}
+.git-local-identity span {
+  color: var(--muted);
+  font-size: 12px;
+}
 .git-section-heading {
   display: flex;
   align-items: center;
@@ -336,4 +357,23 @@
   .git-project-page .spin {
     animation: none;
   }
+}
+
+/* Shared local/cloud setup cards use the active palette and one footer help bubble. */
+.git-setup-card > .card-help { align-self: stretch; margin-top: auto; padding-top: 4px; }
+.git-card-heading > div { flex: 1; min-width: 0; }
+.git-card-heading { flex-wrap: wrap; gap: 10px; }
+.git-card-heading h2 { color: var(--accent); }
+.git-card-heading > .button { flex: 0 0 auto; }
+.git-card-description { color: var(--muted); font-size: 13px; }
+.git-local-identity, .git-destination { background: var(--tint); }
+.git-local-identity strong { color: var(--accent); font-size: 17px; }
+.git-cloud-editor { display: grid; gap: 12px; width: 100%; }
+.git-cloud-editor .button { justify-self: start; }
+@media (max-width: 500px) {
+  .git-card-heading { display: grid; grid-template-columns: 36px minmax(0, 1fr) auto; }
+  .git-card-heading > span:first-child { width: 36px; height: 36px; border-radius: 10px; }
+  .git-card-heading h2 { font-size: 16px; }
+  .git-card-heading > .button { grid-column: 3; grid-row: 1; }
+  .git-card-heading > .badge { grid-column: 2 / -1; grid-row: 2; justify-self: start; margin-left: 0; }
 }

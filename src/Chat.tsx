@@ -1,5 +1,5 @@
 import { ProviderText, ProviderSelect } from "./ProviderColors";
-import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { ConversationRail } from './echoflex/ConversationRail';
 import { reportedContext, turnStatistics } from '../domain/conversation-rail.mjs';
 import ReactMarkdown from "react-markdown";
@@ -34,6 +34,7 @@ import { resolveTodoLayout } from "../domain/appearance.mjs";
 import { hasUnfinishedTodos, todoStatusLabel } from "../domain/todos.mjs";
 import { MAX_ATTACHMENTS, MAX_ATTACHMENT_BYTES, MAX_TOTAL_ATTACHMENT_BYTES } from "../domain/attachments.mjs";
 import { useChatSender, SenderControls } from "./ChatSender";
+import { shareSnapshot } from './snapshot-sharing.mjs';
 import { ComposerMenu } from "./ComposerMenu";
 import { WorkCard } from "./WorkCard";
 import {
@@ -146,7 +147,7 @@ function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: strin
     const reasons = Array.isArray(result?.routing_diagnostics?.reasons) ? result.routing_diagnostics.reasons.slice(0, 3).join(", ") : "";
     const routeExplanation = result?.result || (reasons ? `Routing reasons: ${reasons}.` : "No model qualified under the current delegation budget and provider rules.");
     const label = `${statusLabel}: ${agentName}${modelName ? ` · ${modelName}` : ""}${child ? " · Open conversation" : " · No worker started"}${reasons ? ` · ${reasons}` : ""}`;
-    if (routeUnavailable && !child) return <span className="agent-activity agent-route-unavailable" role="status" aria-label={label} title={label}><CircleAlert size={16} aria-hidden="true" /><span><strong>{agentName} was not started</strong><small>{routeExplanation}</small></span></span>;
+    if (routeUnavailable && !child) return <span className="agent-activity agent-card agent-route-unavailable" role="status" aria-label={label} title={label}><CircleAlert size={16} aria-hidden="true" /><span><strong>{agentName} was not started</strong><small>{routeExplanation}</small></span></span>;
     return (
       <button
         type="button"
@@ -422,10 +423,52 @@ function GroupBody({ group, onChild, mode = "all", childReport = false }: { grou
   return <>{nodes}</>;
 }
 
+const RequestTurn = memo(function RequestTurn({ request, requestIndex, isLast, requestTodos, busy, changeCount, pendingDecisions, models, childReport, expanded, selectWork, openChild, reviewDecisions, railID }: any) {
+    const summary = summarizeRequestWork(request.allMessages, requestTodos);
+    const userGroups = groupMessages(request.userMessages);
+    const responseGroups = groupMessages(request.responseMessages);
+    return (
+      <section key={request.key} id={`${railID}-${request.key}`} className="request-group" aria-label={`Request ${requestIndex + 1}`}>
+        {userGroups.map((group) => (
+          <article key={group.key} className={`message ${group.role}`}>
+            <div className="message-label"><GroupLabel role={group.role} models={[]} /></div>
+            <div className="message-body"><GroupBody group={group} onChild={openChild} childReport={!!childReport} /></div>
+          </article>
+        ))}
+        {(summary.hasWork || (isLast && (busy || changeCount > 0))) && <button type="button"
+          className="request-marker" data-request-work-key={request.key}
+          aria-label={`Open tools for turn ${requestIndex + 1}`}
+          aria-expanded={expanded} aria-controls="chat-tool-dock"
+          onClick={() => { selectWork(request.key); }}>
+          <span className="work-icon"><Terminal size={15} /></span>
+          <span>Turn {requestIndex + 1} tools</span><small>{summary.toolCount + summary.workerCount} action{summary.toolCount + summary.workerCount === 1 ? '' : 's'}{summary.errors ? ` · ${summary.errors} failed` : ''}</small><ArrowUpRight size={14} />
+        </button>}
+        {isLast && pendingDecisions > 0 && (
+          <div className="decision-banner" role="status">
+            <span>Needs your decision · {pendingDecisions} pending — review to continue.</span>
+            <button type="button" onClick={reviewDecisions}>Review decision</button>
+          </div>
+        )}
+        {responseGroups.filter((group) => group.messages.some((m) => m.info?.summary !== true && (m.info?.error || m.parts?.some((p) => (p.type === "text" || p.type === "reasoning") && p.text?.trim() || p.type === "file")))).map((group) => (
+          <article key={group.key} className={`message ${group.role}`}>
+            <div className="message-label"><GroupLabel role={group.role} models={group.role === "assistant" ? distinctGroupModels(group, models) : []} />{group.role === "assistant" && <CopyResponse messages={group.messages} />}</div>
+            <div className="message-body">
+              <GroupBody group={group} onChild={openChild} mode="prose" childReport={!!childReport} />
+              {group.messages.some((m) => m.info?.error) && (
+                <p className="notice error">{responseErrorLabel(group.messages.find((m) => m.info?.error)?.info.error)}</p>
+              )}
+            </div>
+          </article>
+        ))}
+      </section>
+    );
+});
+
 export function Chat({
   data,
   messages,
   pendingSend,
+  sending = false,
   todos = EMPTY_TODOS,
   session,
   busy,
@@ -449,11 +492,11 @@ export function Chat({
   pendingDecisions = 0,
   onReviewDecisions,
   onOpenDetails,
-  detailsDivider,
 }: {
   data: any;
   messages: any[];
   pendingSend?: { text: string; attachments: { filename: string; mime: string; url: string }[]; state: 'sending' | 'accepted' | 'unconfirmed' } | null;
+  sending?: boolean;
   todos?: any[];
   session: any;
   busy: boolean;
@@ -477,7 +520,6 @@ export function Chat({
   pendingDecisions?: number;
   onReviewDecisions?: () => void;
   onOpenDetails?: (tab: string) => void;
-  detailsDivider?: ReactNode;
 }) {
   const end = useRef<HTMLDivElement>(null),
     area = useRef<HTMLDivElement>(null);
@@ -540,8 +582,12 @@ export function Chat({
   }, []);
   useLayoutEffect(() => {
     const input = messageInput.current;
-    if (input) { input.style.height = '0px'; input.style.height = Math.min(160, Math.max(44, input.scrollHeight)) + 'px'; }
-  }, [draft, session?.id]);
+    if (input) {
+      const maximum = Math.min(240, Math.max(120, window.innerHeight * .32));
+      input.style.height = '0px';
+      input.style.height = Math.min(maximum, Math.max(44, input.scrollHeight)) + 'px';
+    }
+  }, [draft, sending, session?.id]);
   const followLatest = () => {
     const scroll = area.current;
     if (scroll && stick.current && scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight > 2) {
@@ -622,7 +668,7 @@ export function Chat({
     session,
     busy,
     loading: syncing,
-    draft,
+    draft: sending ? '' : draft,
     setDraft,
     parentModel: selectedModel,
     intelligence,
@@ -643,7 +689,7 @@ export function Chat({
       });
     },
     hasAttachments: attachments.length > 0,
-    disabled: readOnly || syncing || draftLoading || readingAttachments,
+    disabled: readOnly || syncing || draftLoading || readingAttachments || sending,
     captureDraft,
     acceptDraft,
   });
@@ -652,50 +698,22 @@ export function Chat({
   const openChild = useCallback((id: string) => actions.current.onChild(id), []);
   const openDetails = useCallback((tab: string) => actions.current.onOpenDetails?.(tab), []);
   const reviewDecisions = useCallback(() => actions.current.onReviewDecisions?.(), []);
-  const requestGroups = useMemo(() => buildRequestGroups(messages), [messages]);
-  const requestContent = useMemo(() => requestGroups.map((request, requestIndex, all) => {
+  const previousGroups = useRef<ReturnType<typeof buildRequestGroups>>([]);
+  const requestGroups = useMemo(() => {
+    const next = shareSnapshot(previousGroups.current, buildRequestGroups(messages));
+    previousGroups.current = next;
+    return next;
+  }, [messages]);
+  const selectWork = useCallback((key: string) => { setInspectedWork(key); setExpandedWork(key); }, []);
+  const requestContent = requestGroups.map((request, requestIndex, all) => {
     const isLast = requestIndex === all.length - 1;
     if (isLast) taskHistory.current.set(request.key, todos);
-    const requestTodos = isLast ? todos : (taskHistory.current.get(request.key) ?? EMPTY_TODOS);
-    const summary = summarizeRequestWork(request.allMessages, requestTodos);
-    const userGroups = groupMessages(request.userMessages);
-    const responseGroups = groupMessages(request.responseMessages);
-    return (
-      <section key={request.key} id={`${railID}-${request.key}`} className="request-group" aria-label={`Request ${requestIndex + 1}`}>
-        {userGroups.map((group) => (
-          <article key={group.key} className={`message ${group.role}`}>
-            <div className="message-label"><GroupLabel role={group.role} models={[]} /></div>
-            <div className="message-body"><GroupBody group={group} onChild={openChild} childReport={!!session?.parentID} /></div>
-          </article>
-        ))}
-        {(summary.hasWork || (isLast && (busy || changeCount > 0))) && <button type="button"
-          className="request-marker" data-request-work-key={request.key}
-          aria-label={`Open tools for turn ${requestIndex + 1}`}
-          aria-expanded={expandedWork === request.key} aria-controls="chat-tool-dock"
-          onClick={() => { setInspectedWork(request.key); setExpandedWork(request.key); }}>
-          <span className="work-icon"><Terminal size={15} /></span>
-          <span>Turn {requestIndex + 1} tools</span><small>{summary.toolCount + summary.workerCount} action{summary.toolCount + summary.workerCount === 1 ? '' : 's'}{summary.errors ? ` · ${summary.errors} failed` : ''}</small><ArrowUpRight size={14} />
-        </button>}
-        {isLast && pendingDecisions > 0 && (
-          <div className="decision-banner" role="status">
-            <span>Needs your decision · {pendingDecisions} pending — review to continue.</span>
-            <button type="button" onClick={reviewDecisions}>Review decision</button>
-          </div>
-        )}
-        {responseGroups.filter((group) => group.messages.some((m) => m.info?.summary !== true && (m.info?.error || m.parts?.some((p) => (p.type === "text" || p.type === "reasoning") && p.text?.trim() || p.type === "file")))).map((group) => (
-          <article key={group.key} className={`message ${group.role}`}>
-            <div className="message-label"><GroupLabel role={group.role} models={group.role === "assistant" ? distinctGroupModels(group, data.models) : []} />{group.role === "assistant" && <CopyResponse messages={group.messages} />}</div>
-            <div className="message-body">
-              <GroupBody group={group} onChild={openChild} mode="prose" childReport={!!session?.parentID} />
-              {group.messages.some((m) => m.info?.error) && (
-                <p className="notice error">{responseErrorLabel(group.messages.find((m) => m.info?.error)?.info.error)}</p>
-              )}
-            </div>
-          </article>
-        ))}
-      </section>
-    );
-  }), [requestGroups, todos, busy, changeCount, pendingDecisions, data.models, session?.parentID, expandedWork, toggleWork, openChild, openDetails, reviewDecisions, railID]);
+    return <RequestTurn key={request.key} request={request} requestIndex={requestIndex} isLast={isLast}
+      requestTodos={isLast ? todos : (taskHistory.current.get(request.key) ?? EMPTY_TODOS)}
+      busy={isLast && busy} changeCount={isLast ? changeCount : 0} pendingDecisions={isLast ? pendingDecisions : 0}
+      models={data.models} childReport={!!session?.parentID} expanded={expandedWork === request.key}
+      selectWork={selectWork} openChild={openChild} reviewDecisions={reviewDecisions} railID={railID} />;
+  });
   const currentRequest = requestGroups.at(-1);
   const dockKey = inspectedWork && requestGroups.some(request => request.key === inspectedWork) ? inspectedWork : currentRequest?.key;
   const dockIndex = requestGroups.findIndex(request => request.key === dockKey);
@@ -714,7 +732,7 @@ export function Chat({
     <div className="chat-view has-conversation-rail" aria-busy={syncing}>
       <ConversationRail scroll={area} content={transcript} turns={railTurns} selected={dockKey}
         onSelect={key => { stick.current = false; setInspectedWork(key); setExpandedWork(key); }}
-        onScrollIntent={() => { stick.current = false; }} context={context} divider={detailsDivider} identity={attachmentContext} />
+        onScrollIntent={() => { stick.current = false; }} context={context} identity={attachmentContext} />
       {dockRequest && (dockHasContent || inspectedWork === dockKey) && <div className="request-dock" id="chat-tool-dock">
         <div className="request-dock-context"><span>{isCurrentDock ? 'Current turn' : `Reviewing turn ${dockIndex + 1}`}</span>
           {!isCurrentDock && <button type="button" onClick={() => { setInspectedWork(null); setExpandedWork(null); }}>Back to current turn <ArrowUpRight size={12} /></button>}</div>
@@ -806,7 +824,8 @@ export function Chat({
           }}
         >
           <div className="composer-entry">
-          <ComposerMenu context={attachmentContext} disabled={syncing || readOnly || draftLoading} onAttach={() => attachmentInput.current?.click()}>
+          <ComposerMenu context={attachmentContext} disabled={syncing || readOnly || draftLoading} onAttach={() => attachmentInput.current?.click()}
+            summary={[selectedAgent?.name ?? 'Engineer', currentModel?.name ?? 'Choose a model', intelligence].filter(Boolean).join(' · ')}>
             <div className="composer-selects">
               <label className="composer-choice">
                 <span>Agent</span>
@@ -885,16 +904,15 @@ export function Chat({
           </ComposerMenu>
           <textarea ref={messageInput}
             aria-label="Message"
-            placeholder={
-              session?.imported ? 'Continue in Freelancer to send a new message…' : data?.project
-                ? "What should the agent do? Describe the outcome, scope, and checks…"
-                : "Open a project to get started…"
-            }
-            value={draft}
-            disabled={!data?.project || syncing || draftLoading}
+            autoCapitalize="sentences"
+            autoComplete="off"
+            enterKeyHint="send"
+            value={sending ? '' : draft}
+            disabled={!data?.project || syncing || draftLoading || sending}
+            placeholder={sending ? 'Sending…' : undefined}
             readOnly={readOnly}
             onChange={(e) => setDraft(e.target.value)}
-            onPaste={(event) => { if (event.clipboardData.files.length && !syncing && !readOnly && !draftLoading) { event.preventDefault(); void addAttachments(event.clipboardData.files); } }}
+            onPaste={(event) => { if (event.clipboardData.files.length && !syncing && !readOnly && !draftLoading && !sending) { event.preventDefault(); void addAttachments(event.clipboardData.files); } }}
             onKeyDown={(e) => {
               if (
                 e.key === "Enter" &&
@@ -910,10 +928,9 @@ export function Chat({
               sender={sender}
               busy={busy}
               onStop={onStop}
-              disabled={!selectedModel || !data?.project || syncing || readOnly || draftLoading}
+              disabled={!selectedModel || !data?.project || syncing || readOnly || draftLoading || sending}
             />
           </div>
-          <div className="composer-context" aria-label="Current message settings"><span>{selectedAgent?.name ?? 'Engineer'}</span><span title={currentModel?.name}>{currentModel?.name ?? 'Choose a model'}{intelligence ? ` · ${intelligence}` : ''}</span></div>
           <input ref={attachmentInput} hidden type="file" multiple aria-label="Choose attachments" tabIndex={-1} onChange={(event) => { if (event.target.files) void addAttachments(event.target.files); event.target.value = ""; }} />
 
         </form>

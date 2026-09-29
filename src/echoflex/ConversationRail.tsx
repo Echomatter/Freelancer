@@ -1,18 +1,16 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type ReactNode, type RefObject } from 'react';
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { HelpHint } from '../HelpHint';
 import { railOffset, railPosition } from './rail-geometry.mjs';
 import './conversation-rail.css';
 
 export type RailTurn = { key: string; target: string; label: string; preview: string; status: string; stats: { label: string; value: string }[] };
 type Metrics = { anchors: number[]; maximum: number; position: number; height: number };
 
-/** Echoflex turn navigation + scroll position. The optional divider occupies only
- * unused rail space; turn and thumb targets never start a resize gesture. */
-export function ConversationRail({ scroll, content, turns, selected, onSelect, onScrollIntent, context, divider, identity }: {
+/** Echoflex turn navigation + scroll position. */
+export function ConversationRail({ scroll, content, turns, selected, onSelect, onScrollIntent, context, identity }: {
   scroll: RefObject<HTMLDivElement>; content: RefObject<HTMLDivElement>; turns: RailTurn[];
   selected?: string; onSelect: (key: string) => void; onScrollIntent: () => void;
-  context: { ratio: number | null; label: string }; divider?: ReactNode; identity: string;
+  context: { ratio: number | null; label: string }; identity: string;
 }) {
   const root = useRef<HTMLDivElement>(null), track = useRef<HTMLDivElement>(null);
   const tip = useRef<HTMLDivElement>(null), buttons = useRef(new Map<string, HTMLButtonElement>());
@@ -20,7 +18,7 @@ export function ConversationRail({ scroll, content, turns, selected, onSelect, o
   const closeTimer = useRef<ReturnType<typeof setTimeout>>();
   const tooltipID = useId();
   const [metrics, setMetrics] = useState<Metrics>({ anchors: [], maximum: 0, position: 0, height: 0 });
-  const latest = useRef(metrics); latest.current = metrics;
+  const latest = useRef(metrics);
   const [hovered, setHovered] = useState<string | null>(null), [focusKey, setFocusKey] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false), [tipPosition, setTipPosition] = useState({ left: 0, top: 0 });
   const active = turns.find(turn => turn.key === hovered);
@@ -28,26 +26,35 @@ export function ConversationRail({ scroll, content, turns, selected, onSelect, o
   const showTip = (key: string) => { clearTimeout(closeTimer.current); if (!dragging) setHovered(key); };
   const hideTip = () => { clearTimeout(closeTimer.current); closeTimer.current = setTimeout(() => setHovered(null), 150); };
 
-  useLayoutEffect(() => {
+  // The scroll/content nodes are later siblings: wait until all their refs are
+  // attached, including when a cached transcript is present on the first render.
+  useEffect(() => {
     const area = scroll.current, body = content.current, line = track.current;
     if (!area || !body || !line) return;
-    let frame = 0;
+    let frame = 0, layoutDirty = true;
     const measure = () => {
       frame = 0;
-      const maximum = Math.max(0, area.scrollHeight - area.clientHeight);
-      const origin = area.getBoundingClientRect().top;
-      const anchors = turns.map(turn => {
-        const node = document.getElementById(turn.target);
-        return Math.min(maximum, Math.max(0, (node?.getBoundingClientRect().top ?? origin) - origin + area.scrollTop));
-      });
-      const next = { anchors, maximum, position: railPosition(area.scrollTop, anchors, maximum), height: line.clientHeight };
+      let { anchors, maximum, height } = latest.current;
+      const measuredMaximum = Math.max(0, area.scrollHeight - area.clientHeight);
+      if (layoutDirty || maximum !== measuredMaximum) {
+        maximum = measuredMaximum;
+        const origin = area.getBoundingClientRect().top;
+        anchors = turns.map(turn => {
+          const node = document.getElementById(turn.target);
+          return Math.min(maximum, Math.max(0, (node?.getBoundingClientRect().top ?? origin) - origin + area.scrollTop));
+        });
+        height = line.clientHeight;
+        layoutDirty = false;
+      }
+      const next = { anchors, maximum, position: railPosition(area.scrollTop, anchors, maximum), height };
       // Measure transcript anchors only. Measuring floating UI here creates a
       // resize/render feedback loop, especially while streamed content grows.
       latest.current = next;
-      setMetrics(previous => JSON.stringify(previous) === JSON.stringify(next) ? previous : next);
+      setMetrics(previous => previous.position === next.position && previous.maximum === maximum && previous.height === height &&
+        previous.anchors.length === anchors.length && previous.anchors.every((value, i) => value === anchors[i]) ? previous : next);
     };
     const schedule = () => { if (!frame) frame = requestAnimationFrame(measure); };
-    const observer = new ResizeObserver(schedule);
+    const observer = new ResizeObserver(() => { layoutDirty = true; schedule(); });
     observer.observe(area); observer.observe(body); observer.observe(line);
     area.addEventListener('scroll', schedule, { passive: true });
     measure();
@@ -121,12 +128,10 @@ export function ConversationRail({ scroll, content, turns, selected, onSelect, o
 
   const gap = metrics.height / Math.max(1, turns.length);
   const style = { '--rail-strength': `${Math.round(42 + (context.ratio ?? 0) * 58)}%`, '--turn-target': `${Math.min(26, Math.max(.1, gap))}px`, '--turn-size': `${Math.min(8, Math.max(2, gap - 3))}px` } as CSSProperties;
-  return <div ref={root} className={`conversation-rail${dragging ? ' is-scrolling' : ''}${divider ? ' is-resizable' : ''}`} style={style}
+  return <div ref={root} className={`conversation-rail${dragging ? ' is-scrolling' : ''}`} style={style}
     data-context-level={context.ratio === null ? 'unknown' : Math.round(context.ratio * 100)}
     onWheel={event => { if (scroll.current && event.deltaY && !event.ctrlKey) { onScrollIntent(); scroll.current.scrollTop += event.deltaY * (event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? scroll.current.clientHeight : 1); } }}>
-    {divider}
-    <div className="conversation-rail-help"><HelpHint topic="turn-rail" /></div>
-    <div ref={track} className="conversation-rail-track" onPointerDown={event => { if (!divider && event.target === event.currentTarget) startScroll(event, true); }}>
+    <div ref={track} className="conversation-rail-track" onPointerDown={event => { if (event.target === event.currentTarget) startScroll(event, true); }}>
       <div className="conversation-rail-line" aria-hidden="true" />
       <div className="conversation-rail-turns" role="group" aria-label="Conversation turns">
         {turns.map((turn, index) => <button key={turn.key} ref={node => { if (node) buttons.current.set(turn.key, node); else buttons.current.delete(turn.key); }} type="button"

@@ -1,6 +1,7 @@
-import { executionContext } from "../backend/tools/runtime/execution-context.mjs";
+import { createExecutionContextReader } from "../backend/tools/runtime/execution-context.mjs";
 import { readFile, writeFile, mkdir, unlink, stat } from "node:fs/promises";
 import path from "node:path";
+import { isDeepStrictEqual } from 'node:util';
 import { randomUUID } from "node:crypto";
 import { normalizePlans } from "../domain/costs.mjs";
 import { replaceFile } from "./replace-file.mjs";
@@ -54,6 +55,9 @@ export function createStore(root, { replace = replaceFile } = {}) {
   const directory = path.join(root, ".state", "webpage");
   let queue = Promise.resolve();
   const cache = new Map();
+  // Reuse the authoritative, stat-validated store read during usage attribution.
+  // The reader is captured here, never supplied through a model/tool argument.
+  const executionContext = createExecutionContextReader(() => load('requests'));
   const files = {
     settings: "settings.json",
     usage: "usage.json",
@@ -204,6 +208,14 @@ export function createStore(root, { replace = replaceFile } = {}) {
   }
   return {
     read,
+    async requestSummaries(projectID, sessionID) {
+      const current = await load('requests');
+      return structuredClone(Object.values(current.records)
+        .filter(row => row.projectID === projectID && row.sessionID === sessionID)
+        .map(({ agent, workflow: _workflow, catalog: _catalog, catalogModels: _models, catalogConnected: _connected, ...row }) => ({
+          ...row, agent: agent ? { id: agent.id, name: agent.name } : null,
+        })));
+    },
     update,
     directory,
     flush: () => queue,
@@ -217,8 +229,11 @@ export function createStore(root, { replace = replaceFile } = {}) {
       }));
     },
     async observe(records, { session } = {}) {
+      records = structuredClone(records);
       const requestSnapshot = await observeRequests(records);
-      return update("usage", async (s) => {
+      const work = queue.then(async () => {
+        const current = await load('usage');
+        let next = current;
         for (const row of records)
           if (row) {
             let receipt = requestSnapshot.records[row.parentMessageID];
@@ -235,14 +250,21 @@ export function createStore(root, { replace = replaceFile } = {}) {
                     requestID: receipt.id,
                   }
                 : {};
-            s.records[row.id] = {
-              ...s.records[row.id],
+            const record = {
+              ...next.records[row.id],
               ...row,
               ...attribution,
             };
+            if (isDeepStrictEqual(next.records[row.id], record)) continue;
+            if (next === current) next = { ...current, records: { ...current.records } };
+            next.records[row.id] = record;
           }
-        return s;
+        // Repeated transcript reads usually contain no new usage. Avoid cloning
+        // and serializing the entire account ledger just to discover that fact.
+        if (next !== current) await writeDocument('usage', next);
       });
+      queue = work.catch(() => {});
+      return work;
     },
     async recordRequest(record) {
       const captured = structuredClone(record);

@@ -27,6 +27,8 @@ See [composer design](composer-design.md) for the six alternatives compared.
 `action-feedback.browser.mjs` delays Queue and Stop acknowledgements to check
 immediate pending feedback, duplicate-click guards, preservation of newer draft
 typing, and retrying the same delivery ID after a lost acknowledgement.
+`send-feedback.browser.mjs` also checks that the composer clears and disables
+while a submitted message is sending, then preserves the draft after failure.
 Interrupt captures a steering message, stops the response, cancels waiting
 messages, then delivers the steer once native state permits it. Stop without a
 message only stops. Render failures offer recovery without resending. The dock
@@ -37,21 +39,22 @@ its selection or cause the application to go blank.
 in a phone viewport and checks pairing/reload/unauthenticated rejection;
 `browser-capabilities.browser.mjs` checks the HTTP-compatible ID/copy fallbacks.
 
-`chat-loading-cache.browser.mjs`
-holds chat responses to verify one loading stage fills the chat and Details
-area, then switches projects and verifies a recent transcript appears before
-the network read completes. It also opens a worker from a tool card, returns to
-its parent, and verifies cached worker navigation while revalidation is held.
-Late responses from another project must not replace the selected transcript.
-The composer stays disabled until native state is rechecked.
+`chat-loading-cache.browser.mjs` switches between recently opened projects and
+verifies a warmed transcript appears before the full native read completes. It
+also verifies a parent transcript warms its linked worker, late reads from
+another project cannot replace the selected transcript, and cached views stay
+read-only until native state is rechecked.
 `colors.browser.mjs` covers provider identities and themes.
 
-Recent chat content is kept only in the current browser tab, for up to 15
-minutes, 12 chats, and an estimated 16 MB total, including worker chats. Size
-accounting walks retained values without creating a serialized transcript copy;
-expired entries are removed before evicting useful chats. Cached copies omit native status,
-permissions, and questions. Each revisit rechecks the native chat before
-allowing a new message.
+Recent chat content is kept only in the current browser tab, for up to 20
+minutes, 32 chats, and an estimated 24 MB total, including worker chats. In the
+background, the app warms active/waiting chats and the three latest parent chats
+for the current and two most recently used registered projects. Parent message
+links warm their verified child sessions too. At most two transcript-only reads
+run concurrently; the full native chat read still refreshes status, permissions,
+questions, todos, diffs, and activity before enabling actions. Cached copies omit
+native status, permissions, and questions. Size accounting avoids serializing
+transcripts, and expired entries are removed before evicting useful chats.
 
 Concurrent refreshes for the current selection share an in-flight read. Navigation
 invalidates UI delivery from older reads, while completed transcripts can still

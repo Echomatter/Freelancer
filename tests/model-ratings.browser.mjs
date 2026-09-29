@@ -28,6 +28,10 @@ test('model-ratings', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =>
     assert.equal(await page.getByRole('button', { name: 'All', exact: true }).getAttribute('aria-pressed'), 'true');
     await page.getByRole('button', { name: 'Update Model Ratings' }).click();
     const dialog = page.getByRole('dialog', { name: 'Update Model Ratings' });
+    await dialog.getByRole('combobox', { name: 'Research path' }).selectOption('free');
+    await expect(dialog.getByRole('combobox', { name: 'Configuration model' })).toHaveCount(0);
+    await expect(dialog.getByRole('button', { name: 'Go', exact: true })).toBeEnabled();
+    await dialog.getByRole('combobox', { name: 'Research path' }).selectOption('selected');
     await dialog.getByRole('combobox', { name: 'Configuration model' }).selectOption('opencode/free');
     await dialog.getByRole('button', { name: 'Go', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
@@ -76,5 +80,13 @@ test('model-ratings', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =>
     await status.getByRole('button', { name: 'Dismiss model update', exact: true }).click();
     await dialog.waitFor({ state: 'hidden' });
     console.log('PASS model filters, status-only dialog, hidden sessions, saved ratings, retry and durable dismissal');
+    await page.getByRole('button', { name: 'Update Model Ratings' }).click();
+    await dialog.getByRole('combobox', { name: 'Research path' }).selectOption('free');
+    await dialog.getByRole('button', { name: 'Go', exact: true }).click();
+    await status.getByText(/Researching models/).waitFor();
+    assert.equal((await f.api('models/ratings')).job.free, true);
+    await expect(page.locator('.model-rating-progress > p')).toHaveCount(0);
+    await status.getByRole('button', { name: 'Hide model update progress', exact: true }).click();
+    await expect(page.locator('.model-rating-progress')).toHaveText('');
   } finally { await browser.close(); await f.close(); }
 });

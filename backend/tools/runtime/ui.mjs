@@ -14,15 +14,15 @@ export function createUiBackend(root, directory) {
   directory = path.resolve(directory);
   let refreshing;
   return {
-    async snapshot(sessionID) {
+    async snapshot(sessionID, { chatOnly = false } = {}) {
       const warnings = [];
       async function safe(label, fn, fallback) { try { return await fn(); } catch { warnings.push(`${label} unavailable; refresh to retry.`); return fallback; } }
       const [preferences, roster, evidence, history, usage, receipts] = await Promise.all([
-        safe('Preferences', () => loadPreferences(root, directory, sessionID), null),
-        safe('Route catalog', () => json(path.join(root,'routing/model-roster.json'), {}), {}),
-        safe('Evidence', () => json(path.join(root,'routing/model-evidence.json'), {}), {}),
+        chatOnly ? null : safe('Preferences', () => loadPreferences(root, directory, sessionID), null),
+        chatOnly ? {} : safe('Route catalog', () => json(path.join(root,'routing/model-roster.json'), {}), {}),
+        chatOnly ? {} : safe('Evidence', () => json(path.join(root,'routing/model-evidence.json'), {}), {}),
         safe('Outcomes', () => json(path.join(root,'.state/task-history.json'), { entries: [] }), { entries: [] }),
-        safe('Quota', () => usageSnapshot(root), null),
+        chatOnly ? null : safe('Quota', () => usageSnapshot(root), null),
         safe('Receipts', async () => {
           if (!sessionID) return [];
           const dir = path.join(root, '.state/delegation');

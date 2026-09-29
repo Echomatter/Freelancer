@@ -279,8 +279,13 @@ export function ContentStorage({
     {confirmProject && <ConfirmDialog ariaLabel="Confirm project archive"
       title={`${confirmProject.organization?.archivedAt ? "Restore" : "Put away"} ${confirmProject.name}?`}
       onCancel={() => setConfirmProject(null)} onConfirm={archiveProject} busy={storagePending}
-      confirmLabel="Confirm project change" error={storageError}>
-      <p>This does not delete or move files, change GitHub, stop work, or change individual chat archives.</p>
+      confirmLabel={storagePending
+        ? confirmProject.organization?.archivedAt ? "Restoring…"
+          : jobs?.job?.kind === "archive" && jobs.job.status === "completed" ? "Putting away…" : "Indexing project…"
+        : "Confirm project change"} error={storageError}>
+      {confirmProject.organization?.archivedAt
+        ? <p>This returns the project to active navigation. Future index refreshes will include it again.</p>
+        : <p>Freelancer refreshes this project’s file and conversation indexes before putting it away. Once archived, automatic index refreshes skip it until restored. This does not delete or move files, change GitHub, stop work, or change individual chat archives.</p>}
     </ConfirmDialog>}
   </div>;
 }

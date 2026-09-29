@@ -53,7 +53,7 @@ export function createSender(app, { file = app.store?.directory && path.join(app
     work.then(cleanup, cleanup);
     return work;
   }
-  const records = async (project, session) => Object.values((await app.store.read('requests')).records)
+  const records = async (project, session) => (app.store.requestSummaries ? await app.store.requestSummaries(project, session) : Object.values((await app.store.read('requests')).records))
     .filter(r => r.projectID === project && r.sessionID === session);
   async function deliver(project, session, input) {
     const previous = (await app.store.read('settings')).chatChoices?.[session];

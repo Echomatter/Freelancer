@@ -173,6 +173,26 @@ test("worker transcripts carry verified navigation identity outside the sidebar 
   await assert.rejects(f.app.chat(project.id, "ses_foreign"), /another project/);
 });
 
+test('chat display reuses model metadata while bootstrap, send and connection changes stay fresh', async t => {
+  const f = await fixture(t);
+  const p = await f.app.addProject(f.directory);
+  const reads = () => f.calls.filter(call => call.route === '/provider').length;
+  await f.app.bootstrap(p.id);
+  const initial = reads();
+  const timings = [];
+  await f.app.chat(p.id, 'ses_owned', { onTiming: (name, ms) => timings.push({ name, ms }) });
+  await f.app.chat(p.id, 'ses_worker');
+  assert.equal(reads(), initial, 'chat summaries reuse one bounded catalog snapshot');
+  assert(timings.some(row => row.name === 'providers' && row.ms >= 0));
+  await f.app.bootstrap(p.id);
+  assert.equal(reads(), initial + 1, 'bootstrap refreshes native inventory');
+  await f.app.send(p.id, 'ses_owned', { text: 'hello', model: { providerID: 'opencode', modelID: 'free' } });
+  assert.equal(reads(), initial + 2, 'dispatch checks current native models');
+  await f.app.auth('opencode-go', 'key', { key: 'fake-test-key' });
+  await f.app.chat(p.id, 'ses_owned');
+  assert.equal(reads(), initial + 3, 'credential lifecycle invalidates displayed metadata');
+});
+
 test("opening a folder installs project defaults and preserves project source", async (t) => {
   const f = await fixture(t);
   await writeFile(path.join(f.directory, "AGENTS.md"), "User instructions");

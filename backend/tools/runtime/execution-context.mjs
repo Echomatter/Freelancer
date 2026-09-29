@@ -22,10 +22,16 @@ async function json(file) {
 
 // Resolve from native identity and durable application records, never from a
 // model-provided agent/context blob. Historical receipts are not edited.
-export async function executionContext(root, directory, session, message) {
+export function createExecutionContextReader(readRequests = root => json(path.join(root, ".state/webpage/requests.json"))) {
+  return async (root, directory, session, message) => resolveExecutionContext(
+    root, directory, session, message, readRequests,
+  );
+}
+
+async function resolveExecutionContext(root, directory, session, message, readRequests) {
   const info = message?.info ?? message;
   if (info?.role !== "assistant") return null;
-  const records = await json(path.join(root, ".state/webpage/requests.json"));
+  const records = await readRequests(root);
   const request = records?.records?.[info.parentID];
   if (
     request?.sessionID === session?.id &&
@@ -87,3 +93,5 @@ export async function executionContext(root, directory, session, message) {
     parentAssistantID: receipt.parent_assistant_id,
   };
 }
+
+export const executionContext = createExecutionContextReader();

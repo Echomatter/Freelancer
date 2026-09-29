@@ -4,9 +4,17 @@ Open **Project settings → GitHub** in the left sidebar. The project history, G
 Git saves local checkpoints; GitHub receives only the checkpoints you choose to
 upload. Connecting an account or enabling history does not upload files.
 
+The two setup cards work together: **Local history** saves checkpoints on this
+computer; **Cloud sync** connects those checkpoints to GitHub. Each configured
+card has an **Edit** button. Local history edits the name and email shown under
+**Make changes as** for future checkpoints in this project. Cloud sync offers
+account sign-in, linked-project refresh and an upload enable/disable setting.
+Changing accounts does not move the linked repository. Help is in each card's
+lower-right corner; names and headings follow the selected theme.
+
 ## Connection and build states
 
-The GitHub card reports two separate states: **Account connected** means the
+The Cloud sync card reports two separate states: **Account connected** means the
 GitHub CLI is signed in using the system credential store; **Project linked**
 means this selected project has also been bound to a GitHub repository. A
 signed-in account can be linked by choosing a repository in the card. The

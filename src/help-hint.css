@@ -8,3 +8,9 @@
 .help-hint-popover > small { display: block; margin-top: 9px; color: var(--muted); font-size: 10px; }
 .field-label { display: flex; align-items: center; gap: 0; }
 .context-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.card-help, .field-help { display: flex; justify-content: flex-end; margin-top: 6px; }
+.card-help:empty, .field-help:empty { display: none; }
+.card-help .help-hint, .field-help .help-hint { margin: 0; }
+.page-help { position: fixed; right: 14px; bottom: 12px; z-index: 25; }
+.page-help .help-hint-trigger { width: 30px; height: 30px; border: 1px solid var(--line); background: var(--paper); }
+.help-hint-popover select { display: block; width: 100%; margin: 8px 0; padding: 6px; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; }

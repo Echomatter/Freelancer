@@ -33,6 +33,8 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
     [preset, setPreset] = useState("review");
   const [github, setGithub] = useState(false);
   const [editingIdentity, setEditingIdentity] = useState(false);
+  const [editingCloud, setEditingCloud] = useState(false);
+  const [cloudEnabled, setCloudEnabled] = useState(false);
   const [mainBranch, setMainBranch] = useState("");
   const [confirmation, setConfirmation] = useState<any>(null);
   const inFlight = useRef(false),
@@ -300,18 +302,23 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
           </p>
         ))}
       <div className="git-setup-grid">
-        <Panel className="git-setup-card">
+        <Panel className="git-setup-card" help="git-history">
           <div className="git-card-heading">
             <span>
               <HardDrive size={23} />
             </span>
             <div>
-              <h2 aria-label="Local project history">Local project history<HelpHint topic="git-history" /></h2>
+              <h2>Local history</h2>
             </div>
             <Badge tone={policy.tracking ? "success" : "neutral"}>
               {policy.tracking ? "On" : "Off"}
             </Badge>
+            {policy.tracking && <Button variant="quiet" aria-label={editingIdentity ? "Close local history edit" : "Edit local history"} aria-expanded={editingIdentity} disabled={disabled} onClick={() => {
+              setName(data.local?.identity.name || ""); setEmail(data.local?.identity.email || "");
+              setEditingIdentity(value => !value);
+            }}>{editingIdentity ? "Cancel" : "Edit"}</Button>}
           </div>
+          <p className="git-card-description">Save checkpoints on this computer so you can return to earlier work.</p>
           {!data.tools.git ? (
             <>
               <p>Git needs to be installed once.</p>
@@ -399,15 +406,14 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
             </>
           ) : (
             <>
-              <small>
-                {data.local?.identity.name} · {data.local?.identity.email}
-              </small>
+              <div className="git-local-identity">
+                <small>Make changes as</small>
+                <strong>{data.local?.identity.name}</strong>
+                <span>{data.local?.identity.email}</span>
+              </div>
               {identityNeedsAttention && <p className="notice error" role="alert">
                 This project still has a placeholder checkpoint identity. Set your name and email before saving new history.
               </p>}
-              <Button variant="quiet" disabled={disabled} onClick={() => setEditingIdentity((value) => !value)}>
-                {editingIdentity ? "Cancel identity edit" : "Edit checkpoint identity"}
-              </Button>
               {editingIdentity && <div className="git-identity">
                 <label>Name on checkpoints<input value={name} onChange={(e) => setName(e.target.value)} maxLength={200} /></label>
                 <label>Email on checkpoints<input value={email} onChange={(e) => setEmail(e.target.value)} maxLength={200} /></label>
@@ -417,7 +423,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                 )}>Save checkpoint identity</Button>
                 <HelpHint topic="git-identity" />
               </div>}
-              <Button
+              {editingIdentity && <Button
                 variant="quiet"
                 disabled={disabled}
                 onClick={() =>
@@ -437,22 +443,24 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                 }
               >
                 Stop tracking automation
-              </Button>
+              </Button>}
             </>
           )}
         </Panel>
-        <Panel className="git-setup-card">
+        <Panel className="git-setup-card" help="git-connection">
           <div className="git-card-heading">
             <span>
               <Github size={23} />
             </span>
             <div>
-              <h2 aria-label="GitHub connection">GitHub connection<HelpHint topic="git-connection" /></h2>
+              <h2>Cloud sync</h2>
             </div>
             <Badge tone={data.auth.connected ? "success" : "neutral"}>
               {githubStatus}
             </Badge>
+            {data.tools.gh && data.auth.connected && <Button variant="quiet" aria-label={editingCloud ? "Close cloud sync edit" : "Edit cloud sync"} aria-expanded={editingCloud} disabled={disabled} onClick={() => { setCloudEnabled(policy.github); setEditingCloud(value => !value); }}>{editingCloud ? "Cancel" : "Edit"}</Button>}
           </div>
+          <p className="git-card-description">Keep a copy on GitHub and share the checkpoints you choose.</p>
           {!data.tools.gh ? (
             <>
               <p>Install GitHub CLI to connect this computer securely.</p>
@@ -479,14 +487,12 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
             </>
           ) : (
             <>
-              <p>
-                {data.auth.connected
-                  ? repo
-                    ? `Signed in as ${data.auth.login}. This project is linked to ${repo.name}.`
-                    : `Signed in as ${data.auth.login}. Choose a GitHub project below to link this project.`
-                  : data.auth.message ||
-                    "Sign in with your browser. Never paste a token into chat."}
-              </p>
+              {data.auth.connected ? <div className="git-local-identity">
+                <small>Connected to GitHub as</small>
+                <strong>{data.auth.login}</strong>
+                <span>{repo ? "Project linked" : "Choose a project below to connect this folder."}</span>
+              </div> : <p>{data.auth.message || "Sign in with your browser. Never paste a token into chat."}</p>}
+              {(!data.auth.connected || editingCloud) && <>
               <Button
                 disabled={disabled}
                 onClick={() =>
@@ -506,6 +512,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
               >
                 Open GitHub sign-in page <ExternalLink size={13} />
               </a>
+              </>}
               {repo && (
                 <div className="git-destination">
                   <a href={repo.url} target="_blank" rel="noreferrer noopener">
@@ -517,7 +524,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                       ? "Sync enabled"
                       : "Uploads are off."}
                   </small>
-                  {data.auth.connected && policy.tracking && (
+                  {editingCloud && data.auth.connected && policy.tracking && (
                     <Button
                       variant="quiet"
                       disabled={disabled}
@@ -534,6 +541,14 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
                   )}
                 </div>
               )}
+              {editingCloud && policy.tracking && repo && <div className="git-cloud-editor">
+                <label className="check"><input type="checkbox" checked={cloudEnabled} onChange={event => setCloudEnabled(event.target.checked)} disabled={disabled} />Allow uploads to GitHub</label>
+                <p className="git-footnote">Your working agreement still controls when changes can be uploaded. Changing accounts does not move this linked repository.</p>
+                <Button disabled={disabled} onClick={() => void act(() => api("git/policy", {
+                  project, revision: policy.revision, preset: policy.preset, mainBranch: policy.mainBranch,
+                  tracking: policy.tracking, github: cloudEnabled,
+                }, "PUT"), () => setEditingCloud(false))}>Save cloud sync</Button>
+              </div>}
               {data.auth.connected && !repo && !policy.tracking && (
                 <p className="git-footnote">
                   Turn on local project history before linking a GitHub project.
@@ -583,11 +598,11 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
           )}
         </Panel>
       </div>
-      <Panel className="git-agreement">
+      <Panel className="git-agreement" help="git-agreement">
         <div className="git-section-heading">
           <ShieldCheck size={22} />
           <div>
-            <h2 aria-label="Working agreement">Working agreement<HelpHint topic="git-agreement" /></h2>
+            <h2>Working agreement</h2>
           </div>
         </div>
         <fieldset disabled={disabled} className="git-presets">
@@ -673,7 +688,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
         <div className="git-section-heading">
           <GitBranch size={22} />
           <div>
-            <h2 aria-label="Current work">Current work<HelpHint topic="git-sync" /></h2>
+            <h2>Current work</h2><HelpHint topic="git-sync" />
             <p>
               {data.local?.branch
                 ? `Working on ${data.local.branch}`

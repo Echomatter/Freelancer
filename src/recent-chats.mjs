@@ -1,7 +1,7 @@
 // Recent chat content stays in this browser tab only. Native OpenCode remains
 // authoritative for status, permissions, questions, and every new response.
 export class RecentChats {
-  constructor({ limit = 12, maxBytes = 16_000_000, ttlMs = 15 * 60_000, now = Date.now } = {}) {
+  constructor({ limit = 32, maxBytes = 24_000_000, ttlMs = 20 * 60_000, now = Date.now } = {}) {
     this.limit = limit;
     this.maxBytes = maxBytes;
     this.ttlMs = ttlMs;
@@ -25,6 +25,16 @@ export class RecentChats {
     this.entries.delete(key);
     this.entries.set(key, entry);
     return entry.chat;
+  }
+
+  isFresh(project, session, ageMs) {
+    const entry = this.entries.get(this.key(project, session));
+    if (!entry) return false;
+    if (entry.expiresAt <= this.now()) {
+      this.delete(project, session);
+      return false;
+    }
+    return this.now() - (entry.updatedAt ?? 0) < ageMs;
   }
 
   put(project, session, response, version = 0) {
@@ -62,7 +72,7 @@ export class RecentChats {
     const bytes = estimateBytes(project) + estimateBytes(session) + estimateBytes(chat);
     this.delete(project, session);
     if (bytes > this.maxBytes) return;
-    this.entries.set(key, { project, session, chat, bytes, version, expiresAt: now + this.ttlMs });
+    this.entries.set(key, { project, session, chat, bytes, version, updatedAt: now, expiresAt: now + this.ttlMs });
     this.bytes += bytes;
     while (this.entries.size > this.limit || this.bytes > this.maxBytes) {
       const oldest = this.entries.keys().next().value;
@@ -88,6 +98,22 @@ export class RecentChats {
       }
     }
   }
+}
+
+// Warm every visible active/awaiting session first, then a small recent slice
+// of parent chats. Child transcripts are discovered from cached parent links.
+export function chatWarmTargets(sessions = [], activity = {}, recentRoots = 3) {
+  const byID = new Map(sessions.filter(row => row?.id).map(row => [row.id, row]));
+  const recency = row => Number(row.time?.updated ?? row.time?.created ?? 0) || 0;
+  const active = [...byID.values()]
+    .filter(row => {
+      const state = activity[row.id];
+      return state?.active || state?.retry || state?.waiting;
+    })
+    .sort((a, b) => Number(!!activity[b.id]?.active) - Number(!!activity[a.id]?.active) || recency(b) - recency(a));
+  const roots = [...byID.values()].filter(row => !row.parentID).sort((a, b) => recency(b) - recency(a)).slice(0, recentRoots);
+  const seen = new Set();
+  return [...active, ...roots].filter(row => !seen.has(row.id) && seen.add(row.id));
 }
 
 function estimateBytes(value, seen = new WeakSet()) {

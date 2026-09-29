@@ -77,6 +77,17 @@ test('sidebar-layout', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
     const before = await width();
     await mkdir('artifacts/sidebar-layout', { recursive: true });
     await page.screenshot({ path: 'artifacts/sidebar-layout/desktop.png' });
+    await page.getByRole('button', { name: 'Collapse navigation', exact: true }).click();
+    await expect(page.locator('.workspace')).toHaveClass(/navigation-collapsed/);
+    assert.equal(await width(), 68, 'desktop navigation collapses to the familiar icon rail');
+    const compactChats = page.getByRole('button', { name: 'Chats', exact: true });
+    if (await compactChats.getAttribute('aria-expanded') !== 'true') await compactChats.click();
+    await expect(page.getByRole('button', { name: 'New chat', exact: true })).toBeVisible();
+    await compactChats.click();
+    await page.reload();
+    await expect(page.locator('.workspace')).toHaveClass(/navigation-collapsed/);
+    await page.getByRole('button', { name: 'Expand navigation', exact: true }).click();
+    await expect(page.locator('.workspace')).not.toHaveClass(/navigation-collapsed/);
     await page.locator(".usage-disclosure").click();
     await page.getByRole("button", { name: "Open Available Usage", exact: true }).waitFor();
     assert.equal(await width(), before, "expanded usage does not change sidebar width");
@@ -94,6 +105,7 @@ test('sidebar-layout', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
 
     await page.setViewportSize({ width: 680, height: 520 });
     await page.waitForFunction(() => Math.round(document.querySelector(".sidebar").getBoundingClientRect().width) === 68);
+    await page.waitForFunction(() => matchMedia('(max-width: 720px)').matches);
     const compactBefore = await width();
     if ((await page.locator(".usage-disclosure").getAttribute("aria-expanded")) !== "true") {
       await page.locator(".usage-disclosure").click();
@@ -111,6 +123,28 @@ test('sidebar-layout', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
     await compactList.locator('.nav-chat-select').first().click();
     await expect(compactList).toHaveCount(0);
     assert.equal(await width(), compactBefore, 'compact chat selection is not clipped by the rail');
+
+    const mobile = await browser.newPage({ viewport: { width: 680, height: 520 }, hasTouch: true, isMobile: true });
+    await mobile.goto(f.url);
+    await mobile.getByRole('button', { name: 'Hide navigation', exact: true }).waitFor();
+    const swipe = (from, to) => mobile.evaluate(({ from, to }) => {
+      const root = document.querySelector('.workspace'), y = 230;
+      const makeTouch = x => new Touch({ identifier: 1, target: root, clientX: x, clientY: y });
+      const start = makeTouch(from), end = makeTouch(to);
+      root.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, touches: [start], changedTouches: [start] }));
+      root.dispatchEvent(new TouchEvent('touchmove', { bubbles: true, touches: [end], changedTouches: [end] }));
+      root.dispatchEvent(new TouchEvent('touchend', { bubbles: true, touches: [], changedTouches: [end] }));
+    }, { from, to });
+    await swipe(58, 4);
+    await expect(mobile.locator('.workspace')).toHaveClass(/navigation-hidden/);
+    assert.equal(await mobile.locator('.sidebar').evaluate(el => getComputedStyle(el).visibility), 'hidden');
+    await swipe(8, 74);
+    await expect(mobile.locator('.workspace')).not.toHaveClass(/navigation-hidden/);
+    await mobile.getByRole('button', { name: 'Hide navigation', exact: true }).click();
+    await expect(mobile.getByRole('button', { name: 'Show navigation', exact: true })).toBeVisible();
+    await mobile.getByRole('button', { name: 'Show navigation', exact: true }).click();
+    await expect(mobile.getByRole('button', { name: 'Show navigation', exact: true })).toHaveCount(0);
+    await mobile.close();
 
     await page.setViewportSize({ width: 1440, height: 900 });
     await f.app.saveAppearance({ theme: 'light' });

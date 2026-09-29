@@ -47,33 +47,39 @@ export function useModelRatings(onComplete: () => Promise<void>) {
     catch (e) { setError((e as Error).message); return false; }
     finally { revision.current++; setPending(false); }
   };
-  const start = (project: string, model: string, variant = '', retry?: string) =>
-    mutate('models/ratings?project=' + encodeURIComponent(project), { model, variant, retry });
+  const start = (project: string, model: string, variant = '', retry?: string, free = false) =>
+    mutate('models/ratings?project=' + encodeURIComponent(project), { model, variant, retry, free });
   const dismiss = () => mutate('models/ratings/dismiss', { id: job.id });
   return { job, error: error || pollError, pending, hidden: hidden === job?.id, start, dismiss,
     clearError: () => { setError(''); setPollError(''); },
     reveal: () => setHidden(''), hide: () => setHidden(job.id),
     stop: () => mutate('models/ratings/stop', { id: job.id }),
-    retry: async () => { const previous = job; if (await dismiss()) await start(previous.project, previous.model, previous.variant, previous.id); } };
+    retry: async () => { const previous = job; if (await dismiss()) await start(previous.project, previous.model, previous.variant, previous.id, previous.free); } };
 }
 
 export function ModelRatingDialog({ models, connected, project, onClose, onStart, pending, error }: {
   models: any[]; connected: string[]; project: string; onClose: () => void;
-  onStart: (project: string, model: string, variant?: string) => Promise<boolean>; pending: boolean; error: string;
+  onStart: (project: string, model: string, variant?: string, retry?: string, free?: boolean) => Promise<boolean>; pending: boolean; error: string;
 }) {
-  const [choice, setChoice] = useState(''), [variant, setVariant] = useState('');
+  const [choice, setChoice] = useState(''), [variant, setVariant] = useState(''), [free, setFree] = useState(false);
   const available = models.filter(row => connected.includes(row.provider));
   return <Dialog title="Update Model Ratings" size="compact" onClose={onClose} busy={pending} initialFocus="first"
-    onSubmit={event => { event.preventDefault(); void onStart(project, choice, variant).then(started => { if (started) onClose(); }); }}
+    onSubmit={event => { event.preventDefault(); void onStart(project, choice, variant, undefined, free).then(started => { if (started) onClose(); }); }}
     footer={<><Button type="button" disabled={pending} onClick={onClose}>Cancel</Button>
-      <Button variant="primary" disabled={!choice || pending}>{pending ? 'Starting…' : 'Go'}</Button></>}>
-      <Field label="Configuration model" help="model-ratings">
-        <ProviderSelect provider={choice} autoFocus required value={choice} onChange={event => { setChoice(event.target.value); setVariant(''); }}>
+      <Button variant="primary" disabled={(!choice && !free) || pending}>{pending ? 'Starting…' : 'Go'}</Button></>}>
+      <Field label="Research path">
+        <select value={free ? 'free' : 'selected'} disabled={pending} onChange={event => setFree(event.target.value === 'free')}>
+          <option value="selected">Selected model</option>
+          <option value="free">Free models · parallel research</option>
+        </select>
+      </Field>
+      {free ? <p className="muted">Automatically selects up to four free models to research in parallel and reassigns unfinished work when a model fails.</p> : <><Field label="Configuration model" help="model-ratings">
+        <ProviderSelect provider={choice} autoFocus data-dialog-autofocus required={!free} disabled={free} value={choice} onChange={event => { setChoice(event.target.value); setVariant(''); }}>
           <option value="">Select a connected model…</option>
           {available.map(row => <option key={row.id} value={row.id}>{row.name} · {row.provider} ({row.costClass})</option>)}
         </ProviderSelect>
       </Field>
-      <ModelIntelligence variants={available.find(row => row.id === choice)?.variants ?? []} value={variant} onChange={setVariant} disabled={pending} />
+      <ModelIntelligence variants={available.find(row => row.id === choice)?.variants ?? []} value={variant} onChange={setVariant} disabled={pending} /></>}
       {error && <p className="notice error" role="alert">{error}</p>}
   </Dialog>;
 }

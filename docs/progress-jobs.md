@@ -1,5 +1,12 @@
 # Background progress and project preparation
 
+Project switching uses the same in-page loading stage as chats, with the current
+project name and preparation phase. It never opens the add-project dialog.
+During indexing, **Continue in background** opens the workspace without cancelling
+the index job; its progress and Stop/Retry controls remain below the header.
+Browser reads time out after 30 seconds so a stalled connection releases loading
+controls and offers recovery. This does not stop or resend native work.
+
 `src/echoflex/ProgressStatus.tsx` is the reusable presentation component. It accepts a status label, semantic state, optional measured percentage, optional details, dismiss callback and one configurable action. Callers own execution and persistence; a dismiss callback never implies cancellation. Text and controls sit inside a slim color-changing bar. Running work uses an indeterminate sweep; waiting/partial states use warning, success uses green, and errors use the danger palette. Reduced-motion preferences disable animation. Labels and native progress semantics keep state understandable without color.
 
 Model research, file and conversation index refreshes, and SQLite optimize/check/compact jobs share this component below the workspace header. Jobs remain visible across navigation. Stop is offered only where execution can actually stop. SQLite maintenance does not offer a fake cancellation control; compaction retains its confirmation. Terminal jobs offer Retry, Rebuild or Run again as appropriate, plus dismiss. Model results remain durable across server restart; index/maintenance progress survives browser reload but is held by the current server process.

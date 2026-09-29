@@ -15,7 +15,7 @@ function activate(fallback) {
   if (next) {
     next.element.showModal();
     const target = next.focus?.isConnected ? next.focus : next.initialFocus === 'first'
-      ? next.element.querySelector('[autofocus]') ?? next.element.querySelector('.ef-dialog-body input:not(:disabled), .ef-dialog-body select:not(:disabled), .ef-dialog-body textarea:not(:disabled), .ef-dialog-body button:not(:disabled):not(.help-hint-trigger)') ?? next.element.querySelector('button:not(:disabled)')
+      ? next.element.querySelector('[autofocus], [data-dialog-autofocus]') ?? next.element.querySelector('.ef-dialog-body input:not(:disabled), .ef-dialog-body select:not(:disabled), .ef-dialog-body textarea:not(:disabled), .ef-dialog-body button:not(:disabled):not(.help-hint-trigger)') ?? next.element.querySelector('button:not(:disabled)')
       : next.element.querySelector('[data-dialog-heading]');
     focus(target ?? next.element);
   } else focus(fallback);

@@ -12,6 +12,18 @@ Verification must cover token contrast, input validation, partial saves/reset, o
 
 ## Use
 
+**Create a theme** opens the third category, **Custom themes**. Generate or
+Regenerate rolls fresh local randomness with a choice of Surprise me, Light or
+Dark. The preview shows page, sidebar, card, text and action colors. Naming is
+optional; **Save & use** stores the palette and applies it after confirmation.
+Discard leaves the current theme intact. Saved custom themes can be selected or
+removed; removing the active one returns to its built-in Light or Dark default.
+
+All 300 built-in thumbnails use the same semantic tokens as the live layout:
+page background behind the transcript, sidebar beside it, and a distinct paper
+card/composer. Text strokes are opaque, so their colors match the rendered ink.
+The previous thumbnail used paper for the entire main area, hiding the page hue.
+
 Open **Application settings > Appearance**, expand Light themes or Dark themes, and choose a palette from its color-sorted preview grid. Either category can be collapsed independently. A checkmark and pressed state identify the selected palette independently of color. The grid adapts to two columns on medium screens and one column on narrow screens. Todo placement is retained from older preferences, but is no longer an Appearance setting; the current workspace behavior remains in effect.
 
 Open **Application settings > Providers** to set each provider's color. Choose a named swatch, the system color picker, or a three/six-digit hex value. The sample previews the choice without changing the rest of the app. **Save color** persists it; **Use default** removes only that provider's override. Color changes do not save unsaved billing fields or require authentication.
@@ -27,9 +39,21 @@ OpenCode Free (`opencode`) defaults to green and OpenCode Go (`opencode-go`) has
 - `src/ProviderColors.tsx`: appearance context, identity primitives and native model-select wrapper. It never globally replaces semantic accent/status variables with provider colors.
 - `src/colors.css`: shared primitive states and custom UI colors. Existing custom composer, question, panel-resize, code/diff and provider-connection surfaces consume the same semantic variables. Git pages use these same tokens.
 
-The shape in existing `settings.json` remains `appearance.theme` plus an optional `appearance.providerColors` object keyed by supported provider IDs. Missing overrides use defaults. Known Light/Dark settings retain their background families; some old muted and semantic shades are adjusted for readability. Unknown theme values resolve to Light. No bulk migration, dependency upgrade, separate settings database, cloud sync or account change is introduced.
+The existing `settings.json` keeps `appearance.theme`, optional `appearance.customThemes`, and an optional `appearance.providerColors` object keyed by supported provider IDs. Missing overrides use defaults. Known Light/Dark settings retain their background families; some old muted and semantic shades are adjusted for readability. Unknown theme values resolve to Light. No bulk migration, dependency upgrade, separate settings database, cloud sync or account change is introduced.
 
 The appearance handler accepts partial provider maps and `null` resets. Invalid combined patches fail before mutation. Serialization in the existing store preserves unrelated settings. Successful UI responses merge only the changed keys and invalidate older bootstrap reads. Provider color metadata never influences billing, quotas, model eligibility, routing or credentials.
+
+Custom definitions live in `appearance.customThemes` (up to 64), alongside the
+selected ID in `appearance.theme`. Only UUID-based IDs, a short plain-text name,
+light/dark mode and nine canonical hex colors are accepted. The server derives
+every semantic token and validates the same contrast requirements as built-ins.
+Generation uses browser crypto randomness and bounded rejection sampling. It
+rejects exact decorative color reuse and weighted OKLab distance below 0.08 from
+same-mode built-ins, saved themes and recent rolls (recent-roll checks are local).
+Semantic status colors keep their established meaning. Saves recheck against
+the current collection inside the serialized store update, avoiding concurrent
+overwrites. Initial HTML and provider color derivation support custom palettes;
+names and arbitrary CSS never enter the server-stamped style attribute.
 
 ## Startup and interactions
 
@@ -52,6 +76,13 @@ npm run test:browser -- colors
 ```
 
 The color contracts cover legacy/default resolution, token parity, text/control contrast, custom provider colors, provider identity, input validation, concurrent partial writes, resets, HTTP boundaries, initial HTML, and token replacement. Source/token comparisons normalize Windows CRLF to LF; the CLI regression test accepts both line endings while rejecting changed or missing tokens.
+
+`tests/custom-themes.browser.mjs` compares the computed colors of all 300
+thumbnails against their source tokens. It also covers random rerolls, mode
+selection, unsaved preview isolation, naming, failed-save recovery, unnamed
+saves, removal, a delayed-bootstrap first-paint check and narrow-screen layout.
+`tests/custom-themes.test.mjs` exercises a full 64-theme collection, contrast,
+perceptual separation, hostile color input and concurrent appearance writes.
 
 The production browser journey passed six scenario groups: all palettes and live shell/primitive states; failed theme saves; provider preview and duplicate-save prevention; invalid/failed color writes and model cards; parent/worker identity with neutral messages and actual sender/question dialogs; connection dialog, narrow layout, shade adaptation, reload, reset and forced-color usability. It uses the real application/HTTP/store with disposable data and only native OpenCode transport stubbed; no inference or real credentials.
 

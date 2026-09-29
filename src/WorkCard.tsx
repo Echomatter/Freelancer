@@ -1,6 +1,7 @@
 import { useEffect, useId, useState, type ReactNode } from 'react';
 import { ChevronDown, X } from 'lucide-react';
 import './work-card.css';
+import { HelpScope } from './HelpHint';
 
 // Presentation only. Dismissing a card never cancels native work or edits todos.
 export function WorkCard({ title, icon, children, onDismiss, dismissLabel = 'Dismiss card', action, defaultOpen = true, preview, attention = false }: {
@@ -17,6 +18,6 @@ export function WorkCard({ title, icon, children, onDismiss, dismissLabel = 'Dis
       {action}
       {onDismiss && <button type="button" className="icon-button work-card-dismiss" aria-label={dismissLabel} title={dismissLabel} onClick={onDismiss}><X size={15} /></button>}
     </header>
-    {open && <div id={id} className="work-card-body">{children}</div>}
+    {open && <div id={id} className="work-card-body"><HelpScope>{children}</HelpScope></div>}
   </section>;
 }

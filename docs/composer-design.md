@@ -1,9 +1,12 @@
 # Composer and tool dock
 
-The composer uses matching 44px controls: message options on the left and the
-send action on the right. The text field grows to 160px, then scrolls. A quiet
-line shows the current agent, model and intelligence without adding
-another toolbar.
+The composer uses a slim, shadow-free bottom surface with matching 44px round controls: message options on the left and the
+send action on the right. The text field grows with the draft to an adaptive
+viewport cap, then scrolls. The options button stays visually quiet until hovered or opened. Its tooltip
+names the current agent, model and intelligence; the menu holds the labeled
+controls. There is no secondary label row below the input. The enclosing border
+continues along the very bottom of the page. The options sheet mounts only while
+open, keeping its model list out of the closed chat DOM.
 
 ## Alternatives tried
 
@@ -25,6 +28,10 @@ Escape returns focus to the options button; clicking outside closes the panel.
 Tab after the last setting returns to the message. The panel floats above the
 chat scroll area so an expanded tool dock cannot clip it on short screens.
 Changes apply to the next message and do not change captured running assignments.
+The textarea has no instructional placeholder. Its accessible label remains
+stable, and mobile text controls use a 16px font, a send return-key hint, dynamic
+viewport resizing and safe-area padding so focusing it does not zoom or displace
+the surrounding toolbars.
 
 ## Supporting context
 
@@ -58,7 +65,12 @@ without tools shows an empty tool state instead of another turn's commands.
 
 The same outlined icon treatment identifies the Projects and Chats parent
 controls. Their children retain lighter icons. Compact navigation closes after
-chat selection and when the window enters the phone layout.
+chat selection and when the window enters the phone layout. Desktop users can
+collapse the navigation to the same icon rail; that choice persists locally.
+On phones, the rail can be hidden for reading space with its top-bar control or
+a leftward swipe. A rightward swipe beginning at the left screen edge restores
+it; the top-bar control remains available for touch, keyboard, and assistive
+technology users.
 
 ## Browser evidence
 
@@ -68,3 +80,5 @@ attachment/task collapse, draft preservation, tool markers and phone overflow.
 independent output scrolling, streamed tools, delegation handoffs and short
 viewports. Existing send, queue, interrupt and uncertainty journeys retain their
 transport assertions. These are simulated-provider checks, not live inference.
+
+Contextual help sits in one lower-right footer bubble per card. Related field topics share that bubble through a topic selector; headings and the conversation rail have no help icons. Page-level help stays in the lower-right corner.

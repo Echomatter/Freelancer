@@ -158,3 +158,52 @@ test('background configuration accepts one native session and records completed 
   assert.equal(service.status().status, 'completed');
   assert.equal(service.catalog([{ id: 'opencode/a' }])['opencode/a'].status, 'Updated');
 });
+
+for (const targetCount of [1, 24]) test(`free research dispatches four workers concurrently and reassigns a failed batch (${targetCount} targets)`, async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-free-rating-pool-'));
+  const targets = Array.from({ length: targetCount }, (_, i) => ({ id: `provider/model${i}`, provider: 'provider', name: `Model ${i}`, costClass: 'subscription' }));
+  const free = Array.from({ length: 4 }, (_, i) => ({ id: `opencode/free${i}`, provider: 'opencode', name: `Free ${i}`, costClass: 'free' }));
+  const models = [...targets, ...free], calls = [], messages = new Map(), statuses = {};
+  let sessions = 0;
+  const host = { async request(route, options) {
+    calls.push({ route, options });
+    if (route === '/session') { const id = `ses_free${++sessions}`; statuses[id] = { type: 'busy' }; return { id, directory: root }; }
+    if (route.endsWith('/prompt_async')) return {};
+    if (route.endsWith('/message')) return messages.get(route.split('/')[2]) ?? [];
+    if (route === '/session/status') return statuses;
+    if (route === '/permission' || route === '/question') return [];
+    if (route.endsWith('/abort')) return true;
+    throw Error(route);
+  } };
+  const service = createModelRatingService({ host, backendRoot: root, dataRoot: root,
+    project: async () => ({ id: 'p', directory: root }),
+    getCatalog: async () => ({ models, providers: { connected: ['provider', 'opencode'] } }) });
+  t.after(async () => { service.close(); await rm(root, { recursive: true, force: true }); });
+  service.catalog(models);
+  await service.start('p', '', undefined, '', true);
+  const prompts = () => calls.filter(call => call.route.endsWith('/prompt_async'));
+  assert.equal(prompts().length, 4, 'four free workers start without waiting for each other');
+  const failed = prompts()[0], session = failed.route.split('/')[2];
+  messages.set(session, [{ info: { role: 'assistant', parentID: failed.options.body.messageID, error: true,
+    finish: 'stop', time: { completed: Date.now() } }, parts: [] }]);
+  statuses[session] = { type: 'idle' };
+  const completed = prompts()[1], completedSession = completed.route.split('/')[2];
+  const completedTargets = models.filter(row => completed.options.body.parts[0].text.includes(`${row.id}:`));
+  messages.set(completedSession, [{ info: { role: 'assistant', parentID: completed.options.body.messageID,
+    finish: 'stop', time: { completed: Date.now() } }, parts: [{ type: 'text', text: JSON.stringify({ models: completedTargets.map(row => ({
+      id: row.id, scores, summary: 'Estimate', sources: [],
+    })) }) }] }]);
+  statuses[completedSession] = { type: 'idle' };
+  for (let i = 0; i < 30 && prompts().length === 4; i++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(prompts().length, 5, 'another available free worker receives the failed batch');
+  assert.equal(prompts().filter(call => call.route.split('/')[2] === session).length, 1, 'failed worker is not retried');
+  for (const call of prompts()) {
+    const id = call.route.split('/')[2];
+    messages.set(id, [{ info: { role: 'assistant', parentID: call.options.body.messageID, error: true,
+      finish: 'stop', time: { completed: Date.now() } }, parts: [] }]);
+    statuses[id] = { type: 'idle' };
+  }
+  for (let i = 0; i < 40 && service.status().status === 'running'; i++) await new Promise(resolve => setTimeout(resolve, 100));
+  assert.equal(service.status().status, 'partial', 'an exhausted pool terminates with unresolved work instead of hanging');
+  assert.ok(service.status().missing > 0);
+});

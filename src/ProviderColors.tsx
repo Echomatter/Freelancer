@@ -1,8 +1,9 @@
 import { Children, cloneElement, isValidElement, createContext, useContext, forwardRef, type ReactElement, type ReactNode, type CSSProperties, type HTMLAttributes, type SelectHTMLAttributes } from 'react';
 import { providerID, providerTokens } from '../domain/provider-colors.mjs';
 
-export type ColorAppearance = { theme?: string; providerColors?: Record<string, string> };
-export type ColorPatch = { theme?: string; providerColors?: Record<string, string | null> };
+export type CustomTheme = { id: string; name: string; mode: 'light' | 'dark'; colors: Record<string, string> };
+export type ColorAppearance = { theme?: string; customThemes?: CustomTheme[]; providerColors?: Record<string, string> };
+export type ColorPatch = { theme?: string; customThemes?: CustomTheme[]; providerColors?: Record<string, string | null> };
 export const AppearanceContext = createContext<ColorAppearance>({});
 export const useColorAppearance = () => useContext(AppearanceContext);
 export function providerAttributes(provider: unknown, appearance: ColorAppearance) {

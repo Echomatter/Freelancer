@@ -79,6 +79,105 @@ test('published file indexes with extraction gaps stay reusable and complete wit
   await until(() => jobs.status().status === 'completed');
 });
 
+test('putting a project away refreshes files and chats first and blocks later targeted index jobs', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-archive-index-'));
+  const calls = [];
+  let archived = false;
+  const app = {
+    project: async id => ({ id, name: id }),
+    rebuildContentIndex: async options => {
+      calls.push(['files', options.projectID, options.includeArchivedProject]);
+      return { sources: 4, failures: [] };
+    },
+    history: {
+      isProjectArchived: async id => id === 'p' && archived,
+      projectArchiveRevision: async () => 0,
+      rebuildChatSearch: async options => {
+        calls.push(['chats', options.projectID, options.includeArchivedProject]);
+        return { conversations: 3, failures: [] };
+      },
+    },
+  };
+  const jobs = createIndexJobs({ app, dataRoot: root });
+  t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
+
+  assert.deepEqual(await jobs.archiveProject('p', 0, async () => {
+    calls.push(['archive', 'p']); archived = true; return { archived };
+  }), { archived: true });
+  assert.deepEqual(calls, [['files', 'p', true], ['chats', 'p', true], ['archive', 'p']]);
+  assert.equal(jobs.status().kind, 'archive');
+  assert.equal(jobs.status().status, 'completed');
+  await assert.rejects(jobs.start('files', 'p'), /Restore this project/);
+  await assert.rejects(jobs.start('chats', 'p'), /Restore this project/);
+});
+
+test('a failed final index leaves the project active and does not archive it', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-archive-index-failure-'));
+  let archived = false;
+  const app = {
+    project: async id => ({ id }),
+    rebuildContentIndex: async () => ({ sources: 1, failures: [] }),
+    history: {
+      isProjectArchived: async () => archived,
+      projectArchiveRevision: async () => 0,
+      rebuildChatSearch: async () => ({ conversations: 0, failures: [{ project: 'p', error: 'Native chat unavailable' }] }),
+    },
+  };
+  const jobs = createIndexJobs({ app, dataRoot: root });
+  t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
+
+  await assert.rejects(jobs.archiveProject('p', 0, async () => { archived = true; }), /0 conversations indexed/);
+  assert.equal(archived, false);
+  assert.equal(jobs.status().status, 'partial');
+});
+
+test('stopping the final archive index keeps the project active and never calls its commit', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-archive-index-stop-'));
+  let entered = false, archived = false;
+  const app = {
+    project: async id => ({ id }),
+    rebuildContentIndex: async ({ signal }) => {
+      entered = true;
+      await new Promise(resolve => signal.addEventListener('abort', resolve, { once: true }));
+      signal.throwIfAborted();
+    },
+    history: {
+      isProjectArchived: async () => archived,
+      projectArchiveRevision: async () => 0,
+      rebuildChatSearch: async () => assert.fail('stop must fence chat indexing'),
+    },
+  };
+  const jobs = createIndexJobs({ app, dataRoot: root });
+  t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
+  const archive = jobs.archiveProject('p', 0, async () => { archived = true; });
+  await until(() => entered);
+  jobs.stop(jobs.status().id);
+  await assert.rejects(archive, /stopped/);
+  assert.equal(archived, false);
+  assert.equal(jobs.status().status, 'stopped');
+});
+
+test('a commit conflict after successful final indexing leaves the project active', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-archive-index-commit-'));
+  const calls = [];
+  let archived = false;
+  const app = {
+    project: async id => ({ id }),
+    rebuildContentIndex: async () => { calls.push('files'); return { sources: 1, failures: [] }; },
+    history: {
+      isProjectArchived: async () => archived,
+      projectArchiveRevision: async () => 0,
+      rebuildChatSearch: async () => { calls.push('chats'); return { conversations: 1, failures: [] }; },
+    },
+  };
+  const jobs = createIndexJobs({ app, dataRoot: root });
+  t.after(async () => { await jobs.close(); await rm(root, { recursive: true, force: true }); });
+  await assert.rejects(jobs.archiveProject('p', 0, async () => { throw Error('archive revision changed'); }), /archive revision changed/);
+  assert.deepEqual(calls, ['files', 'chats']);
+  assert.equal(jobs.status().status, 'completed');
+  assert.equal(archived, false);
+});
+
 test('SQLite integrity findings are failures, and synchronous maintenance never offers a fake Stop', async () => {
   const jobs = createIndexJobs({ app: { history: { maintainIndex: async operation => ({ healthy: false, findings: [`${operation} failed`] }) } } });
   const job = await jobs.start('check');

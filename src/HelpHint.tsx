@@ -1,11 +1,37 @@
 import { CircleHelp } from "lucide-react";
-import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { helpTopics, type HelpTopic } from "./documentation-help";
 import "./help-hint.css";
 
-export function HelpHint({ topic, label }: { topic: HelpTopic; label?: string }) {
-  const excerpt = helpTopics[topic];
+type Topic = { topic: HelpTopic; label?: string };
+const CardHelp = createContext<((id: string, topic: Topic) => () => void) | null>(null);
+
+// Fields contribute to their containing card's single footer bubble. Nested
+// cards own their help, so controls never collect beside headings or labels.
+export function HelpScope({ children, topic }: { children: ReactNode; topic?: HelpTopic }) {
+  const [entries, setEntries] = useState<Record<string, Topic>>({});
+  const register = useCallback((id: string, item: Topic) => {
+    setEntries(previous => ({ ...previous, [id]: item }));
+    return () => setEntries(previous => { const next = { ...previous }; delete next[id]; return next; });
+  }, []);
+  const topics = [...new Map([...(topic ? [{ topic }] : []), ...Object.values(entries)].map(item => [item.topic, item])).values()];
+  return <CardHelp.Provider value={register}>{children}
+    {topics.length > 0 && <div className="card-help"><HelpPopover topics={topics} /></div>}
+  </CardHelp.Provider>;
+}
+
+export function HelpHint({ topic, label }: Topic) {
+  const register = useContext(CardHelp), id = useId();
+  useEffect(() => register?.(id, { topic, label }), [register, id, topic, label]);
+  return register ? null : <HelpPopover topics={[{ topic, label }]} />;
+}
+
+function HelpPopover({ topics }: { topics: Topic[] }) {
+  const [selected, setSelected] = useState<HelpTopic | null>(null);
+  const current = topics.find(item => item.topic === selected) ?? topics[0];
+  const excerpt = helpTopics[current.topic];
+  const label = topics[0].label;
   const id = useId();
   const trigger = useRef<HTMLButtonElement>(null);
   const tip = useRef<HTMLDivElement>(null);
@@ -41,7 +67,7 @@ export function HelpHint({ topic, label }: { topic: HelpTopic; label?: string })
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
     return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
-  }, [open]);
+  }, [open, current.topic]);
   useEffect(() => {
     if (!open) return;
     const key = (event: KeyboardEvent) => {
@@ -61,16 +87,20 @@ export function HelpHint({ topic, label }: { topic: HelpTopic; label?: string })
   }, [open, id]);
 
   return <span className="help-hint">
-    <button ref={trigger} type="button" className="help-hint-trigger" aria-label={`Help: ${label ? `${label} — ` : ""}${excerpt.title}`}
+    <button ref={trigger} type="button" className="help-hint-trigger" aria-label={`Help: ${label ? `${label} — ` : ""}${helpTopics[topics[0].topic].title}`}
       aria-expanded={open} aria-describedby={open ? id : undefined}
       onMouseEnter={show} onMouseLeave={leave}
-      onFocus={() => { focused.current = true; show(); }} onBlur={() => { focused.current = false; close(); }}
+      onFocus={() => { focused.current = true; show(); }} onBlur={event => { focused.current = false; if (!tip.current?.contains(event.relatedTarget as Node)) close(); }}
       onClick={event => { event.stopPropagation(); if (pinned.current) close(); else { pinned.current = true; show(); } }}>
       <CircleHelp size={14} aria-hidden="true" />
     </button>
-    {open && createPortal(<div ref={tip} id={id} className="help-hint-popover" role="tooltip" style={position}
+    {open && createPortal(<div ref={tip} id={id} className="help-hint-popover" role={topics.length > 1 ? 'dialog' : 'tooltip'} aria-label={topics.length > 1 ? 'Card help' : undefined} style={position}
+      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget as Node) && event.relatedTarget !== trigger.current) close(); }}
       onMouseEnter={() => clearTimeout(timer.current)} onMouseLeave={leave}>
       <strong>{excerpt.title}</strong>
+      {topics.length > 1 && <select aria-label="Help topic" value={current.topic} onChange={event => setSelected(event.target.value as HelpTopic)}>
+        {topics.map(item => <option key={item.topic} value={item.topic}>{helpTopics[item.topic].title}</option>)}
+      </select>}
       {excerpt.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
       <small>README · Interface help</small>
     </div>, trigger.current?.closest("dialog") ?? document.body)}

@@ -8,6 +8,7 @@ release/
 .opencode/
 runtime.json
 /model-assessments*.json
+/model_assessments*.json
 /models_assessment.json
 __pycache__/
 

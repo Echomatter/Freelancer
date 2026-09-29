@@ -63,10 +63,12 @@ function ActivityCard({ activity, onChild }: { activity: any; onChild: (id: stri
         <span className="activity-detail-title activity-detail-identity">
           <strong>{activity.agentName ?? activity.agentID ?? activity.role ?? "Unknown agent"}</strong>
           {activity.child && <ArrowUpRight className="activity-open-indicator" size={14} aria-hidden="true" />}
-          <small className="activity-action-count">{activity.completedTools ?? 0} actions</small>
+        </span>
+        <span className="activity-detail-status">
           <Badge tone={completed ? "success" : routeUnavailable ? "warning" : "neutral"}>
             {activityLabel(activity.phase)}
           </Badge>
+          <small className="activity-action-count">{activity.completedTools ?? 0} actions</small>
         </span>
         {model && <small className="activity-detail-model"><ProviderText provider={model} mark>{model}</ProviderText></small>}
       </button>

@@ -4,6 +4,36 @@ import path from "node:path";
 import { localDataFixture } from "./fixtures/local-data-app.mjs";
 import { test, expect } from "./support/browser-test.mjs";
 
+test('settings headings, provider controls and empty states fit compact screens', { tag: ['@app'] }, async ({ appBrowser, own }) => {
+  const fixture = await own(localDataFixture({ gitOptions: {
+    resolveExecutable: async () => { throw Error('Tools unavailable in presentation fixture'); },
+    runner: async () => { throw Error('Unexpected external Git command'); },
+  } }));
+  const page = await appBrowser.newPage({ viewport: { width: 320, height: 740 } });
+  try {
+    await page.goto(fixture.url);
+    for (const width of [320, 760]) {
+      await page.setViewportSize({ width, height: 740 });
+      for (const [scope, title] of [
+        ['Application settings', 'Providers'], ['Application settings', 'Content & Storage'],
+        ['Application settings', 'Conversation history'], ['Project settings', 'Session defaults'],
+        ['Project settings', 'GitHub'],
+      ]) {
+        await test.step(`${width}px ${title}`, async () => {
+          const trigger = page.getByRole('button', { name: scope, exact: true });
+          if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click();
+          await page.locator('.settings-drawer-links:not([hidden])').getByRole('button', { name: title, exact: true }).click();
+          await expect(page.locator('.page-title').getByRole('heading', { name: title, exact: true })).toBeVisible();
+          if (title === 'GitHub') await expect(page.getByRole('heading', { name: 'Local history', exact: true })).toBeVisible();
+          const overflow = await page.locator('.page, .page-title, .provider-card, .empty').evaluateAll(nodes => nodes.filter(node => node.clientWidth && node.scrollWidth > node.clientWidth + 1).map(node => ({ className: node.className, width: node.clientWidth, content: node.scrollWidth })));
+          assert.deepEqual(overflow, [], `${title} has no clipped horizontal content at ${width}px`);
+          assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+        });
+      }
+    }
+  } finally { await appBrowser.close(); }
+});
+
 test("settings panels share framing, aligned forms, help placement and clickable directory paths", { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
   let gitCommands = 0;
   // Layout must not depend on installed tools, a runner's sign-in, or network.

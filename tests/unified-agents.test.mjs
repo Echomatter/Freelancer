@@ -145,10 +145,19 @@ test("agent edits and deletion affect future roots, not captured assignments or 
   assert.equal(rows[0].agentName, custom.name);
   assert.equal(rows[0].agentID, agent.id);
   const next = await f.send();
+  const promptsBeforeRejection = f.prompts.length;
+  const sessionsBeforeRejection = f.sessions.size;
   await assert.rejects(
     f.delegator.execute({ ...job, agentID: agent.id }, next),
-    /Choose a named/,
+    error => {
+      assert.equal(error.name, "InvalidAgent");
+      assert.equal(error.details.supplied_agent, agent.id);
+      assert.deepEqual(error.details.valid_agents, ["engineer", "researcher", "designer"]);
+      return true;
+    },
   );
+  assert.equal(f.prompts.length, promptsBeforeRejection, "a deleted agent cannot dispatch on a future root");
+  assert.equal(f.sessions.size, sessionsBeforeRejection, "validation does not create a replacement child");
   assert.equal(
     (await f.store.read("requests")).records[
       receipt.parent_message_id
@@ -218,7 +227,12 @@ test("unknown agents, role-based calls, forged native identity and missing conte
     ctx = await f.send();
   await assert.rejects(
     f.delegator.execute({ ...job, agentID: "missing" }, ctx),
-    /named/,
+    error => {
+      assert.equal(error.name, "InvalidAgent");
+      assert.equal(error.details.supplied_agent, "missing");
+      assert.deepEqual(error.details.valid_agents, ["engineer", "researcher", "designer"]);
+      return true;
+    },
   );
   await assert.rejects(
     f.delegator.execute({ role: "worker", task: "Edit" }, ctx),
@@ -227,6 +241,7 @@ test("unknown agents, role-based calls, forged native identity and missing conte
   f.rows.get(f.parent.id).at(-1).info.agent = "researcher";
   await assert.rejects(f.delegator.execute(job, ctx), /identity differs/);
   assert.equal(f.prompts.length, 1);
+  assert.equal(f.sessions.size, 1, "invalid agents and identities never create children");
 });
 test("a new native profile refresh is idle-only and cannot interrupt a running main request", async (t) => {
   const f = await unifiedFixture(t);

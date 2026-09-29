@@ -9,6 +9,7 @@ import {
   Plus,
   FolderOpen,
   ChevronDown,
+  ArrowLeft,
   ArrowUpRight,
   RefreshCw,
   Activity,
@@ -20,6 +21,7 @@ import {
   Gauge,
   PanelLeftClose,
   PanelLeftOpen,
+  PanelRight,
 } from "lucide-react";
 import { api, query, subscribe } from "./api";
 import { Button, Panel, Badge, Empty, Field, PageCloseButton, PageHeading } from "./echoflex/Controls";
@@ -43,7 +45,7 @@ import { Permissions } from './Permissions';
 import { Dialog, useConfirmation } from './echoflex/Dialog';
 import { FolderPicker, ProjectImport } from './ProjectImport';
 import { useProjectActivity } from "./SessionActivity";
-import { UsageHero, UsageSidebar, UsageProviders } from "./AvailableUsage";
+import { UsageHero, UsageSidebar, UsageProviders, UsagePreferences } from "./AvailableUsage";
 import { useAvailability } from "./useAvailability";
 import { ContributionRows } from "./Contributions";
 import { AppearanceContext, ProviderText, ProviderSelect, providerAttributes, type ColorPatch } from "./ProviderColors";
@@ -98,6 +100,7 @@ export default function App() {
     return () => media.removeEventListener("change", update);
   }, []);
   const toggleNavigation = () => {
+    collapseNavigation();
     if (narrowViewport) setNavigationHiddenMobile(value => !value);
     else {
       const next = !navigationCollapsed;
@@ -130,7 +133,9 @@ export default function App() {
   const [view, setViewState] = useState("chat"),
     [tab, setTab] = useState("providers"),
     [settingsScope, setSettingsScope] = useState<SettingsScope>("application"),
-    [expandedSettings, setExpandedSettings] = useState<SettingsScope | null>(null),
+    [expandedNavigation, setExpandedNavigation] = useState<SettingsScope | null>(null),
+    [expandedProjects, setExpandedProjects] = useState(false),
+    [expandedChats, setExpandedChats] = useState(false),
     [model, setModel] = useState("inherit"),
     [variant, setVariant] = useState("inherit");
   const [error, setError] = useState(""),
@@ -174,14 +179,40 @@ export default function App() {
   const [choicesKey, setChoicesKey] = useState("");
   const [historySelection, setHistorySelection] = useState<string | undefined>();
   const historyOpen = view === "history";
-  const setView = (next: React.SetStateAction<string>) => startTransition(() => setViewState(next));
-  const openHistory = (id?: string) => { setHistorySelection(id); setExpandedSettings("application"); setView("history"); };
-  const closeSettings = () => { setExpandedSettings(null); setHistorySelection(undefined); setIndexedFilePath(""); setFileFolderPath(""); setView("chat"); };
+  const compactNavigation = narrowViewport || navigationCollapsed;
+  const collapseNavigation = () => { setExpandedNavigation(null); setExpandedProjects(false); setExpandedChats(false); };
+  const dismissCompactNavigation = () => {
+    if (!compactNavigation) return;
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active.closest('#workspace-navigation'))
+      active.closest('.nav-accordion, .settings-drawer')?.querySelector<HTMLButtonElement>('.nav-card-trigger')?.focus();
+    collapseNavigation();
+  };
+  const toggleNavigationGroup = (group: SettingsScope | "projects" | "chats") => {
+    if (group === 'projects') setExpandedProjects(value => !value);
+    else if (group === 'chats') setExpandedChats(value => !value);
+    else setExpandedNavigation(value => value === group ? null : group);
+    if (compactNavigation) {
+      if (group !== 'projects') setExpandedProjects(false);
+      if (group !== 'chats') setExpandedChats(false);
+      if (group === 'projects' || group === 'chats') setExpandedNavigation(null);
+    }
+  };
+  useEffect(() => { setExpandedProjects(false); }, [project]);
+  useEffect(() => { collapseNavigation(); }, [narrowViewport, navigationCollapsed]);
+  useEffect(() => {
+    const dismiss = collapseNavigation;
+    window.addEventListener('popstate', dismiss);
+    return () => window.removeEventListener('popstate', dismiss);
+  }, []);
+  const setView = (next: React.SetStateAction<string>) => { dismissCompactNavigation(); startTransition(() => setViewState(next)); };
+  const openHistory = (id?: string) => { setHistorySelection(id); setExpandedNavigation("application"); setView("history"); };
+  const closeSettings = () => { setExpandedNavigation(null); setHistorySelection(undefined); setIndexedFilePath(""); setFileFolderPath(""); setView("chat"); };
   const openSettings = (scope: SettingsScope, item: string) => {
     if (item === "history") { openHistory(); return; }
     if (item === "files") { setIndexedFilePath(""); setFileFolderPath(""); setFileNavigation(value => value + 1); }
     setSettingsScope(scope);
-    setExpandedSettings(scope);
+    setExpandedNavigation(scope);
     setTab(item);
     setView(({ github: "github", models: "models", usage: "overview", agents: "agents", files: "files", search: "search" } as Record<string, string>)[item] ?? "settings");
   };
@@ -190,7 +221,7 @@ export default function App() {
     setIndexedFilePath("");
     setFileFolderPath(relativePath);
     setSettingsScope("project");
-    setExpandedSettings("project");
+    setExpandedNavigation("project");
     setTab("files");
     setView("files");
   };
@@ -440,6 +471,11 @@ export default function App() {
   useEffect(() => {
     const escape = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
+        if (e.defaultPrevented) return;
+        const sidebar = document.getElementById('workspace-navigation');
+        const compact = window.matchMedia('(max-width: 720px)').matches || sidebar?.closest('.navigation-collapsed');
+        // Navigation handles its own innermost dismissal before page-level Back.
+        if (sidebar?.contains(e.target as Node) || (compact && sidebar?.querySelector('.nav-card-trigger[aria-expanded="true"]'))) return;
         if (projectTransition.current) return;
         setFolderOpen(false);
         setView((current) => current === "history" ? "chat" : current);
@@ -520,6 +556,7 @@ export default function App() {
   const selectSession = (id: string) => {
     if (!id) return;
     if (id !== session) chatVersion.current++;
+    if (window.matchMedia('(max-width: 800px)').matches) setDetails(false);
     setSession(id);
     setView("chat");
   };
@@ -663,7 +700,7 @@ export default function App() {
     setFileNavigation(value => value + 1);
     setFileFolderPath(parentDirectory(filePath));
     setSettingsScope("project");
-    setExpandedSettings("project");
+    setExpandedNavigation("project");
     setTab("files");
     setView("files");
   }
@@ -767,7 +804,7 @@ export default function App() {
         if (!start || !touch || !narrowViewport) return;
         const dx = touch.clientX - start.x, dy = touch.clientY - start.y;
         if (Math.abs(dx) < 54 || Math.abs(dx) < Math.abs(dy) * 1.4) return;
-        if (!navigationHiddenMobile && start.x < 76 && dx < 0) setNavigationHiddenMobile(true);
+        if (!navigationHiddenMobile && start.x < 76 && dx < 0) { collapseNavigation(); setNavigationHiddenMobile(true); }
         else if (navigationHiddenMobile && start.x < 28 && dx > 0) setNavigationHiddenMobile(false);
       }}
       onTouchCancel={() => { navigationTouch.current = null; }}>
@@ -788,30 +825,34 @@ export default function App() {
           Freelancer
         </div>
         <ProjectNavigation
+          expanded={expandedProjects} onToggle={() => toggleNavigationGroup("projects")} onDismiss={() => setExpandedProjects(false)}
           projects={(data?.settings.projects ?? []).filter(p => !p.organization?.archivedAt || p.id === project)}
           selected={project}
           disabled={!!projectLoading || !data || !compatibleApplication(data)}
           onSelect={(p) => {
+            dismissCompactNavigation();
             void openProject(p);
           }}
           onAdd={() => {
+            dismissCompactNavigation();
             setError("");
             setImportError('');
             setFolderOpen(true);
           }}
-          onManage={(p) => { setProjectEdit(p); setProjectName(p.name); }}
+          onManage={(p) => { dismissCompactNavigation(); setProjectEdit(p); setProjectName(p.name); }}
         />
         <ChatNavigation
+          expanded={expandedChats} onToggle={() => toggleNavigationGroup("chats")} onDismiss={() => setExpandedChats(false)}
           sessions={(data?.sessions ?? []).filter((s) => !s.parentID && !s.organization?.archived).slice(0, 40)
             .map((s) => ({ ...s, activity: sessionActivity?.[s.id] }))}
           selected={session} disabled={!!projectLoading || !data || !compatibleApplication(data)} creating={creatingChat}
-          onNew={() => run(createChat)}
+          onNew={() => { dismissCompactNavigation(); return run(createChat); }}
            onSelect={(s) => selectSession(s.id)}
-           onContinue={continueChatInNew} onArchive={archiveChat} onPin={pinChat} onExport={exportChat} onRename={renameChat}
+           onContinue={(s) => { dismissCompactNavigation(); return continueChatInNew(s); }} onArchive={archiveChat} onPin={pinChat} onExport={exportChat} onRename={renameChat}
         />
         <div className="sidebar-bottom usage-dock">
-          <SettingsNavigation expanded={expandedSettings} scope={navigationScope} tab={navigationTab}
-            project={!!project} onToggle={(scope) => setExpandedSettings(expandedSettings === scope ? null : scope)}
+          <SettingsNavigation expanded={expandedNavigation} scope={navigationScope} tab={navigationTab}
+            project={!!project} onToggle={toggleNavigationGroup} onDismiss={() => setExpandedNavigation(null)}
             onSelect={openSettings} />
           <UsageSidebar view={availableUsage.view} state={availableUsage.state}
             onRefresh={availableUsage.refresh} onOpen={() => setView("overview")} />
@@ -826,7 +867,7 @@ export default function App() {
               : <button type="button" className="directory-root breadcrumb-fallback" disabled={!project} onClick={() => openDirectory("")}>{data?.project?.name ?? "Your workspace"}</button>}
             <span className="slash">/</span>
             {view !== "chat" && view !== "overview" && <><span className="breadcrumb">{navigationScope === "project" ? "Project settings" : "Application settings"}</span><span className="slash">/</span></>}
-            <strong>{view === "chat" ? current?.title ?? "New chat" : view === "overview" ? "Available Usage" : settingsItemLabel(navigationScope, navigationTab)}</strong>
+            <strong title={view === "chat" ? current?.title ?? "New chat" : view === "overview" ? "Available Usage" : settingsItemLabel(navigationScope, navigationTab)}>{view === "chat" ? current?.title ?? "New chat" : view === "overview" ? "Available Usage" : settingsItemLabel(navigationScope, navigationTab)}</strong>
           </div>
           <div className="topbar-right">
             <Button variant="quiet" className="navigation-layout-toggle" aria-label={navigationControlLabel} title={navigationControlLabel}
@@ -838,14 +879,15 @@ export default function App() {
             {view === "chat" && current?.parentID && (
               <Button
                 variant="quiet"
+                className="topbar-compact-action" aria-label="Back to parent chat" title="Back to parent chat"
                 onClick={() => selectSession(current.parentID)}
               >
-                Back to parent chat
+                <ArrowLeft className="topbar-action-icon" size={17} aria-hidden="true" /><span>Back to parent chat</span>
               </Button>
             )}
             {view === "chat" && session && (
-              <Button variant="quiet" aria-expanded={details} aria-controls="workspace-details" onClick={() => setDetails(!details)}>
-                Details
+              <Button variant="quiet" className="topbar-compact-action" aria-label="Details" title="Details" aria-expanded={details} aria-controls="workspace-details" onClick={() => setDetails(!details)}>
+                <PanelRight className="topbar-action-icon" size={17} aria-hidden="true" /><span>Details</span>
               </Button>
             )}
             <Badge tone="success">
@@ -1009,6 +1051,7 @@ export default function App() {
               <div className="page overview">
                 <PageHeading title="Available Usage" icon={Gauge} actions={<PageCloseButton onClick={closeSettings} />} />
                 <UsageHero view={availableUsage.view} state={availableUsage.state} onRefresh={availableUsage.refresh} />
+                <UsagePreferences showDepletedModels={data.settings.appearance?.showDepletedModels} refresh={refresh} />
                 <div className="overview-grid">
                   <Panel title="Your providers">
                     <UsageProviders view={availableUsage.view} />

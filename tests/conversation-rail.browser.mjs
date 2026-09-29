@@ -75,7 +75,10 @@ test('conversation rail: turn tools, statistics, scroll gestures, resize, and st
     await page.mouse.click(track.x + 2, track.y + track.height * .62);
     await expect.poll(async () => Number(await page.getByRole('scrollbar').getAttribute('aria-valuenow'))).toBeGreaterThan(50);
     assert.equal(await width(), original, 'track seeking does not resize Details');
-    await expect(page.getByRole('button', { name: 'Details', exact: true }).locator('svg')).toHaveCount(0);
+    const detailsControl = page.getByRole('button', { name: 'Details', exact: true });
+    await expect(detailsControl.locator('svg')).toBeHidden();
+    await expect(detailsControl.locator('span')).toHaveText('Details');
+    await expect(detailsControl.locator('span')).toBeVisible();
     await dragThumb(page, .2);
     await expect.poll(() => page.getByRole('scrollbar').getAttribute('aria-valuenow')).not.toBe('100');
     assert.equal(await width(), original); const before = await offset();

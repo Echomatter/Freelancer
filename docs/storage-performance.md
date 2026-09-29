@@ -80,6 +80,13 @@ to determine whether an observed delay actually comes from local writes,
 native reads or rendering before changing persistence. Full-document writes
 remain a known format cost; this benchmark does not remove that cost.
 
+The default diagnostic was run during PR #3/#4 integration on 2026-09-29
+(Windows x64, Node 24.16.0). Median changed-observation times for 10/100/250
+receipts were 16/44/90 ms; warm scoped reads were 0.34/0.39/0.55 ms.
+Each changed observation replaced the request and usage documents. Identical
+observations and both read paths made zero replacements. These isolated local
+measurements do not establish live provider latency or a maximum safe workload.
+
 A migration is separate work: it needs evidence of a user-visible bottleneck,
 external-reader compatibility, preserved captured authority, backup/rollback
 and interruption tests. Do not delete historical receipts, relax permission

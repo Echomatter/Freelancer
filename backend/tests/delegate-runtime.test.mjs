@@ -174,6 +174,41 @@ test('native retry state waits in the same worker and can recover to completion'
   assert.equal(f.requests.filter(row => row.kind === 'abort').length, 0);
 });
 
+for (const background of [false, true]) test(`provider retry keeps progress and immediately resumes the same named worker (${background ? 'background' : 'foreground'})`, async t => {
+  const f = await fixture(t, { hang:true, surface:'opencode-free', models:['opencode/free'] });
+  const nativeMessages = f.client.session.messages;
+  let reads = 0;
+  f.client.session.messages = async request => {
+    if (request.path.id !== 'child1') return nativeMessages(request);
+    const complete = ++reads >= 4;
+    f.states.child1 = { type: reads <= 2 ? 'retry' : complete ? 'idle' : 'busy' };
+    const row = assistant('child1', { providerID:'opencode', modelID:'free' }, {
+      agent:'engineer', parentID:f.requests.find(row => row.kind === 'prompt')?.body.messageID,
+      ...(!complete ? { time:{ created:0 }, finish:'tool-calls' } : {}),
+    });
+    row.parts.unshift({ id:'read', type:'tool', tool:'read', state:{ status:'completed', input:{ filePath:'source.ts' } } });
+    return { data:[row] };
+  };
+  const updates = [];
+  const result = await f.service.execute({ ...args, needsWrites:false, background }, { ...f.ctx, metadata: update => updates.push(structuredClone(update)) });
+  if (background) {
+    for (let i = 0; i < 100 && !updates.some(update => update.metadata?.freelancer_status === 'completed'); i++)
+      await new Promise(resolve => setTimeout(resolve, 5));
+    assert.ok(updates.some(update => update.metadata?.freelancer_status === 'completed'));
+  } else assert.equal(result.status, 'completed');
+  const activity = updates.map(update => update.metadata?.freelancer_activity).filter(Boolean);
+  const waiting = activity.filter(row => row.phase === 'waiting');
+  assert.equal(waiting.length, 1, 'unchanged retry state does not write and republish on every poll');
+  assert.equal(waiting[0].completed_tools, 1, 'retry preserves actions already completed');
+  assert.equal(waiting[0].agentName, 'Engineer');
+  const resumed = activity.findIndex(row => row.phase === 'working');
+  assert.ok(resumed > activity.findIndex(row => row.phase === 'waiting'), 'leaving retry publishes work immediately');
+  assert.equal(activity[resumed].agentName, 'Engineer');
+  assert.equal(activity.at(-1).phase, 'completed');
+  assert.equal(f.requests.filter(row => row.kind === 'create').length, 1);
+  assert.equal(f.requests.filter(row => row.kind === 'abort').length, 0);
+});
+
 test('worker system prompt includes captured agent and fixed Build contract', async t => {
   const f = await fixture(t, { agents: [{ id: 'engineer', name: 'Engineer', prompt: 'Inspect edge cases before editing.', response: 'concise', approach: 'practical' }] });
   await f.service.execute(args, f.ctx);
@@ -239,6 +274,20 @@ test('todos work for every named agent without granting source writes', async t 
     }
   }
 });
+
+test('worker inspection reads the latest continuation receipt even when timestamps tie', async t => {
+  const f = await fixture(t, { surface:'opencode-free', models:['opencode/free'] });
+  const first = await f.service.execute(args, f.ctx);
+  const child = first.attempts[0].child_session;
+  const continued = await f.service.execute({ ...args, worker:child, task:'Continue with a separate bounded acceptance check.' }, { ...f.ctx, callID:'continue' });
+  assert.equal(continued.status, 'completed');
+  assert.notEqual(continued.task_id, first.task_id);
+  assert.equal(continued.attempts[0].child_session, child);
+  const inspected = await f.service.execute({ worker:child }, f.ctx);
+  assert.equal(inspected.task_id, continued.task_id);
+  assert.equal(inspected.assignment, 'Continue with a separate bounded acceptance check.');
+  assert.equal(f.requests.filter(row => row.kind === 'create').length, 1);
+});
 test('agents can track todos while explicit parent native denial survives', async t => {
   const reader = await fixture(t, { parentAgent: 'researcher' });
   await reader.service.checkTool({ sessionID: 'parent', tool: 'todowrite' }, { args: { todos: [] } });
@@ -273,7 +322,7 @@ test('manual, disabled role and excluded model preferences prevent execution in 
   for (const preferences of [preset('manual'),{...defaults,agentAccess:{engineer:['review']}},{...defaults,excludedModels:['opencode-go/model-b']},{...defaults,excludedProviders:['opencode-go']},{...defaults,allowedModels:['opencode/free-only-choice']}]) {
     const f=await fixture(t,{policyVersion:3});
     await savePreferences(f.root,f.root,{preferences,scope:'project'});
-    await assert.rejects(f.service.execute(args,f.ctx),/disabled|excluded|workflow restrictions/);
+    await assert.rejects(f.service.execute(args,f.ctx),error => error.name === 'PreferenceConstraint');
     assert.equal(f.requests.filter(r=>r.kind==='create'||r.kind==='prompt').length,0);
   }
 });
@@ -571,6 +620,7 @@ test('timeout aborts actual session, no automatic replacement writer', async t =
   const f = await fixture(t, { hang: true }); const result = await f.service.execute(args, f.ctx);
   assert.equal(result.status, 'failed'); assert.equal(result.attempts[0].abort_verified, true);
   assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
+  assert.equal(result.activity.agentName, 'Engineer', 'failure retains the captured named identity');
 });
 test('unverified abort retains evidence and never automatically replaces the writer', async t => {
   const f = await fixture(t, { hang: true, abortFails: true }); const result = await f.service.execute(args, f.ctx);

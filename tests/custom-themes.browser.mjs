@@ -17,6 +17,21 @@ test('all thumbnails match the layout; custom rolls preview, save, reload and re
     await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible();
   }
   await page.goto(f.url); await appearance();
+  await test.step('Palette generator is first and all categories start collapsed', async () => {
+    await expect(page.locator('.palette-group-toggle').first()).toHaveText('Palette generator');
+    await expect(page.locator('.palette-group-toggle[aria-expanded="false"]')).toHaveCount(4);
+    await expect(page.locator('.palette-option')).toHaveCount(0);
+    await expect(page.getByRole('checkbox', { name: /exhausted|depleted/ })).toHaveCount(0);
+    const generator = page.getByRole('button', { name: 'Palette generator', exact: true });
+    await generator.focus(); await page.keyboard.press('Enter');
+    await expect(generator).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.getByLabel('Generated theme style')).toBeVisible();
+    await page.keyboard.press('Space');
+    await expect(generator).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.getByLabel('Generated theme style')).toHaveCount(0);
+  });
+  await page.getByRole('button', { name: /^Light themes/ }).click();
+  await page.getByRole('button', { name: /^Dark themes/ }).click();
   await expect(page.locator('.palette-option')).toHaveCount(palettes.length);
   const audit = await page.locator('.palette-option').evaluateAll(elements => elements.map(element => {
     const color = (selector, property = 'backgroundColor') => getComputedStyle(element.querySelector(selector))[property];
@@ -75,9 +90,10 @@ test('all thumbnails match the layout; custom rolls preview, save, reload and re
   assert.equal(await page.locator('html').evaluate(element => getComputedStyle(element).getPropertyValue('--bg').trim()), palette.tokens.bg);
   release(); await page.unroute('**/api/bootstrap*');
   await appearance();
-  await page.getByRole('button', { name: /^Light themes/ }).click();
-  await page.getByRole('button', { name: /^Dark themes/ }).click();
+  await expect(page.locator('.palette-group-toggle[aria-expanded="false"]')).toHaveCount(4);
+  await page.getByRole('button', { name: /^Custom themes/ }).click();
   await expect(savedButton).toHaveAttribute('aria-pressed', 'true');
+  await page.getByRole('button', { name: 'Palette generator', exact: true }).click();
   await page.getByRole('button', { name: 'Generate theme', exact: true }).click();
   const dismiss = page.locator('.index-job-progress').getByRole('button', { name: /Dismiss/ });
   if (await dismiss.isVisible()) await dismiss.click();
@@ -96,6 +112,14 @@ test('all thumbnails match the layout; custom rolls preview, save, reload and re
   await page.getByRole('button', { name: 'Remove Midnight Confetti theme', exact: true }).click();
   await expect(page.locator('html')).toHaveAttribute('data-theme', 'dark');
   assert.equal((await f.store.read('settings')).appearance.customThemes.length, 0);
+  await page.getByRole('button', { name: 'Generate theme', exact: true }).click();
+  const longThemeName = 'W'.repeat(48);
+  await page.getByLabel('Theme name (optional)').fill(longThemeName);
+  await expect(page.getByLabel('Theme name (optional)')).toHaveValue(longThemeName);
+  await page.getByRole('button', { name: 'Save & use', exact: true }).click();
+  const longName = page.getByRole('button', { name: `Use ${longThemeName} palette`, exact: true });
+  await expect(longName).toHaveAttribute('aria-pressed', 'true');
+  assert.ok(await longName.evaluate(element => element.scrollWidth <= element.clientWidth + 1));
   await page.getByRole('button', { name: 'Generate theme', exact: true }).click();
   await page.getByRole('button', { name: 'Save & use', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Use My theme 1 palette', exact: true })).toHaveAttribute('aria-pressed', 'true');

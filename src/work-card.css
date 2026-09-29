@@ -1,7 +1,7 @@
 .work-card { min-width: 0; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); overflow: hidden; font-size: 12px; }
 .work-card-heading { display: flex; align-items: center; gap: 6px; padding: 7px 9px; }
 .work-card-toggle { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; padding: 5px; border: 0; background: transparent; color: var(--text); text-align: left; cursor: pointer; }
-.work-card-toggle strong { flex: 1; font-size: 12px; font-weight: 600; }
+.work-card-toggle strong { flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; font-weight: 600; }
 .work-card-toggle > svg:first-child { color: var(--accent); }
 .work-card-toggle > svg { flex-shrink: 0; transition: transform 140ms ease; }
 .work-card-toggle .collapsed { transform: rotate(-90deg); }

@@ -28,6 +28,9 @@ whole-chat token totals do not describe window fullness. Unsent drafts and new
 streamed text are not estimated. A dash indicates missing usage or capacity.
 After compaction, a new reported call updates the percentage.
 
+The help button below the percentage explains turn selection, scrolling and
+context use. Open it with a click, touch or keyboard; Escape closes it.
+
 Automatic compaction is in **Project settings → Session defaults → Context
 window**. This controls OpenCode's native automatic compactor for all chats in
 the selected project. Save when the project's chats and decisions are idle.
@@ -49,7 +52,8 @@ turns. Dense histories retain one dot and keyboard target per turn. Resize
 observers measure the transcript and viewport, never the dock or tooltip;
 measurements are batched in animation frames and unchanged metrics do not
 render again. Normal scrolling reuses the measured anchors; only viewport or
-transcript size changes trigger a new geometry pass. The top help icon is removed. Stream updates do not switch a historical dock selection. A new
+transcript size changes trigger a new geometry pass. One help control sits below
+the context percentage, outside the turn track. Stream updates do not switch a historical dock selection. A new
 turn resets it to current work.
 
 `GET/PUT /api/context-settings` reads the effective native configuration and

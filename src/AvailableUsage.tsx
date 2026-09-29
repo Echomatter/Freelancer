@@ -1,5 +1,6 @@
 import { HelpHint } from "./HelpHint";
-import { useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { api } from "./api";
 import {
   AlertCircle,
   ArrowUpRight,
@@ -186,11 +187,22 @@ export function UsageSidebar({
 }: SummaryProps & { onOpen: () => void }) {
   const [open, setOpen] = useState(false),
     id = useId(),
-    button = useRef<HTMLButtonElement>(null);
+    button = useRef<HTMLButtonElement>(null),
+    section = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const dismiss = (event: PointerEvent) => {
+      const compact = window.matchMedia("(max-width: 720px)").matches || section.current?.closest(".navigation-collapsed");
+      if (compact && !section.current?.contains(event.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", dismiss);
+    return () => document.removeEventListener("pointerdown", dismiss);
+  }, [open]);
   const value = headline(view, state);
   const refreshFailed = !!(state.error || view.refreshFailed);
   return (
     <section
+      ref={section}
       className="usage usage-sidebar"
       aria-label="Available usage"
       data-expanded={open}
@@ -232,7 +244,7 @@ export function UsageSidebar({
           type="button"
           variant="quiet"
           className="usage-open"
-          onClick={onOpen}
+          onClick={() => { setOpen(false); button.current?.focus(); onOpen(); }}
         >
           Open Available Usage
           <ArrowUpRight size={14} aria-hidden="true" />
@@ -356,4 +368,45 @@ export function UsageProviders({ view }: { view: View }) {
       )}
     </div>
   );
+}
+
+export function UsagePreferences({ showDepletedModels = true, refresh }: {
+  showDepletedModels?: boolean;
+  refresh: () => Promise<unknown>;
+}) {
+  const [value, setValue] = useState(showDepletedModels),
+    [pending, setPending] = useState(false),
+    [error, setError] = useState(""),
+    [saved, setSaved] = useState(false);
+  const saving = useRef(false), description = useId();
+  useEffect(() => { if (!saving.current) setValue(showDepletedModels); }, [showDepletedModels]);
+  async function save(next: boolean) {
+    if (saving.current) return;
+    saving.current = true; setPending(true); setError(""); setSaved(false);
+    try {
+      // Keep the existing saved key: this preference controls model visibility,
+      // while routing and native availability checks remain authoritative.
+      const result = await api("appearance", { showDepletedModels: next }, "PUT");
+      if (result?.saved !== true)
+        throw Error("Model visibility was not confirmed. Please try again.");
+      setValue(next); setSaved(true);
+      await refresh();
+    } catch (e) { setError(e instanceof Error ? e.message : "Model visibility could not be saved."); }
+    finally { saving.current = false; setPending(false); }
+  }
+  return <Panel className="usage usage-preferences">
+    <details>
+      <summary>Model visibility</summary>
+      <div className="usage-preferences-content">
+        <label className="check">
+          <input type="checkbox" checked={value} disabled={pending} aria-describedby={description}
+            onChange={event => void save(event.target.checked)} />
+          Show exhausted models in the workspace picker
+        </label>
+        <p id={description}>Keep models with exhausted usage visible in the workspace model picker. Availability checks still apply when choosing a model.</p>
+        {(pending || saved) && <small role="status">{pending ? "Saving…" : "Model visibility saved."}</small>}
+        {error && <p className="notice error" role="alert">{error}</p>}
+      </div>
+    </details>
+  </Panel>;
 }

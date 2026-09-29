@@ -191,7 +191,9 @@ test('an unavailable default is advisory, while an explicit unavailable model ne
   assert.equal(r.status, 'completed');
   assert.equal(r.model_selection.source, 'runtime');
   assert.equal(f.sessions.size, 2);
-  await assert.rejects(f.delegator.execute({ ...job, agentID: agent.id, selectedModel: 'opencode-go/paid' }, ctx), /excluded/);
+  await assert.rejects(f.delegator.execute({ ...job, agentID: agent.id, selectedModel: 'opencode-go/paid' }, ctx), error =>
+    error.name === 'PreferenceConstraint' && error.details.supplied_model === 'opencode-go/paid' && !error.details.eligible_models.includes('opencode-go/paid'));
+  assert.equal(f.sessions.size, 2, 'explicit excluded models never start a fallback child');
 });
 
 test('a free-only user instruction prevents a paid default even without a saved free-only budget', async t => {

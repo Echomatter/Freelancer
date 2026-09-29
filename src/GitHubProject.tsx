@@ -140,9 +140,8 @@ function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
       try {
         if (refreshAfter) await refresh();
       } catch {
-        setError(
-          "Action finished, but status could not be refreshed. Check again before repeating it.",
-        );
+        // refresh owns the recoverable status error. Keep the action's result
+        // separate so a successful retry cannot leave a false action failure.
       }
     } catch (e) {
       if (alive.current) setError((e as Error).message);
@@ -174,7 +173,7 @@ function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
   const ask = (action: string, title: string, text: string, extra = {}) =>
     setConfirmation({ kind: "setup", action, title, text, ...extra });
   function confirm() {
-    if (!confirmation) return;
+    if (!confirmation || disabled) return;
     const c = confirmation;
     if (c.kind === "plan")
       void act(
@@ -923,7 +922,7 @@ function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
             >
               Cancel
             </Button>
-            <Button variant="primary" disabled={pending} onClick={confirm}>
+            <Button variant="primary" disabled={disabled} onClick={confirm}>
               {pending ? (
                 <>
                   <LoaderCircle size={16} className="spin" />
@@ -968,6 +967,12 @@ function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
               </p>
             </>
           )}
+          {statusError && <div className="notice error" role="alert">
+            <p>Git status could not be refreshed. {statusError} Refresh before approving this action.</p>
+            <Button disabled={pending || refreshing} onClick={() => void refresh().catch(() => {})}>
+              <RefreshCw size={16} className={refreshing ? "spin" : ""} />Refresh Git status
+            </Button>
+          </div>}
           {error && (
             <p className="notice error" role="alert">
               {error}

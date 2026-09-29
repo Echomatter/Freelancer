@@ -96,7 +96,7 @@ Credentials remain with the native/provider authentication systems; Freelancer d
 
 **Application settings → Available Usage** turns provider/model telemetry into a practical view of remaining availability. It is designed around usable capacity rather than presenting token or dollar estimates as if they were provider billing records. Unknown, estimated and unavailable information stays distinguishable.
 
-The workspace model picker can optionally hide depleted models. That preference lives under **Appearance**.
+The workspace model picker can optionally hide exhausted models. That preference lives under **Available Usage → Model visibility** and retains its saved value from Appearance.
 
 ### Appearance and layout
 
@@ -108,7 +108,9 @@ Under **Application settings → Appearance** you can:
 
 - browse the light and dark palette collections visually;
 - apply a palette to the whole application;
-- control whether depleted-usage models remain visible in the workspace picker.
+- generate, name and save custom themes from the palette generator at the top.
+
+The generator and theme collections start collapsed. Each has its own labeled disclosure control, and the current theme stays visible above them.
 
 Provider colors are configured separately on **Providers**. They give OpenAI, Copilot, OpenCode Go and OpenCode Free a recognizable visual identity where provider context is useful, while status/error colors keep their semantic meaning.
 
@@ -177,9 +179,9 @@ Freelancer deliberately separates project-specific choices from application-wide
 |  | **Delegation** | Project worker/delegation behavior and orchestration limits |
 | **Application** | **Models** | Searchable model catalog, provider/model information and rating activity |
 |  | **Search all content** | Indexed files and conversations across registered projects |
-|  | **Available Usage** | Remaining provider/model availability and usage observations |
+|  | **Available Usage** | Remaining provider/model availability, usage observations and exhausted-model visibility |
 |  | **Providers** | Authentication, plan type, optional subscription cost, currency and provider colors |
-|  | **Appearance** | 300 built-in palettes, custom themes and depleted-model visibility |
+|  | **Appearance** | Palette generator, saved custom themes and 300 built-in palettes |
 |  | **Content & Storage** | Data locations, backup guidance, project archive/restore, index refresh and SQLite maintenance |
 |  | **Remote access** | Remembered-device access on a private network or through an optional HTTPS tunnel |
 |  | **Git defaults** | Default managed-Git agreement for projects |
@@ -516,7 +518,7 @@ Local checkpoints and completed uploads are separate records. A preview has not 
 
 Choose a palette to apply it across the application. Light and dark groups are ordered by accent color. Provider colors are configured separately in Providers; status colors retain their meaning.
 
-Custom themes lets you roll a fresh palette. Choose Surprise me, Light, or Dark and click Regenerate until you find one you like. The preview stays unsaved until you choose Save & use. A name is optional. Generated colors pass readability checks and differ from the built-in and saved collections. Your saved themes are available after restarting Freelancer.
+The Palette generator at the top lets you roll a fresh palette. Choose Surprise me, Light, or Dark and click Regenerate until you find one you like. The preview stays unsaved until you choose Save & use. A name is optional. Generated colors pass readability checks and differ from the built-in and saved collections. Saved choices appear in Custom themes and remain available after restarting Freelancer. All groups start collapsed; expand their labeled controls to browse or create.
 <!-- /help -->
 
 <!-- help:provider-color -->

@@ -112,7 +112,7 @@ const Markdown = memo(function Markdown({ text }: { text: string }) {
     </div>
   );
 });
-function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: string) => void; modelFallback?: string }) {
+function Tool({ part, onChild, modelFallback, agentFallback }: { part: any; onChild: (id: string) => void; modelFallback?: string; agentFallback?: string }) {
   const [open, setOpen] = useState(false);
   const state = part.state ?? {},
     meta = state.metadata ?? {},
@@ -120,8 +120,7 @@ function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: strin
       meta.freelancer_delegate_display ?? meta.ai_toolkit_delegate_display;
   const input = saved?.original_input ?? state.input ?? {};
   const selection = meta.freelancer_status === "selection_required";
-  const handoff =
-    !selection && (!!saved || part.tool === "delegate" || part.tool === "task");
+  const handoff = isHandoffPart(part);
   const title = toolTitle(part);
   const child = delegateChildSession(part);
   if (selection)
@@ -140,7 +139,7 @@ function Tool({ part, onChild, modelFallback }: { part: any; onChild: (id: strin
     const failed = outcome === "error";
     let result: any = null;
     try { result = typeof state.output === "string" ? JSON.parse(state.output) : state.output && typeof state.output === "object" ? state.output : null; } catch { /* Native host may truncate a long receipt. */ }
-    const agentName = String(meta.agentName ?? meta.freelancer_activity?.agentName ?? result?.agent?.name ?? saved?.agent?.name ?? input.agentID ?? input.agent ?? input.role ?? "Agent");
+    const agentName = String(meta.agentName ?? meta.freelancer_activity?.agentName ?? result?.agent?.name ?? saved?.agent?.name ?? input.agentID ?? input.agent ?? input.role ?? agentFallback ?? "Agent");
     const modelName = delegateModel(part) ?? modelFallback;
     const routeUnavailable = ["no_qualified_route", "delegation_unavailable"].includes(meta.freelancer_status ?? result?.status);
     const statusLabel = routeUnavailable ? "Route unavailable" : running ? "Agent working" : failed ? "Agent stopped" : "Agent finished";
@@ -228,7 +227,10 @@ function toolTitle(part: any): string {
   if (title) return String(title);
   if (toolName.includes("content_index")) return contentIndexTitle(input);
   if (part.tool === "delegate" || part.tool === "task")
-    return input.worker && !state.metadata?.agentName
+    return state.metadata?.freelancer_status === "catalog" ? "Inspect agent catalog"
+      : state.metadata?.freelancer_status === "workers" ? "Inspect workers"
+      : ["blocked", "conflict", "unavailable"].includes(state.metadata?.freelancer_status) ? state.title || "Worker unavailable"
+      : input.worker && !state.metadata?.agentName
       ? "Continuing agent"
       : `Delegating to ${state.metadata?.agentName ?? input.agentID ?? input.agent ?? input.role ?? "an agent"}`;
   return String(state.title || part.tool || "Using a tool");
@@ -360,10 +362,14 @@ function GroupBody({ group, onChild, mode = "all", childReport = false }: { grou
     for (const part of msg.parts ?? []) flat.push({ msg, part });
   const visibleTools = new Set(latestToolParts(group.messages));
   const modelByChild = new Map<string, string>();
+  const agentByChild = new Map<string, string>();
   for (const { part } of flat) {
     if (!isHandoffPart(part)) continue;
     const child = delegateChildSession(part), model = delegateModel(part);
+    const meta = part.state?.metadata ?? {}, input = part.state?.input ?? {};
+    const agent = meta.agentName ?? meta.freelancer_activity?.agentName ?? input.agentID ?? input.agent ?? input.role;
     if (child && model) modelByChild.set(child, model);
+    if (child && agent) agentByChild.set(child, String(agent));
   }
   const nodes: any[] = [];
   let textBuffer: { key: string; text: string }[] = [];
@@ -415,7 +421,7 @@ function GroupBody({ group, onChild, mode = "all", childReport = false }: { grou
       textBuffer.push({ key, text });
     } else if (part.type === "tool") {
       flush();
-      nodes.push(<Tool key={key} part={part} onChild={onChild} modelFallback={modelByChild.get(delegateChildSession(part) ?? "")} />);
+      nodes.push(<Tool key={key} part={part} onChild={onChild} modelFallback={modelByChild.get(delegateChildSession(part) ?? "")} agentFallback={agentByChild.get(delegateChildSession(part) ?? "")} />);
     } else if (part.type === "file") {
       flush();
       nodes.push(<Attachment key={key} file={part} />);

@@ -20,6 +20,14 @@ const phaseLabel = (status, failure) => {
     provider:'Provider failed',binding:'Blocked · binding',model:'Blocked · model'}[status] || 'Preparing handoff');
 };
 export function completionMetadata(receipt, args) {
+  if (receipt.status === 'worker_transcript') return {
+    sessionId: receipt.child_session, parentSessionId: receipt.parent_session,
+    agentID: receipt.activity?.agentID, agentName: typeof receipt.agent === 'string' ? receipt.agent : receipt.agent?.name,
+    selected_model: receipt.activity?.selected_model, task_id: receipt.task_id,
+    freelancer_activity: receipt.activity,
+    // Reading a transcript completes the inspection tool, not the child.
+    freelancer_status: ['busy', 'retry'].includes(receipt.native_status) ? 'running' : receipt.receipt_status,
+  };
   const attempt = receipt.attempts?.at(-1);
   const metadata = { sessionId: attempt?.child_session, parentSessionId: receipt.parent_session,
     agentID: receipt.agent?.id, agentName: receipt.agent?.name, role: receipt.role, selected_model: attempt?.selected_model, task_id: receipt.task_id,

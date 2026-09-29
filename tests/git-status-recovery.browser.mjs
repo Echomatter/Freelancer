@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
+import { gitProjectFixture } from './fixtures/git-project-app.mjs';
 import { test, expect } from './support/browser-test.mjs';
 
 const gitOptions = {
@@ -22,6 +23,46 @@ const heading = page => page.locator('.git-project-page .page-title');
 const refresh = page => page.getByRole('button', { name: 'Refresh Git status', exact: true });
 const loaded = page => page.getByRole('heading', { name: 'Local history', exact: true });
 const abortCalls = fixture => fixture.calls.filter(call => /\/abort$/.test(call.route)).length;
+
+test('Git approval waits for fresh status and a completed checkpoint survives a failed follow-up read', { tag: ['@app'] }, async ({ appBrowser, own }) => {
+  const fixture = await own(gitProjectFixture());
+  await fixture.app.gitProjects.initialize(fixture.project.id, { confirm: true, name: 'Browser Tester', email: 'browser@example.invalid' });
+  const page = await appBrowser.newPage({ viewport: { width: 390, height: 844 } });
+  let fail = false, executions = 0;
+  await page.route('**/api/git?**', route => fail
+    ? route.fulfill({ status: 503, json: { error: 'Status temporarily unavailable' } })
+    : route.continue());
+  await page.route('**/api/git/execute', async route => { executions++; await route.continue(); });
+  try {
+    await page.goto(fixture.url);
+    await openGit(page);
+    await expect(loaded(page)).toBeVisible();
+    fail = true;
+    await page.getByRole('button', { name: 'Save checkpoint', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Review this action', exact: true });
+    await expect(dialog.getByRole('alert')).toContainText('Refresh before approving this action.');
+    await expect(dialog.getByRole('button', { name: 'Approve this action', exact: true })).toBeDisabled();
+    assert.equal(executions, 0, 'failed preview refresh does not execute Git');
+    fail = false;
+    await dialog.getByRole('button', { name: 'Refresh Git status', exact: true }).click();
+    await expect(dialog.getByRole('button', { name: 'Approve this action', exact: true })).toBeEnabled();
+    await expect(dialog.getByRole('alert')).toHaveCount(0);
+    fail = true;
+    const execution = page.waitForResponse(response => response.url().endsWith('/api/git/execute') && response.request().method() === 'POST');
+    await dialog.getByRole('button', { name: 'Approve this action', exact: true }).click();
+    assert.equal((await (await execution).json()).status, 'completed', 'the real Git checkpoint completes before checking its follow-up UI');
+    await expect(dialog).toHaveCount(0);
+    await expect(page.getByRole('alert')).toContainText('Showing the last loaded Git status.');
+    assert.equal(executions, 1);
+    const completed = await fixture.app.gitProjects.inspect(fixture.project.id);
+    assert.equal(completed.local.history.length, 1, 'checkpoint really completed despite follow-up read failure');
+    fail = false;
+    await refresh(page).click();
+    await expect(page.getByRole('alert')).toHaveCount(0);
+    await expect(page.getByText('No changed files.', { exact: true })).toBeVisible();
+    assert.equal(executions, 1, 'status recovery never repeats the checkpoint');
+  } finally { await appBrowser.close(); }
+});
 
 test('Git panel keeps its frame while loading and can close without stopping work', { tag: ['@app'] }, async ({ appBrowser, own }) => {
   const fixture = await own(localDataFixture({ gitOptions }));

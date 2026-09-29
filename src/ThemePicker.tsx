@@ -1,8 +1,8 @@
 import { HelpHint } from "./HelpHint";
-import { memo, useEffect, useRef, useState, type CSSProperties } from 'react';
-import { Check, Dices, Trash2 } from 'lucide-react';
+import { memo, useEffect, useId, useRef, useState, type CSSProperties } from 'react';
+import { Check, ChevronDown, Dices, Trash2 } from 'lucide-react';
 import { api } from './api';
-import { applyTheme, resolveTheme, lightPalettes, darkPalettes, paletteStyles, paletteStyle, customThemePalette } from '../domain/theme.mjs';
+import { applyTheme, resolveTheme, lightPalettes, darkPalettes, paletteStyles, paletteStyle, customThemePalette, themePalette } from '../domain/theme.mjs';
 import { generateCustomTheme } from '../domain/custom-themes.mjs';
 import type { ColorPatch, CustomTheme } from './ProviderColors';
 const emptyThemes: CustomTheme[] = [];
@@ -34,7 +34,8 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
     }
     finally { saving.current = false; setPending(false); }
   }
-  const [expanded, setExpanded] = useState({ light: true, dark: true, custom: true });
+  const [expanded, setExpanded] = useState({ generator: false, light: false, dark: false, custom: false });
+  const id = useId();
   const [draft, setDraft] = useState<CustomTheme | null>(null), [name, setName] = useState('');
   const [mode, setMode] = useState('any');
   const recent = useRef<CustomTheme[]>([]);
@@ -44,7 +45,7 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
       const next = generateCustomTheme({ mode, saved: customThemes, avoid: recent.current }) as CustomTheme;
       recent.current = [...recent.current.slice(-7), next];
       setDraft(next);
-      if (reveal) setExpanded({ light: false, dark: false, custom: true });
+      if (reveal) setExpanded(current => ({ ...current, generator: true }));
     } catch (e) { setError(e instanceof Error ? e.message : 'Try rolling again.'); }
   }
   async function saveCustom(removeCustomTheme?: string) {
@@ -57,7 +58,7 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
         throw Error('Theme was not confirmed. Please try again.');
       applyTheme(result.theme, document.documentElement, result.customThemes); setValue(result.theme);
       onSaved?.({ theme: result.theme, customThemes: result.customThemes });
-      if (!removeCustomTheme) { setDraft(null); setName(''); }
+      if (!removeCustomTheme) { setDraft(null); setName(''); setExpanded(current => ({ ...current, custom: true })); }
       void refresh().catch(() => {});
     } catch (e) { setError(e instanceof Error ? e.message : 'Theme could not be saved.'); }
     finally { saving.current = false; setPending(false); }
@@ -66,27 +67,13 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
   return <section className="palette-picker" aria-labelledby="theme-picker-heading">
     <div className="palette-title"><h3 id="theme-picker-heading" aria-label="Theme">Theme</h3>
       <button type="button" className="button" disabled={pending || customThemes.length >= 64} onClick={() => roll(true)}><Dices size={16} />Create a theme</button></div>
-    {groups.map(group => <div className="palette-group" key={group.mode}>
-      <h4 className="palette-group-heading">
-        <button type="button" className="palette-group-toggle" aria-expanded={expanded[group.mode]}
-          onClick={() => setExpanded(current => ({ ...current, [group.mode]: !current[group.mode] }))}>
-          <span>{group.heading} ({group.palettes.length})</span><span aria-hidden="true">{expanded[group.mode] ? '−' : '+'}</span>
-        </button>
-      </h4>
-      {expanded[group.mode] && <div className="palette-options" role="group" aria-label={group.heading}>
-          {group.palettes.map(p => <button type="button" key={p.id} disabled={pending} aria-label={`Use ${p.name} palette`} aria-pressed={value === p.id}
-            className="palette-option" onClick={() => void save(p.id)}>
-            <PaletteMini palette={p} />
-            <span className="palette-name"><strong>{p.name}</strong>{value === p.id && <Check size={16} aria-hidden="true" />}</span>
-          </button>)}
-        </div>}
-    </div>)}
-    <div className="palette-group custom-themes">
-      <h4 className="palette-group-heading"><button type="button" className="palette-group-toggle" aria-expanded={expanded.custom}
-        onClick={() => setExpanded(current => ({ ...current, custom: !current.custom }))}>
-        <span>Custom themes ({customThemes.length})</span><span aria-hidden="true">{expanded.custom ? '−' : '+'}</span>
+    <p className="palette-intro palette-current">Current theme: <strong>{themePalette(value, customThemes).name}</strong></p>
+    <div className="palette-group theme-generator">
+      <h4 className="palette-group-heading"><button type="button" className="palette-group-toggle" aria-expanded={expanded.generator} aria-controls={`${id}-generator`}
+        onClick={() => setExpanded(current => ({ ...current, generator: !current.generator }))}>
+        <span>Palette generator</span><ChevronDown size={16} aria-hidden="true" />
       </button></h4>
-      {expanded.custom && <>
+      {expanded.generator && <div id={`${id}-generator`}>
         <p className="palette-intro">Roll something new. Keep a palette you love, with a name of your own.</p>
         <div className="theme-roll-controls">
           <label>Style<select aria-label="Generated theme style" value={mode} disabled={pending} onChange={event => setMode(event.target.value)}>
@@ -107,7 +94,16 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
               <button type="button" className="button" disabled={pending} onClick={() => { setDraft(null); setName(''); setError(''); }}>Discard</button></div>
           </div>
         </div>}
-        {customThemes.length >= 64 && <p className="palette-intro">Your collection is full. Remove a theme to make room for another.</p>}
+        {customThemes.length >= 64 && <p className="palette-intro">Your collection is full. Remove a saved custom theme to make room for another.</p>}
+      </div>}
+    </div>
+    <div className="palette-group custom-themes">
+      <h4 className="palette-group-heading"><button type="button" className="palette-group-toggle" aria-expanded={expanded.custom} aria-controls={`${id}-custom`}
+        onClick={() => setExpanded(current => ({ ...current, custom: !current.custom }))}>
+        <span>Custom themes ({customThemes.length})</span><ChevronDown size={16} aria-hidden="true" />
+      </button></h4>
+      {expanded.custom && <div id={`${id}-custom`}>
+        {!customThemes.length && <p className="palette-intro">Your saved themes will appear here. Create one with the palette generator above.</p>}
         <div className="palette-options" role="group" aria-label="Custom themes">
           {customThemes.map(p => <div className="custom-theme-option" key={p.id}>
             <button type="button" className="palette-option" disabled={pending} aria-label={`Use ${p.name} palette`} aria-pressed={value === p.id} onClick={() => void save(p.id)}>
@@ -116,8 +112,23 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
             <button type="button" className="custom-theme-remove" disabled={pending} aria-label={`Remove ${p.name} theme`} title={`Remove ${p.name}`} onClick={() => void saveCustom(p.id)}><Trash2 size={14} /></button>
           </div>)}
         </div>
-      </>}
+      </div>}
     </div>
+    {groups.map(group => <div className="palette-group" key={group.mode}>
+      <h4 className="palette-group-heading">
+        <button type="button" className="palette-group-toggle" aria-expanded={expanded[group.mode]} aria-controls={`${id}-${group.mode}`}
+          onClick={() => setExpanded(current => ({ ...current, [group.mode]: !current[group.mode] }))}>
+          <span>{group.heading} ({group.palettes.length})</span><ChevronDown size={16} aria-hidden="true" />
+        </button>
+      </h4>
+      {expanded[group.mode] && <div id={`${id}-${group.mode}`} className="palette-options" role="group" aria-label={group.heading}>
+          {group.palettes.map(p => <button type="button" key={p.id} disabled={pending} aria-label={`Use ${p.name} palette`} aria-pressed={value === p.id}
+            className="palette-option" onClick={() => void save(p.id)}>
+            <PaletteMini palette={p} />
+            <span className="palette-name"><strong>{p.name}</strong>{value === p.id && <Check size={16} aria-hidden="true" />}</span>
+          </button>)}
+        </div>}
+    </div>)}
     {pending && <small role="status">Saving theme…</small>}
     {error && <p className="notice error" role="alert">{error}</p>}
     <div className="card-help"><HelpHint topic="theme" /></div>

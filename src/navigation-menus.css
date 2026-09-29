@@ -49,6 +49,7 @@
 .nav-project-list, .nav-chat-list { display: grid; gap: 2px; min-width: 0; max-height: min(32vh, 300px); overflow-y: auto; scrollbar-width: thin; }
 .chat-navigation .nav-chat-list { flex: 1 1 auto; min-height: 0; max-height: none; align-content: start; }
 .nav-project-row, .nav-chat-row { position: relative; display: flex; align-items: center; min-width: 0; border-radius: 8px; }
+.nav-chat-row { flex-wrap: wrap; }
 .nav-project-row:hover, .nav-chat-row:hover { background: var(--hover); }
 .nav-project-row.selected, .nav-chat-row.selected { background: var(--tint); color: var(--accent); }
 .nav-project-select, .nav-chat-select {
@@ -62,13 +63,16 @@
 .nav-chat-pinned { flex: 0 0 auto; color: var(--accent); }
 .nav-manage:hover:not(:disabled), .nav-chat-manage-trigger:hover:not(:disabled), .nav-chat-manage-trigger[aria-expanded="true"] { background: var(--paper); border-color: var(--line); color: var(--accent); }
 .nav-manage:disabled, .nav-chat-manage-trigger:disabled { opacity: .5; }
-.nav-chat-menu { position: absolute; z-index: 30; top: calc(100% - 3px); right: 4px; display: grid; min-width: 185px; padding: 5px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); box-shadow: 0 10px 30px var(--shadow); }
+.nav-chat-menu { display: grid; flex: 0 0 100%; min-width: 0; padding: 5px; margin-top: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }
 .nav-chat-menu button { display: flex; align-items: center; gap: 8px; padding: 8px; border: 0; border-radius: 6px; background: transparent; color: var(--text); text-align: left; font-size: 11px; }
 .nav-chat-menu button:hover:not(:disabled) { background: var(--hover); }
 .nav-chat-menu button:disabled { opacity: .5; }
 .nav-chat-rename { display: grid; gap: 5px; padding: 7px 6px; border-bottom: 1px solid var(--line); }
 .nav-chat-rename label { display: grid; gap: 4px; color: var(--muted); font-size: 10px; }
 .nav-chat-rename input { width: 100%; min-width: 0; padding: 7px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+.nav-chat-menu button { min-width: 0; overflow-wrap: anywhere; }
+.nav-chat-menu button > svg, .settings-drawer-links button > svg { flex: 0 0 auto; }
+.settings-drawer-links button > span { overflow-wrap: anywhere; }
 .nav-chat-rename button { justify-content: center; background: var(--tint); color: var(--accent); }
 .nav-empty { display: block; padding: 9px 10px; color: var(--muted); font-size: 11px; line-height: 1.5; }
 @media (min-width: 721px) {
@@ -86,7 +90,7 @@
     box-shadow: 0 10px 30px var(--shadow);
   }
   .navigation-collapsed .chat-navigation .nav-accordion-content { display: grid; }
-  .navigation-collapsed .nav-create { justify-content: center; padding: 11px; font-size: 0; }
+  .navigation-collapsed .nav-create { padding: 11px; }
   .navigation-collapsed .nav-project-list, .navigation-collapsed .chat-navigation .nav-chat-list { max-height: min(48vh, 420px); }
   .navigation-collapsed .settings-drawers { gap: 8px; }
   .navigation-collapsed .sidebar-bottom { overflow: visible; }
@@ -104,7 +108,6 @@
   .navigation-collapsed .usage-sidebar .usage-text-state { font-size: 10px; }
   .navigation-collapsed .usage-sidebar .usage-compound { max-width: 38px; height: 4px; }
   .navigation-collapsed .usage-breakout { position: fixed; z-index: 110; left: 76px; bottom: 74px; width: min(300px, calc(100vw - 88px)); max-height: calc(100dvh - 100px); }
-  .navigation-collapsed .nav-chat-menu { left: calc(100% + 4px); right: auto; }
 }
 @media (max-width: 720px) {
   .chat-navigation { flex: 0 0 auto; }
@@ -113,6 +116,11 @@
   .nav-card-trigger > span, .nav-chevron { display: none; }
   .nav-accordion-content { position: absolute; z-index: 35; top: 0; left: calc(100% + 8px); width: min(270px, calc(100vw - 90px)); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 10px 30px var(--shadow); }
   .chat-navigation .nav-accordion-content { display: grid; }
-  .nav-create { justify-content: center; padding: 11px; font-size: 0; }
+  .nav-create { padding: 11px; }
   .nav-project-list, .chat-navigation .nav-chat-list { max-height: min(48vh, 420px); }
+  .sidebar .sidebar-bottom { overflow: visible; }
+  .settings-drawer { position: relative; }
+  .sidebar .settings-drawer-links { position: absolute; z-index: 35; bottom: 0; left: calc(100% + 8px); width: min(270px, calc(100vw - 90px)); max-height: min(65dvh, 480px); padding: 8px; border: 1px solid var(--line); border-radius: 10px; background: var(--paper); box-shadow: 0 10px 30px var(--shadow); }
+  .sidebar .settings-drawer-links button { justify-content: flex-start; padding: 10px; }
+  .sidebar .settings-drawer-links button > span { display: initial; }
 }

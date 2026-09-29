@@ -115,6 +115,7 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
       'navigating to a registered project does not retain the add-project dialog');
     releaseOtherBootstrap();
     await workspaceReady.waitFor({ state: 'hidden' });
+    await expect(page.locator('.project-navigation .nav-card-trigger')).toHaveAttribute('aria-expanded', 'false');
     await expect.poll(() => secondPreviewFinished).toBe(true);
     f.state.messages.ses_second.push({ info: { id: 'second-fresh', role: 'assistant' },
       parts: [{ id: 'second-fresh-text', type: 'text', text: 'Second project fresh update' }] });
@@ -141,6 +142,7 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
     holdFirst = true;
     await chooseProject('History project');
     await page.getByText('First project transcript').waitFor();
+    await expect(page.locator('.project-navigation .nav-card-trigger')).toHaveAttribute('aria-expanded', 'false');
     assert.equal(firstRevalidationFinished, false, 'cached chat appears before its network read completes');
     assert.equal(await stage.count(), 0, 'a recent chat has no loading stage');
     assert.equal(await page.locator('.composer textarea').isDisabled(), true,

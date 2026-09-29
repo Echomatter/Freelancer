@@ -87,7 +87,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
               output: JSON.stringify({ status: boundary ? 'blocked' : conflict ? 'conflict' : 'unavailable', failure_class: kind,
                 reason: error?.message || 'Worker execution could not be established.',
                 ...(error?.details ? { details: error.details } : {}),
-                action: boundary ? 'Honor this boundary. Do not retry through another tool. Continue permitted direct work.' : conflict ? 'Wait, narrow scope or sequence the work.' : kind === 'invalid_request' ? 'Correct the named field using the returned catalog/model details; do not guess aliases or shorten the task as a workaround.' : 'Inspect the cause before retrying; preserve any uncertain child work.' }), metadata: {} }
+                action: boundary ? 'Honor this boundary. Do not retry through another tool. Continue permitted direct work.' : conflict ? 'Wait, narrow scope or sequence the work.' : kind === 'invalid_request' ? 'Correct the named field using the returned catalog/model details; do not guess aliases or shorten the task as a workaround.' : 'Inspect the cause before retrying; preserve any uncertain child work.' }), metadata: { freelancer_status: boundary ? 'blocked' : conflict ? 'conflict' : 'unavailable' } }
           }
         },
       }),

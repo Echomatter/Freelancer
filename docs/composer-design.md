@@ -64,9 +64,15 @@ scrolling and the existing inline tool markers retain their behavior. A turn
 without tools shows an empty tool state instead of another turn's commands.
 
 The same outlined icon treatment identifies the Projects and Chats parent
-controls. Their children retain lighter icons. Compact navigation closes after
-chat selection and when the window enters the phone layout. Desktop users can
+controls. Their children retain lighter icons. Projects, Chats, and both settings
+groups start collapsed. Compact navigation opens one group at a time and closes
+after selecting a project, chat, settings destination, or new/continued chat;
+opening a submenu keeps its parent open. Escape dismisses the innermost menu
+and returns focus to its control, and clicking outside dismisses compact flyouts.
+Phone settings show labeled destinations beside the rail. Desktop users can
 collapse the navigation to the same icon rail; that choice persists locally.
+Full desktop navigation keeps the chat list open while browsing settings.
+Changing between rail and full navigation closes open groups.
 On phones, the rail can be hidden for reading space with its top-bar control or
 a leftward swipe. A rightward swipe beginning at the left screen edge restores
 it; the top-bar control remains available for touch, keyboard, and assistive
@@ -80,5 +86,8 @@ attachment/task collapse, draft preservation, tool markers and phone overflow.
 independent output scrolling, streamed tools, delegation handoffs and short
 viewports. Existing send, queue, interrupt and uncertainty journeys retain their
 transport assertions. These are simulated-provider checks, not live inference.
+`navigation.browser.mjs` covers phone and collapsed desktop menus, destination
+dismissal, nested management actions, focus return, usage navigation and back
+controls through the production browser bundle.
 
 Contextual help sits in one lower-right footer bubble per card. Related field topics share that bubble through a topic selector; headings and the conversation rail have no help icons. Page-level help stays in the lower-right corner.

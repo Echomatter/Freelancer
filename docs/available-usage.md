@@ -6,6 +6,13 @@ the chat; its **Open Available Usage** link opens the dashboard. In the icon-onl
 navigation layout, the provider disclosure opens beside the rail. Only its rows
 scroll; Settings, the summary and disclosure actions remain reachable.
 
+**Application settings > Available Usage > Model visibility** controls whether
+models with exhausted usage remain in the workspace model picker. The setting
+keeps its existing saved value when moving from Appearance; changing it does not
+grant availability or alter routing. Model visibility and Observation details
+start collapsed, as does the sidebar provider disclosure. Expand their labeled
+controls to inspect or change them.
+
 ## What the estimate means
 
 Each connected, enabled finite subscription contributes one equal share to the
@@ -27,7 +34,7 @@ finite denominator. Model readiness and restrictions remain in the existing
 model inventory; provider rows no longer include a model/limits dropdown.
 
 Times refer to reported window resets. A reset is not a promise that every model
-will be usable. About this estimate retains local absolute reset times, the observation time
+will be usable. Observation details retains local absolute reset times, the observation time
 and shared-window information. A fresh observation must confirm a new value; the UI never
 invents a refill. Small positive/non-full edges cannot round to empty/full.
 

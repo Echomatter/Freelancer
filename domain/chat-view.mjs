@@ -22,7 +22,7 @@ export function toolOutcomeStatus(part) {
   // authoritative state for the handoff card, not the parent tool's exit.
   const delegated = state.metadata?.freelancer_status;
   if (delegated === "running" || delegated === "starting") return "running";
-  if (["failed", "stop_unverified", "cancelled", "timeout"].includes(delegated)) return "error";
+  if (["failed", "stop_unverified", "cancelled", "timeout", "blocked", "conflict", "unavailable"].includes(delegated)) return "error";
   if (delegated === "completed") return "completed";
   return state.status ?? "unknown";
 }
@@ -40,6 +40,10 @@ export function requestWorkLabel(summary, live = false) {
 
 export function isHandoffPart(part) {
   const meta = part?.state?.metadata ?? {};
+  // Discovery and a refused dispatch are inspectable tool results, not a
+  // started worker. In particular, a refused continuation must not replace
+  // the existing child's running card or claim that child has stopped.
+  if (["catalog", "workers", "blocked", "conflict", "unavailable"].includes(meta.freelancer_status)) return false;
   return Boolean(
     meta.freelancer_delegate_display ??
       meta.ai_toolkit_delegate_display ??
@@ -196,9 +200,9 @@ export function latestToolParts(messages = []) {
   // completion) or a replayed snapshot: the latest snapshot supersedes
   // earlier ones, so a running tool that completes does not stick at
   // running, and a replayed event is never double-counted. Distinct ids
-  // with identical text are always retained. Parts carry no reliable
-  // cross-stream timestamps, so array order is the ordering source; this is
-  // the documented adapter limit, not perfect reconstruction.
+  // with identical text are always retained. Array order is the fallback
+  // unless two parts report timestamped observations of the same managed
+  // worker assignment.
   const latestByPartID = new Map();
   for (const m of messages) {
     for (const part of m?.parts ?? []) {
@@ -217,6 +221,13 @@ export function latestToolParts(messages = []) {
   for (const part of latestByCall.values()) {
     const child = isHandoffPart(part) ? delegateChildSession(part) : null;
     const key = child ? `worker:${child}` : Symbol();
+    const previous = latestByWorker.get(key);
+    const olderMeta = previous?.state?.metadata, nextMeta = part.state?.metadata;
+    // A later inspection tool can contain an older snapshot than the live
+    // dispatch part, which continues updating in place after that read.
+    // Compare only one assignment; a new continuation must win immediately.
+    if (child && olderMeta?.task_id && olderMeta.task_id === nextMeta?.task_id &&
+        Date.parse(olderMeta.freelancer_activity?.updated_at) > Date.parse(nextMeta.freelancer_activity?.updated_at)) continue;
     if (latestByWorker.has(key)) latestByWorker.delete(key);
     latestByWorker.set(key, part);
   }

@@ -324,7 +324,9 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
   }
   async function theme(id) {
     await settings("Appearance");
-    const name = palettes.find((palette) => palette.id === id).name;
+    const palette = palettes.find((palette) => palette.id === id), name = palette.name;
+    const group = page.getByRole('button', { name: palette.mode === 'light' ? /^Light themes/ : /^Dark themes/ });
+    if (await group.getAttribute('aria-expanded') !== 'true') await group.click();
     await page
       .getByRole("button", { name: `Use ${name} palette`, exact: true })
       .click();
@@ -753,4 +755,88 @@ test('usage', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await browser.close();
     await f.close();
   }
+});
+
+test('usage model visibility preserves saved settings, handles failures and filters the workspace picker', { tag: ['@app'] }, async ({ appBrowser: browser, own }) => {
+  const f = await own(usageFixture());
+  await f.store.update('settings', settings => ({ ...settings, appearance: {
+    ...settings.appearance, theme: 'midnight', showDepletedModels: false, providerColors: { openai: '#3379cc' },
+  } }));
+  const quotas = quotaFixture();
+  quotas.surfaces['github-copilot-oauth'].buckets.premium_interactions.percent_remaining = 0;
+  f.replace(quotas);
+  const page = await browser.newPage({ viewport: { width: 1380, height: 900 } });
+  async function settings(tab) {
+    const menu = page.getByRole('button', { name: 'Application settings', exact: true });
+    if (await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
+    await page.getByRole('button', { name: tab, exact: true }).click();
+  }
+  async function preferences() {
+    await settings('Available Usage');
+    await expect(page.locator('.usage-preferences details')).not.toHaveAttribute('open');
+    await expect(page.locator('.usage-method')).not.toHaveAttribute('open');
+    await page.locator('.usage-preferences summary').click();
+  }
+  async function modelOptions() {
+    const chats = page.getByRole('button', { name: 'Chats', exact: true });
+    if (await chats.getAttribute('aria-expanded') !== 'true') await chats.click();
+    await page.locator('.nav-chat-select').filter({ hasText: 'Availability test chat' }).click();
+    await page.getByRole('button', { name: 'Message options', exact: true }).click();
+    return page.getByRole('combobox', { name: 'Parent model', exact: true });
+  }
+  await page.goto(f.url);
+  await settings('Appearance');
+  await expect(page.getByRole('checkbox', { name: /exhausted|depleted/ })).toHaveCount(0);
+  await preferences();
+  const checkbox = page.getByRole('checkbox', { name: 'Show exhausted models in the workspace picker', exact: true });
+  await expect(checkbox).not.toBeChecked();
+  await page.locator('.usage-preferences summary').focus();
+  await page.keyboard.press('Space');
+  await expect(checkbox).not.toBeVisible();
+  await page.keyboard.press('Enter');
+  await expect(checkbox).toBeVisible();
+  await expect((await modelOptions()).locator('option[value="github-copilot/forge"]')).toHaveCount(0);
+  await preferences();
+
+  let release;
+  const gate = new Promise(resolve => { release = resolve; });
+  await page.route('**/api/appearance', async route => {
+    await gate;
+    await route.fulfill({ status: 400, contentType: 'application/json', body: JSON.stringify({ error: 'Visibility save failed for this test.' }) });
+  });
+  try {
+    await checkbox.click();
+    await expect(checkbox).toBeDisabled();
+  } finally { release(); }
+  await expect(page.getByRole('alert').filter({ hasText: 'Visibility save failed' })).toBeVisible();
+  await expect(checkbox).not.toBeChecked();
+  assert.equal((await f.store.read('settings')).appearance.showDepletedModels, false);
+  await page.unroute('**/api/appearance');
+  // This setting adopts the confirmed server value after the save completes.
+  // Playwright check()/uncheck() require a synchronous checked-state change.
+  await checkbox.click();
+  await expect(page.getByRole('status').filter({ hasText: 'Model visibility saved.' })).toBeVisible();
+  await expect(checkbox).toBeChecked();
+  await expect(checkbox).toBeEnabled();
+  const saved = (await f.store.read('settings')).appearance;
+  assert.equal(saved.showDepletedModels, true);
+  assert.equal(saved.theme, 'midnight');
+  assert.deepEqual(saved.providerColors, { openai: '#3379cc' });
+  await page.reload();
+  await preferences();
+  await expect(checkbox).toBeChecked();
+  await expect((await modelOptions()).locator('option[value="github-copilot/forge"]')).toHaveCount(1);
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await preferences();
+  assert.ok(await page.locator('.usage-preferences').evaluate(element => element.scrollWidth <= element.clientWidth + 1));
+  assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+  await checkbox.click();
+  await expect(page.getByRole('status').filter({ hasText: 'Model visibility saved.' })).toBeVisible();
+  await expect(checkbox).not.toBeChecked();
+  await expect(checkbox).toBeEnabled();
+  assert.equal((await f.store.read('settings')).appearance.showDepletedModels, false);
+  await page.reload();
+  await preferences();
+  await expect(checkbox).not.toBeChecked();
 });

@@ -74,7 +74,9 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     assert.ok(contrast(hex(pair[0]), hex(pair[1])) >= 4.5, `${label}: ${pair.join(' on ')}`);
   }
   async function chooseTheme(id) {
-    const name = palettes.find(p => p.id === id).name;
+    const palette = palettes.find(p => p.id === id), name = palette.name;
+    const group = page.getByRole('button', { name: palette.mode === 'light' ? /^Light themes/ : /^Dark themes/ });
+    if (await group.getAttribute('aria-expanded') !== 'true') await group.click();
     await page.getByRole('button', { name: `Use ${name} palette`, exact: true }).click();
     await page.waitForFunction(theme => document.documentElement.dataset.theme === theme, id);
     await page.waitForFunction(() => [...document.querySelectorAll('.palette-option')].every(button => !button.disabled));
@@ -82,9 +84,12 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
   async function screenshot(name) { const directory = paletteArtifacts('colors'); await mkdir(directory, { recursive: true }); await page.screenshot({ path: `${directory}/${name}.png`, fullPage: false, animations: 'disabled' }); }
   try {
     await load(); await settings();
+    await expect(page.locator('.palette-group-toggle[aria-expanded="false"]')).toHaveCount(4);
+    await page.getByRole('button', { name: /^Light themes/ }).click();
+    await page.getByRole('button', { name: /^Dark themes/ }).click();
     await page.getByRole('button', { name: /^Use .* palette$/ }).first().waitFor();
     assert.equal(await page.getByRole('button', { name: /^Use .* palette$/ }).count(), palettes.length);
-    assert.equal(await page.getByLabel('Generated theme style').count(), 1);
+    assert.equal(await page.getByLabel('Generated theme style').count(), 0);
     for (const p of browserPalettes) {
       await test.step(`${p.name}: shell, selection, focus and contrast`, async () => {
         await chooseTheme(p.id);

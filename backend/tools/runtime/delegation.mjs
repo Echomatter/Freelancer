@@ -345,7 +345,9 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         created_at: receipt.created_at, activity: receipt.activity || null,
       }))) };
     }
-    const receipt = receipts.find(row => row.attempts?.some(attempt => attempt.child_session === args.worker));
+    const current = await readJson(workerFile(args.worker));
+    const matching = receipts.filter(row => row.attempts?.some(attempt => attempt.child_session === args.worker));
+    const receipt = matching.find(row => row.task_id === current?.taskID) ?? matching.at(-1);
     if (!receipt) throw fault('PermissionError', 'This worker does not belong to this parent and project.');
     const child = await call('session', 'get', sessionArgs(args.worker, ctx.directory), ctx.abort);
     if (child?.parentID !== ctx.sessionID) throw fault('BindingFailure', 'Native child session does not match the recorded parent.');
@@ -741,6 +743,8 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                   if (receipt.runtime_signals.needsDiagnosis)
                     throw fault('RepeatedFailure', 'Equivalent tool failures repeated three times. Stop and re-diagnose before continuing this worker.');
                   const activity = activityOf(turnMessages, now() - start);
+                  const retrying = statuses?.[child.id]?.type === 'retry';
+                  if (retrying) Object.assign(activity, { phase: 'waiting', label: 'Provider retry in progress' });
                   const nextKey = JSON.stringify([activity.phase, activity.label, activity.completed_tools]);
                   if (nextKey !== activityKey) meaningfulAt = stamp();
                   if (nextKey !== activityKey || now() - activityAt >= 5000) {
@@ -759,15 +763,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                   if (observation.error) throw Object.assign(new Error('Child failed'), observation.error);
                   if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses))
                     throw fault('UnsupportedRuntime', 'Missing runtime session status');
-                  if (statuses?.[child.id]?.type === 'retry') {
-                    receipt.activity = { schema_version: 1, phase: 'waiting', label: 'Provider retry in progress',
-                      child_session: child.id, selected_model: selected, last_meaningful_at: meaningfulAt,
-                      assignment: args.task.slice(0, 240), requested_by: ctx.sessionID,
-                      dispatched_model: attempt.dispatched_model, observed_model: observation.observed,
-                      agentID: agent.id, agentName: agent.name, mode };
-                    await atomicJson(receiptFile, receipt);
-                    await ctx.metadata?.({ title: `@${agent.name} · Waiting for provider retry`,
-                      metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: 'running' } });
+                  if (retrying) {
                     await sleep(cfg.pollMs);
                     continue;
                   }
@@ -796,7 +792,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                 receipt.failure_summary = { failure: attempt.failure, error_type: attempt.error_type, error: attempt.error,
                   abort_verified: attempt.abort_verified, child_session: child.id, selected_model: selected,
                   observed_model: attempt.observed_model || null };
-                receipt.activity = { schema_version: 1, phase: 'failed', label: `Stopped · ${attempt.failure}${attempt.error ? ` · ${attempt.error.slice(0, 120)}` : ''}`,
+                receipt.activity = { ...receipt.activity, schema_version: 1, phase: 'failed', label: `Stopped · ${attempt.failure}${attempt.error ? ` · ${attempt.error.slice(0, 120)}` : ''}`,
                   child_session: child.id, selected_model: selected, failure: attempt.failure, error_type: attempt.error_type, updated_at: stamp() };
                 await atomicJson(receiptFile, receipt);
                 await emit(receipt);
@@ -827,6 +823,8 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
             receipt.runtime_signals = runtimeSignals(turnMessages);
             if (receipt.runtime_signals.needsDiagnosis) throw fault('RepeatedFailure', 'Equivalent tool failures repeated three times. Stop and re-diagnose before continuing this worker.');
             const activity = activityOf(turnMessages, now() - start);
+            const retrying = statuses?.[child.id]?.type === 'retry';
+            if (retrying) Object.assign(activity, { phase: 'waiting', label: 'Provider retry in progress' });
             const nextKey = JSON.stringify([activity.phase, activity.label, activity.completed_tools]);
             if (nextKey !== activityKey) meaningfulAt = stamp();
             if (nextKey !== activityKey || now() - activityAt >= 5000) {
@@ -845,15 +843,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
             attempt.usage_source = observation.usage ? 'session_messages' : 'unavailable';
             if (observation.error) throw Object.assign(new Error('Child failed'), observation.error);
             if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses)) throw fault('UnsupportedRuntime', 'Missing runtime session status');
-            if (statuses?.[child.id]?.type === 'retry') {
-              receipt.activity = { schema_version: 1, phase: 'waiting', label: 'Provider retry in progress',
-                child_session: child.id, selected_model: selected, last_meaningful_at: meaningfulAt,
-                assignment: args.task.slice(0, 240), requested_by: ctx.sessionID,
-                dispatched_model: attempt.dispatched_model, observed_model: observation.observed,
-                agentID: agent.id, agentName: agent.name, mode };
-              await atomicJson(receiptFile, receipt);
-              await ctx.metadata?.({ title: `@${agent.name} · Waiting for provider retry`,
-                metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: 'running' } });
+            if (retrying) {
               await sleep(cfg.pollMs);
               continue;
             }
@@ -873,7 +863,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           attempt.status = 'failed'; attempt.failure = failureKind(e); attempt.error_type = e.name || 'Error';
           attempt.error = String(e?.data?.message || e?.message || '').slice(0, 500) || null;
           attempt.completed_at = stamp(); attempt.elapsed_ms = now() - Date.parse(attempt.started_at);
-          receipt.activity = { schema_version: 1, phase: 'failed', label: `Stopped · ${attempt.failure}${attempt.error ? ` · ${attempt.error.slice(0, 120)}` : ''}`, child_session: child?.id, selected_model: selected, failure: attempt.failure, error_type: attempt.error_type, updated_at: stamp() };
+          receipt.activity = { ...receipt.activity, schema_version: 1, phase: 'failed', label: `Stopped · ${attempt.failure}${attempt.error ? ` · ${attempt.error.slice(0, 120)}` : ''}`, child_session: child?.id, selected_model: selected, failure: attempt.failure, error_type: attempt.error_type, updated_at: stamp() };
           if (child?.id) attempt.abort_verified = await stopped(child.id, ctx.directory);
           else attempt.abort_verified = true; // No prompt was sent without a known child ID.
           // A failed/ambiguous submission is not safe to replay as another writer.

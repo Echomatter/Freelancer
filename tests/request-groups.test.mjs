@@ -284,6 +284,29 @@ test("delegate callbacks for one child render as one current worker with its rec
   assert.equal(summary.workers.finished, 1);
 });
 
+test("catalog reads and refused worker continuations stay inspectable tools without replacing a worker", () => {
+  const running = { id: "worker", type: "tool", tool: "delegate", state: { status: "completed", input: { agent: "engineer" }, metadata: { sessionId: "child", freelancer_status: "running" } } };
+  const catalog = { id: "catalog", type: "tool", tool: "delegate", state: { status: "completed", input: {}, metadata: { freelancer_status: "catalog" } } };
+  const refused = { id: "refused", type: "tool", tool: "delegate", state: { status: "completed", input: { worker: "child", task: "Continue" }, metadata: { freelancer_status: "conflict" } } };
+  const messages = [{ info: { role: "assistant" }, parts: [running, catalog, refused] }];
+  assert.deepEqual(latestToolParts(messages).map(part => part.id), ["worker", "catalog", "refused"]);
+  const summary = summarizeRequestWork(messages);
+  assert.equal(summary.workerCount, 1);
+  assert.equal(summary.workers.running, 1);
+  assert.equal(summary.toolCount, 2);
+  assert.equal(summary.errors, 1);
+});
+
+test("live completion supersedes an older inspection snapshot for the same worker assignment", () => {
+  const dispatch = { id: "dispatch", type: "tool", tool: "delegate", state: { status: "completed", input: { agent: "engineer", task: "Inspect" }, metadata: { sessionId: "child", task_id: "assignment", freelancer_status: "completed", freelancer_activity: { updated_at: "2026-09-29T12:00:02Z" } } } };
+  const inspection = { id: "inspection", type: "tool", tool: "delegate", state: { status: "completed", input: { worker: "child" }, metadata: { sessionId: "child", task_id: "assignment", freelancer_status: "running", freelancer_activity: { updated_at: "2026-09-29T12:00:01Z" } } } };
+  const messages = [{ parts: [dispatch, inspection] }];
+  assert.deepEqual(latestToolParts(messages).map(part => part.id), ["dispatch"]);
+  assert.equal(summarizeRequestWork(messages).workers.finished, 1);
+  inspection.state.metadata.freelancer_activity.updated_at = "2026-09-29T12:00:03Z";
+  assert.deepEqual(latestToolParts(messages).map(part => part.id), ["inspection"]);
+});
+
 
 test("native recap and synthetic continuation stay with the user's request", () => {
   const recap = { ...assistantText("recap", "Internal recap"), info: {id:"recap", role:"assistant", summary:true} };

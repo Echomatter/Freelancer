@@ -188,23 +188,7 @@ export function Settings({
         {tab === "appearance" && (
           <>
             <PageHeading title="Appearance" icon={Palette} actions={closeAction} />
-              <Panel>
-                <label className="check">
-                <input
-                  type="checkbox"
-                  checked={
-                    data.settings.appearance?.showDepletedModels !== false
-                  }
-                  onChange={(e) => {
-                    const showDepletedModels = e.target.checked;
-                    void run(async () => {
-                      await api("appearance", { showDepletedModels }, "PUT");
-                      await refresh();
-                    });
-                  }}
-                />
-                Show depleted usage models in the workspace picker
-              </label>
+            <Panel>
               <ThemePicker theme={data.settings.appearance?.theme} customThemes={data.settings.appearance?.customThemes} refresh={refresh} onSaved={onColorsSaved} />
             </Panel>
           </>

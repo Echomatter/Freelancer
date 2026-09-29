@@ -12,19 +12,22 @@ Verification must cover token contrast, input validation, partial saves/reset, o
 
 ## Use
 
-**Create a theme** opens the third category, **Custom themes**. Generate or
+The **Palette generator** is first in Appearance. It, **Custom themes**, **Light
+themes** and **Dark themes** start collapsed and expand independently. **Create
+a theme** opens the generator with a fresh preview. Generate or
 Regenerate rolls fresh local randomness with a choice of Surprise me, Light or
 Dark. The preview shows page, sidebar, card, text and action colors. Naming is
 optional; **Save & use** stores the palette and applies it after confirmation.
 Discard leaves the current theme intact. Saved custom themes can be selected or
-removed; removing the active one returns to its built-in Light or Dark default.
+removed in **Custom themes**; saving opens that collection so the new choice is
+visible. Removing the active one returns to its built-in Light or Dark default.
 
 All 300 built-in thumbnails use the same semantic tokens as the live layout:
 page background behind the transcript, sidebar beside it, and a distinct paper
 card/composer. Text strokes are opaque, so their colors match the rendered ink.
 The previous thumbnail used paper for the entire main area, hiding the page hue.
 
-Open **Application settings > Appearance**, expand Light themes or Dark themes, and choose a palette from its color-sorted preview grid. Either category can be collapsed independently. A checkmark and pressed state identify the selected palette independently of color. The grid adapts to two columns on medium screens and one column on narrow screens. Todo placement is retained from older preferences, but is no longer an Appearance setting; the current workspace behavior remains in effect.
+Open **Application settings > Appearance**, expand Light themes or Dark themes, and choose a palette from its color-sorted preview grid. Either category can be collapsed independently. A checkmark and pressed state identify the selected palette independently of color. The grid adapts to two columns on medium screens and one column on narrow screens. Exhausted model visibility is under **Application settings > Available Usage > Model visibility** and retains the existing saved preference. Todo placement is retained from older preferences, but is no longer an Appearance setting; the current workspace behavior remains in effect.
 
 Open **Application settings > Providers** to set each provider's color. Choose a named swatch, the system color picker, or a three/six-digit hex value. The sample previews the choice without changing the rest of the app. **Save color** persists it; **Use default** removes only that provider's override. Color changes do not save unsaved billing fields or require authentication.
 

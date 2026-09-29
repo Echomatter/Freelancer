@@ -38,6 +38,8 @@ test('dialogs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await page.getByRole('textbox', { name: 'Message', exact: true }).waitFor();
     await page.getByRole('button', { name: 'Application settings', exact: true }).click();
     await page.getByRole('button', { name: 'Models', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Chats', exact: true })).toHaveAttribute('aria-expanded', 'true');
+    await expect(page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' })).toBeVisible();
     await page.getByRole('button', { name: 'Update Model Ratings', exact: true }).click();
     const picker = page.getByRole('dialog', { name: 'Update Model Ratings', exact: true });
     await picker.waitFor();

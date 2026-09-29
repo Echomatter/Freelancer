@@ -12,6 +12,21 @@ test('host completion can replace all metadata without losing original delegate 
  assert.equal(card.tool,'delegate');assert.deepEqual(card.state.input,original.state.input);
  assert.equal(card.callID,original.callID);assert.equal(card.state.metadata.sessionId,'child');
 });
+
+test('worker transcript inspection preserves the worker identity and native running state', () => {
+ const receipt = { status:'worker_transcript', child_session:'child', parent_session:'parent',
+   agent:'Researcher', receipt_status:'completed', native_status:'busy', task_id:'task',
+   activity:{ agentID:'researcher', selected_model:'opencode/free', phase:'working' } };
+ const metadata = completionMetadata(receipt, {worker:'child'});
+ assert.equal(metadata.sessionId,'child');
+ assert.equal(metadata.agentID,'researcher');
+ assert.equal(metadata.agentName,'Researcher');
+ assert.equal(metadata.selected_model,'opencode/free');
+ assert.equal(metadata.freelancer_status,'running');
+ assert.equal(completionMetadata({...receipt,native_status:'retry'}, {worker:'child'}).freelancer_status,'running');
+ assert.equal(completionMetadata({...receipt,native_status:'idle',receipt_status:'failed'}, {worker:'child'}).freelancer_status,'failed');
+ assert.equal(completionMetadata({...receipt,native_status:'idle'}, {worker:'child'}).freelancer_status,'completed');
+});
 test('native card points to the real child and restores exact model-visible tool history',()=>{
  const original=part(),card=taskCard(original);assert.equal(card.tool,'task');assert.equal(card.state.metadata.sessionId,'child');assert.equal(card.callID,original.callID);
  const messages=[{parts:[card]}];restoreDelegateTools(messages);assert.deepEqual(messages[0].parts[0],original);

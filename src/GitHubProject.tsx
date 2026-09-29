@@ -20,10 +20,18 @@ import { gitPresets, agreementText } from "../domain/git-project.mjs";
 import "./git-project.css";
 
 type Props = { project: string; onClose: () => void; onAsk: () => void };
-export function GitHubProject({ project, onClose, onAsk }: Props) {
+export function GitHubProject(props: Props) {
+  // A different project must never inherit another project's form or late action.
+  return <GitHubProjectPanel key={props.project} {...props} />;
+}
+function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
   const [data, setData] = useState<any>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
+  const [statusError, setStatusError] = useState("");
+  const [refreshing, setRefreshing] = useState(false);
+  const readController = useRef<AbortController | null>(null);
+  const readFailed = useRef(false);
   const [pending, setPending] = useState(false),
     [selected, setSelected] = useState<string[]>([]);
   const [name, setName] = useState(""),
@@ -41,33 +49,52 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
     alive = useRef(true),
     version = useRef(0),
     initialized = useRef(false);
-  const refresh = async (signal?: AbortSignal) => {
+  const refresh = async () => {
+    if (!project || readController.current) return {};
+    const controller = new AbortController();
+    readController.current = controller;
     const revision = ++version.current;
+    setRefreshing(true);
     try {
-      const next = await api("git?" + query(project), undefined, "GET", signal);
-      if (alive.current && revision === version.current) setData(next);
+      const next = await api("git?" + query(project), undefined, "GET", controller.signal);
+      if (alive.current && revision === version.current) {
+        setData(next);
+        setStatusError("");
+        readFailed.current = false;
+      }
       return next;
-    } catch (error) {
-      if (alive.current && revision === version.current) throw error;
+    } catch (failure) {
+      if (alive.current && revision === version.current && !controller.signal.aborted) {
+        setStatusError((failure as Error).message);
+        readFailed.current = true;
+        throw failure;
+      }
       return {};
+    } finally {
+      if (readController.current === controller) {
+        readController.current = null;
+        if (alive.current) setRefreshing(false);
+      }
     }
   };
   useEffect(() => {
     alive.current = true;
-    const controller = new AbortController();
+    let disposed = false;
     let timer: ReturnType<typeof setTimeout>;
     const poll = async () => {
-      try {
-        if (!inFlight.current) await refresh(controller.signal);
-      } catch (e) {
-        if (!controller.signal.aborted) setError((e as Error).message);
-      }
-      if (!controller.signal.aborted) timer = setTimeout(poll, 3500);
+      // Failed reads stay visible until an explicit retry. Do not overlap reads,
+      // replay mutations, or repeatedly spawn status commands behind an error.
+      if (!inFlight.current && !readController.current && !readFailed.current)
+        await refresh().catch(() => {});
+      if (!disposed) timer = setTimeout(poll, 3500);
     };
-    void poll();
+    if (project) void poll();
     return () => {
+      disposed = true;
       alive.current = false;
-      controller.abort();
+      ++version.current;
+      readController.current?.abort();
+      readController.current = null;
       clearTimeout(timer);
     };
   }, [project]);
@@ -95,6 +122,9 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
     if (inFlight.current) return;
     inFlight.current = true;
     ++version.current; // A pre-action poll cannot overwrite the action's state.
+    readController.current?.abort();
+    readController.current = null;
+    setRefreshing(false);
     setPending(true);
     setError("");
     setNotice("");
@@ -188,25 +218,39 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
         () => setConfirmation(null),
       );
   }
+  const heading = <PageHeading title="GitHub" icon={Github} actions={<>
+    <Button
+      aria-label="Refresh Git status"
+      disabled={!project || pending || refreshing}
+      onClick={() => void refresh().catch(() => {})}
+    >
+      <RefreshCw size={17} className={refreshing ? "spin" : ""} />
+    </Button>
+    <PageCloseButton onClick={onClose} />
+  </>} />;
   if (!project)
     return (
-      <Empty icon={Github} title="Open a project first">
-        Git history and GitHub choices belong to the selected project.
-      </Empty>
+      <div className="page git-project-page">
+        {heading}
+        <Empty icon={Github} title="Open a project first">
+          Git history and GitHub choices belong to the selected project.
+        </Empty>
+      </div>
     );
   if (!data)
     return (
-      <Empty
-        icon={LoaderCircle}
-        title="Checking project history…"
-        action={
-          error ? (
-            <Button onClick={() => void act(() => refresh(), undefined, false)}>Try again</Button>
-          ) : undefined
-        }
-      >
-        {error}
-      </Empty>
+      <div className="page git-project-page">
+        {heading}
+        <div role={statusError ? "alert" : "status"}>
+          <Empty
+            icon={statusError ? Github : LoaderCircle}
+            title={statusError ? "Project history could not be loaded" : "Checking project history…"}
+            action={statusError ? <Button disabled={refreshing} onClick={() => void refresh().catch(() => {})}>Try again</Button> : undefined}
+          >
+            {statusError || "You can leave this page. Running work will continue."}
+          </Empty>
+        </div>
+      </div>
     );
   const policy = data.agreement,
     repo = policy.repository;
@@ -222,7 +266,7 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
   const branchMismatch = policy.preset === "main" && data.local?.branch &&
     data.local.branch !== policy.mainBranch;
   const jobs = (data.setup || []).filter((j) => j.status === "running");
-  const disabled = pending || jobs.length > 0;
+  const disabled = pending || jobs.length > 0 || !!statusError;
   const githubStatus = !data.auth.connected
     ? "Not signed in"
     : repo
@@ -230,16 +274,10 @@ export function GitHubProject({ project, onClose, onAsk }: Props) {
       : "Account connected";
   return (
     <div className="page git-project-page">
-      <PageHeading title="GitHub" icon={Github} actions={<>
-          <Button
-            aria-label="Refresh Git status"
-            disabled={pending}
-            onClick={() => void act(() => refresh(), undefined, false)}
-          >
-            <RefreshCw size={17} className={pending ? "spin" : ""} />
-          </Button>
-          <PageCloseButton onClick={onClose} />
-        </>} />
+      {heading}
+      {statusError && <p className="notice error" role="alert">
+        Showing the last loaded Git status. {statusError} Refresh before starting another Git action.
+      </p>}
       {error && !confirmation && (
         <div className="notice error" role="alert">
           {error}

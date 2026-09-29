@@ -5,7 +5,13 @@ import { localDataFixture } from "./fixtures/local-data-app.mjs";
 import { test, expect } from "./support/browser-test.mjs";
 
 test("settings panels share framing, aligned forms, help placement and clickable directory paths", { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
-  const fixture = await own(localDataFixture());
+  let gitCommands = 0;
+  // Layout must not depend on installed tools, a runner's sign-in, or network.
+  // Real Git behavior remains covered by git-project.browser.mjs and contracts.
+  const fixture = await own(localDataFixture({ gitOptions: {
+    resolveExecutable: async () => { throw Error("Tools unavailable in presentation fixture"); },
+    runner: async () => { gitCommands++; throw Error("Unexpected external Git command"); },
+  } }));
   await mkdir(path.join(fixture.project.directory, "docs", "nested"), { recursive: true });
   await writeFile(path.join(fixture.project.directory, "docs", "nested", "guide.txt"), "Nested guide");
   const nativeRequest = fixture.host.request.bind(fixture.host);
@@ -89,6 +95,10 @@ test("settings panels share framing, aligned forms, help placement and clickable
     await inspectPanel("Agents", "Project settings", "Agents");
     await page.screenshot({ path: "artifacts/settings-panels/agents.png", fullPage: false });
     await inspectPanel("GitHub", "Project settings", "GitHub", false);
+    // The persistent heading alone is not evidence that status loaded.
+    await expect(page.getByRole("heading", { name: "Local history", exact: true })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Cloud sync", exact: true })).toBeVisible();
+    assert.equal(gitCommands, 0, "layout inspection never invokes machine Git/GitHub tools");
     await page.screenshot({ path: "artifacts/settings-panels/github.png", fullPage: false });
     await inspectPanel("Providers", "Application settings", "Providers");
     await page.screenshot({ path: "artifacts/settings-panels/providers.png", fullPage: false });

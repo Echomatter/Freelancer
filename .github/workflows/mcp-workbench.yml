@@ -1,0 +1,30 @@
+name: MCP review workbench
+on:
+  push:
+    branches: [codex/platform-mcp-shared-toolkit]
+    paths: [.github/workflows/mcp-workbench.yml]
+permissions:
+  contents: read
+jobs:
+  snapshot:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          package-manager-cache: false
+      - run: npm ci
+      - name: Package exact review checkout and test dependencies
+        run: |
+          git archive HEAD > /tmp/source.tar
+          tar -rf /tmp/source.tar node_modules
+          gzip /tmp/source.tar
+      - uses: actions/upload-artifact@v7
+        with:
+          name: mcp-review-workbench
+          path: /tmp/source.tar.gz
+          retention-days: 1

@@ -1,4 +1,5 @@
-import { readFile } from 'node:fs/promises';
+import { readRuntimeText as readFile } from './state-database.mjs';
+
 import path from 'node:path';
 
 // A preference adapter for OpenCode's native compactor, not a second engine.

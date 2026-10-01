@@ -9,7 +9,7 @@ test('agent panels retain readable identities, statuses and expanded tools at ev
   const nativeChat = f.app.chat.bind(f.app);
   const phases = ['selection_required', 'working', 'completed', 'failed', 'awaiting_paid_permission', 'delegation_unavailable'];
   f.app.chat = async (...args) => ({ ...await nativeChat(...args), activity: phases.map((phase, i) => ({
-    id: `activity-${i}`, agentName: `${name} ${i}`, selected: model, phase, completedTools: 12345,
+    id: `activity-${i}`, requestID: 'request', agentName: `${name} ${i}`, selected: model, phase, completedTools: 12345,
     ...(i > 0 && i < 5 ? { child: i === 1 ? 'ses_worker' : `ses_worker_${i}` } : {}),
     raw: { routing_diagnostics: { reasons: ['unavailable-model-with-long-identifier-'.repeat(8)] } },
   })) });
@@ -41,36 +41,31 @@ test('agent panels retain readable identities, statuses and expanded tools at ev
     expect(await page.locator('.chat-loading-stage').evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     releaseChat();
     await expect(page.locator('.chat-loading-stage')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
-    const details = page.locator('.work-details');
-    await expect(details.locator('.activity-detail-card')).toHaveCount(phases.length);
+    await page.getByRole('button', { name: /^Agents / }).click();
+    const details = page.locator('.chat-tool-overlay');
+    await expect(details.locator('.agent-status-card')).toHaveCount(phases.length + 3);
     for (const width of [390, 760, 1440]) {
       await test.step(`Details cards fit at ${width}px`, async () => {
         await page.setViewportSize({ width, height: 1000 });
         for (const text of ['Choosing a model', 'Working', 'Finished', 'Stopped', 'Needs your approval', 'Route unavailable']) {
-          await expect(details.getByText(text, { exact: true })).toBeVisible();
+          await expect(details.getByText(text, { exact: true }).first()).toBeVisible();
         }
-        const overflow = await details.evaluate(root => [...root.querySelectorAll('.activity-detail-card, .activity-detail-toggle, .activity-detail-title, .activity-detail-status, .activity-detail-model, .activity-route-note')]
+        const overflow = await details.evaluate(root => [...root.querySelectorAll('.agent-status-card, .agent-card-copy, .agent-status-label')]
           .filter(node => node.scrollWidth > node.clientWidth + 1).map(node => node.className));
         expect(overflow, 'Activity contents fit their grid and flex containers').toEqual([]);
         expect(await details.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-        await expect(details.locator('.activity-detail-title strong').first()).toHaveText(`${name} 0`);
+        await expect(details.locator('.agent-card-copy strong').first()).toHaveText(`${name} 0`);
       });
     }
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
-    const work = page.locator('.request-working').last();
-    await expect(work).not.toHaveAttribute('open');
-    await work.locator('summary').first().click();
-    await expect(work.locator('.agent-card')).toHaveCount(3);
-    await expect(work.getByRole('button', { name: `Agent working: ${name} · ${model} · Open conversation`, exact: true })).toBeVisible();
-    const catalog = work.locator('.tool-card').filter({ hasText: 'Inspect agent catalog' });
-    await expect(catalog).not.toHaveAttribute('open');
-    await catalog.locator('summary').click();
-    await expect(catalog.locator('pre')).toContainText('"engineer"');
-    await catalog.locator('summary').click();
-    const refusal = work.locator('.tool-card').filter({ hasText: 'Waiting for worker' });
-    await refusal.locator('summary').click();
-    await expect(refusal.locator('pre')).toContainText('This worker is already busy. Wait before continuing it.');
+    const work = page.locator('.chat-tool-overlay');
+    await expect(work.locator('.agent-card')).toHaveCount(phases.length + 3);
+    await expect(work.locator('.handoff-card, .agent-turn-report')).toHaveCount(0);
+    await expect(work).toContainText('Inspect agent catalog');
+    await expect(work).toContainText('This worker is already busy. Wait before continuing it.');
+    await page.getByRole('button', { name: /^Commands / }).click();
+    await expect(work.locator('.agent-card, .activity-detail-card')).toHaveCount(0);
+    await expect(work).not.toContainText('Inspect agent catalog');
+    await expect(work).not.toContainText('Waiting for worker');
     const tool = work.locator('.tool-card').filter({ hasText: `Read ${path.slice(4)}` });
     await expect(tool).not.toHaveAttribute('open');
     await tool.locator('summary').click();
@@ -85,50 +80,11 @@ test('agent panels retain readable identities, statuses and expanded tools at ev
     }
     await tool.locator('summary').click();
     await expect(tool.locator('pre')).toHaveCount(0);
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
-    await details.getByRole('tab', { name: 'changes', exact: true }).click();
-    await expect(details).toBeVisible();
-    await details.getByRole('tab', { name: 'activity', exact: true }).click();
-    await details.locator('.activity-summary-button').filter({ hasText: `${name} 1` }).click();
-    await expect(page.locator('.topbar').getByText('Linked worker', { exact: true })).toBeVisible();
-    await expect(details).toHaveCount(0);
-    for (const width of [320, 390]) {
-      await page.setViewportSize({ width, height: 1000 });
-      const topbar = page.locator('.topbar');
-      const title = topbar.getByText('Linked worker', { exact: true });
-      await expect(title).toBeVisible();
-      await expect(title).toHaveAttribute('title', 'Linked worker');
-      for (const name of ['Back to parent chat', 'Details']) {
-        const control = topbar.getByRole('button', { name, exact: true });
-        await expect(control).toBeVisible();
-        await expect(control).toHaveAttribute('title', name);
-        await expect(control.locator('svg')).toBeVisible();
-        await expect(control.locator('span')).toBeHidden();
-      }
-      const geometry = await topbar.evaluate(node => {
-        const bounds = node.getBoundingClientRect();
-        const title = node.querySelector('strong').getBoundingClientRect();
-        const controls = [...node.querySelectorAll('.topbar-right button')].map(button => {
-          const box = button.getBoundingClientRect();
-          return { left: box.left, right: box.right, top: box.top, bottom: box.bottom, width: box.width, height: box.height, overflows: button.scrollWidth > button.clientWidth + 1 };
-        });
-        return { left: bounds.left, right: bounds.right, top: bounds.top, bottom: bounds.bottom, titleWidth: title.width, titleRight: title.right, controls, overflows: node.scrollWidth > node.clientWidth + 1 };
-      });
-      expect(geometry.titleWidth, `Child title retains readable space at ${width}px`).toBeGreaterThanOrEqual(80);
-      expect(geometry.titleRight).toBeLessThanOrEqual(geometry.controls[0].left - 1);
-      expect(geometry.overflows).toBe(false);
-      for (const control of geometry.controls) {
-        expect(control.width).toBeGreaterThanOrEqual(32);
-        expect(control.height).toBeGreaterThanOrEqual(36);
-        expect(control.left).toBeGreaterThanOrEqual(geometry.left);
-        expect(control.right).toBeLessThanOrEqual(geometry.right);
-        expect(control.top).toBeGreaterThanOrEqual(geometry.top);
-        expect(control.bottom).toBeLessThanOrEqual(geometry.bottom);
-        expect(control.overflows).toBe(false);
-      }
-    }
+    await page.getByRole('button', { name: /^Agents / }).click();
+    await details.getByRole('button', { name: `${name} 1 · Working · Open conversation`, exact: true }).click();
+    await expect(page.locator('.chat-tool-overlay')).toHaveCount(0);
+    await page.getByRole('button', { name: /^Agents / }).click();
     await page.getByRole('button', { name: 'Back to parent chat', exact: true }).click();
-    await expect(page.locator('.topbar').getByText('Important conversation', { exact: true })).toBeVisible();
     await expect(page.locator('.chat-transcript').getByText('Inspect the worker states', { exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Back to parent chat', exact: true })).toHaveCount(0);
     await expect(details).toHaveCount(0);

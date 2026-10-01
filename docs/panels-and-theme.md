@@ -1,16 +1,22 @@
-# Panel sizing and startup palette
+# Chat tools, files and startup palette
 
-Drag the right edge of navigation or empty space in the conversation rail on
-the left edge of Details. Turn dots jump; the pulsing ring scrolls. Widths preview
-immediately and save on release. Double-click an edge to reset that panel.
-The focused separator supports Arrow keys, Shift for larger steps, and Home/End.
-Escape cancels a drag. Failed saves roll back with a visible error.
+The top row combines navigation, Commands, Agents, Models, optional Goals,
+connection status and refresh. Each tool tab opens an overlay below it. Working
+icons animate only for current activity; selecting another turn shows its history.
 
-Widths live in the existing appearance store. The two fields are independent of
-todo placement, theme, routing and native sessions. Navigation is bounded to
-180–480px, Details to 260–640px, with 320px reserved for chat. Small windows
-clamp the displayed sizes without erasing preferences. The existing compact
-navigation and Details overlay remain; their resize handles are not shown.
+Commands contains command activity. **Project settings → Files** contains the
+selected chat's recorded diffs and current working tree previews. Each change is
+labeled **Chat record** or **Working tree**; the latter can include other chats'
+work. The file browser and indexed-search links remain on this page.
+
+Agents uses graphical status cards linked to native agent chats for handoffs and
+reports. Models starts with **Work by models**, showing the chat and its agents'
+measured token-activity shares for the displayed month, including partial-data
+labels. These shares are activity volume, not quality or completion. Selected-turn
+model identities and handoff statuses appear below the chart.
+
+Navigation width still previews while dragging and saves on release. Keyboard
+resizing and narrow-screen clamping preserve the saved preference.
 
 The saved light/dark palette is now included in the initial HTML, with a critical
 background and color-scheme before scripts execute. It does not depend on the

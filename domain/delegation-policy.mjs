@@ -40,7 +40,8 @@ export function effectiveDelegationPreferences(current, captured = current) {
     ...current,
     childVariant: captured.childVariant,
     delegation: [current.delegation, captured.delegation].includes('manual') ? 'manual'
-      : [current.delegation, captured.delegation].includes('ask') ? 'ask' : 'automatic',
+      : [current.delegation, captured.delegation].includes('ask') ? 'ask'
+      : captured.delegation === 'encouraged' ? 'encouraged' : 'automatic',
     subscriptionDelegation: current.subscriptionDelegation === 'automatic' && captured.subscriptionDelegation === 'automatic'
       ? 'automatic' : 'ask',
     costPreference: [current.costPreference, captured.costPreference].includes('free-only') ? 'free-only'
@@ -55,7 +56,9 @@ export function effectiveDelegationPreferences(current, captured = current) {
 }
 
 export function delegationGuidance(preferences, allowedModels) {
-  const behavior = 'Decide whether to work directly, use tools, skills, or delegate to suitable named agents. No helper or team shape is mandatory; agent identity is guidance, not authority.';
+  const behavior = preferences.delegation === 'encouraged'
+    ? 'The user encourages delegation. Proactively identify useful, bounded assignments for suitable named agents, such as independent research, implementation, or verification. Prefer delegation when it improves progress or quality; keep trivial or tightly coupled work local. No helper or team shape is mandatory; agent identity is guidance, not authority.'
+    : 'Decide whether to work directly, use tools, skills, or delegate to suitable named agents. No helper or team shape is mandatory; agent identity is guidance, not authority.';
   return [
     preferences.delegation === 'manual' ? 'Work directly. The user has disabled workers.' : behavior,
     `Up to ${preferences.maxParallel} simultaneous delegated assignments. This is a ceiling, not a target.`,

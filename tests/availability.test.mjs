@@ -187,6 +187,9 @@ test("cached-but-usable observations keep their age and flag a failed refresh", 
   assert.equal(result.remaining, 60);
   assert.equal(result.asOf, new Date(now - 180000).toISOString());
   assert.equal(result.refreshFailed, true);
+  assert.equal(result.providers[0].needsReconnect, true);
+  assert.equal(result.providers[0].issue, "Reconnect to refresh usage");
+  assert.equal(result.providers[1].needsReconnect, false);
   assert.equal(observedLabel(result.asOf, now), "Updated 3m ago");
 });
 test("model statuses distinguish shared availability from independent native restrictions", () => {

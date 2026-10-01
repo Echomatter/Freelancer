@@ -33,6 +33,12 @@ models remain visible, with variable or known blocked availability, outside the
 finite denominator. Model readiness and restrictions remain in the existing
 model inventory; provider rows no longer include a model/limits dropdown.
 
+A rejected or expired provider sign-in is reported on that provider's row.
+Other current readings remain visible. **Reconnect provider** opens the existing
+Providers settings and OpenCode-owned sign-in flow; Freelancer does not rotate
+or copy credentials. A successful reconnection refreshes usage immediately.
+Transport-wide refresh failures remain distinct from one provider needing attention.
+
 Times refer to reported window resets. A reset is not a promise that every model
 will be usable. Observation details retains local absolute reset times, the observation time
 and shared-window information. A fresh observation must confirm a new value; the UI never

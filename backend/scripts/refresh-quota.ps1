@@ -11,6 +11,7 @@ param(
     [string]$AuthPath = ''
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'state-database.ps1')
 if ($ToolkitRoot -eq '') { $ToolkitRoot = Split-Path -Parent $PSScriptRoot }
 $StatePath = Join-Path $ToolkitRoot '.state\quota-state.json'
 $stateDir = Split-Path -Parent $StatePath
@@ -19,19 +20,11 @@ $lock = $null
 try { $lock = New-Object System.IO.FileStream(($StatePath + '.lock'), [IO.FileMode]::OpenOrCreate, [IO.FileAccess]::ReadWrite, [IO.FileShare]::None, 4096, [IO.FileOptions]::DeleteOnClose) }
 catch { Write-Output 'Quota refresh already active; using existing observations.'; return }
 try {
-function Write-Utf8NoBom([string]$Path, [string]$Text) {
-    $enc = New-Object System.Text.UTF8Encoding($false)
-    $tmp = $Path + '.' + [guid]::NewGuid().ToString('N') + '.tmp'
-    try {
-        [System.IO.File]::WriteAllText($tmp, $Text, $enc)
-        if (Test-Path -LiteralPath $Path) { [System.IO.File]::Replace($tmp, $Path, [NullString]::Value) }
-        else { [System.IO.File]::Move($tmp, $Path) }
-    } finally { if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force } }
-}
+function Write-Utf8NoBom([string]$Path, [string]$Text) { Write-FreelancerState $Path $Text }
 function Now-UtcIso() { return (Get-Date).ToUniversalTime().ToString('o') }
 $prior = $null
 try {
-    if (Test-Path -LiteralPath $StatePath) { $prior = Get-Content -LiteralPath $StatePath -Raw -Encoding UTF8 | ConvertFrom-Json }
+    $prior = Read-FreelancerState $StatePath
 } catch { throw 'Quota state is malformed; original preserved. Repair it rather than discarding known execution failures.' }
 function Get-PriorSurface([string]$name) {
     if ($prior -and $prior.surfaces) {

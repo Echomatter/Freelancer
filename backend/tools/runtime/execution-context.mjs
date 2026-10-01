@@ -1,6 +1,8 @@
-import { readFile } from "node:fs/promises";
-import path from "node:path";
+import { readRuntimeRequest } from './record-database.mjs';
+import { readRuntimeText as readFile } from './state-database.mjs';
+
 import { createHash } from 'node:crypto';
+import path from "node:path";
 export const workerBindingFile = (root, sessionID, messageID) => path.join(root, '.state/delegation/bindings', createHash('sha256').update(JSON.stringify([sessionID, messageID])).digest('hex') + '.json');
 
 const same = (a, b) =>
@@ -22,7 +24,7 @@ async function json(file) {
 
 // Resolve from native identity and durable application records, never from a
 // model-provided agent/context blob. Historical receipts are not edited.
-export function createExecutionContextReader(readRequests = root => json(path.join(root, ".state/webpage/requests.json"))) {
+export function createExecutionContextReader(readRequests) {
   return async (root, directory, session, message) => resolveExecutionContext(
     root, directory, session, message, readRequests,
   );
@@ -31,8 +33,9 @@ export function createExecutionContextReader(readRequests = root => json(path.jo
 async function resolveExecutionContext(root, directory, session, message, readRequests) {
   const info = message?.info ?? message;
   if (info?.role !== "assistant") return null;
-  const records = await readRequests(root);
-  const request = records?.records?.[info.parentID];
+  const records = readRequests ? await readRequests(root) : null;
+  const lookup = id => readRequests ? records?.records?.[id] : readRuntimeRequest(root, id);
+  const request = await lookup(info.parentID);
   if (
     request?.sessionID === session?.id &&
     same(request.directory, directory) &&
@@ -47,8 +50,8 @@ async function resolveExecutionContext(root, directory, session, message, readRe
       readOnly: request.policyVersion < 5
         ? request.workflow?.mode !== "build"
         : request.readOnly === true,
-      rootSessionID: session.id,
-      rootRequestID: request.id ?? info.parentID,
+      rootSessionID: request.rootSessionID ?? session.id,
+      rootRequestID: request.rootRequestID ?? request.id ?? info.parentID,
     };
   }
   const binding = await json(workerBindingFile(root, session?.id, info.parentID));
@@ -71,7 +74,7 @@ async function resolveExecutionContext(root, directory, session, message, readRe
     return null;
   if (!info.agent || info.agent !== receipt.agent?.id)
     throw Error("Agent identity differs from the delegated assignment.");
-  const capturedRoot = records?.records?.[receipt.root_request_id];
+  const capturedRoot = await lookup(receipt.root_request_id);
   const captured = capturedRoot && capturedRoot.sessionID === receipt.root_session &&
     same(capturedRoot.directory, directory) && capturedRoot.policyVersion === receipt.policy_version
     ? capturedRoot : {};

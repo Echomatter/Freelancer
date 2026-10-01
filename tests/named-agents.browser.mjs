@@ -208,9 +208,8 @@ test('named-agents', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => 
     parent.info.time.completed = Date.now();
     parent.info.finish = "stop";
     delete f.status[parentID];
-    const work = page.locator(".request-working").last();
-    if (!(await work.evaluate((element) => element.open))) await work.locator("summary").click();
-    const childButton = page.getByRole("button", {
+    const work = page.locator('.chat-transcript');
+    const childButton = work.getByRole("button", {
       name: /Agent finished: Accessibility specialist/,
     });
     await childButton.waitFor();
@@ -294,9 +293,7 @@ test('named-agents', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => 
     throw error;
   } finally {
     await browser.close();
-    await web.sender.close();
-    web.server.closeAllConnections();
-    await new Promise((r) => web.server.close(r));
+    await web.close();
     await f.close();
   }
 });

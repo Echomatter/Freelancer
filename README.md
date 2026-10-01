@@ -39,6 +39,7 @@ Each project is a folder you choose. Its chats stay grouped with that project, a
 - **Attachments and saved drafts** let you prepare a request before sending it. Draft revisions are saved locally and protected against stale-window overwrites and lost acknowledgements.
 - **Immediate send feedback** shows a submitted request while chat creation or native dispatch is still completing, without pretending that transport acceptance means the work has finished.
 - **Queued follow-ups** can wait for a safe boundary instead of colliding with active work.
+- **Project goals** keep a named objective in one chat. Create or edit one in **Project settings → Goals**, then Start when ready. The compact goal header can be hidden without stopping work; [the goal guide](docs/goals.md) covers Resume, Stop and settings.
 - **Questions and permission requests** remain explicit decisions. They are not hidden inside model prose.
 - **Request groups** keep the answer, tool activity, tasks and delegated work associated with the instruction that caused them.
 - **Details and Files panels** provide drill-down without forcing all execution noise into the transcript.
@@ -176,6 +177,7 @@ Freelancer deliberately separates project-specific choices from application-wide
 |  | **Agents** | Built-in/custom working roles, instructions, model and response preferences |
 |  | **GitHub** | Local Git history, GitHub authentication/linking, checkpoints and reviewed sync |
 |  | **Session defaults** | Starting agent, model and reasoning choices for new chats in this project |
+|  | **Goals** | Named objectives, linked goal chats, execution settings, Start, Resume and Stop |
 |  | **Delegation** | Project worker/delegation behavior and orchestration limits |
 | **Application** | **Models** | Searchable model catalog, provider/model information and rating activity |
 |  | **Search all content** | Indexed files and conversations across registered projects |
@@ -227,6 +229,7 @@ The README is the product overview. The handbook goes deeper:
 - [Local data, history and archives](docs/local-data.md)
 - [Git and GitHub projects](docs/github-projects.md)
 - [State-aware sender](docs/state-aware-sender.md)
+- [Project goals](docs/goals.md)
 - [Conversation rail](docs/conversation-rail.md)
 - [Release acceptance](docs/release-acceptance.md)
 
@@ -566,7 +569,7 @@ Message settings apply to the next message. Attach files with the file chooser o
 <!-- help:message-delivery -->
 ### Messages during a response
 
-Delegate requests a worker at the parent's next safe boundary; its actual progress appears in Details. Queue sends after the current turn finishes. Interrupt stops the response, cancels waiting messages and continues with this message. A model override applies to the next parent turn for Queue or Interrupt, and to the worker for Delegate. Attached files stay in the composer.
+Delegate asks the current parent to assign an additional concern to a worker. Steer asks it to adjust its own ongoing work. Both deliver at the next supported boundary without aborting; tools already executing may finish first. Queue sends after the current turn and stays intact when steering. Stop remains available for cancellation. A model override applies to the queued parent turn or Delegate's worker, never to the running parent on Steer. Pending cards are editable before dispatch. Saved delivery, model-input inclusion and observed action are distinct; inspect uncertain outcomes before retrying. Attached files stay in the composer.
 <!-- /help -->
 
 <!-- help:model-ratings -->

@@ -1,3 +1,4 @@
+import { readState, stateFiles } from '../tools/runtime/state-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, readdir, readFile, rm } from 'node:fs/promises';
@@ -218,14 +219,14 @@ test('worker system prompt includes captured agent and fixed Build contract', as
   assert.doesNotMatch(prompt.body.system, /Workflow:/);
   assert.match(prompt.body.system, /Freelancer execution contract/);
 });
-test('delegation receipts replace an existing JSON file without discarding it', async t => {
+test('delegation receipts update the database without creating JSON files', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'delegation-write-'));
   t.after(() => rm(root, {recursive:true, force:true}));
   const file = path.join(root, '.state', 'delegation', 'receipt.json');
   await atomicJson(file, {status:'starting'});
   await atomicJson(file, {status:'completed', attempts:[{child:'ses_1'}]});
-  assert.deepEqual(JSON.parse(await readFile(file, 'utf8')), {status:'completed', attempts:[{child:'ses_1'}]});
-  assert.deepEqual(await readdir(path.dirname(file)), ['receipt.json']);
+  assert.deepEqual(readState(file), {status:'completed', attempts:[{child:'ses_1'}]});
+  assert.deepEqual(stateFiles(path.dirname(file)), ['receipt.json']);
 });
 test('parent rediscovers workers and reads current native child chat after controller restart', async t => {
   const f = await fixture(t);
@@ -626,7 +627,7 @@ test('unverified abort retains evidence and never automatically replaces the wri
   const f = await fixture(t, { hang: true, abortFails: true }); const result = await f.service.execute(args, f.ctx);
   assert.equal(result.status, 'stop_unverified');
   const names = await readdir(path.join(f.root, '.state', 'delegation')); assert.ok(!names.some(n => n.endsWith('.lock')));
-  assert.equal(JSON.parse(await readFile(path.join(f.root, '.state', 'delegation', `${result.task_id}.json`))).status, 'stop_unverified');
+  assert.equal(readState(path.join(f.root, '.state', 'delegation', `${result.task_id}.json`)).status, 'stop_unverified');
   assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
 });
 

@@ -82,20 +82,16 @@ remain accessible. Usage/accounting still includes archived work.
 | Project source and Git history                                                       | Filesystem / Git                       | User-selected folders                                                   | Never moved or deleted here                                          |
 | Native sessions, messages, parts, tools, permissions, todos                          | OpenCode                               | Native engine database, located through the same executable's `db path` | Use native API/CLI; never write its database                         |
 | Provider authentication                                                              | Existing native authentication systems | Existing credential locations                                           | Never copied into this store or exports as a credential collection   |
-| Registered projects, plans, appearance, agent overrides, remembered choices | Existing Freelancer store              | `backend/.state/webpage/settings.json`                                  | Remains authoritative; no bulk migration                             |
-| Request receipts and observed usage                                                  | Existing Freelancer store              | `requests.json`, `usage.json` in that directory                         | Not removed or reset by archive                                      |
-| Waiting/uncertain delivery                                                           | Freelancer sender                      | `sender-outbox.json`                                                    | A delivery commitment, not a draft; archive cannot cancel it         |
-| Runtime preferences, delegation receipts, outcomes and quota state                   | Existing runtime writers               | Other directories/files under `backend/.state/`                         | Kept in runtime JSON                                               |
+| Registered projects, plans, appearance, agent overrides, remembered choices | Existing Freelancer store              | `backend/.state/webpage/records.sqlite`                                  | Transactional one-time import; database authority                             |
+| Request receipts and observed usage                                                  | Existing Freelancer store              | `records.sqlite` in that directory; original JSON retained as migration backups                         | Not removed or reset by archive                                      |
+| Waiting/uncertain delivery                                                           | Freelancer sender                      | Sender document in `records.sqlite`                                                    | A delivery commitment, not a draft; archive cannot cancel it         |
+| Runtime preferences, delegation receipts, outcomes and quota state                   | Existing runtime writers               | Documents in `records.sqlite`                         | Shared Node/Bun/PowerShell database access                                               |
 | Project files and conversation search indexes                                        | Freelancer content indexer             | Project-scoped tables inside the same per-user `freelancer.sqlite`                  | Rebuildable derived indexes; project files and native chats remain authoritative |
 | Pins, local hiding, project archives, unsent drafts                                  | Freelancer local data service      | `freelancer.sqlite` in the resolved user data directory                    | New feature authority                                                |
 | Previously seen session headers                                                      | OpenCode; SQLite copy is a cache       | `session_headers`                                                       | Titles/IDs/ancestry/timestamps only, checked natively before actions |
 | Agent/skill defaults                                                                 | Application source                     | Existing domain/backend files                                           | Definitions are not running jobs                                     |
 
-The old JSON files already have version checks, mutation serialization and
-atomic replacement. They have not been declared broken or silently abandoned.
-This release deliberately leaves their scripts/plugins/readers intact. In
-particular, The Git agreement remains in its existing store; there is no
-second copy of its policy in SQLite.
+Freelancer mutable runtime state now lives in SQLite. The shared document store imports legacy JSON once, keeps the original bytes as backups, and never reads them again after migration. Native plugins and PowerShell scripts use the same database. Git agreements remain one authority in the settings document. See [storage performance](storage-performance.md) for migration and rollback boundaries.
 
 ## The parts and their relationships
 

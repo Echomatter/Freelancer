@@ -1,8 +1,9 @@
-import { readFile } from "node:fs/promises";
+import { readRuntimeText as readFile } from './state-database.mjs';
+
 import path from "node:path";
 import {
-  workspaceCatalog,
   normalizeAgent,
+  workspaceCatalog,
 } from "../../../domain/workspace.mjs";
 
 export const retiredAgents = Object.freeze([
@@ -63,6 +64,8 @@ export function configureAgentProfiles(config, catalog) {
         ? config.permission
         : (config.permission?.[key] ?? config.permission?.["*"])) ??
       otherwise;
+    const globalQuestion = typeof config.permission === "object" ? config.permission?.question : undefined;
+    const question = globalQuestion ?? (["deny", "ask"].includes(permission["*"]) ? permission["*"] : "allow");
     config.agent[agent.id] = {
       ...previous,
       mode: "all",
@@ -71,11 +74,17 @@ export function configureAgentProfiles(config, catalog) {
       // Do not pin an assignment's model or copy a mutable persona into this cache.
       prompt: "",
       model: undefined,
+      // OpenCode's generated named profiles otherwise disable its built-in
+      // question tool, leaving the browser with no native request to render.
+      tools: { ...previous.tools, question: true },
       permission:
         typeof permission === "string"
           ? permission
           : {
               ...permission,
+              // OpenCode seeds named agents with question=deny. The built-in
+              // question tool must be permitted so its request can reach the UI.
+              question,
               paid_delegate: fallback("paid_delegate", "ask"),
               plan_enter: "deny",
               task: fallback("task", "allow"),

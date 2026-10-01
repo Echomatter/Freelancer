@@ -38,7 +38,7 @@ test("settings panels share framing, aligned forms, help placement and clickable
   let gitCommands = 0;
   // Layout must not depend on installed tools, a runner's sign-in, or network.
   // Real Git behavior remains covered by git-project.browser.mjs and contracts.
-  const fixture = await own(localDataFixture({ gitOptions: {
+  const fixture = await own(localDataFixture({ persistPreferences: true, gitOptions: {
     resolveExecutable: async () => { throw Error("Tools unavailable in presentation fixture"); },
     runner: async () => { gitCommands++; throw Error("Unexpected external Git command"); },
   } }));
@@ -95,22 +95,25 @@ test("settings panels share framing, aligned forms, help placement and clickable
     await page.getByRole("textbox", { name: "Chat name", exact: true }).fill("Important conversation");
     await page.getByRole("button", { name: "Rename", exact: true }).click();
     await expect(chats.getByRole("button", { name: "Manage Important conversation", exact: true })).toBeVisible();
-    await expect(page.locator(".directory-breadcrumb .directory-root")).toHaveAttribute("title", fixture.project.directory);
-    await page.locator(".directory-breadcrumb .directory-root").click();
+    await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+    await page.getByRole('button', { name: 'Files', exact: true }).click();
     await expect(page.getByRole("heading", { name: "Files", exact: true })).toBeVisible();
     await page.locator(".file-row").filter({ hasText: "docs" }).click();
     await page.locator(".file-row").filter({ hasText: "nested" }).click();
     await page.locator(".file-row").filter({ hasText: "guide.txt" }).click();
     await expect(page.locator(".file-preview")).toHaveText("Nested guide");
-    await page.getByRole("navigation", { name: "Directory breadcrumb" }).getByRole("button", { name: "docs", exact: true }).click();
-    await expect(page.locator(".files-location")).toHaveText("docs");
-    await expect(page.locator(".file-row")).toContainText("nested");
-    await expect(page.locator(".file-preview")).toHaveCount(0);
-    await page.locator(".directory-root").click();
-    await expect(page.locator(".file-row")).toContainText("docs");
+    await expect(page.locator('.files-location')).toHaveText('docs/nested/guide.txt');
+    for (let i = 0; i < 3; i++) await page.getByRole('button', { name: 'Back', exact: true }).click();
+    await expect(page.locator('.file-row')).toContainText('docs');
 
     await inspectPanel("Session defaults", "Project settings", "Session defaults");
     await inspectPanel("Delegation", "Project settings", "Delegation");
+    const delegation = page.getByRole('combobox', { name: 'Delegation', exact: true });
+    await expect(delegation.locator('option')).toHaveText(['Agent decides', 'Encourage delegation', 'No delegation']);
+    await delegation.selectOption({ label: 'Encourage delegation' });
+    await page.getByRole('button', { name: 'Save delegation budget', exact: true }).click();
+    await expect(page.getByText('Delegation budget saved.', { exact: true })).toBeVisible();
+    assert.equal((await fixture.app.readPreferences(fixture.project.id)).defaults.delegation, 'encouraged');
     const delegationFields = page.locator(".delegation-settings .field-grid .field");
     await expect(delegationFields).toHaveCount(4);
     const fieldRects = await delegationFields.evaluateAll(fields => fields.map(field => {

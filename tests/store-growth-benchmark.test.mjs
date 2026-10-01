@@ -19,7 +19,8 @@ test('growth benchmark measures actual store paths without leaking synthetic rec
   for (const workload of result.workloads) {
     assert.equal(workload.samples.length, 7);
     const byOperation = Object.fromEntries(workload.operations.map(row => [row.operation, row]));
-    assert.equal(byOperation['changed observation'].replacements, 4, 'each changed observation replaces requests and usage');
+    assert.equal(byOperation['changed observation'].replacements, 0, 'changed observations update SQLite rows without replacing JSON ledgers');
+    assert.ok(workload.databaseBytes > 0);
     assert.equal(byOperation['identical observation'].replacements, 0, 'repeated observations must not rewrite either document');
     assert.equal(byOperation['cold scoped read'].replacements, 0);
     assert.equal(byOperation['warm scoped read'].replacements, 0);

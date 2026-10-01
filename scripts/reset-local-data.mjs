@@ -1,5 +1,6 @@
+import { readStateText, readState } from '../backend/tools/runtime/state-database.mjs';
 // Reset only Freelancer's local SQLite data. Native OpenCode conversations and
-// the application settings JSON live elsewhere and are never opened here.
+// the runtime settings database live elsewhere and are never opened here.
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, lstat, readFile, readdir, rename, rmdir, unlink } from "node:fs/promises";
@@ -22,7 +23,7 @@ await mkdir(dataRoot, { recursive: true });
 if (!(await lstat(dataRoot)).isDirectory() || (await lstat(dataRoot)).isSymbolicLink())
   throw Error("The local data root must be a real directory.");
 
-const originalSettings = await readFile(settingsFile);
+const originalSettings = await readStateText(settingsFile);
 const settings = JSON.parse(originalSettings.toString("utf8"));
 if (!Array.isArray(settings.projects)) throw Error("Application settings are unreadable; local data was not changed.");
 
@@ -34,7 +35,7 @@ const moved = [];
 let installed = false;
 let validated = false;
 try {
-  if (existsSync(path.join(stateRoot, "launch.json")))
+  if (readState(path.join(stateRoot, "launch.json")))
     throw Error("Freelancer still has a launch record. Stop its server cleanly before resetting local data.");
   await mkdir(working);
   await mkdir(old);
@@ -79,7 +80,7 @@ try {
   } finally {
     replacement.close();
   }
-  if (digest(await readFile(settingsFile)) !== digest(originalSettings))
+  if (digest(await readStateText(settingsFile)) !== digest(originalSettings))
     throw Error("Application settings changed during the reset. Old local data remains available for recovery.");
   validated = true;
 

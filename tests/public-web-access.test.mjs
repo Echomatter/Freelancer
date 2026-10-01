@@ -1,7 +1,8 @@
+import { readStateText as readFile } from '../backend/tools/runtime/state-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { startServer } from '../server/http.mjs';
@@ -22,6 +23,7 @@ const call = (url, route, body, method = body ? 'POST' : 'GET', extra = {}) => f
 const callWithHost = (url, route, body, method, extra, host) => new Promise((resolve, reject) => {
   const endpoint = new URL(url), chunks = [];
   const request = http.request({
+    agent: false,
     hostname: endpoint.hostname, port: endpoint.port, path: `/api/${route}`, method,
     headers: { ...headers, ...extra, host },
   }, response => {

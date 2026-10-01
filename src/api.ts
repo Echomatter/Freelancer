@@ -8,8 +8,19 @@ export async function api(
 ) {
   // A stalled read must release its caller's loading/single-flight guard.
   // Mutations retain their existing uncertain-delivery semantics.
-  const readTimeout = method === 'GET' ? AbortSignal.timeout(30_000) : undefined;
-  const requestSignal = readTimeout ? signal ? AbortSignal.any([signal, readTimeout]) : readTimeout : signal;
+  // Mobile browsers may support AbortController without the newer static
+  // AbortSignal helpers. Compose cancellation here so workspace reads still run.
+  const readController = method === 'GET' ? new AbortController() : undefined;
+  const forwardAbort = () => readController?.abort(signal?.reason);
+  if (readController && signal) {
+    if (signal.aborted) forwardAbort();
+    else signal.addEventListener('abort', forwardAbort, { once: true });
+  }
+  let timedOut = false;
+  const timeout = readController && !readController.signal.aborted ? setTimeout(() => {
+    timedOut = true;
+    readController.abort();
+  }, 30_000) : undefined;
   try {
     const response = await fetch("/api/" + route, {
       method,
@@ -18,7 +29,7 @@ export async function api(
         "X-Freelancer-Client": "webpage",
       },
       body: body === undefined ? undefined : JSON.stringify(body),
-      signal: requestSignal,
+      signal: readController?.signal ?? signal,
     });
     const value = await response.json();
     if (!response.ok)
@@ -28,9 +39,12 @@ export async function api(
       });
     return value;
   } catch (error) {
-    if (readTimeout?.aborted && !signal?.aborted)
+    if (timedOut && !signal?.aborted)
       throw Error('Loading took too long. Try Refresh; running work has not been stopped.');
     throw error;
+  } finally {
+    clearTimeout(timeout);
+    if (readController) signal?.removeEventListener('abort', forwardAbort);
   }
 }
 export const query = (project?: string, session?: string) =>

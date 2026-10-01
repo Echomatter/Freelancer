@@ -1,5 +1,6 @@
 import { checkedCatalog } from '../../backend/tools/runtime/agent-catalog.mjs';
 import { applyContextSettings } from '../../backend/tools/runtime/context-settings.mjs';
+import { loadPreferences, savePreferences } from '../../backend/tools/runtime/preferences.mjs';
 import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
@@ -12,7 +13,7 @@ import { startServer } from "../../server/http.mjs";
 import { createActivityReader } from "../../server/activity.mjs";
 import { defaults } from "../../shared/strategy.mjs";
 
-export async function localDataFixture({ gitOptions = {} } = {}) {
+export async function localDataFixture({ gitOptions = {}, timers = true, persistPreferences = false } = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "freelancer-history-")));
   const directory = path.join(root, "project");
   await mkdir(directory);
@@ -82,6 +83,7 @@ export async function localDataFixture({ gitOptions = {} } = {}) {
                     toolcall: true,
                     variants: { low: {}, high: {} },
                   },
+                  ...state.extraModels,
               },
             },
           ],
@@ -163,6 +165,7 @@ export async function localDataFixture({ gitOptions = {} } = {}) {
           );
         if (action === "message")
           return structuredClone(state.messages[session.id] ?? []);
+        if (action?.startsWith('message/')) return structuredClone((state.messages[session.id] ?? []).find(m => m.info.id === action.slice(8)));
         if (action === "todo") return structuredClone(state.todos[session.id] ?? []);
         if (action === "diff") return [];
         if (action === "prompt_async") {
@@ -231,12 +234,13 @@ export async function localDataFixture({ gitOptions = {} } = {}) {
     dataRoot: path.join(root, "user-data"),
     gitOptions,
     backendFactory: () => ({
-      snapshot: async () => snapshot,
-      save: async () => {},
+      snapshot: async session => persistPreferences ? { ...snapshot, preferences: await loadPreferences(root, directory, session) } : snapshot,
+      save: async input => persistPreferences ? savePreferences(root, directory, input) : undefined,
       refreshQuota: async () => {},
     }),
   });
   const runtime = await startServer({
+    timers,
     remoteAccess: await createRemoteAccess({ file: path.join(root, "remote-access.json") }),
     application: app,
     readActivity: createActivityReader({ project: app.project, host }),

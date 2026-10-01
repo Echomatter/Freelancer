@@ -1,0 +1,68 @@
+.main > .topbar { position: relative; z-index: 15; gap: 6px; height: auto; min-height: 46px; padding: 4px 8px; flex-shrink: 0; flex-wrap: nowrap; }
+#chat-toolbar-host { flex: 1; min-width: 0; }
+.chat-toolbar-tabs { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); gap: 4px; container-type: inline-size; }
+.chat-toolbar-tabs button { display: flex; align-items: center; justify-content: center; gap: 8px; min-width: 0; padding: 9px 8px; color: var(--text); background: transparent; border: 1px solid var(--line); border-radius: 7px; cursor: pointer; }
+.chat-toolbar-tabs button:hover { background: var(--hover); }
+.chat-toolbar-tabs button.selected { color: var(--accent-contrast); background: var(--accent); border-color: var(--accent); box-shadow: inset 0 -2px 0 color-mix(in srgb, var(--accent-contrast) 20%, transparent); }
+.chat-toolbar-tabs button.selected small { color: inherit; opacity: 1; }
+.chat-toolbar-tabs small { opacity: .65; font-variant-numeric: tabular-nums; }
+.chat-tool-overlay { position: absolute; top: 100%; left: 8px; right: 42px; max-height: min(65dvh, 620px); display: flex; flex-direction: column; background: var(--paper); color: var(--text); border: 1px solid var(--line); border-radius: 0 0 10px 10px; box-shadow: 0 12px 28px var(--shadow); overflow: hidden; z-index: 30; }
+.chat-tool-overlay > header { display: flex; align-items: center; justify-content: space-between; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+.chat-tool-content { overflow: auto; overscroll-behavior: contain; padding: 12px; min-height: 70px; }
+.chat-tool-content .goal-header { margin: 0; flex-wrap: wrap; }
+.chat-tool-content .request-working-body { max-height: none; }
+.tool-working { animation: tool-pulse 1.2s ease-in-out infinite; }
+@keyframes tool-pulse { 50% { opacity: .35; transform: rotate(-12deg); } }
+@media (prefers-reduced-motion: reduce) { .tool-working { animation: none; } }
+@media (max-width: 800px) {
+  .main > .topbar { padding: 3px 4px; gap: 4px; }
+  .main > .topbar .topbar-right { width: auto; gap: 2px; flex: 0 0 auto; }
+  .main > .topbar > .navigation-layout-toggle, .main > .topbar .topbar-right > .button, .main > .topbar .topbar-right > .icon-button { width: 28px; min-width: 28px; flex-basis: 28px; height: 34px; min-height: 34px; padding: 0; }
+  .main > .topbar .topbar-right > .connection-status { display: inline-flex; width: 12px; padding: 0; justify-content: center; background: transparent; border: 0; }
+  .connection-status-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .chat-toolbar-tabs button { gap: 4px; font-size: 11px; padding: 8px 3px; }
+  .chat-toolbar-tabs svg { width: 14px; }
+  .chat-tool-overlay { left: 4px; right: 34px; max-height: 60dvh; }
+}
+
+@media (max-width: 720px) { .main > .topbar .topbar-right > .badge { display: inline-flex; } }
+.chat-tool-content p, .goal-handoff p { overflow-wrap: anywhere; }
+.turn-activity-marks { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; margin: 8px 0 12px; color: var(--muted); }
+.turn-activity-marks > small { font-size: 10px; }
+.chat-transcript .turn-activity-marks .activity-mark { display: inline-flex; align-items: center; gap: 4px; width: auto; min-height: 0; margin: 0; padding: 4px 6px; border: 1px solid var(--line); border-radius: 6px; color: var(--muted); background: transparent; font-size: 10px; cursor: pointer; }
+.chat-transcript .turn-activity-marks .activity-mark:hover, .chat-transcript .turn-activity-marks .activity-mark:focus-visible { color: var(--accent); border-color: var(--accent); background: var(--tint); }
+.activity-mark svg { flex-shrink: 0; }
+.chat-turn-context { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; font-size: 12px; }
+@container (max-width: 460px) {
+  .chat-toolbar-tabs button { display: grid; grid-template-columns: 14px minmax(0, max-content); grid-template-areas: "icon stat" "label label"; gap: 2px 3px; padding: 5px 2px; font-size: 10px; }
+  .chat-toolbar-tabs svg { grid-area: icon; width: 12px; height: 12px; }
+  .chat-toolbar-tabs span { grid-area: label; text-align: center; }
+  .chat-toolbar-tabs small { grid-area: stat; min-width: 0; overflow: hidden; text-overflow: ellipsis; font-size: 9px; }
+}
+@container (max-width: 300px) {
+  .chat-toolbar-tabs button { grid-template-columns: minmax(0, 1fr); grid-template-areas: "icon" "stat"; justify-items: center; gap: 1px; min-height: 34px; padding: 3px 1px; }
+  .chat-toolbar-tabs span { display: none; }
+  .chat-toolbar-tabs small { max-width: 100%; }
+}
+
+/* Cards summarize execution; the linked native chat owns handoffs and reports. */
+.agent-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.agent-turn-entry { min-width: 0; }
+.agent-turn-entry .agent-card { width: 100%; height: auto; }
+.agent-status-card { align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 16px; }
+.agent-status-card .agent-card-icon { width: 40px; height: 40px; flex-basis: 40px; border-radius: 10px; background: var(--tint); color: var(--accent); }
+.agent-status-card:disabled { opacity: 1; cursor: default; }
+.agent-status-label { color: var(--accent); font-size: 12px; }
+.agent-status-label.failed { color: var(--warning); }
+.agent-chat-hint { display: block; margin: 6px 4px; color: var(--muted); font-size: 11px; }
+.agent-status-grid[data-historical=true] .spin { animation: none; }
+.model-work-overview { padding: 14px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
+.model-work-overview h3, .file-changes h3 { margin: 0 0 8px; }
+.model-work-overview .usage-bar { height: 10px; }
+.model-work-overview .model-work > span { min-width: 0; overflow-wrap: anywhere; }
+.model-work-overview .badge { flex-shrink: 0; }
+.file-changes { min-width: 0; margin: 12px 0 20px; padding: 16px; border: 1px solid var(--line); border-radius: 12px; background: var(--paper); }
+.file-changes summary { display: flex; gap: 8px; justify-content: space-between; flex-wrap: wrap; cursor: pointer; padding: 10px 0; }
+.file-changes summary span { overflow-wrap: anywhere; min-width: 0; }
+.file-changes summary small { color: var(--muted); }
+.file-changes .diff { max-height: 420px; overflow: auto; }

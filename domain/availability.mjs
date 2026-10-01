@@ -161,6 +161,10 @@ export function availabilityView(data, now = Date.now()) {
       blocked: blockActive || knownBlock,
       asOf: observed === null ? null : new Date(observed).toISOString(),
       stale: kind === "finite" && (!fresh || expired || blockExpired),
+      needsReconnect: ['auth-failed', 'no-credential'].includes(source?.telemetryStatus),
+      issue: ['auth-failed', 'no-credential'].includes(source?.telemetryStatus) ? 'Reconnect to refresh usage' :
+        source?.telemetryStatus === 'unreachable' ? 'Usage service unreachable' :
+        source?.telemetryStatus === 'unparseable' ? 'Usage response unavailable' : '',
       refreshFailed:
         !!source?.telemetryStatus &&
         source.telemetryStatus !== "ok" &&

@@ -20,5 +20,16 @@ export default defineConfig({
   server: { host: '127.0.0.1', watch: { ignored: ['**/backend/.state/**'] }, proxy: { '/api': 'http://127.0.0.1:47840' } },
   // The source-run server can still have open tabs using the previous build.
   // Keep hashed chunks available for their later lazy imports.
-  build: { target: 'es2022', emptyOutDir: false },
+  build: {
+    target: 'es2022', emptyOutDir: false,
+    rollupOptions: { output: {
+      // Cache framework/rendering dependencies independently of application
+      // changes and keep the main application chunk below Vite's size warning.
+      manualChunks(id) {
+        if (!id.includes('/node_modules/')) return;
+        if (/\/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
+        return 'vendor';
+      },
+    } },
+  },
 });

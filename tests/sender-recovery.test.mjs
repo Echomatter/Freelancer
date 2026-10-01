@@ -1,6 +1,7 @@
+import { readStateText as readFile } from '../backend/tools/runtime/state-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createSender } from '../server/sender.mjs';

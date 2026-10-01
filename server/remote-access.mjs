@@ -1,10 +1,9 @@
+import { createHash,randomBytes,timingSafeEqual } from 'node:crypto';
 import http from 'node:http';
-import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
-import path from 'node:path';
 import QRCode from 'qrcode';
+import { readStateText as readFile,writeState } from '../backend/tools/runtime/state-database.mjs';
 import { localLanAddresses } from './lan.mjs';
-import { createTailscaleFunnel, TAILSCALE_FUNNEL_PORTS } from './tailscale-funnel.mjs';
+import { createTailscaleFunnel,TAILSCALE_FUNNEL_PORTS } from './tailscale-funnel.mjs';
 
 export const WEB_ACCESS_FALLBACK_PORT = 58635;
 const secret = () => randomBytes(32).toString('base64url');
@@ -31,10 +30,7 @@ export async function createRemoteAccess({ file, addresses = localLanAddresses, 
   const serial = fn => { const work = queue.catch(() => {}).then(fn); queue = work; return work; };
   async function save(next) {
     if (file) {
-      await mkdir(path.dirname(file), { recursive: true });
-      const temp = `${file}.${randomBytes(8).toString('hex')}.tmp`;
-      await writeFile(temp, JSON.stringify(next), { mode: 0o600 });
-      await rename(temp, file);
+      writeState(file, next);
     }
     state = next;
   }

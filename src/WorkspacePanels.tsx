@@ -1,219 +1,42 @@
-import { ProviderText } from "./ProviderColors";
+import { ArrowLeft, ArrowUpRight, File, Folder, Search } from "lucide-react";
 import { useEffect, useState } from "react";
-import {
-  ArrowLeft,
-  ArrowUpRight,
-  File,
-  Folder,
-  Search,
-  Check,
-  Clock,
-  Activity,
-} from "lucide-react";
 import { api, query } from "./api";
-import { Button, PageCloseButton, PageHeading, Panel, Field, Badge, Empty } from "./echoflex/Controls";
-import { visibleActivity, activityLabel } from "../domain/activity.mjs";
-import { ChatContributions } from "./Contributions";
-import { resolveTodoLayout } from "../domain/appearance.mjs";
-import { hasUnfinishedTodos, todoStatusLabel } from "../domain/todos.mjs";
+import { FileChanges } from "./FileChanges";
+import { Diff } from "./FilePreview";
+import {
+  Button,
+  PageCloseButton,
+  PageHeading,
+  Panel,
+} from "./echoflex/Controls";
 
-export function Diff({ text }: { text: string }) {
-  return (
-    <pre className="diff">
-      {text.split("\n").map((line, i) => (
-        <span
-          key={i}
-          className={
-            line.startsWith("+")
-              ? "added"
-              : line.startsWith("-")
-                ? "removed"
-                : line.startsWith("@@")
-                  ? "hunk"
-                  : ""
-          }
-        >
-          {line}
-          {"\n"}
-        </span>
-      ))}
-    </pre>
-  );
-}
-
-function ActivityCard({ activity, onChild }: { activity: any; onChild: (id: string) => void }) {
-  const completed = activity.phase === "completed";
-  const routeUnavailable = ["no_qualified_route", "delegation_unavailable"].includes(activity.phase);
-  const model = activity.observed ?? activity.selected;
-  const status = activityLabel(activity.phase);
-  const reasons = activity.raw?.routing_diagnostics?.reasons;
-  const reasonText = Array.isArray(reasons) && reasons.length ? `Routing reasons: ${reasons.slice(0, 3).join(", ")}.` : "No model qualified under the current delegation settings.";
-  const detail = routeUnavailable ? `No worker started. ${reasonText} The parent continues directly when permitted.` : "";
-  const label = `${activity.agentName ?? activity.agentID ?? activity.role ?? "Agent"}${model ? ` · ${model}` : ""} · ${status} · ${activity.completedTools ?? 0} actions${detail ? ` · ${detail}` : ""}`;
-  return (
-    <Panel className="activity-detail-card">
-      <button
-        type="button"
-        className="activity-detail-toggle activity-summary-button"
-        aria-label={activity.child ? `${label} · Open conversation` : label}
-        title={label}
-        disabled={!activity.child}
-        onClick={() => activity.child && onChild(activity.child)}
-      >
-        <span className="activity-detail-title activity-detail-identity">
-          <strong>{activity.agentName ?? activity.agentID ?? activity.role ?? "Unknown agent"}</strong>
-          {activity.child && <ArrowUpRight className="activity-open-indicator" size={14} aria-hidden="true" />}
-        </span>
-        <span className="activity-detail-status">
-          <Badge tone={completed ? "success" : routeUnavailable ? "warning" : "neutral"}>
-            {activityLabel(activity.phase)}
-          </Badge>
-          <small className="activity-action-count">{activity.completedTools ?? 0} actions</small>
-        </span>
-        {model && <small className="activity-detail-model"><ProviderText provider={model} mark>{model}</ProviderText></small>}
-      </button>
-      {routeUnavailable && <small className="activity-route-note">No worker started. {reasonText} The parent continues directly when permitted.</small>}
-    </Panel>
-  );
-}
-
-function CurrentFile({ project, file }: { project?: string; file: any }) {
-  const [preview, setPreview] = useState<any>(null);
-  const [error, setError] = useState("");
-  const [loading, setLoading] = useState(false);
-  async function load() {
-    if (!project || loading) return;
-    setLoading(true); setError("");
-    try {
-      setPreview(await api("files?" + query(project) + "&content=true&path=" + encodeURIComponent(file.file)));
-    } catch (e) { setError((e as Error).message); }
-    finally { setLoading(false); }
-  }
-  if (file.status === "Deleted") return <p className="changes-scope">Deleted from the working tree.</p>;
-  return <div>
-    <button className="work-changes-link" type="button" disabled={!project || loading} onClick={load}>{loading ? "Loading…" : preview ? "Refresh preview" : "Preview current file"}</button>
-    {error && <p className="notice error" role="alert">{error}</p>}
-    {preview && (preview.type === "binary" || preview.encoding === "base64"
-      ? <p className="changes-scope">This file does not have a text preview.</p>
-      : typeof preview.diff === "string" && preview.diff
-        ? <Diff text={preview.diff} />
-        : <><p className="changes-scope">Current file contents</p><pre className="file-preview">{preview.content}</pre></>)}
-  </div>;
-}
-
-export function Details({
-  chat,
+export function Files({
   project,
-  contributions,
-  appearance,
-  busy = false,
-  requestTab,
-  onChild,
+  run,
+  onClose,
+  onSearch,
+  initialPath,
+  initialFolder = "",
+  onLocationChange,
+  changes,
+  chatTitle,
+  changesUnavailable,
+  messages,
+  directory,
 }: {
-  chat: any;
-  project?: string;
-  contributions?: any;
-  appearance?: any;
-  busy?: boolean;
-  requestTab?: string | { tab: string; n: number };
-  onChild: (id: string) => void;
+  project: string;
+  run: any;
+  onClose: () => void;
+  onSearch?: () => void;
+  initialPath?: string;
+  initialFolder?: string;
+  onLocationChange?: (path: string, file?: string) => void;
+  changes?: any[];
+  chatTitle?: string;
+  changesUnavailable?: boolean;
+  messages?: any[];
+  directory?: string;
 }) {
-  const [selectedTab, setTab] = useState("activity");
-  useEffect(() => {
-    const tab = typeof requestTab === "string" ? requestTab : requestTab?.tab;
-    if (tab) setTab(tab);
-  }, [typeof requestTab === "string" ? requestTab : `${requestTab?.tab}:${requestTab?.n}`]);
-  const docked = resolveTodoLayout(appearance) === "docked";
-  const tab = docked && selectedTab === "tasks" ? "activity" : selectedTab;
-  const activityTime = (row: any) =>
-    Date.parse(row.raw?.created_at) || Date.parse(row.updatedAt) || 0;
-  const activity = [...visibleActivity(chat.activity ?? [])].sort(
-    (a, b) => activityTime(b) - activityTime(a),
-  );
-  return (
-    <aside className="work-details" id="workspace-details">
-      <h2 className="details-chat-title">{chat.title || "New chat"}</h2>
-      <ChatContributions contributions={contributions} />
-      <nav className="tab-row" role="tablist" aria-label="Details sections">
-        {["activity", "changes", ...(docked ? [] : ["tasks"])].map((id) => (
-          <button
-            key={id}
-            type="button"
-            role="tab"
-            aria-selected={tab === id}
-            aria-controls={`details-${id}`}
-            className={tab === id ? "selected" : ""}
-            onClick={() => setTab(id)}
-          >
-            {id}{id === "changes" && chat.diff?.length > 0 ? ` · ${new Set(chat.diff.map(file => file.file ?? file.path)).size}` : ""}
-          </button>
-        ))}
-      </nav>
-      {tab === "activity" && (
-        <section id="details-activity" role="tabpanel" aria-label="Activity" tabIndex={0}>
-          <div className="detail-summary">
-            <span>Context</span>
-            <strong>
-              {chat.summary?.contextPercent == null
-                ? "—"
-                : `${chat.summary.contextPercent}%`}
-            </strong>
-          </div>
-          {activity.map((a) => (
-            <ActivityCard key={a.id} activity={a} onChild={onChild} />
-          ))}
-          {!chat.activity?.length && (
-            <Empty
-              icon={Activity}
-              title="All in this chat"
-              children="Agents will appear here when they join the work."
-            />
-          )}
-        </section>
-      )}
-      {tab === "tasks" && (
-        <section id="details-tasks" role="tabpanel" aria-label="Tasks" tabIndex={0}>
-          {!busy && hasUnfinishedTodos(chat.todos ?? []) && <p role="status">Response ended with unfinished tasks. Send a follow-up to continue.</p>}
-          {(chat.todos ?? []).map((todo, i) => (
-            <div className="todo" key={todo.id ?? i}>
-              {todo.status === "completed" ? (
-                <Check size={16} />
-              ) : (
-                <Clock size={16} />
-              )}
-              <span>{todo.content}</span>
-              <small>{todoStatusLabel(todo, busy)}</small>
-            </div>
-          ))}
-          {!chat.todos?.length && <Empty icon={Check} title="No tasks yet" />}
-        </section>
-      )}
-      {tab === "changes" && (
-        <section id="details-changes" role="tabpanel" aria-label="Changes" tabIndex={0}>
-          {chat.changesUnavailable && <p className="notice">Current project changes could not be loaded. Refresh to retry.</p>}
-          {["session", "workspace"].map(scope => {
-            const files = (chat.diff ?? []).filter(file => (file.scope ?? "session") === scope);
-            if (!files.length) return null;
-            return <section key={scope} aria-label={scope === "session" ? "Chat changes" : "Project changes"}>
-              <p className="changes-scope">{scope === "session" ? "Recorded in this chat" : "Current project changes · includes work outside this chat"}</p>
-              {files.map((file, i) => <details className="file-diff" key={file.file ?? file.path ?? i}>
-                <summary><File size={15} /><span>{file.file ?? file.path}</span>
-                  <small>{Number.isFinite(file.additions) ? `+${file.additions} −${file.deletions ?? 0}` : file.status ?? "Changed"}</small>
-                </summary>
-                {file.patch || file.before !== undefined || file.after !== undefined
-                  ? <Diff text={file.patch ?? `--- Before\n${file.before ?? ""}\n+++ After\n${file.after ?? ""}`} />
-                  : <CurrentFile key={`${project}/${file.file}`} project={project} file={file} />}
-              </details>)}
-            </section>;
-          })}
-          {!chat.diff?.length && !chat.changesUnavailable && <Empty icon={File} title="No changes yet" />}
-        </section>
-      )}
-    </aside>
-  );
-}
-
-export function Files({ project, run, onClose, onSearch, initialPath, initialFolder = "", onLocationChange }: { project: string; run: any; onClose: () => void; onSearch?: () => void; initialPath?: string; initialFolder?: string; onLocationChange?: (path: string) => void }) {
   const folder = initialFolder;
   const [loading, setLoading] = useState(true),
     [selectedPath, setSelectedPath] = useState(initialPath ?? ""),
@@ -235,8 +58,14 @@ export function Files({ project, run, onClose, onSearch, initialPath, initialFol
     void (async () => {
       try {
         const value = await api(
-          "files?" + query(project) + (selectedPath ? "&content=true" : "") + "&path=" + encodeURIComponent(selectedPath || folder),
-          undefined, "GET", controller.signal,
+          "files?" +
+            query(project) +
+            (selectedPath ? "&content=true" : "") +
+            "&path=" +
+            encodeURIComponent(selectedPath || folder),
+          undefined,
+          "GET",
+          controller.signal,
         );
         if (!controller.signal.aborted) {
           if (selectedPath) setFile({ ...value, path: selectedPath });
@@ -257,28 +86,50 @@ export function Files({ project, run, onClose, onSearch, initialPath, initialFol
       return;
     }
     setSelectedPath(node.path);
-    onLocationChange?.(parentDirectory(node.path));
+    onLocationChange?.(parentDirectory(node.path), node.path);
   }
   return (
     <div className="page files-page">
-      <PageHeading title="Files" icon={Folder} help="project-files" actions={<>
-          {(folder || selectedPath) && (
-            <Button
-              onClick={() =>
-                selectedPath
-                  ? setSelectedPath("")
-                  : onLocationChange?.(parentDirectory(folder))
-              }
-            >
-              <ArrowLeft size={15} />
-              Back
-            </Button>
-          )}
-          {onSearch && <Button variant="quiet" onClick={onSearch}><Search size={15} />Search project content</Button>}
-          <PageCloseButton onClick={onClose} />
-        </>} />
-      <p className="files-location" aria-label="Current location">{selectedPath || folder || "Your project"}</p>
-      {error && <div className="notice error" role="alert">{error} <Button onClick={() => setRevision(value => value + 1)}>Retry files</Button></div>}
+      <PageHeading
+        title="Files"
+        icon={Folder}
+        help="project-files"
+        actions={
+          <>
+            {(folder || selectedPath) && (
+              <Button
+                onClick={() =>
+                  selectedPath
+                    ? (setSelectedPath(""), onLocationChange?.(folder))
+                    : onLocationChange?.(parentDirectory(folder))
+                }
+              >
+                <ArrowLeft size={15} />
+                Back
+              </Button>
+            )}
+            {onSearch && (
+              <Button variant="quiet" onClick={onSearch}>
+                <Search size={15} />
+                Search project content
+              </Button>
+            )}
+            <PageCloseButton onClick={onClose} />
+          </>
+        }
+      />
+      {!selectedPath && !folder && <FileChanges project={project} changes={changes} messages={messages} directory={directory} chatTitle={chatTitle} unavailable={changesUnavailable} />}
+      <p className="files-location" aria-label="Current location">
+        {selectedPath || folder || "Your project"}
+      </p>
+      {error && (
+        <div className="notice error" role="alert">
+          {error}{" "}
+          <Button onClick={() => setRevision((value) => value + 1)}>
+            Retry files
+          </Button>
+        </div>
+      )}
       {file ? (
         <Panel>
           {file.type === "binary" || file.encoding === "base64" ? (
@@ -311,7 +162,9 @@ export function Files({ project, run, onClose, onSearch, initialPath, initialFol
               </button>
             ))
           )}
-          {!loading && !error && !selectedPath && !nodes.length && <p>This folder is empty.</p>}
+          {!loading && !error && !selectedPath && !nodes.length && (
+            <p>This folder is empty.</p>
+          )}
         </Panel>
       )}
     </div>

@@ -211,7 +211,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     report("send acknowledgment restores the composer for a new draft");
 
     await page
-      .getByRole("button", { name: "Choose Delegate, Queue, or Interrupt", exact: true })
+      .getByRole("button", { name: "Choose Delegate, Queue, or Steer", exact: true })
       .click();
     const sender = page.getByRole("dialog").filter({ hasText: "Queue" });
     // The exact dialog choices come from the existing Queue/Clarify component.

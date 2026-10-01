@@ -665,7 +665,7 @@ export function createHistoryService({
           path: app.store.directory,
           bytes: null,
           owner: "Freelancer",
-          note: "Existing JSON settings, requests, usage and sender records remain in place. No bulk migration.",
+          note: "Runtime receipts and usage use a separate SQLite ledger; settings and sender JSON remain in place. Archive does not reset them.",
         },
         {
           id: "native",

@@ -89,7 +89,7 @@ export function ChatNavigation({ sessions, selected, disabled, creating, expande
       <div className="nav-chat-list">
         {sessions.map((session) => <div key={session.id} className={`nav-chat-row ${session.id === selected ? "selected" : ""}`}>
           <button type="button" className="nav-chat-select" disabled={disabled} title={session.title || "New chat"} aria-current={session.id === selected ? "page" : undefined} onClick={() => { setMenu(""); onSelect(session); }}>
-            {!session.imported && <SessionActivity activity={session.activity} />}
+            {!session.imported && <SessionActivity activity={session.activity} goal={session.goal} />}
             <span>{session.imported ? "Imported · " : ""}{session.title || "New chat"}</span>
             {session.organization?.pinnedAt && <Pin className="nav-chat-pinned" size={13} aria-label="Pinned" />}
           </button>
@@ -97,11 +97,11 @@ export function ChatNavigation({ sessions, selected, disabled, creating, expande
            onClick={() => { setRenameTitle(session.title ?? ""); setMenu((value) => value === session.id ? "" : session.id); }}><Settings size={15} aria-hidden="true" /></button>
           {menu === session.id && <div className="nav-chat-menu" role="group" aria-label={`Manage ${session.title || "New chat"}`}>
             {!session.imported && <form className="nav-chat-rename" onSubmit={(event) => { event.preventDefault(); closeMenu(); onRename(session, renameTitle); }}>
-              <label><span>Chat name</span><input aria-label="Chat name" value={renameTitle} maxLength={160} onChange={(event) => setRenameTitle(event.target.value)} /></label>
+              <label><span>Chat name</span><input aria-label="Chat name" value={renameTitle} maxLength={session.goal ? 120 : 160} onChange={(event) => setRenameTitle(event.target.value)} /></label>
               <button type="submit" disabled={disabled || !renameTitle.trim() || renameTitle.trim() === session.title}><Check size={14} />Rename</button>
             </form>}
-            <button type="button" disabled={disabled} onClick={() => { closeMenu(); onContinue(session); }}><WandSparkles size={14} />Continue in new chat</button>
-            <button type="button" disabled={disabled || !!session.organization?.archived} onClick={() => { closeMenu(); onArchive(session); }}><Archive size={14} />Archive</button>
+            {!session.goal && <button type="button" disabled={disabled} onClick={() => { closeMenu(); onContinue(session); }}><WandSparkles size={14} />Continue in new chat</button>}
+            {!session.goal && <button type="button" disabled={disabled || !!session.organization?.archived} onClick={() => { closeMenu(); onArchive(session); }}><Archive size={14} />Archive</button>}
             <button type="button" disabled={disabled} aria-pressed={!!session.organization?.pinnedAt} onClick={() => { closeMenu(); onPin(session); }}><Pin size={14} />{session.organization?.pinnedAt ? "Unpin" : "Pin"}</button>
             <button type="button" disabled={disabled} onClick={() => { closeMenu(); onExport(session); }}><Download size={14} />Export</button>
           </div>}

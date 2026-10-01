@@ -12,6 +12,7 @@ param(
     [string]$UserTaskId = '', [string]$ReviewTaskId = '', [switch]$Operational
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'state-database.ps1')
 if (-not $Operational -and -not $MeasureStart -and -not $MarkReviewDefect -and
     (-not $PSBoundParameters.ContainsKey('Success') -or -not $PSBoundParameters.ContainsKey('TestsPassed'))) {
     throw 'Pass explicit -Success and -TestsPassed values. A missing result must not become a recorded failure.'
@@ -29,15 +30,8 @@ foreach($t in @($TaskType)) {
 if (-not $TaskTypeNorm.Count -and -not $MarkReviewDefect) { throw '-TaskType is required.' }
 if (-not $ToolkitRoot) { $ToolkitRoot=Split-Path -Parent $PSScriptRoot }
 $HistoryPath=Join-Path $ToolkitRoot '.state\task-history.json'
-$LegacyHistoryPath=Join-Path $ToolkitRoot 'routing\task-history.json'
 New-Item -ItemType Directory -Path (Split-Path -Parent $HistoryPath) -Force|Out-Null
-function Write-Utf8NoBom([string]$Path,[string]$Text) {
-    $tmp=$Path+'.'+[guid]::NewGuid().ToString('N')+'.tmp'
-    try {
-        [IO.File]::WriteAllText($tmp,$Text,(New-Object Text.UTF8Encoding($false)))
-        if(Test-Path -LiteralPath $Path){[IO.File]::Replace($tmp,$Path,[NullString]::Value)}else{[IO.File]::Move($tmp,$Path)}
-    } finally {if(Test-Path -LiteralPath $tmp){Remove-Item -LiteralPath $tmp -Force}}
-}
+function Write-Utf8NoBom([string]$Path, [string]$Text) { Write-FreelancerState $Path $Text }
 function Parse-TokenNumber([string]$s) {
     $t=("$s".Trim() -replace ',','')
     if($t -match '^([\d\.]+)\s*([KMB])?$') {
@@ -91,11 +85,7 @@ try{$historyLock=New-Object System.IO.FileStream(($HistoryPath+'.lock'),[IO.File
 catch{throw 'Outcome history is busy; retry this same TaskId without duplicating work.'}
 try {
     $historyData=$null
-    $historyReadPath=if(Test-Path -LiteralPath $HistoryPath){$HistoryPath}else{$LegacyHistoryPath}
-    if(Test-Path -LiteralPath $historyReadPath){
-        try{$historyData=Get-Content -LiteralPath $historyReadPath -Raw -Encoding UTF8|ConvertFrom-Json}
-        catch{throw "History is malformed; preserved unchanged: $HistoryPath"}
-    }
+    $historyData = Read-FreelancerState $HistoryPath
     if(-not $historyData){$historyData=[pscustomobject]@{generated=$true;generated_at='';entries=@()}}
     if(-not $historyData.PSObject.Properties['generated_at']){$historyData|Add-Member generated_at ''}
     if(-not $historyData.PSObject.Properties['entries']){$historyData|Add-Member entries @()}
@@ -130,8 +120,8 @@ try {
         if(-not $cQuality -and ($null-ne$cIn-or$null-ne$cOut-or$null-ne$cCost)){$cQuality='estimated'}
         if($MeasureFinalize){
             $mp=Get-MeasurePath $TaskId
-            if(-not(Test-Path -LiteralPath $mp)){throw 'No measurement baseline; run MeasureStart before the task.'}
-            $base=Get-Content -LiteralPath $mp -Raw -Encoding UTF8|ConvertFrom-Json
+            $base = Read-FreelancerState $mp
+            if(-not $base){throw 'No measurement baseline; run MeasureStart before the task.'}
             $after=Get-StatsSnapshot
             $after=$after|ConvertTo-Json -Depth 8|ConvertFrom-Json
             $b=$base.models.PSObject.Properties|Where-Object{$_.Name -eq $Model}|Select-Object -First 1
@@ -149,7 +139,7 @@ try {
                     $cQuality='unmeasurable';$cReason='counter-reset-or-delayed-reporting';$cIn=$null;$cOut=$null;$cCache=$null;$cCost=$null
                 }
             }
-            Remove-Item -LiteralPath $mp -Force
+            Remove-FreelancerState $mp
         }
         $entry=[ordered]@{task_id=$TaskId;timestamp=$now;repo=$Repo;task_type=$TaskTypeNorm;model=$Model;access=$Access;
             success=$Success;tests_passed=$TestsPassed;attempts=$Attempts;escalated=$Escalated;
@@ -161,8 +151,7 @@ try {
         }
         $receiptPath=$null
         if($TaskId -match '^[a-f0-9]{64}$'){$receiptPath=Join-Path $ToolkitRoot ('.state\delegation\'+$TaskId+'.json')}
-        if($receiptPath -and(Test-Path -LiteralPath $receiptPath)){
-            $receipt=Get-Content -LiteralPath $receiptPath -Raw -Encoding UTF8|ConvertFrom-Json
+        if($receiptPath -and ($receipt = Read-FreelancerState $receiptPath)){
             $attempt=@($receipt.attempts|Select-Object -Last 1)[0]
             $operationalReceipt = $Operational -and $receipt.status -in @('failed','stop_unverified') -and $attempt.status -eq 'failed'
             if($Operational -and (-not $operationalReceipt -or $Success -or $TestsPassed)){throw 'Operational recording requires a failed execution and cannot claim task success or passed tests.'}

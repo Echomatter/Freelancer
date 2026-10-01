@@ -39,6 +39,7 @@ test("one authored catalog generates named profiles without a second prompt or n
     assert.equal(config.agent[agent.id].mode, "all");
     assert.equal(config.agent[agent.id].prompt, "");
     assert.equal(config.agent[agent.id].model, undefined);
+    assert.equal(config.agent[agent.id].tools.question, true);
   }
   for (const name of retiredAgents)
     assert.equal(config.agent[name].disable, true, name);
@@ -67,6 +68,9 @@ test("generated profiles preserve whole-agent and global native permission decis
   assert.equal(c.agent.engineer.permission.bash, "ask");
   assert.equal(c.agent.designer.permission["*"], "deny");
   assert.equal(c.agent.designer.permission.todowrite, "ask");
+  assert.equal(c.agent.engineer.permission.question, "allow");
+  assert.equal(c.agent.designer.permission.question, "deny");
+  assert.equal(configureAgentProfiles({ permission: { question: "ask" } }, checkedCatalog()).agent.engineer.permission.question, "ask");
 });
 test("legacy restricted role preferences migrate conservatively without creating executable aliases", () => {
   const p = normalizePreferences({

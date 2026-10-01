@@ -5,11 +5,16 @@
 Matching controls frame the text box: **Message options** on the left and the
 send action on the right. The flat options panel contains attachments,
 agent, model and intelligence in one view. Escape closes it and returns focus.
-Tasks, attachments and delivery status use collapsible support cards; collapse
-never removes files or cancels work. New delivery errors reveal their details.
+Tasks, attachments and pending delivery status use collapsible support cards;
+collapse never removes files or cancels work. New delivery errors reveal their
+details. After a Queue, Delegate, or Steer request is observed in native chat,
+its composer card clears and the user-authored text remains in the transcript as
+a labeled, collapsible request card. Expand a pending delivery card to edit or
+cancel it. On narrow screens,
+the draft gets its own row above the message controls.
 See [composer design](composer-design.md) for interaction and layout decisions.
 
-The composer has one dynamic action: Send when idle with content, Stop when a response is running and the text box is empty, and a Delegate / Queue / Interrupt dialog when text is entered during a response. Stop uses a circular icon so it does not look like a checkbox. Opening or dismissing the dialog never aborts a response. Interrupt stops the native response and cancels waiting deliveries while preserving the draft. Shift+Enter and IME composition retain their normal editing behavior. Local attachments use native OpenCode file parts on a normal send. They stay in the browser until sent, are limited to four files (4 MB each, 6 MB total), and are not included in saved text drafts or Queue / Delegate. During a response, the action stays Stop if only files are attached; typed text opens the dialog and leaves those files in the composer for a later send.
+The composer has one dynamic action: Send when idle with content, Stop when a response is running and the text box is empty, and a Delegate / Queue / Steer dialog when text is entered during a response. Stop uses a circular icon so it does not look like a checkbox. Opening or dismissing the dialog never aborts a response. Steer sends a correction at the next supported model boundary without stopping native work or clearing Queue. Stop stays separately available, including while a draft is entered. Tools already executing may finish. Shift+Enter and IME composition retain their normal editing behavior. Local attachments use native OpenCode file parts on a normal send. They stay in the browser until sent, are limited to four files (4 MB each, 6 MB total), and are not included in saved text drafts or Queue / Delegate. During a response, the action stays Stop if only files are attached; typed text opens the dialog and leaves those files in the composer for a later send.
 
 The dialog captures the originating project, chat and draft. It offers a model override without changing global defaults. Cancelling preserves the draft. A successful submission clears only the exact captured draft, never text typed later or a draft in another chat.
 
@@ -17,7 +22,7 @@ A normal send immediately shows a local message preview, including attachments, 
 
 ## Queue
 
-Queue waits for the native parent turn to finish, including its running tools and pending questions/permissions. Requests fire in FIFO order, one parent turn at a time, even after navigating away. Each request snapshots its own parent model, effort, and agent choices. An override applies to that queued turn, not the running parent or saved defaults. Pending requests are visible and cancellable.
+Queue waits for the native parent turn to finish, including its running tools and pending questions/permissions. Requests fire in FIFO order, one parent turn at a time, even after navigating away. Each request snapshots its own parent model, effort, and agent choices. An override applies to that queued turn, not the running parent or saved defaults. Pending requests are visible, editable and cancellable. Edits are revision checked and apply only before dispatch.
 
 ## Delegate
 
@@ -26,6 +31,18 @@ Delegate submits a bounded concern through the existing OpenCode parent prompt p
 Delegate requires an established parent chat. Agent labels do not grant authority; explicit inspection constraints still apply. Existing model eligibility, quota, free-only, task and paid-delegation permissions remain in force. A model dropdown selection is not permission to bypass those controls.
 
 The delegate request is a native parent message so the parent can act on it; the user sees it collapsed as a Handoff card. The worker's completed report is collapsed as a Handoff card in the worker chat. The native transcript remains available to agents through the parent/worker relationship.
+
+## Steer
+
+Steer uses the same non-aborting parent path as Delegate, with instructions to
+incorporate the correction directly. The parent agent, model, reasoning and captured
+constraints remain unchanged. The model override is only for Queue or Delegate's
+worker; it never changes the parent on Steer.
+
+Cards distinguish saved delivery, native admission and evidence of model-input
+inclusion. Neither admission nor inclusion proves the requested action occurred.
+An unprocessed turn-ending handoff can receive one controlled continuation in the
+same chat. Uncertain outcomes require inspection, never blind replay.
 
 ## Delivery safeguards
 

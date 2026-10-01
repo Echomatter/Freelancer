@@ -1,95 +1,88 @@
 # Storage performance
 
-Freelancer keeps the existing JSON authorities in `backend/.state/webpage/` for
-settings, usage, request receipts and Git operations. This preserves on-disk
-compatibility for scripts and external readers: files are still versioned JSON,
-written by atomic replacement, and corrupt or unsupported documents fail closed
-instead of being repaired or overwritten.
+Request receipts and observed usage now use row storage in
+`backend/.state/webpage/records.sqlite`. This database belongs to the runtime
+checkout: captured agent definitions and permission evidence must not be mixed
+with another checkout or deleted during search-index maintenance. Organization,
+drafts, imports and search continue to use the per-user `freelancer.sqlite`.
+OpenCode remains the owner of its conversations and credentials.
 
-The request receipt file can be large because every request keeps immutable
-captured agent definitions. Older receipts may retain a retired captured workflow value for compatibility. The server store now keeps an internal
-validated cache for each JSON document and invalidates it with file metadata
-before use. Public `read()` returns a clone so callers cannot mutate the cached
-copy. Mutations still run through one in-process queue, and a changed file is
-validated again before it becomes the cached snapshot.
+## Candidate assessment
 
-Observation updates avoid cloning and comparing the full request document. They
-copy only the top-level records map and touched receipts, preserve captured
-definitions verbatim, and skip the request write when a rescan reports the same
-response IDs, models and completion state. Usage attribution reuses that request
-snapshot instead of rereading `requests.json` in the common path. Actual changes
-still stringify the full JSON once because external readers require the existing
-single-file format.
+| Data | Decision | Reason |
+| --- | --- | --- |
+| Request receipts | Migrated to SQLite | Large immutable captures; frequent updates and single-request authorization reads |
+| Observed usage | Migrated to SQLite | Growing ledger; rescans usually change only a few records |
+| Goals and sender outbox | Migrated to SQLite documents | Server and native readers share authority; pending and uncertain delivery states survive migration without replay |
+| Git operations | Migrated to SQLite documents | Preserve preview fingerprints and uncertain-operation recovery |
+| Settings, schedules, runtime preferences, quota and outcome history | Migrated to SQLite documents | Transactional updates shared by Node, native Bun plugins and PowerShell helpers |
+| Delegation receipts, worker claims and input observations | Migrated to SQLite documents | Preserve native identity and dispatch evidence across restarts |
+| Navigation and remembered chats | Migrated to database settings | One-time browser preference import; future writes go through the server |
 
-The observer keeps session update versions only for sessions still returned by
-the current scan. Directory matching is normalized with platform-aware path
-rules so Windows case differences do not create duplicate version entries.
+## Migration and compatibility
 
-## Limits
+On first access, each legacy ledger is validated and imported in one SQLite
+transaction. Its completion marker commits with the rows. A failed import leaves
+no partial rows or marker and preserves the original JSON bytes. Requests and
+usage migrate independently. Missing files become empty collections; malformed
+or unsupported files stop the operation instead of being overwritten.
 
-- This is not a data migration and does not delete or rewrite live state except
-  for normal request and usage updates.
-- Other processes can still update the JSON files. The cache notices replacement
-  through file metadata before the next store read or write, then parses and
-  validates the new content.
-- `execution-context.mjs` still reads `requests.json` directly for authorization
-  outside the store. The store avoids that extra read only for normal observation
-  attribution when the receipt is already present in the request snapshot.
-- A real request change still pays the cost to serialize the compatible
-  single-file JSON document. Avoiding that would require a separate storage
-  format and a migration plan.
+Legacy `requests.json` and `usage.json` remain untouched recovery backups.
+After migration, SQLite is authoritative: edits made to those backups are not
+reimported. Native execution-context readers use indexed receipt lookups and
+perform the same transactional import when first encountered. There is no JSON
+fallback after migration or after database errors. Restart the server and its native runtime together
+when adopting this change; running an older writer concurrently is unsupported.
+
+Before a rollback, stop both runtime processes and back up the entire private
+state directory. Restoring only the original JSON would lose receipts and usage
+recorded since migration. Export both collections with the current store's
+`read('requests')` and `read('usage')` while stopped, and retain the SQLite file
+and any sidecars before returning to an older version. Do not discard current
+request evidence or substitute the stale pre-migration backups.
+
+Normal receipt writes and observations touch only their own rows. An indexed
+summary column excludes captured catalogs before sending chat receipt summaries
+to the browser. Full `read()` remains available for explicit ledger consumers;
+`recordRequest()` returns a document containing only the touched receipt.
+Unchanged observations make no row writes. The server serializes mutations;
+native tools share the document API for their own state. Short-lived SQLite connections use a busy timeout, WAL
+and full synchronous durability and do not keep Windows test directories open.
+
+Settings, Git operations and Goals use `server/document-store.mjs`; retired settings
+migration is isolated in `server/settings-migration.mjs`. Request/usage SQL is
+in `backend/tools/runtime/record-store.mjs`, with runtime receipt access in
+`backend/tools/runtime/record-database.mjs`. The per-user store delegates imported
+chats, model ratings and chat indexing to focused modules under `server/data/`.
+
+`state-database.mjs` maps legacy filenames to stable database document keys.
+Directory scans import once and then enumerate database records. Deletion retains
+the migration marker, so an old backup cannot resurrect deleted state. OS process
+locks remain filesystem coordination primitives. Authored routing catalogs,
+OpenCode configuration/authentication, project registration markers, exported
+files and test reports are not mutable database fallbacks.
+
+## JSON request errors
+
+HTTP writes retain bounded bodies: 9 MiB for `/api/send` (including base64
+attachments) and 1 MiB elsewhere. Oversized fixed-length and chunked requests
+return JSON with HTTP 413 and `BODY_TOO_LARGE`. Malformed or non-object JSON
+returns HTTP 400 and `INVALID_JSON`. Serialization happens before success headers
+are sent, so serialization failures can return a complete error response.
+Database migration does not increase these transport limits or prove the cause
+of an unspecified HTTP 500 in a test.
 
 ## Reproducible synthetic measurement
 
-Run `node scripts/benchmark-store.mjs`. It creates and removes isolated temporary
-state, comparing the previous observation algorithm with the current store on
-100 captured receipts totaling about 30 MiB. It reports wall time and process CPU
-separately. One local run produced:
+Run `node scripts/benchmark-store-growth.mjs`. It measures 10, 100 and 250
+synthetic receipts with 64 KiB captures and three observation/read repetitions.
+The first scoped read includes migration. Changed observations, identical
+observations and subsequent scoped reads report wall time and CPU separately.
+The report includes legacy backup size, database size and JSON replacement counts.
+Row rollback, unchanged-write and native identity behavior have dedicated tests.
 
-| Observation | Previous elapsed / CPU | Current elapsed / CPU |
-| --- | --- | --- |
-| Changed response, cold cache | 557 / 562 ms | 278 / 266 ms |
-| Identical rescan, warm cache | 412 / 391 ms | 1 / 0 ms (rounded) |
-
-These are single-run synthetic measurements, not end-to-end application latency
-or a guarantee on other machines. The previous algorithm already skipped disk
-writes for unchanged content; the improvement removes repeated parsing, cloning
-and whole-document comparisons on that path. Captured receipts remain intact.
-
-## Growth measurements before a storage migration
-
-Run `node scripts/benchmark-store-growth.mjs` from a prepared checkout. It
-measures 10, 100 and 250 synthetic receipts with 64 KiB captured payloads and
-three observation/read repetitions per workload. Cold scoped reads, changed
-observations, identical observations and warm scoped reads are reported
-separately, with wall time, process CPU, file size and actual atomic-replacement
-counts. This is a diagnostic, not a timing gate or a safe-workload guarantee.
-
-Only newly created temporary state is used; it is removed in a `finally` block.
-The command accepts no live data path and makes no provider or GitHub request.
-Aggregate results and samples, without receipt contents or local paths, are
-written to ignored `artifacts/performance/store-growth.json`. Imported callers
-can choose smaller bounded synthetic workloads; each is capped at 64 MiB and
-no more than ten repetitions. CI contracts use a tiny fixture to check bounds,
-write counts and output shape without enforcing machine-specific timing limits.
-
-Retain measurements with the exact checkout and environment used. Compare
-like-for-like workloads on the same machine. Use `Server-Timing` and the
-long-chat browser journey described in [Local chat performance](local-performance.md)
-to determine whether an observed delay actually comes from local writes,
-native reads or rendering before changing persistence. Full-document writes
-remain a known format cost; this benchmark does not remove that cost.
-
-The default diagnostic was run during PR #3/#4 integration on 2026-09-29
-(Windows x64, Node 24.16.0). Median changed-observation times for 10/100/250
-receipts were 16/44/90 ms; warm scoped reads were 0.34/0.39/0.55 ms.
-Each changed observation replaced the request and usage documents. Identical
-observations and both read paths made zero replacements. These isolated local
-measurements do not establish live provider latency or a maximum safe workload.
-
-A migration is separate work: it needs evidence of a user-visible bottleneck,
-external-reader compatibility, preserved captured authority, backup/rollback
-and interruption tests. Do not delete historical receipts, relax permission
-checks or rewrite native OpenCode storage merely to improve a benchmark.
-Live inference and sustained multi-session acceptance still use the
-[release acceptance record](release-acceptance.md), not synthetic timings.
+The benchmark creates disposable state and never accepts a live data path.
+Aggregate samples are written to ignored `artifacts/performance/store-growth.json`.
+Workloads are bounded to 64 MiB, with no machine-specific timing assertions.
+Compare identical workloads on the same machine; migration cost and steady-state
+latency are separate. These results do not prove live provider performance.

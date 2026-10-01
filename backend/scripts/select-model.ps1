@@ -34,6 +34,7 @@ param(
     [double]$QuotaStalenessMinutes = 30
 )
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'state-database.ps1')
 if (-not $ToolkitRoot) { $ToolkitRoot = Split-Path -Parent $PSScriptRoot }
 
 function To-Bool($v) {
@@ -99,7 +100,7 @@ $rosterPath = Join-Path $ToolkitRoot 'routing\model-roster.json'
 $evidencePath = Join-Path $ToolkitRoot 'routing\model-evidence.json'
 $historyPath = Join-Path $ToolkitRoot 'routing\task-history.json'
 $localHistoryPath = Join-Path $ToolkitRoot '.state\task-history.json'
-if (Test-Path -LiteralPath $localHistoryPath) { $historyPath = $localHistoryPath }
+$historyPath = $localHistoryPath
 
 # These are authoritative selector inputs, not retired per-session role state.
 $policy = Get-Content -LiteralPath $policyPath -Raw -Encoding UTF8 | ConvertFrom-Json
@@ -108,7 +109,7 @@ $ev = Get-Content -LiteralPath $evidencePath -Raw -Encoding UTF8 | ConvertFrom-J
 
 $historyEntries = @()
 try {
-    $h = Get-Content -LiteralPath $historyPath -Raw -Encoding UTF8 | ConvertFrom-Json
+    $h = Read-FreelancerState $historyPath
     if ($h.entries) { $historyEntries = @($h.entries) }
 } catch { $historyEntries = @() }
 
@@ -116,7 +117,7 @@ try {
 # inherit another provider's freshness. Execution blocks remain separate.
 if ($QuotaStatePath -eq '') { $QuotaStatePath = Join-Path $ToolkitRoot '.state\quota-state.json' }
 $quotaState = $null
-try { if (Test-Path -LiteralPath $QuotaStatePath) { $quotaState = Get-Content -LiteralPath $QuotaStatePath -Raw -Encoding UTF8 | ConvertFrom-Json } } catch {}
+$quotaState = Read-FreelancerState $QuotaStatePath
 function Test-SurfaceFresh($s) {
     if (-not $s -or -not $s.telemetry -or $s.telemetry.status -ne 'ok' -or -not $s.telemetry.as_of) { return $false }
     try {
@@ -474,10 +475,8 @@ if (Test-SurfaceFresh $os) {
 # Execution-side health is durable and scoped. Its files contain no credentials.
 $health = @()
 $healthDir = Join-Path $ToolkitRoot '.state\delegation\blocks'
-if (Test-Path -LiteralPath $healthDir) {
-    foreach ($f in Get-ChildItem -LiteralPath $healthDir -File -Filter '*.json') {
-        try { $health += (Get-Content -LiteralPath $f.FullName -Raw -Encoding UTF8 | ConvertFrom-Json) } catch { throw 'Execution health state is malformed; repair it rather than bypass a known block.' }
-    }
+foreach ($f in @(Get-FreelancerStateFiles $healthDir)) {
+    $health += Read-FreelancerState $f
 }
 $excluded = @($ExcludedModels.Split(',') | Where-Object { $_ })
 foreach ($rm in $routeModels) {

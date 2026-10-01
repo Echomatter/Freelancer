@@ -3,7 +3,7 @@ import { ProviderText, ProviderSelect } from "./ProviderColors";
 import { WorkCard } from './WorkCard';
 import { useEffect, useRef, useState } from 'react';
 import { Dialog } from './echoflex/Dialog';
-import { Button } from './echoflex/Controls';
+import { Button, Field } from './echoflex/Controls';
 import { ArrowUp, CircleStop, Hand, LoaderCircle, ListPlus, Bot, X } from 'lucide-react';
 import { api, query } from './api';
 import { clientID } from './browser-capabilities.mjs';
@@ -11,9 +11,9 @@ import { senderAction } from '../domain/sender.mjs';
 import './chat-sender.css';
 
 type Intent = { id: string; project: string; session: string; text: string; model: string; variant: string; agentID: string; draftToken?: any };
-type Delivery = { id: string; kind: 'queue' | 'clarify' | 'interrupt'; status: string; model: string; text?: string; error?: string; notice?: string };
+type Delivery = { id: string; kind: 'queue' | 'clarify' | 'steer'; status: string; model: string; text?: string; messageID?: string; error?: string; notice?: string; version?: number; includedAt?: number };
 type Options = { data: any; session: any; busy: boolean; loading: boolean; draft: string; setDraft: (text: string) => void;
-  parentModel: string; intelligence: string; agentID: string; models: any[]; onSend: (variant: string) => void; onStop: () => void | Promise<unknown>; disabled?: boolean; hasAttachments?: boolean; captureDraft?: () => any; acceptDraft?: (token: any) => void };
+  parentModel: string; intelligence: string; agentID: string; models: any[]; visibleMessageIDs?: string[]; onSend: (variant: string) => void; onStop: () => void | Promise<unknown>; disabled?: boolean; hasAttachments?: boolean; captureDraft?: () => any; acceptDraft?: (token: any) => void };
 
 export function useChatSender(options: Options) {
   const { data, busy, loading, draft, parentModel, intelligence, agentID } = options;
@@ -26,6 +26,9 @@ export function useChatSender(options: Options) {
   const [override, setOverride] = useState('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState('');
+  const [editing, setEditing] = useState<Delivery | null>(null);
+  const [editText, setEditText] = useState('');
+  const [savingEdit, setSavingEdit] = useState('');
   const [deliveries, setDeliveries] = useState<{ context: string; rows: Delivery[] }>({ context: '', rows: [] });
   const flight = useRef(new Set<string>());
   const optimistic = useRef(new Map<string, Delivery[]>());
@@ -35,6 +38,8 @@ export function useChatSender(options: Options) {
   const [dismissed, setDismissed] = useState<Set<string>>(() => new Set());
   const dismissalKey = (row: Delivery) => `${context}/${row.id}/${row.status}/${row.error ?? ''}`;
   const rows = deliveries.context === context ? deliveries.rows : [];
+  const visibleMessageIDs = new Set(options.visibleMessageIDs ?? []);
+  const composerRows = rows.filter(row => !row.messageID || !visibleMessageIDs.has(row.messageID) || ['uncertain', 'failed'].includes(row.status));
   const mergeRows = (origin: string, serverRows: Delivery[]) => {
     const confirmed = new Set(serverRows.map(row => row.id));
     const localRows = (optimistic.current.get(origin) ?? []).filter(row => !confirmed.has(row.id));
@@ -45,7 +50,7 @@ export function useChatSender(options: Options) {
   activeDelivery.current = rows.some(row => ['waiting', 'sending', 'submitted'].includes(row.status));
   const action = pending ? 'loading' : senderAction({ busy: busy || rows.some(r => ['waiting', 'sending', 'submitted'].includes(r.status)), draft, loading, available: !!parentModel && !!project && !options.disabled, hasAttachments: options.hasAttachments });
   useEffect(() => {
-    setIntent(null); setOverride(''); setPending(flight.current.has(context) || flight.current.has(`stop:${context}`)); setError(''); setConnectionError('');
+    setIntent(null); setEditing(null); setOverride(''); setPending(flight.current.has(context) || flight.current.has(`stop:${context}`)); setError(''); setConnectionError('');
   }, [context]);
   useEffect(() => {
     if (!project || !session || loading) return;
@@ -77,10 +82,10 @@ export function useChatSender(options: Options) {
       setIntent({ id: clientID(), project, session, text: draft, model: parentModel, variant: intelligence, agentID, draftToken: options.captureDraft?.() });
     } else options.onSend(intelligence);
   }
-  async function choose(kind: 'queue' | 'clarify' | 'interrupt') {
+  async function choose(kind: 'queue' | 'clarify' | 'steer') {
     if (!intent || flight.current.has(context)) return;
     const captured = intent, origin = query(captured.project, captured.session);
-    const model = override || (kind !== 'clarify' ? captured.model : 'auto');
+    const model = kind === 'steer' ? 'auto' : override || (kind !== 'clarify' ? captured.model : 'auto');
     const local: Delivery = { id: captured.id, kind, status: 'sending', model, text: captured.text };
     optimistic.current.set(origin, [...(optimistic.current.get(origin) ?? []).filter(row => row.id !== local.id), local]);
     revision.current++;
@@ -146,25 +151,38 @@ export function useChatSender(options: Options) {
     <>
       {connectionError && <p className="notice error sender-error" role="status">Sender connection: {connectionError}. Pending messages remain on the server.</p>}
       {error && !intent && <p className="notice error sender-error" role="alert">{error}<button type="button" aria-label="Dismiss sender error" onClick={() => setError('')}><X size={15} /></button></p>}
-      {rows.some(row => dismissed.has(dismissalKey(row))) && <button type="button" className="restore-work" onClick={() => setDismissed(new Set())}>Show hidden delivery cards</button>}
-      {rows.filter(row => !dismissed.has(dismissalKey(row))).map(row => <WorkCard key={row.id}
+      {composerRows.some(row => dismissed.has(dismissalKey(row))) && <button type="button" className="restore-work" onClick={() => setDismissed(new Set())}>Show hidden delivery cards</button>}
+      {composerRows.filter(row => !dismissed.has(dismissalKey(row))).map(row => <WorkCard key={row.id}
           icon={row.kind === 'queue' ? <ListPlus size={16} /> : <Bot size={16} />}
-          title={`${row.kind === 'queue' ? 'Queue' : row.kind === 'interrupt' ? 'Interrupt' : 'Delegate'} · ${row.status === 'waiting' ? 'Waiting' : row.status === 'submitted' ? 'Handed to OpenCode' : row.status === 'sending' ? 'Submitting…' : row.status === 'interrupting' ? 'Stopping response…' : row.status === 'delivered' ? 'Delivered' : row.status === 'cancelled' || row.status === 'dismissed' ? 'Cancelled' : 'Check delivery'}`}
+          title={`${row.kind === 'queue' ? 'Queue' : row.kind === 'steer' ? 'Steer' : row.kind === 'clarify' ? 'Delegate' : 'Previous delivery'} · ${['uncertain', 'failed'].includes(row.status) ? 'Check delivery' : row.includedAt ? 'Included in model input' : row.status === 'waiting' ? 'Saved for delivery' : row.status === 'submitted' ? 'Saved in native chat' : row.status === 'sending' ? 'Submitting…' : row.status === 'delivered' ? 'Delivered' : row.status === 'cancelled' || row.status === 'dismissed' ? 'Cancelled' : 'Check delivery'}`}
           defaultOpen={false} preview={row.error || row.notice || row.text}
           attention={['uncertain', 'failed'].includes(row.status)}
-          onDismiss={() => setDismissed(previous => new Set([...previous, dismissalKey(row)]))} dismissLabel="Dismiss delivery card"
-          action={['waiting', 'uncertain', 'failed'].includes(row.status) ? <button type="button" className="work-card-cancel" onClick={() => void cancel(row)}>{row.status === 'waiting' ? 'Cancel message' : 'Acknowledge notice'}</button> : undefined}>
+          onDismiss={() => setDismissed(previous => new Set([...previous, dismissalKey(row)]))} dismissLabel="Dismiss delivery card">
             <small><ProviderText provider={row.model === 'auto' ? 'opencode' : row.model} mark>{row.model === 'auto' ? 'Agent default / automatic' : (options.models.find(m => m.id === row.model)?.name ?? row.model)}</ProviderText></small>
             {row.text && <p>{row.text}</p>}
+            {row.status === 'waiting' && <button type="button" onClick={() => { setError(''); setEditing(row); setEditText(row.text ?? ''); }}>Edit pending message</button>}
             {row.kind === 'clarify' && row.status === 'submitted' && <HelpHint topic="message-delivery" />}
             {(row.error || row.notice) && <p role="status">{row.error || row.notice}</p>}
+            {['waiting', 'uncertain', 'failed'].includes(row.status) && <button type="button" className="work-card-cancel" onClick={() => void cancel(row)}>{row.status === 'waiting' ? 'Cancel message' : 'Acknowledge notice'}</button>}
       </WorkCard>)}
+      {editing && <Dialog title="Edit pending message" onClose={() => setEditing(null)} busy={savingEdit === editing.id} footer={<><Button disabled={savingEdit === editing.id} onClick={() => setEditing(null)}>Cancel</Button><Button variant="primary" disabled={savingEdit === editing.id || !editText.trim()} onClick={async () => {
+        const captured = editing, origin = context, lock = `edit:${context}/${editing.id}`;
+        if (flight.current.has(lock)) return;
+        flight.current.add(lock); setSavingEdit(captured.id); setError('');
+        try {
+          const updated = await api('sender', { project, session, id: captured.id, text: editText, version: captured.version ?? 0 }, 'PATCH');
+          if (latest.current.context !== origin) return;
+          revision.current++; setDeliveries(current => current.context === origin ? { ...current, rows: current.rows.map(r => r.id === updated.id ? updated : r) } : current);
+          setEditing(current => current?.id === captured.id ? null : current);
+        } catch (e) { if (latest.current.context === origin) setError((e as Error).message); }
+        finally { flight.current.delete(lock); setSavingEdit(current => current === captured.id ? '' : current); }
+      }}>{savingEdit === editing.id ? 'Saving…' : 'Save message'}</Button></>}><Field label="Pending message"><textarea rows={5} disabled={savingEdit === editing.id} value={editText} onChange={e => setEditText(e.target.value)} /></Field>{error && <p role="alert">{error}</p>}</Dialog>}
       {intent && <Dialog title="While this response runs"
         icon={<Hand />} onClose={() => setIntent(null)} busy={pending} initialFocus="first"
         footer={<>{pending && <span role="status"><LoaderCircle className="spin" size={16} /> Saving message…</span>}
           <Button type="button" disabled={pending} onClick={() => setIntent(null)}>Cancel</Button></>}>
         <blockquote className="sender-preview">{intent.text}</blockquote>
-        <label className="sender-model">Model override<ProviderSelect provider={override} aria-label="Message model override" value={override} disabled={pending} onChange={e => setOverride(e.target.value)} autoFocus>
+        <label className="sender-model">Queue model / Delegate worker model<ProviderSelect provider={override} aria-label="Message model override" value={override} disabled={pending} onChange={e => setOverride(e.target.value)} autoFocus>
           <option value="">No override · use assignment defaults</option>
           {options.models.map(m => <option key={m.id} value={m.id}>{m.name}{m.costClass === 'free' ? ' · Free' : ''} · {m.provider}</option>)}
         </ProviderSelect></label>
@@ -172,7 +190,7 @@ export function useChatSender(options: Options) {
         <div className="sender-options">
           <button type="button" disabled={pending} onClick={() => void choose('clarify')}><Bot size={22} aria-hidden="true" /><strong>Delegate</strong><span>Ask a worker to handle this concern at the parent’s next safe boundary.</span></button>
           <button type="button" disabled={pending} onClick={() => void choose('queue')}><ListPlus size={22} aria-hidden="true" /><strong>Queue</strong><span>Send automatically after the current turn finishes.</span></button>
-          <button type="button" disabled={pending} onClick={() => void choose('interrupt')}><CircleStop size={22} aria-hidden="true" /><strong>Interrupt</strong><span>Stop the current response, cancel waiting messages, and continue with this message.</span></button>
+          <button type="button" disabled={pending} onClick={() => void choose('steer')}><Hand size={22} aria-hidden="true" /><strong>Steer</strong><span>Adjust the ongoing work at the next boundary. Keep its model and queued messages. Executing tools may finish first.</span></button>
         </div>
         {error && <p className="notice error" role="alert">{error}</p>}
       </Dialog>}
@@ -186,12 +204,13 @@ export function SenderControls({ sender, busy, disabled }: { sender: ReturnType<
   const hand = sender.action === 'handoff';
   return <div className="sender-controls">
     <button type="button" className={`sender-main ${hand ? 'handoff' : ''} ${stop ? 'stop' : ''}`}
-      aria-label={sender.stopping ? 'Stopping response' : stop ? 'Stop response' : hand ? 'Choose Delegate, Queue, or Interrupt' : sender.pending ? 'Submitting message' : 'Send message'}
+      aria-label={sender.stopping ? 'Stopping response' : stop ? 'Stop response' : hand ? 'Choose Delegate, Queue, or Steer' : sender.pending ? 'Submitting message' : 'Send message'}
       aria-haspopup={hand ? 'dialog' : undefined}
-      title={stop ? 'Stop the response and cancel pending messages' : hand ? 'Choose Delegate, Queue, or Interrupt — attached files stay in the composer' : 'Send message'}
+      title={stop ? 'Stop the response and cancel pending messages' : hand ? 'Choose Delegate, Queue, or Steer — attached files stay in the composer' : 'Send message'}
       disabled={!stop && (disabled || sender.pending || sender.action === 'disabled' || sender.action === 'loading')}
       onClick={stop ? sender.stop : sender.submit}>
       {sender.action === 'loading' ? <LoaderCircle size={21} className="spin" /> : stop ? <CircleStop size={21} /> : <ArrowUp size={22} />}
     </button>
+    {busy && !stop && !sender.stopping && <button type="button" className="sender-main stop" aria-label="Stop response" title="Stop running work" onClick={sender.stop}><CircleStop size={19} /></button>}
   </div>;
 }

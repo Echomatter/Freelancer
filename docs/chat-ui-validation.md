@@ -12,14 +12,29 @@ right-aligned content-sized user bubbles, retained reading position after
 navigation, shared task/delivery cards, dismissal/restoration, explicit queue
 cancellation, settings close controls, and narrow layouts. `chat-tweaks.browser.mjs`
 checks that assistant prose, including reasoning parts, stays in the chat while
-tool calls stay in the collapsed work card. `chat-dock.browser.mjs` checks the
+tool calls stay in the Commands overlay. `chat-dock.browser.mjs` checks the
 current-turn dock, its independent scroll area, explicit review of an earlier
 turn from a slim marker, return to current work, and narrow layout. Scrolling
 the transcript does not change the selected tools or duplicate their bodies.
 
-The dock sits above the transcript even when a short conversation cannot scroll.
+The toolbar stays above the transcript even when a short conversation cannot scroll. Commands opens an overlay below that toolbar.
 Expanded output has its own bounded scroll area and cannot cover the composer.
-The dock journey checks oversized first-tool output on a narrow, short viewport.
+The toolbar journey checks equal sections, overlays, goal handoffs and preserved drafts at 1440px, 390px and 320px. The command history journey checks oversized first-tool output on a short viewport.
+The selected tab uses the theme accent. Small activity markers for Commands,
+Agents, Models and Goals open details for their owning turn; internal handoff
+bodies and agent cards stay in the overlays. The journey checks that opening
+an older turn does not show a later turn's model, and that labels, icons and
+stats remain inside their buttons beside the collapsed navigation rail.
+Tabs, navigation toggle, connection status and loading indicator share one top
+row on phones too, with the panel toggle at the left edge. Narrow tabs show icons and stats with accessible names; the
+selected tab keeps its accent. The mobile composer keeps a short draft on one
+row and grows for multiline text.
+The Agents overlay groups each worker card with that turn's assignments,
+handoffs and reports, including distinct follow-ups to the same worker. Live
+tool, subject, elapsed time and receipt details remain inspectable. Commands
+excludes delegation, catalog and worker-inspection tools. Tab icons animate only
+for their scoped activity; stale observations, approval waits and idle running
+goals do not animate. Later assignments cannot replace earlier turn reports.
 `composer.browser.mjs` checks matching input controls, the complete one-level
 options panel, keyboard focus, collapsible tasks/files, and phone layouts.
 See [composer design](composer-design.md) for the six alternatives compared.
@@ -29,9 +44,10 @@ immediate pending feedback, duplicate-click guards, preservation of newer draft
 typing, and retrying the same delivery ID after a lost acknowledgement.
 `send-feedback.browser.mjs` also checks that the composer clears and disables
 while a submitted message is sending, then preserves the draft after failure.
-Interrupt captures a steering message, stops the response, cancels waiting
-messages, then delivers the steer once native state permits it. Stop without a
-message only stops. Render failures offer recovery without resending. The dock
+Steer captures a correction without stopping the response or cancelling waiting
+messages, then delivers the steer once native state permits it. Stop cancels
+pending deliveries and stops the response; it also pauses an active goal.
+Render failures offer recovery without resending. The dock
 journey checks delegation handoffs while a docked card is visible. One card
 renders the selected tools; no scroll-position measurement can feed back into
 its selection or cause the application to go blank.

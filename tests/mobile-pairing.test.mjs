@@ -1,7 +1,8 @@
+import { readStateText as readFile } from '../backend/tools/runtime/state-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import http from 'node:http';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { startServer } from '../server/http.mjs';

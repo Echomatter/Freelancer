@@ -31,7 +31,13 @@ type SummaryProps = {
   view: View;
   state: RefreshState;
   onRefresh: () => unknown;
+  onManageProviders?: () => void;
 };
+
+function usageWarning(view: View, state: RefreshState) {
+  if (state.error) return state.error;
+  return view.providers.filter(p => p.kind === 'finite' && p.refreshFailed).map(p => `${p.name}: ${p.issue || 'Usage refresh failed'}`).join(' · ');
+}
 
 function absoluteTime(value: string) {
   return new Intl.DateTimeFormat(undefined, {
@@ -148,7 +154,7 @@ export function UsageProviderRow({
         ) : (
           <NextReset view={view} event={p.nextReset} provider={false} />
         )}
-        {p.stale && <small>Not current</small>}
+        {p.issue ? <small className="usage-warning">{p.issue}</small> : p.stale && <small>Not current</small>}
       </div>
     </ProviderScope>
   );
@@ -184,6 +190,7 @@ export function UsageSidebar({
   state,
   onRefresh,
   onOpen,
+  onManageProviders,
 }: SummaryProps & { onOpen: () => void }) {
   const [open, setOpen] = useState(false),
     id = useId(),
@@ -200,6 +207,7 @@ export function UsageSidebar({
   }, [open]);
   const value = headline(view, state);
   const refreshFailed = !!(state.error || view.refreshFailed);
+  const warning = usageWarning(view, state);
   return (
     <section
       ref={section}
@@ -238,8 +246,9 @@ export function UsageSidebar({
           )}
         </div>
         {(state.error || view.refreshFailed) && (
-          <small className="usage-warning">Refresh failed</small>
+          <small className="usage-warning">{warning}</small>
         )}
+        {view.providers.some(p => p.needsReconnect) && onManageProviders && <Button variant="quiet" onClick={() => { setOpen(false); onManageProviders(); }}>Reconnect provider</Button>}
         <Button
           type="button"
           variant="quiet"
@@ -256,7 +265,7 @@ export function UsageSidebar({
         className="usage-disclosure"
         aria-controls={id}
         aria-expanded={open}
-        aria-label={`${open ? "Hide" : "Show"} provider availability. Estimated available: ${value}. ${view.nextReset ? `Next reset: ${view.nextReset.name}, ${resetLabel(view.nextReset.resetAt, view.now)}.` : "Reset unknown."}${refreshFailed ? " Refresh failed." : ""}`}
+        aria-label={`${open ? "Hide" : "Show"} provider availability. Estimated available: ${value}. ${view.nextReset ? `Next reset: ${view.nextReset.name}, ${resetLabel(view.nextReset.resetAt, view.now)}.` : "Reset unknown."}${warning ? ` ${warning}.` : ""}`}
         onClick={() => setOpen((current) => !current)}
       >
         <span className="usage-summary-line">
@@ -276,14 +285,14 @@ export function UsageSidebar({
           <NextReset view={view} />
         </span>
         {(state.error || view.refreshFailed) && (
-          <span className="usage-sidebar-warning">Refresh failed</span>
+          <span className="usage-sidebar-warning">{state.error || 'Provider needs attention'}</span>
         )}
       </button>
     </section>
   );
 }
 
-export function UsageHero({ view, state, onRefresh }: SummaryProps) {
+export function UsageHero({ view, state, onRefresh, onManageProviders }: SummaryProps) {
   const value = headline(view, state);
   return (
     <Panel className="usage usage-hero" aria-label="Available Usage summary">
@@ -322,13 +331,14 @@ export function UsageHero({ view, state, onRefresh }: SummaryProps) {
           {state.pending
             ? "Refreshing…"
             : state.error || view.refreshFailed
-              ? "Refresh failed"
+              ? usageWarning(view, state)
               : view.status === "partial"
                 ? "Partial data"
                 : view.plans.some((p) => p.stale)
                   ? "Not current"
                   : observedLabel(view.asOf, view.now)}
         </small>
+        {view.providers.some(p => p.needsReconnect) && onManageProviders && <Button variant="quiet" onClick={onManageProviders}>Reconnect provider</Button>}
         <HelpHint topic="usage-estimate" />
         <details className="usage-method">
           <summary>Observation details</summary>

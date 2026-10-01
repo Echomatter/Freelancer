@@ -2,6 +2,7 @@
 // routing, permissions, or storage. They derive request groups and compact
 // work summaries from already-loaded message arrays.
 import { hasUnfinishedTodos } from "./todos.mjs";
+import { isInternalMessage } from './sender.mjs';
 
 export function responseErrorLabel(error) {
   const name = typeof error === 'object' ? error?.name : '';
@@ -21,6 +22,7 @@ export function toolOutcomeStatus(part) {
   // child itself is still running. Its durable presentation metadata is the
   // authoritative state for the handoff card, not the parent tool's exit.
   const delegated = state.metadata?.freelancer_status;
+  if (delegated === 'worker_handoff') return ['failed','uncertain'].includes(state.metadata?.delivery_status) ? 'error' : 'pending';
   if (delegated === "running" || delegated === "starting") return "running";
   if (["failed", "stop_unverified", "cancelled", "timeout", "blocked", "conflict", "unavailable"].includes(delegated)) return "error";
   if (delegated === "completed") return "completed";
@@ -148,6 +150,12 @@ export function buildRequestGroups(messages = [], options = {}) {
     }
     if (typeof rid !== "string" || !rid.trim()) rid = null;
     if (role === "user") {
+      if (isInternalMessage(m) && lastGroup) {
+        lastGroup.responseMessages.push(m);
+        lastGroup.allMessages.push(m);
+        if (rid) byRequestID.set(rid, lastGroup);
+        continue;
+      }
       const owned = rid ? byRequestID.get(rid) : undefined;
       if (owned) {
         owned.userMessages.push(m);
@@ -195,7 +203,7 @@ export function buildRequestGroups(messages = [], options = {}) {
 // A native part can be replayed with the same id, while callbacks for one
 // call or child can arrive with distinct part ids. Keep the latest visible
 // state without merging separate calls or separate child sessions.
-export function latestToolParts(messages = []) {
+export function latestToolParts(messages = [], { collapseWorkers = true } = {}) {
   // Same part id means the same item updated (arguments → output →
   // completion) or a replayed snapshot: the latest snapshot supersedes
   // earlier ones, so a running tool that completes does not stick at
@@ -217,6 +225,7 @@ export function latestToolParts(messages = []) {
     if (latestByCall.has(key)) latestByCall.delete(key);
     latestByCall.set(key, part);
   }
+  if (!collapseWorkers) return [...latestByCall.values()];
   const latestByWorker = new Map();
   for (const part of latestByCall.values()) {
     const child = isHandoffPart(part) ? delegateChildSession(part) : null;

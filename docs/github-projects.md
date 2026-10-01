@@ -85,6 +85,11 @@ Every named agent can manage project history. The saved agreement supplies defau
 Both the panel and the native `git_project` tool call the same application
 service. Account setup stays in the panel. Agreement changes can also be confirmed in chat. The agent
 uses one native permission request per approved plan, not one per shell command.
+For an ordinary local branch merge into the agreed main branch, the agent uses
+`git_project` action `merge` to preview the source and target, then calls `merge`
+with that plan ID. OpenCode asks for native `git_project` permission on execution.
+Writing “Approve” in chat text does not answer a native question or grant that
+permission; the request appears in Freelancer's decision UI.
 
 ## Saving, getting updates and syncing
 

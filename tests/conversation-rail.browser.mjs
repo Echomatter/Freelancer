@@ -31,7 +31,7 @@ async function dragThumb(page, position, cancel = false) {
 test('conversation rail: turn tools, statistics, scroll gestures, resize, and streaming', { tag: ['@app', '@chat'] }, async ({ appBrowser: browser, own }) => {
   const f = await own(composerFixture()); f.state.messages.ses_history = turns(); f.state.todos.ses_history = [];
   const page = await browser.newPage({ viewport: { width: 1440, height: 940 } }); await open(page, f);
-  const rail = page.locator('.conversation-rail'), scroll = page.locator('.chat-scroll'), dock = page.locator('.request-dock');
+  const rail = page.locator('.conversation-rail'), scroll = page.locator('.chat-scroll'), dock = page.locator('.chat-tool-overlay');
   const bubble = n => page.getByRole('button', { name: `Jump to turn ${n}`, exact: true });
   const offset = () => scroll.evaluate(el => el.scrollTop);
   await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Preserve this draft');
@@ -48,7 +48,7 @@ test('conversation rail: turn tools, statistics, scroll gestures, resize, and st
     await page.getByRole('tooltip').hover(); await expect(page.getByRole('tooltip')).toContainText('Turn 6');
     await bubble(6).click();
     await expect(dock).toContainText('Reviewing turn 6'); await expect(dock).toContainText('Read turn-6.tsx');
-    await expect(dock.locator('.request-working')).toHaveAttribute('open');
+    await expect(dock).toBeVisible();
     await expect.poll(async () => Math.abs((await page.getByRole('region', { name: 'Request 6', exact: true }).boundingBox()).y - (await scroll.boundingBox()).y - 12)).toBeLessThan(2);
     await bubble(3).click(); await expect(dock).toContainText('No tools recorded for this turn');
     await bubble(6).click(); const before = await offset();
@@ -68,27 +68,23 @@ test('conversation rail: turn tools, statistics, scroll gestures, resize, and st
     await expect(dock).toContainText('Reviewing turn 7');
   });
   await test.step('Thumb drag and Escape never resize Details or overwrite a draft', async () => {
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
-    const width = () => page.locator('.work-details').evaluate(el => el.getBoundingClientRect().width);
+    await page.getByRole('button', { name: /^Agents / }).click();
+    const width = () => page.locator('.chat-tool-overlay').evaluate(el => el.getBoundingClientRect().width);
     const original = await width();
     const track = await page.locator('.conversation-rail-track').boundingBox();
     await page.mouse.click(track.x + 2, track.y + track.height * .62);
     await expect.poll(async () => Number(await page.getByRole('scrollbar').getAttribute('aria-valuenow'))).toBeGreaterThan(50);
     assert.equal(await width(), original, 'track seeking does not resize Details');
-    const detailsControl = page.getByRole('button', { name: 'Details', exact: true });
-    await expect(detailsControl.locator('svg')).toBeHidden();
-    await expect(detailsControl.locator('span')).toHaveText('Details');
+    const detailsControl = page.getByRole('button', { name: /^Agents / });
+    await expect(detailsControl.locator('svg')).toBeVisible();
+    await expect(detailsControl.locator('span')).toHaveText('Agents');
     await expect(detailsControl.locator('span')).toBeVisible();
     await dragThumb(page, .2);
     await expect.poll(() => page.getByRole('scrollbar').getAttribute('aria-valuenow')).not.toBe('100');
     assert.equal(await width(), original); const before = await offset();
     await dragThumb(page, .8, true); await expect.poll(offset).toBe(before);
     assert.equal(await page.locator('html').evaluate(el => el.classList.contains('conversation-scrolling')), false);
-    const separator = page.getByRole('separator', { name: 'Details width' }); const b = await separator.boundingBox();
-    await page.mouse.move(b.x + 3, b.y + 140); await page.mouse.down();
-    await page.mouse.move(b.x - 67, b.y + 140, { steps: 10 }); await page.mouse.up();
-    await expect.poll(width).toBe(original + 70);
-    await expect(separator).toHaveAttribute('aria-disabled', 'false');
+    await expect(page.getByRole('separator', { name: 'Details width' })).toHaveCount(0);
     assert.equal(await offset(), before);
     await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('Preserve this draft');
   });
@@ -131,7 +127,7 @@ test('conversation rail: turn tools, statistics, scroll gestures, resize, and st
 test('conversation rail: dense history, touch, reduced motion, and short phone viewport', { tag: ['@app', '@chat'] }, async ({ appBrowser: browser, own }) => {
   const f = await own(composerFixture()); f.state.messages.ses_history = turns(120); f.state.todos.ses_history = [];
   const page = await browser.newPage({ viewport: { width: 430, height: 650 }, hasTouch: true, isMobile: true, reducedMotion: 'reduce' }); await open(page, f);
-  const rail = page.locator('.conversation-rail'), dots = rail.locator('.conversation-rail-turn'), dock = page.locator('.request-dock');
+  const rail = page.locator('.conversation-rail'), dots = rail.locator('.conversation-rail-turn'), dock = page.locator('.chat-tool-overlay');
   await expect(dots).toHaveCount(120);
   await dots.first().focus(); await page.keyboard.press('End'); await expect(dots.last()).toBeFocused();
   await page.keyboard.press('Home'); await page.keyboard.press('Enter'); await expect(dock).toContainText('Reviewing turn 1');
@@ -157,10 +153,10 @@ test('conversation rail: dense history, touch, reduced motion, and short phone v
   const r = await rail.boundingBox(), composer = await page.locator('.composer').boundingBox(), d = await dock.boundingBox();
   assert.ok(r.x + r.width <= 431); assert.ok(composer.x + composer.width <= r.x);
   assert.ok(d.y + d.height <= composer.y); assert.equal(await page.getByRole('separator', { name: 'Details width' }).count(), 0);
-  await page.getByRole('button', { name: 'Details', exact: true }).click();
-  const detail = await page.locator('.work-details').boundingBox();
-  assert.ok(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.work-details') !== null, { x: detail.x + detail.width - 8, y: detail.y + 150 }), 'Details overlay sits above rail on phones');
-  await page.getByRole('button', { name: 'Details', exact: true }).click();
+  await page.getByRole('button', { name: /^Agents / }).click();
+  const detail = await page.locator('.chat-tool-overlay').boundingBox();
+  assert.ok(await page.evaluate(({ x, y }) => document.elementFromPoint(x, y)?.closest('.chat-tool-overlay') !== null, { x: detail.x + detail.width - 8, y: detail.y + detail.height / 2 }), 'Details overlay sits above rail on phones');
+  await page.getByRole('button', { name: /^Agents / }).click();
   await page.setViewportSize({ width: 430, height: 580 });
   await mkdir('artifacts/conversation-rail', { recursive: true });
   await page.screenshot({ path: 'artifacts/conversation-rail/phone.png' });

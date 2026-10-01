@@ -652,8 +652,8 @@ test("agent instructions compose with the fixed Build execution contract", async
   assert.match(body.system, /Focus on useful results/);
   assert.doesNotMatch(body.system, /Workflow:|workflows/);
   assert.match(body.system, /application-owned/);
-  assert.match(body.system, /installed delegate tool/);
-  assert.match(body.system, /backend owns quota refresh/);
+  assert.match(body.system, /`delegate` for bounded named-agent assignments/);
+  assert.match(body.system, /backend owns model inventory, eligibility, quota freshness, evidence, routing, receipts, and scoring/);
   assert.match(body.system, /Request context:/);
   const receipt = (await f.store.read("requests")).records[body.messageID];
   assert.equal(receipt.status, "accepted");

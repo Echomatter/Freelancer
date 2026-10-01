@@ -1,287 +1,72 @@
-import { createExecutionContextReader } from "../backend/tools/runtime/execution-context.mjs";
-import { readFile, writeFile, mkdir, unlink, stat } from "node:fs/promises";
-import path from "node:path";
+import { createExecutionContextReader } from '../backend/tools/runtime/execution-context.mjs';
+import { normalizePlans } from '../domain/costs.mjs';
 import { isDeepStrictEqual } from 'node:util';
-import { randomUUID } from "node:crypto";
-import { normalizePlans } from "../domain/costs.mjs";
-import { replaceFile } from "./replace-file.mjs";
+import { createDocumentStore } from './document-store.mjs';
+import { createRecordStore, recordCollections } from './record-store.mjs';
 
-const legacyWorkflowAgent = (id, workflows = []) => {
-  const custom = workflows.find((workflow) => workflow.id === id)?.agentID;
-  if (custom && !["inherit", "none", "git"].includes(custom)) return custom;
-  return ({ build: "engineer", plan: "engineer", explore: "researcher", review: "engineer", sync: "engineer" })[id] ?? "engineer";
-};
-
-function migrateSettings(settings) {
-  const workflows = Array.isArray(settings.workflows) ? settings.workflows : [];
-  let changed = Object.hasOwn(settings, "workflows");
-  const choices = Object.fromEntries(Object.entries(settings.chatChoices ?? {}).map(([session, choice]) => {
-    if (!choice || typeof choice !== "object") return [session, choice];
-    const next = { ...choice };
-    if (Object.hasOwn(next, "workflowID")) {
-      if (!next.agentID || ["inherit", "none", "git"].includes(next.agentID))
-        next.agentID = legacyWorkflowAgent(next.workflowID, workflows);
-      delete next.workflowID;
-      changed = true;
-    } else if (next.agentID === "git") {
-      next.agentID = "engineer";
-      changed = true;
-    }
-    return [session, next];
-  }));
-  const sessionDefaults = Object.fromEntries(Object.entries(settings.sessionDefaults ?? {}).map(([project, value]) => {
-    if (!value || typeof value !== "object") return [project, value];
-    const next = { ...value };
-    if (Object.hasOwn(next, "workflowID")) {
-      if (!next.agentID || ["inherit", "none", "git"].includes(next.agentID))
-        next.agentID = legacyWorkflowAgent(next.workflowID, workflows);
-      delete next.workflowID;
-      changed = true;
-    } else if (next.agentID === "git") {
-      next.agentID = "engineer";
-      changed = true;
-    }
-    return [project, next];
-  }));
-  if (!changed) return settings;
-  const next = { ...settings, chatChoices: choices, sessionDefaults };
-  delete next.workflows;
-  return next;
-}
-
-// Single application process serializes mutations and atomically replaces files.
-// A malformed existing document is an error, never an invitation to overwrite it.
-export function createStore(root, { replace = replaceFile } = {}) {
-  const directory = path.join(root, ".state", "webpage");
+// One application writer serializes mutations. Native tools only read receipts.
+export function createStore(root) {
+  const documents = createDocumentStore(root), records = createRecordStore(root);
+  const executionContext = createExecutionContextReader();
   let queue = Promise.resolve();
-  const cache = new Map();
-  // Reuse the authoritative, stat-validated store read during usage attribution.
-  // The reader is captured here, never supplied through a model/tool argument.
-  const executionContext = createExecutionContextReader(() => load('requests'));
-  const files = {
-    settings: "settings.json",
-    usage: "usage.json",
-    requests: "requests.json",
-    gitOperations: "git-operations.json",
+  const enqueue = action => {
+    const work = queue.then(action);
+    queue = work.catch(() => {});
+    return work;
   };
-  const defaults = {
-    settings: () => ({
-      version: 1,
-      revision: 0,
-      projects: [],
-      plans: normalizePlans(),
-      monthlyPlans: {},
-    }),
-    usage: () => ({ version: 1, records: {} }),
-    requests: () => ({ version: 1, records: {} }),
-    gitOperations: () => ({ version: 1, records: {} }),
-  };
-  const filePath = (name) => path.join(directory, files[name]);
-  const signature = (stats) =>
-    stats ? `${stats.size}:${stats.mtimeNs}:${stats.ctimeNs}` : null;
-  async function currentSignature(name) {
-    try {
-      return signature(await stat(filePath(name), { bigint: true }));
-    } catch (e) {
-      if (e.code === "ENOENT") return null;
-      throw e;
-    }
-  }
-  function validate(name, value) {
-    if (value.version !== 1) throw Error("Unsupported document");
-    if (
-      name === "settings" &&
-      (!Array.isArray(value.projects) || !Number.isInteger(value.revision))
-    )
-      throw Error("Invalid settings");
-    if (
-      ["usage", "requests", "gitOperations"].includes(name) &&
-      (!value.records ||
-        typeof value.records !== "object" ||
-        Array.isArray(value.records))
-    )
-      throw Error("Invalid usage");
-  }
-  async function load(name) {
-    if (!files[name]) throw Error("Unknown document");
-    try {
-      const seen = await currentSignature(name),
-        cached = cache.get(name);
-      if (cached && cached.signature === seen) return cached.data;
-      if (seen === null) {
-        const value = defaults[name]();
-        cache.set(name, { signature: null, data: value });
-        return value;
-      }
-      const parsed = JSON.parse(await readFile(filePath(name), "utf8"));
-      validate(name, parsed);
-      const value = name === "settings" ? migrateSettings(parsed) : parsed;
-      if (value !== parsed) {
-        await writeDocument(name, value);
-        return value;
-      }
-      cache.set(name, { signature: seen, data: value });
-      return value;
-    } catch (e) {
-      if (e.code === "ENOENT") {
-        const value = defaults[name]();
-        cache.set(name, { signature: null, data: value });
-        return value;
-      }
-      throw Error(`Cannot read ${name}; your existing data was preserved.`);
-    }
-  }
-  async function read(name) {
-    return structuredClone(await load(name));
-  }
-  async function writeDocument(name, next) {
-    if (name === "settings") next = migrateSettings(next);
-    validate(name, next);
-    await mkdir(directory, { recursive: true });
-    const target = filePath(name),
-      temp = target + "." + randomUUID() + ".tmp";
-    try {
-      await writeFile(temp, JSON.stringify(next, null, 2), { mode: 0o600 });
-      await replace(temp, target);
-      cache.set(name, {
-        signature: await currentSignature(name),
-        data: next,
-      });
-    } finally {
-      await unlink(temp).catch(() => {});
-    }
-  }
+  const read = name => recordCollections.has(name) ? records.read(name) : documents.read(name);
   function update(name, change) {
-    const work = queue.then(async () => {
-      const data = await load(name),
-        next = await change(structuredClone(data));
-      if (JSON.stringify(data) === JSON.stringify(next)) return next;
-      // The callback and caller may keep next; neither may mutate our cache.
-      await writeDocument(name, structuredClone(next));
-      return next;
-    });
-    queue = work.catch(() => {});
-    return work;
-  }
-  async function updateRequests(change) {
-    const work = queue.then(async () => {
-      const data = await load("requests"),
-        next = await change(data);
-      if (next === data) return data;
-      await writeDocument("requests", next);
-      return next;
-    });
-    queue = work.catch(() => {});
-    return work;
-  }
-  async function observeRequests(records) {
-    return updateRequests((current) => {
-      let next = current,
-        nextRecords = current.records;
-      for (const row of records.filter(Boolean)) {
-        const receipt = nextRecords[row.parentMessageID];
-        if (!receipt || receipt.sessionID !== row.sessionID) continue;
-        const response = {
-            model: `${row.providerID}/${row.modelID}`,
-            completed: row.completed,
-          },
-          previous = receipt.responses?.[row.id];
-        if (
-          receipt.status === "observed" &&
-          previous?.model === response.model &&
-          previous?.completed === response.completed
-        )
-          continue;
-        if (next === current) {
-          nextRecords = { ...current.records };
-          next = { ...current, records: nextRecords };
-        }
-        const responses = { ...receipt.responses, [row.id]: response };
-        nextRecords[row.parentMessageID] = {
-          ...receipt,
-          status: "observed",
-          responses,
-        };
+    return enqueue(async () => {
+      const previous = await read(name), next = await change(structuredClone(previous));
+      if (!isDeepStrictEqual(previous, next)) {
+        if (recordCollections.has(name)) await records.replace(name, previous, next);
+        else await documents.write(name, structuredClone(next));
       }
       return next;
     });
   }
   return {
-    read,
-    async requestSummaries(projectID, sessionID) {
-      const current = await load('requests');
-      return structuredClone(Object.values(current.records)
-        .filter(row => row.projectID === projectID && row.sessionID === sessionID)
-        .map(({ agent, workflow: _workflow, catalog: _catalog, catalogModels: _models, catalogConnected: _connected, ...row }) => ({
-          ...row, agent: agent ? { id: agent.id, name: agent.name } : null,
-        })));
-    },
-    update,
-    directory,
-    flush: () => queue,
+    read, update, directory: documents.directory, flush: () => queue,
+    requestSummaries: (project, session) => records.summaries(project, session),
     async savePlans(input, month = new Date().toISOString().slice(0, 7)) {
       const plans = normalizePlans(input);
-      return update("settings", (s) => ({
-        ...s,
-        revision: s.revision + 1,
-        plans,
-        monthlyPlans: { ...s.monthlyPlans, [month]: plans },
-      }));
+      return update('settings', s => ({ ...s, revision: s.revision + 1,
+        plans, monthlyPlans: { ...s.monthlyPlans, [month]: plans } }));
     },
-    async observe(records, { session } = {}) {
-      records = structuredClone(records);
-      const requestSnapshot = await observeRequests(records);
-      const work = queue.then(async () => {
-        const current = await load('usage');
-        let next = current;
-        for (const row of records)
-          if (row) {
-            let receipt = requestSnapshot.records[row.parentMessageID];
-            if (!receipt && session?.id === row.sessionID && session?.metadata?.freelancer?.taskID) {
-              receipt = await executionContext(root, row.directory, session, {info:{
-                role:"assistant", agent:row.nativeAgent, parentID:row.parentMessageID,
-              }});
-            }
-            const attribution =
-              receipt && receipt.sessionID === row.sessionID
-                  ? {
-                    agentID: receipt.agent.id,
-                    agentName: receipt.agent.name,
-                    requestID: receipt.id,
-                  }
-                : {};
-            const record = {
-              ...next.records[row.id],
-              ...row,
-              ...attribution,
-            };
-            if (isDeepStrictEqual(next.records[row.id], record)) continue;
-            if (next === current) next = { ...current, records: { ...current.records } };
-            next.records[row.id] = record;
-          }
-        // Repeated transcript reads usually contain no new usage. Avoid cloning
-        // and serializing the entire account ledger just to discover that fact.
-        if (next !== current) await writeDocument('usage', next);
+    observe(input, { session } = {}) {
+      const rows = structuredClone(input).filter(Boolean);
+      return enqueue(async () => {
+        const receipts = await records.mutate('requests', rows.filter(row => row.parentMessageID).map(row => [row.parentMessageID, receipt => {
+          if (!receipt || receipt.sessionID !== row.sessionID) return receipt;
+          return { ...receipt, status: 'observed', responses: { ...receipt.responses,
+            [row.id]: { model: `${row.providerID}/${row.modelID}`, completed: row.completed } } };
+        }]));
+        // Resolve all authority before committing usage, so a bad native identity
+        // never leaves a partially attributed batch behind.
+        const changes = [];
+        for (const row of rows) {
+          let receipt = receipts[row.parentMessageID];
+          if (!receipt && session?.id === row.sessionID && session?.metadata?.freelancer?.taskID)
+            receipt = await executionContext(root, row.directory, session, { info: {
+              role: 'assistant', agent: row.nativeAgent, parentID: row.parentMessageID,
+            } });
+          const attribution = receipt && receipt.sessionID === row.sessionID ? {
+            agentID: receipt.agent.id, agentName: receipt.agent.name, requestID: receipt.id,
+          } : {};
+          changes.push([row.id, previous => ({ ...previous, ...row, ...attribution })]);
+        }
+        await records.mutate('usage', changes);
       });
-      queue = work.catch(() => {});
-      return work;
     },
-    async recordRequest(record) {
-      const captured = structuredClone(record);
-      const result = await updateRequests((current) => {
-        const previous = current.records[captured.id],
-          nextRecord = {
-          ...previous,
-          ...captured,
-          ...(previous?.status === "observed" ? { status: "observed" } : {}),
-        };
-        if (JSON.stringify(previous) === JSON.stringify(nextRecord)) return current;
-        return {
-          ...current,
-          records: { ...current.records, [captured.id]: nextRecord },
-        };
+    recordRequest(input) {
+      const captured = structuredClone(input);
+      return enqueue(async () => {
+        const changed = await records.mutate('requests', [[captured.id, previous => ({
+          ...previous, ...captured, ...(previous?.status === 'observed' ? { status: 'observed' } : {}),
+        })]]);
+        // Only the touched receipt is returned; callers do not need the ledger.
+        return { version: 1, records: changed };
       });
-      return structuredClone(result);
     },
   };
 }

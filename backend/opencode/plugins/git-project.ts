@@ -1,5 +1,5 @@
 import { tool, type Plugin } from "@opencode-ai/plugin";
-import { readFile } from "node:fs/promises";
+import { readStateText as readFile } from '../../tools/runtime/state-database.mjs';
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -33,7 +33,7 @@ const GitProject: Plugin = async ({ client, directory }) => {
     tool: {
       git_project: tool({
         description:
-          "Managed Git/GitHub for every named agent. Use inspect, preview and execute for ordinary work. Call prepare before implementation to prepare the agreed task branch; chats themselves never switch branches. If the user explicitly requests anything outside the saved agreement, use request with a reason and either agreement changes (tracking, github, preset, mainBranch), or tool git/gh and an exact args array. Ask the native question with the returned questions unchanged, then call request with planID after approval. This includes branch merges/deletions, uploads, history rewrites and visibility changes. Native permission and repository/content checks still apply. Never publish through shell.",
+          "Managed Git/GitHub for every named agent. Use inspect, preview and execute for ordinary work. Call prepare before implementation to prepare the agreed task branch; chats themselves never switch branches. To merge a local branch into the agreed main branch, call merge with branch for an exact preview, then merge with planID; the latter asks native git_project permission. Do not ask a question or use request for this ordinary merge. For an explicit request outside the saved agreement, use request with a reason and either agreement changes (tracking, github, preset, mainBranch), or tool git/gh and exact args. Ask the native question tool with the returned questions unchanged, wait for the recorded answer, then call request with planID after approval. Native permission and repository/content checks still apply. Never publish through shell.",
         args: {
           action: tool.schema.enum(["inspect", "preview", "execute", "merge", "request", "prepare"]),
           reason: tool.schema.string().max(2000).optional(),

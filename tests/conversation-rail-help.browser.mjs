@@ -23,7 +23,7 @@ for (const [name, viewport, touch] of [
       await expect(rail).toBeVisible();
       await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep this unsent draft');
       await page.getByRole('button', { name: 'Jump to turn 2', exact: true }).click();
-      await expect(page.locator('.request-dock')).toContainText('Reviewing turn 2');
+      await expect(page.locator('.chat-tool-overlay')).toContainText('Reviewing turn 2');
       const help = page.getByRole('button', { name: 'Help: Navigation and context — Conversation rail', exact: true });
       await help.focus();
       const tip = page.locator('.help-hint-popover');
@@ -43,7 +43,7 @@ for (const [name, viewport, touch] of [
       assert.ok(target.width >= 24 && target.height >= 24, 'help has its own usable target');
       assert.ok(box.x >= 0 && box.y >= 0 && box.x + box.width <= viewport.width + 1 && box.y + box.height <= viewport.height + 1, 'help fits the viewport');
       await expect(rail).toHaveAttribute('data-context-level', '25');
-      await expect(page.locator('.request-dock')).toContainText('Reviewing turn 2');
+      await expect(page.locator('.chat-tool-overlay')).toContainText('Reviewing turn 2');
       await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toHaveValue('Keep this unsent draft');
       assert.equal(await page.locator('.chat-scroll').evaluate(el => el.scrollTop), before);
       assert.equal(await page.locator('html').evaluate(el => el.classList.contains('conversation-scrolling')), false);

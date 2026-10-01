@@ -1,8 +1,8 @@
-import { readFile, mkdir, writeFile, unlink, open } from 'node:fs/promises';
+import { createHash } from 'node:crypto';
+import { mkdir,open,unlink } from 'node:fs/promises';
 import path from 'node:path';
-import { createHash, randomUUID } from 'node:crypto';
-import { defaults, normalizePreferences } from '../../../shared/strategy.mjs';
-import { replaceFile } from '../../../server/replace-file.mjs';
+import { defaults,normalizePreferences } from '../../../shared/strategy.mjs';
+import { readRuntimeText as readFile,writeState } from './state-database.mjs';
 
 const key = directory => createHash('sha256').update(process.platform === 'win32' ? path.resolve(directory).toLowerCase() : path.resolve(directory)).digest('hex');
 export const preferencesFile = (root, directory) => path.join(root, '.state', 'preferences', `${key(directory)}.json`);
@@ -26,7 +26,6 @@ export async function savePreferences(root, directory, { preferences, sessionID,
   await mkdir(path.dirname(file), { recursive: true });
   let lock;
   try { lock = await open(`${file}.lock`, 'wx'); } catch { throw new Error('Preferences are being updated. Refresh and retry.'); }
-  const temp = `${file}.${randomUUID()}.tmp`;
   try {
     const data = await document(root, directory);
     if (revision !== undefined && revision !== data.revision) throw new Error('Preferences changed elsewhere. Refresh before saving.');
@@ -39,8 +38,7 @@ export async function savePreferences(root, directory, { preferences, sessionID,
       if (data.execution && sessionID) delete data.execution[sessionID];
     }
     data.revision++;
-    await writeFile(temp, JSON.stringify(data, null, 2), { mode: 0o600 });
-    await replaceFile(temp, file);
+    writeState(file, data);
     return loadPreferences(root, directory, sessionID);
-  } finally { await unlink(temp).catch(() => {}); await lock.close(); await unlink(`${file}.lock`).catch(() => {}); }
+  } finally { await lock.close(); await unlink(`${file}.lock`).catch(() => {}); }
 }

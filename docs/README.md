@@ -28,7 +28,8 @@ Start with what you are trying to do. These guides describe the **single browser
 | Models-page scores, source guidance, and background rating updates | [Model ratings contract](model-ratings.md) |
 | Shared progress bars, index/SQLite jobs and first-open preparation | [Background progress](progress-jobs.md) |
 | Shared popups, subagent priority, confirmations and build enforcement | [Echoflex dialogs](echoflex-dialogs.md) |
-| Add a message while work runs; Queue versus Delegate | [State-aware sender](state-aware-sender.md) |
+| Add a message while work runs; Queue, Delegate and Steer | [State-aware sender](state-aware-sender.md) |
+| Save project goals, follow their linked chats, Resume and Stop | [Project goals](goals.md) |
 | Message options, collapsible context cards, and current-turn tool dock | [Composer and tools](composer-design.md) |
 | Turn navigation, scrolling, Details divider and native automatic compaction | [Conversation rail](conversation-rail.md) |
 | One-time and recurring local prompts with project, agent and model choices | [Scheduled prompts](scheduled-prompts.md) |
@@ -48,6 +49,9 @@ For named agents and delegated assignments, start with the [component glossary](
 Use [testing](testing.md) for interactive journeys, focused runs and coverage boundaries, [development and checks](getting-started.md#development-and-checks) for setup, and [the source map](ARCHITECTURE.md#code-map-and-validation) to find the owning module before editing.
 
 [Local chat performance](local-performance.md) describes caching, scoped reads, and measurement limits.
+
+[Goal execution](goals-execution.md) covers durable delivery, checkpoints, recovery
+and the installed-native compatibility probe.
 
 [Local-data smoke checks](local-data-smoke.md) cover installed-runtime observations. The feature guides above include their focused checks. The [unified verification workflow](../.github/workflows/verify.yml) runs contracts and browser journeys on Windows and Ubuntu.
 

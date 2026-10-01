@@ -2,6 +2,7 @@
 param([switch]$Restart, [switch]$NoOpen)
 $ErrorActionPreference = 'Stop'
 $appRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $appRoot 'backend\scripts\state-database.ps1')
 $state = Join-Path $appRoot 'backend\.state\webpage'
 $iconPath = Join-Path $appRoot 'backend\.state\launcher\freelancer.ico'
 $mutex = New-Object Threading.Mutex($false, 'Local\FreelancerTrayController')
@@ -9,13 +10,13 @@ $ownsTray = $false
 $preferenceFile = Join-Path $env:LOCALAPPDATA 'Freelancer\launcher.json'
 $startMode = 'chrome'
 try {
-    $saved = Get-Content -LiteralPath $preferenceFile -Raw | ConvertFrom-Json
+    $saved = Read-FreelancerState $preferenceFile
     if ($saved.startIn -in @('chrome', 'browser')) { $startMode = $saved.startIn }
 } catch { }
 
 function Set-StartMode([string]$mode) {
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $preferenceFile) | Out-Null
-    @{ startIn = $mode } | ConvertTo-Json | Set-Content -LiteralPath $preferenceFile -Encoding UTF8
+    Write-FreelancerState $preferenceFile (@{ startIn = $mode } | ConvertTo-Json)
     $script:startMode = $mode
     $chromeItem.Checked = $mode -eq 'chrome'
     $browserItem.Checked = $mode -eq 'browser'

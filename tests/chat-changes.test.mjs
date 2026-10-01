@@ -20,3 +20,10 @@ test('successful native edit metadata fills snapshot gaps without claiming faile
 test('private state and credentials never enter the changes projection', () => {
   assert.deepEqual(chatChanges([], [], ['.env', '.git/config', 'backend/.state/data.json', 'node_modules/pkg/a.js'].map(path => ({ path }))), []);
 });
+
+// Patch-only native edits previously rendered inside command output.
+test('completed command patches migrate to file changes without inferring failed edits', () => {
+  const patch = '--- a/source.txt\n+++ b/source.txt\n-old\n+new';
+  const parts = ['completed', 'error'].map(status => ({ type: 'tool', state: { status, input: { filePath: status + '.txt' }, metadata: { diff: patch } } }));
+  assert.deepEqual(chatChanges([], [{ parts }]), [{ file: 'completed.txt', patch, scope: 'session' }]);
+});

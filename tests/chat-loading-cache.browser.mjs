@@ -58,8 +58,7 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
     await nav.locator('.nav-chat-select').filter({ hasText: title }).click();
   };
   const openWorker = async () => {
-    const work = page.locator('.request-working').last();
-    if (!(await work.evaluate(element => element.open))) await work.locator('summary').first().click();
+    const work = page.locator('.chat-transcript');
     await work.getByRole('button', { name: /Agent finished: Researcher .* Open conversation/ }).click();
   };
 
@@ -100,7 +99,7 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
     await page.goto(f.url);
     await chooseChat('Important conversation');
     await page.getByText('First project transcript').waitFor();
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await page.getByRole('button', { name: /^Agents / }).click();
 
     holdOtherBootstrap = true;
     await chooseProject('Other project');
@@ -128,8 +127,7 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
       'cached project transcripts remain read-only until native state is refreshed');
     assert.equal(await page.getByRole('button', { name: 'Stop response', exact: true }).count(), 0,
       'cached transcript cannot expose a stop action based on stale status');
-    assert.equal(await page.locator('.work-details').count(), 1, 'Details remains mounted with the warmed project chat');
-    await expect(page.locator('.details-chat-title')).toHaveText('Second project chat');
+    await expect(page.locator('.chat-toolbar-tabs')).toBeVisible();
     await mkdir('artifacts/chat-loading', { recursive: true });
     await page.screenshot({ path: 'artifacts/chat-loading/project-warmup.png' });
     releaseSecond();
@@ -147,7 +145,7 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
     assert.equal(await stage.count(), 0, 'a recent chat has no loading stage');
     assert.equal(await page.locator('.composer textarea').isDisabled(), true,
       'composer waits for live native state before accepting input');
-    assert.equal(await page.locator('.work-details').count(), 1, 'Details returns with the cached chat');
+    await expect(page.locator('.chat-toolbar-tabs')).toBeVisible();
     await page.screenshot({ path: 'artifacts/chat-loading/recent-chat.png' });
     releaseFirst();
     await page.getByText('Fresh native update').waitFor();
@@ -169,6 +167,7 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
     assert.equal(await assignment.evaluate(element => element.open), false);
     await assignment.locator('summary').click();
     await assignment.getByText('Inspect the delegated task and preserve the parent constraints.').waitFor();
+    await page.getByRole('button', { name: /^Agents / }).click();
     await page.getByRole('button', { name: 'Back to parent chat' }).click();
     await page.getByText('First project transcript').waitFor();
 

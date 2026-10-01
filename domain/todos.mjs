@@ -1,3 +1,4 @@
+import { isInternalMessage } from './sender.mjs';
 const terminal = new Set(["completed", "cancelled"]);
 
 export function hasUnfinishedTodos(todos = []) {
@@ -23,7 +24,7 @@ export function visibleTodosForRequest(todos = [], messages = []) {
   let lastUser = -1;
   let lastTodoWrite = -1;
   for (let i = 0; i < messages.length; i++) {
-    if (messages[i]?.info?.role === "user") lastUser = i;
+    if (messages[i]?.info?.role === "user" && !isInternalMessage(messages[i])) lastUser = i;
     if (hasTodoWrite(messages[i])) lastTodoWrite = i;
   }
 

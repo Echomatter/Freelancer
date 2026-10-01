@@ -6,7 +6,7 @@ Open **Project settings → Delegation** for project defaults or a selected chat
 
 | Control | Meaning |
 | --- | --- |
-| Agent decides / Work directly | Allow useful workers, or disable delegation. |
+| Delegation | Agent decides, Encourage delegation, or No delegation. Encourage asks the agent to proactively find useful worker assignments; it does not require a team or change worker limits. |
 | Simultaneous workers | One to six active assignments across the tree; a ceiling. |
 | Maximum depth | One to six nested levels, also bounded by native OpenCode. |
 | Worker models | Free only, Prefer free, All available models, or Paid subscription models only. |

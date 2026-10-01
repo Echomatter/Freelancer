@@ -1,4 +1,4 @@
-import { readFile, writeFile, rename, mkdir } from 'node:fs/promises';
+import { readStateText as readFile, writeState } from '../backend/tools/runtime/state-database.mjs';
 import path from 'node:path';
 
 export async function savedWebPort(file, override) {
@@ -11,7 +11,5 @@ export async function savedWebPort(file, override) {
 }
 
 export async function rememberWebPort(file, port) {
-  await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(`${file}.tmp`, JSON.stringify({ port }), { mode: 0o600 });
-  await rename(`${file}.tmp`, file);
+  writeState(file, { port });
 }

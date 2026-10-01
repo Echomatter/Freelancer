@@ -19,7 +19,7 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
   const menu = page.getByRole('region', { name: 'Message options', exact: true });
   await input.fill('Keep this draft while I adjust the controls.');
   await test.step('One click exposes every message option; Escape returns focus', async () => {
-    const left = await options.boundingBox(), right = await page.locator('.sender-main').boundingBox();
+    const left = await options.boundingBox(), right = await page.getByRole('button', { name: 'Choose Delegate, Queue, or Steer', exact: true }).boundingBox();
     assert.equal(left.width, right.width); assert.equal(left.height, right.height);
     assert.ok(left.width >= 44);
     await options.click();
@@ -52,9 +52,11 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
     await expect(files.getByRole('button', { name: 'Remove layout-notes.txt' })).toBeVisible();
   });
   await test.step('Only the dock contains tools; markers open the requested turn', async () => {
-    const dock = page.locator('.request-dock');
+    const dock = page.locator('.chat-tool-overlay');
     await expect(page.locator('.chat-transcript .tool-card')).toHaveCount(0);
+    await page.locator('.chat-toolbar-tabs button').filter({ hasText: 'Commands' }).click();
     await expect(dock).toContainText('Read composer.css');
+    await page.getByRole('button', { name: 'Close chat tools', exact: true }).click();
     await page.getByRole('button', { name: 'Open tools for turn 1', exact: true }).click();
     await expect(dock).toContainText('Reviewing turn 1');
     await expect(dock).toContainText('Read Chat.tsx');
@@ -72,17 +74,19 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
     await page.setViewportSize({ width: 430, height: 780 });
     await expect(input).not.toHaveAttribute('placeholder');
     await expect(input).toHaveAttribute('enterkeyhint', 'send');
+    await input.fill('Short draft');
+    expect((await page.locator('.composer').boundingBox()).height).toBeLessThanOrEqual(62);
     await input.fill('A longer message\n'.repeat(16));
     const inputRect = await input.boundingBox();
     assert.ok(inputRect.height > 44 && inputRect.height <= 240);
     assert.equal(await input.evaluate(el => getComputedStyle(el).fontSize), '16px');
     await expect(page.locator('.composer-context')).toHaveCount(0);
     expect(await page.locator('.composer').evaluate(el => getComputedStyle(el).borderBottomWidth)).toBe('1px');
-    const currentWork = page.locator('.request-dock .request-working');
-    if (await currentWork.getAttribute('open') === null) await currentWork.locator('summary').first().click();
-    const routeCard = page.locator('.agent-route-unavailable'), routeRect = await routeCard.boundingBox();
+    await page.getByRole('button', { name: /^Agents / }).click();
+    const routeCard = page.locator('.chat-tool-overlay .agent-route-unavailable'), routeRect = await routeCard.boundingBox();
     const viewRect = await page.locator('.chat-view').boundingBox();
     assert.ok(routeRect.x >= viewRect.x && routeRect.x + routeRect.width <= viewRect.x + viewRect.width, 'long worker failures stay inside the chat');
+    await page.getByRole('button', { name: 'Close chat tools', exact: true }).click();
     await page.evaluate(() => {
       const banner = document.createElement('div');
       banner.className = 'error-banner overflow-probe'; banner.setAttribute('role', 'alert');
@@ -108,8 +112,6 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
   });
   await test.step('Short screens keep menu controls clickable above an expanded dock', async () => {
     await page.setViewportSize({ width: 430, height: 520 });
-    const dock = page.locator('.request-dock .request-working');
-    if (await dock.getAttribute('open') === null) await dock.locator('summary').first().click();
     await options.click();
     const rect = await menu.boundingBox();
     assert.ok(rect.y >= 0 && rect.y + rect.height <= 520, 'the complete panel fits in the viewport');

@@ -1,6 +1,10 @@
-import { delegationPool, delegationGuidance } from "../domain/delegation-policy.mjs";
+import { readRuntimeText } from '../backend/tools/runtime/state-database.mjs';
+import { delegationPool, delegationGuidance, effectiveDelegationPreferences, capturedDelegationPool } from "../domain/delegation-policy.mjs";
+import { reserveWorkerSlot, releaseWorkerSession } from '../backend/tools/runtime/worker-dispatch-lock.mjs';
+import { workerResultInstruction } from '../backend/tools/runtime/worker-result.mjs';
 import { checkedCatalog } from "../backend/tools/runtime/agent-catalog.mjs";
 import { executionContext } from "../backend/tools/runtime/execution-context.mjs";
+import { modelInputEvidence } from '../backend/tools/runtime/input-observations.mjs';
 import { ensureAgentProfiles } from "./agent-profiles.mjs";
 import { createHistoryService } from "./history.mjs";
 import { createModelRatingService } from "./model-ratings.mjs";
@@ -48,7 +52,7 @@ import { createContextSettings } from './context-settings.mjs';
 import { gitExecutionContract } from "../domain/git-project.mjs";
 import { senderState } from "../domain/sender.mjs";
 
-import { defaults as runtimeDefaults } from "../shared/strategy.mjs";
+import { defaults as runtimeDefaults, normalizePreferences } from "../shared/strategy.mjs";
 import {
   sessionDefaults,
   startingChoices,
@@ -244,6 +248,80 @@ export function createApplication({
       })().finally(() => { contentIndexRefresh.delete(key); });
       contentIndexRefresh.set(key, refresh);
       return refresh;
+    },
+    async goalActor(input) {
+      const settings = await store.read('settings');
+      const p = settings.projects.find(p => sameDirectory(p.directory, input.directory));
+      if (!p) throw Error('Unknown project.');
+      const session = await ownSession(p, input.sessionID);
+      const message = await request(p, `/session/${part(session.id)}/message/${part(input.messageID)}`);
+      const receipt = await executionContext(backendRoot, p.directory, session, message);
+      if (!receipt?.goalID || session.parentID || receipt.sessionID !== session.id) throw Error('Only the recorded goal parent may report its outcome.');
+      return { receipt, message, project: p.id };
+    },
+    async workerHandoff(input) {
+      if (!['steer', 'queue'].includes(input.delivery) || !input.task?.trim() || input.task.length > 180000) throw Error('Choose a worker, Steer or Queue, and a bounded task.');
+      const settings = await store.read('settings');
+      const p = settings.projects.find(p => sameDirectory(p.directory, input.directory));
+      if (!p) throw Error('Unknown project.');
+      const parent = await ownSession(p, input.sessionID), child = await ownSession(p, input.worker);
+      const message = await request(p, `/session/${part(parent.id)}/message/${part(input.messageID)}`);
+      const parentExecution = await executionContext(backendRoot, p.directory, parent, message);
+      if (!parentExecution || child.parentID !== parent.id) throw Error('This worker does not belong to the recorded parent assignment.');
+      const latest = JSON.parse(await readRuntimeText(path.join(backendRoot, '.state/delegation/workers', createHash('sha256').update(child.id).digest('hex') + '.json'), 'utf8'));
+      if (!/^[a-f0-9]{64}$/.test(latest.taskID)) throw Error('Invalid worker record.');
+      const prior = JSON.parse(await readRuntimeText(path.join(backendRoot, '.state/delegation', latest.taskID + '.json'), 'utf8'));
+      const attempt = prior.attempts?.at(-1);
+      if (prior.parent_session !== parent.id || !sameDirectory(prior.directory, p.directory) || attempt?.child_session !== child.id || prior.status === 'stop_unverified' || prior.status === 'failed' && !attempt.abort_verified) throw Error('Worker ownership or delivery is uncertain. Inspect it before sending.');
+      const root = (await store.read('requests')).records[prior.root_request_id];
+      if (!root || root.sessionID !== prior.root_session || root.projectID !== p.id) throw Error('The captured worker assignment is unavailable.');
+      const current = (await loadPreferences(backendRoot, p.directory, parent.id)).defaults;
+      const preferences = effectiveDelegationPreferences(current, effectiveDelegationPreferences(parentExecution.preferences, root.preferences));
+      if (preferences.delegation === 'manual' || !capturedDelegationPool(parentExecution, current, preferences).includes(attempt.selected_model) || !capturedDelegationPool(root, current, preferences).includes(attempt.selected_model)) throw Error('Worker delivery is outside the captured delegation budget.');
+      const messages = await request(p, `/session/${part(child.id)}/message`);
+      const user = messages.find(m => m.info?.id === attempt.user_message_id);
+      if (!user) throw Error('Worker input has not been confirmed. Inspect it before sending.');
+      const split = attempt.selected_model.indexOf('/');
+      const captured = { ...root, id: attempt.user_message_id, sessionID: child.id, rootSessionID: prior.root_session, rootRequestID: prior.root_request_id,
+        agent: prior.agent, readOnly: prior.read_only || parentExecution.readOnly || input.inspectionOnly === true,
+        catalog: { ...root.catalog, agents: root.catalog.agents.map(a => a.id === prior.agent.id ? prior.agent : a) },
+        preferences: { ...preferences, ...((prior.free_only || input.freeOnly) ? { costPreference: 'free-only' } : {}) },
+        model: { providerID: attempt.selected_model.slice(0, split), modelID: attempt.selected_model.slice(split + 1) }, variant: user.info.variant ?? attempt.variant ?? '',
+        delegationPool: (root.delegationPool ?? []).filter(id => (parentExecution.delegationPool ?? []).includes(id)),
+      };
+      const id = createHash('sha256').update(JSON.stringify([input.sessionID, input.messageID, input.callID, input.worker, input.delivery, input.task])).digest('hex');
+      return { project: p.id, session: child.id, input: { id, text: input.task, kind: input.delivery, model: attempt.selected_model, agentID: prior.agent.id, variant: captured.variant },
+        execution: { captured, worker: { parent: parent.id, root: prior.root_session, taskID: prior.task_id },
+          ...(root.goalID ? { goal: { id: root.goalID, runID: root.goalRunID, revision: root.goalRevision } } : {}),
+          contract: workerResultInstruction + '\nThis is a follow-up from your parent in the same assignment. Preserve its plan and partial results. ' + (captured.readOnly ? 'READ-ONLY: do not edit source or use mutating shell commands.' : '') } };
+    },
+    async workerDeliveryGuard(id, session, execution) {
+      const p = await project(id), native = await ownSession(p, session);
+      if (native.parentID !== execution.worker.parent) throw Error('Worker ownership changed. Nothing was sent.');
+      const captured = execution.captured;
+      if (captured.goalID) {
+        const goal = (await store.read('goals')).records[captured.goalID];
+        if (!goal || goal.status !== 'running' || goal.stopRequested || goal.archived || goal.runID !== captured.goalRunID) throw Error('The owning goal is not running. Resume it before delivering worker work.');
+      }
+      const current = (await loadPreferences(backendRoot, p.directory, execution.worker.parent)).defaults;
+      const effective = effectiveDelegationPreferences(current, captured.preferences);
+      const model = `${captured.model.providerID}/${captured.model.modelID}`;
+      if (effective.delegation === 'manual' || !capturedDelegationPool(captured, current, effective, captured.variant).includes(model)) throw Error('Worker delivery is outside the current and captured budget.');
+      const tree = await app.goalTree(id, execution.worker.root);
+      if (!tree.some(s => s.id === session)) throw Error('Worker ancestry changed.');
+      if (!tree.find(s => s.id === session).active && tree.filter(s => s.id !== execution.worker.root && s.active).length >= effective.maxParallel) return false;
+      return effective.maxParallel;
+    },
+    async goalTree(id, session) {
+      const p = await project(id); await ownSession(p, session);
+      const [all, status] = await Promise.all([request(p, '/session?limit=1000'), request(p, '/session/status')]);
+      const ids = new Set([session]);
+      for (let i = 0; i < 32; i++) {
+        const before = ids.size;
+        for (const s of all) if (ids.has(s.parentID) && sameDirectory(s.directory, p.directory)) ids.add(s.id);
+        if (before === ids.size) break;
+      }
+      return [...ids].map(id => ({ id, active: ['busy', 'retry'].includes(status[id]?.type) }));
     },
     async gitAgentAction(input) {
       const settings = await store.read("settings");
@@ -578,18 +656,29 @@ export function createApplication({
         sessionTitle: decisionOrigins.get(row.sessionID)?.title || 'Subagent',
       }));
       const importedSource = app.chatgpt.source(id, session);
+      const workerInputs = new Map();
+      if (app.sender) {
+        for (const child of new Set(rows.flatMap(m => m.parts ?? []).filter(p => p.state?.metadata?.freelancer_delivery).map(p => p.state.metadata.sessionId))) {
+          for (const delivery of await app.sender.records(id, child)) workerInputs.set(delivery.id, delivery);
+        }
+      }
       let requestRows = [];
       try { requestRows = await timed('receipts', () => store.requestSummaries ? store.requestSummaries(id, session)
         : store.read("requests").then(value => Object.values(value.records))); }
       catch (error) { availabilityWarnings.push(`Request receipts: ${error.message}`); }
       return {
         title: nativeSession.title || "New chat",
+        nativeStatus: status,
+        inputEvidence: await modelInputEvidence(backendRoot, session, rows),
         // Workers and older chats may be absent from the bounded sidebar list.
         // Keep navigation identity with the verified transcript, including cache reads.
         session: { id: nativeSession.id, title: nativeSession.title || "New chat",
           parentID: nativeSession.parentID, time: nativeSession.time },
         messages: [...(importedSource?.messages ?? []), ...rows.map(row => ({ ...row,
-          parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation) }))],
+          parts: row.parts?.filter(part => !part.metadata?.freelancer_chatgpt_orientation).map(part => {
+            const delivery = workerInputs.get(part.state?.metadata?.freelancer_delivery);
+            return delivery ? { ...part, state: { ...part.state, metadata: { ...part.state.metadata, delivery_status: delivery.status, delivery_included: !!delivery.includedAt } } } : part;
+          }) }))],
         continuation: importedSource?.source ?? null,
         receipts: requestRows
           .filter((r) => r.sessionID === session && r.projectID === id)
@@ -737,6 +826,7 @@ export function createApplication({
         agentID = "engineer",
         attachments,
       },
+      execution = {},
     ) {
       if (connecting || refreshingAgents || refreshingContext)
         throw Error(
@@ -744,19 +834,33 @@ export function createApplication({
         );
       sending++;
       let gitAcceptedMessage;
+      let workerSlot, workerSubmitted = false;
       try {
+        if (execution.worker) {
+          const limit = await app.workerDeliveryGuard(id, session, execution);
+          const p = await project(id);
+          workerSlot = limit && await reserveWorkerSlot(backendRoot, execution.worker.root, { limit, sessionID: session,
+            active: async () => new Set((await app.goalTree(id, execution.worker.root)).filter(t => t.id !== execution.worker.root && t.active).map(t => t.id)),
+            settled: async r => {
+              if (!r.messageID) return false;
+              const messages = await request(p, `/session/${part(r.childID)}/message`);
+              return messages.some(m => m.info?.parentID === r.messageID && m.info.time?.completed && (m.info.error || m.info.finish && m.info.finish !== 'tool-calls'));
+            },
+          });
+          if (!workerSlot) throw Object.assign(Error('Waiting for a free worker slot. No inference was sent.'), { code: 'WORKER_CAPACITY' });
+        }
         const fileParts = normalizeAttachments(attachments);
         if (typeof text !== "string" || (!text.trim() && !fileParts.length) || text.length > 200000)
           throw Error("Write a message or attach a file first");
         const settings = await store.read("settings");
-        const workspace = checkedCatalog(settings);
+        const workspace = execution.captured?.catalog ?? checkedCatalog(settings);
         const p = await project(id);
         await ensureAgentProfiles(host, p.directory, workspace.agents, () => sending === 1 && !connecting,
           refreshing => { refreshingAgents = refreshing; });
         const backend = backendFactory(backendRoot, p.directory);
         const snapshot = await backend.snapshot(session);
-        const defaults =
-          snapshot.preferences.defaults ?? snapshot.preferences.preferences;
+        const defaults = normalizePreferences(
+          execution.captured?.preferences ?? snapshot.preferences.defaults ?? snapshot.preferences.preferences);
         const choice = resolveChoices(
           workspace,
           {
@@ -788,7 +892,8 @@ export function createApplication({
                   : "subscription",
           })),
         );
-        const allowedModels = delegationPool(defaults, candidates, catalog.connected, childVariant);
+        const allowedModels = delegationPool(defaults, candidates, catalog.connected, childVariant)
+          .filter(id => !Array.isArray(execution.captured?.delegationPool) || execution.captured.delegationPool.includes(id));
         let model;
         const parseModel = (value) => {
           const slash = value.indexOf("/");
@@ -889,15 +994,17 @@ export function createApplication({
           },
         }));
         const messageID = `msg_${randomUUID().replaceAll("-", "")}`;
+        await workerSlot?.bind(session, messageID);
         const importedSource = app.chatgpt.source(id, session);
         const orientation = importedSource && !(await request(p, `/session/${part(session)}/message`)).length
           ? orientationPart(importedSource, Math.min(48000, catalog.all.find(p => p.id === model?.providerID)?.models[model?.modelID]?.limit?.context || 12000)) : null;
         const metadata = {
-          policyVersion,
+          policyVersion: execution.captured?.policyVersion ?? policyVersion,
           requestID: messageID,
           projectID: id,
           agentID: agent.id,
           mode: "build",
+          ...(execution.goal ? { goalID: execution.goal.id, runID: execution.goal.runID, revision: execution.goal.revision } : {}),
         };
         await store.recordRequest({
           id: messageID,
@@ -905,7 +1012,7 @@ export function createApplication({
           projectID: id,
           createdAt: Date.now(),
           status: "prepared",
-          policyVersion,
+          policyVersion: execution.captured?.policyVersion ?? policyVersion,
           mode: "build",
           agent,
           directory: p.directory,
@@ -914,13 +1021,22 @@ export function createApplication({
           // An empty captured pool means no children, not unrestricted routing.
           delegationPool: allowedModels,
           catalogConnected: catalog.connected,
-          readOnly: false,
+          readOnly: execution.captured?.readOnly === true,
+          ...(execution.captured?.workflow ? { workflow: execution.captured.workflow } : {}),
           model: model ?? null,
           variant: variant || null,
           preferences,
           orienting: !!orientation,
+          rootRequestID: execution.captured?.rootRequestID ?? execution.captured?.id ?? messageID,
+          rootSessionID: execution.captured?.rootSessionID ?? session,
+          ...(execution.goal ? { goalID: execution.goal.id, goalRunID: execution.goal.runID, goalRevision: execution.goal.revision } : {}),
         });
         try {
+          if (execution.automatic && execution.goal) {
+            const goal = (await store.read('goals')).records[execution.goal.id];
+            if (goal?.status !== 'running' || goal.stopRequested || goal.runID !== execution.goal.runID) throw Object.assign(Error('Automatic goal delivery inhibited by Stop or pause.'), { code: 'GOAL_INHIBITED' });
+          }
+          workerSubmitted = !!workerSlot;
           const result = await request(
             p,
             `/session/${part(sessionID(session))}/prompt_async`,
@@ -933,7 +1049,8 @@ export function createApplication({
                 agent: agent.id,
                 system: executionPrompt(agent, metadata, workspace) +
                   "\n\n" + delegationGuidance(preferences, allowedModels) +
-                  (gitAgreement.tracking ? "\n\n" + gitExecutionContract(gitAgreement) : ""),
+                  (gitAgreement.tracking ? "\n\n" + gitExecutionContract(gitAgreement) : "") +
+                  (execution.contract ? "\n\n" + execution.contract : ""),
                 parts: [...(orientation ? [orientation] : []), ...(text.trim() ? [{ type: "text", text }] : []), ...fileParts],
               },
             },
@@ -949,13 +1066,14 @@ export function createApplication({
           throw error;
         }
       } finally {
+        if (!workerSubmitted) await workerSlot?.release();
         gitProjects.finishDispatch(id, session, gitAcceptedMessage);
         sending--;
       }
     },
     async stop(id, session) {
       const p = await project(id);
-      await ownSession(p, session);
+      const native = await ownSession(p, session);
       const result = await request(
         p,
         `/session/${part(sessionID(session))}/abort`,
@@ -987,6 +1105,12 @@ export function createApplication({
             if (e.status !== 404) throw e;
           }
         }
+      }
+      const stoppedStatus = native.parentID ? (await request(p, '/session/status'))[session]?.type : null;
+      if (native.parentID && (!stoppedStatus || stoppedStatus === 'idle')) {
+        let root = native, seen = new Set();
+        while (root.parentID && !seen.has(root.id) && seen.size < 32) { seen.add(root.id); root = await ownSession(p, root.parentID); }
+        await releaseWorkerSession(backendRoot, root.id, session);
       }
       return result;
     },

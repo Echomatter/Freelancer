@@ -1,21 +1,21 @@
+import { readRuntimeText as readFile,stateFiles,writeState } from './state-database.mjs';
 // Native OpenCode child execution. No global model/agent configuration is mutated.
 // SDK response fields, not a model's self-description, establish execution identity.
-import { createHash, randomUUID } from 'node:crypto';
-import { readFile, mkdir, writeFile, unlink, readdir } from 'node:fs/promises';
+import { createHash,randomUUID } from 'node:crypto';
 import path from 'node:path';
-import { activityOf } from './activity.mjs';
-import { workerResult, workerResultInstruction, runtimeSignals } from './worker-result.mjs';
-import { makeDecision, answeredChoice } from './decision.mjs';
 import { isDeepStrictEqual } from 'node:util';
-import { loadPreferences } from './preferences.mjs';
-import { effectiveDelegationPreferences, delegationGuidance, capturedDelegationPool } from '../../../domain/delegation-policy.mjs';
+import { capturedDelegationPool,delegationGuidance,effectiveDelegationPreferences } from '../../../domain/delegation-policy.mjs';
 import { policyInputs } from '../../../shared/strategy.mjs';
+import { activityOf } from './activity.mjs';
+import { answeredChoice,makeDecision } from './decision.mjs';
+import { loadPreferences } from './preferences.mjs';
+import { runtimeSignals,workerResult,workerResultInstruction } from './worker-result.mjs';
 
-import { executionContext, workerBindingFile } from './execution-context.mjs';
+import { agentAssignmentAllowed,legacyTaskPatterns } from '../../../domain/agent-policy.mjs';
 import { legacyModelAllowed } from '../../../domain/workspace.mjs';
-import { agentAssignmentAllowed, legacyTaskPatterns } from '../../../domain/agent-policy.mjs';
-import { executionPrompt, policyVersion } from '../../../server/execution.mjs';
-import { replaceFile } from '../../../server/replace-file.mjs';
+import { executionPrompt,policyVersion } from '../../../server/execution.mjs';
+import { executionContext,workerBindingFile } from './execution-context.mjs';
+import { reserveWorkerSlot } from './worker-dispatch-lock.mjs';
 // Native session metadata is not a project source edit. Host permissions still apply.
 const readers = new Set(['read', 'list', 'glob', 'grep', 'webfetch', 'websearch', 'skill', 'todoread', 'todowrite', 'question']);
 // Preserve explicit user spending constraints even if a parent omits the tool flag.
@@ -78,12 +78,7 @@ function unwrap(r) {
   if (r?.error) throw Object.assign(new Error(r.error?.data?.message || 'SDK request failed'), r.error);
   return r && Object.hasOwn(r, 'data') ? r.data : r;
 }
-export async function atomicJson(file, value) {
-  await mkdir(path.dirname(file), { recursive: true });
-  const tmp = `${file}.${randomUUID()}.tmp`;
-  try { await writeFile(tmp, JSON.stringify(value, null, 2), { mode: 0o600 }); await replaceFile(tmp, file); }
-  finally { await unlink(tmp).catch(() => {}); }
-}
+export async function atomicJson(file, value) { writeState(file, value); }
 async function readJson(file) {
   try { return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, '')); }
   catch (e) { if (e.code === 'ENOENT') return null; throw e; }
@@ -124,7 +119,7 @@ export function observe(messages, selected, agentID) {
 }
 
 /** Inject the plugin's authenticated v1 SDK client; never start another OpenCode server. */
-export function createDelegator({ client, toolkitRoot, directory, select, record, beforeSelect = async () => {},
+export function createDelegator({ client, toolkitRoot, directory, select, record, handoff, beforeSelect = async () => {},
   now = () => Date.now(), sleep = ms => new Promise(r => setTimeout(r, ms)),
   limits = {} }) {
   const cfg = { requestMs: 10000, firstResponseMs: 60000, taskMs: 600000, stopMs: 10000, pollMs: 750, ...limits };
@@ -139,13 +134,27 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     const lock = new Promise(resolve => { unlock = resolve; });
     slotLocks.set(rootSessionID, lock);
     await previous;
+    let releaseDispatch;
     try {
-      if (await occupiedSlots(rootSessionID, directory, signal) >= limit) return null;
-      const reservation = { startedAt: now() };
+      const claim = await reserveWorkerSlot(toolkitRoot, rootSessionID, { limit,
+        active: () => occupiedSlots(rootSessionID, directory, signal, true),
+        settled: async r => {
+          const statuses = await call('session', 'status', { query: query(directory) }, signal);
+          if (statuses?.[r.childID]?.type === 'idle') return true;
+          if (!r.messageID) return false;
+          const messages = await call('session', 'messages', sessionArgs(r.childID, directory), signal);
+          return messages.some(m => m.info?.parentID === r.messageID && m.info.time?.completed && (m.info.error || m.info.finish && m.info.finish !== 'tool-calls'));
+        },
+      });
+      if (!claim) return null;
+      releaseDispatch = claim.release;
+      const reservation = { startedAt: now(), releaseDispatch, bind: claim.bind };
       const reservations = activeByParent.get(rootSessionID) ?? new Set();
       reservations.add(reservation);
       activeByParent.set(rootSessionID, reservations);
       return reservation;
+    } catch (error) {
+      await releaseDispatch?.(); throw error;
     } finally {
       unlock();
       if (slotLocks.get(rootSessionID) === lock) slotLocks.delete(rootSessionID);
@@ -175,7 +184,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
   async function recordedDecision(args, ctx, userMessageID) {
     const decisionDir = path.join(stateDir, 'decisions');
     let names;
-    try { names = await readdir(decisionDir); }
+    try { names = await Promise.resolve(stateFiles(decisionDir)); }
     catch (e) { if (e.code === 'ENOENT') return null; throw e; }
     const messages = await call('session', 'messages', sessionArgs(ctx.sessionID, ctx.directory), ctx.abort);
     const matches = [];
@@ -211,7 +220,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
   }
   const query = directory => ({ directory });
   const sessionArgs = (id, directory) => ({ path: { id }, query: query(directory) });
-  async function occupiedSlots(sessionID, directory, signal) {
+  async function occupiedSlots(sessionID, directory, signal, nativeOnly = false) {
     const activeIDs = new Set();
     let statuses = null;
     if (typeof client.session.children === 'function') {
@@ -239,6 +248,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         if (statusResult && typeof statusResult === 'object' && !Array.isArray(statusResult)) statuses = statusResult;
       } catch { /* Unknown status keeps existing reservations. */ }
     }
+    if (nativeOnly) return activeIDs;
     const reservations = activeByParent.get(sessionID) || new Set();
     let starting = 0;
     for (const entry of [...reservations]) {
@@ -320,7 +330,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     catch { receipt.recording_error = 'Outcome hook failed; durable execution receipt retained'; }
   }
   async function workerReceipts(ctx) {
-    const names = await readdir(stateDir).catch(error => {
+    const names = await Promise.resolve(stateFiles(stateDir)).catch(error => {
       if (error.code === 'ENOENT') return [];
       throw error;
     });
@@ -334,6 +344,9 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
   }
   async function inspectWorkers(args, ctx) {
     const receipts = await workerReceipts(ctx);
+    const outbox = await readJson(path.join(toolkitRoot, '.state/webpage/sender-outbox.json'));
+    const deliveries = worker => (outbox?.rows ?? []).filter(r => r.session === worker && r.execution?.worker?.parent === ctx.sessionID)
+      .map(({ id, kind, status, includedAt, actedOn, error, notice }) => ({ id, kind, status, includedAt, actedOn, error, notice }));
     if (!args.worker) {
       const statuses = await call('session', 'status', { query: query(ctx.directory) }, ctx.abort);
       return { status: 'workers', workers: receipts.flatMap(receipt =>
@@ -342,7 +355,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         agent: receipt.agent?.name, assignment: receipt.activity?.assignment || null,
         receipt_status: receipt.status, native_status: statuses?.[attempt.child_session]?.type || 'idle',
         attempt_status: attempt.status,
-        created_at: receipt.created_at, activity: receipt.activity || null,
+        created_at: receipt.created_at, activity: receipt.activity || null, deliveries: deliveries(attempt.child_session),
       }))) };
     }
     const current = await readJson(workerFile(args.worker));
@@ -367,7 +380,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         error: part.state?.error };
       return { type: part.type, text: String(part.text || '') };
     });
-    return { status: 'worker_transcript', task_id: receipt.task_id, child_session: args.worker,
+    return { status: 'worker_transcript', task_id: receipt.task_id, child_session: args.worker, deliveries: deliveries(args.worker),
       parent_session: ctx.sessionID, agent: receipt.agent?.name, assignment: receipt.activity?.assignment || null,
       receipt_status: receipt.status, native_status: statuses?.[args.worker]?.type || 'idle',
       activity: receipt.activity || null, worker_result: receipt.worker_result || null,
@@ -407,6 +420,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       note: delegationGuidance(savedPreferences, pool(savedPreferences.childVariant)) + ' Edits apply to the next main request, not work already in progress.',
     };
     let continued;
+    if (args.delivery && (!args.worker || !['steer', 'queue'].includes(args.delivery))) throw fault('InvalidAssignment', 'Steer or Queue requires an existing worker and a task.');
     if (args.worker) {
       const child = await call('session', 'get', sessionArgs(args.worker, ctx.directory), ctx.abort);
       const latest = await readJson(workerFile(args.worker));
@@ -416,6 +430,27 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       const attempt = prior?.attempts?.at(-1);
       if (child?.parentID !== ctx.sessionID || prior?.parent_session !== ctx.sessionID || prior?.directory !== ctx.directory || attempt?.child_session !== args.worker)
         throw fault('PermissionError', 'This worker does not belong to this parent and project.');
+      if (args.delivery) {
+        if (!handoff) throw fault('UnsupportedRuntime', 'Worker delivery requires the Freelancer sender.');
+        if (!args.task?.trim()) throw fault('InvalidTask', 'A worker handoff needs a bounded task or correction.');
+        if (savedPreferences.delegation === 'manual' || /\b(?:do not delegate|don.t delegate|handle (?:it|this) yourself|no (?:workers|delegation))\b/i.test(assignment)) throw fault('PreferenceConstraint', 'Delegation is disabled by the user.');
+        if (args.agentID && args.agentID !== prior.agent.id || args.selectedModel && args.selectedModel !== attempt.selected_model) throw fault('BindingFailure', 'Steer and Queue preserve the worker agent and model.');
+        if (!pool(attempt.variant ?? '').includes(attempt.selected_model)) throw fault('PreferenceConstraint', 'The worker model is outside the captured delegation budget.');
+        const selected = execution.catalogModels.find(m => m.id === attempt.selected_model);
+        const inherited = await lookup(ctx.sessionID, ctx.directory);
+        const freeOnly = !!(args.freeOnly || prior.free_only || inherited?.freeOnly || freeOnlyAssignment(assignment));
+        if (freeOnly && selected?.costClass !== 'free') throw fault('PreferenceConstraint', 'This worker is not eligible free capacity.');
+        if (selected?.costClass !== 'free') {
+          if (!ctx.ask) throw fault('PermissionError', 'Native paid_delegate permission is required.');
+          await ctx.ask({ permission: 'paid_delegate', patterns: [attempt.selected_model], always: [attempt.selected_model], metadata: { model: attempt.selected_model, agentID: prior.agent.id, worker: args.worker, delivery: args.delivery } });
+        }
+        const delivery = await handoff({ worker: args.worker, task: args.task, delivery: args.delivery,
+          inspectionOnly: args.needsWrites === false || inherited?.readOnly === true, freeOnly,
+          directory: ctx.directory, sessionID: ctx.sessionID, messageID: ctx.messageID, callID: ctx.callID }, ctx.abort);
+        return { ...delivery, parent_session: ctx.sessionID, agent: prior.agent, selected_model: attempt.selected_model, task_id: prior.task_id };
+      }
+      const savedDeliveries = await readJson(path.join(toolkitRoot, '.state/webpage/sender-outbox.json'));
+      if (savedDeliveries?.rows?.some(r => r.session === args.worker && ['waiting','sending','submitted','uncertain','failed'].includes(r.status))) throw fault('WorkerBusy', 'This worker has pending or uncertain deliveries. Inspect it; use Steer or Queue without bypassing those deliveries.');
       if (!(prior.status === 'completed' || prior.status === 'failed' && attempt.abort_verified === true))
         throw fault('WorkerBusy', 'Worker is active or its delivery/stop is uncertain. Inspect it before continuing.');
       const statuses = await call('session', 'status', { query: query(ctx.directory) }, ctx.abort);
@@ -557,7 +592,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     }
     // Durable equivalent-failure guard across tool calls and runtime restarts.
     if (!legacyContract) {
-      const names = await readdir(stateDir).catch(() => []);
+      const names = await Promise.resolve(stateFiles(stateDir)).catch(() => []);
       let failures = 0;
       for (const name of names.filter(name => /^[a-f0-9]{64}\.json$/.test(name))) {
         const prior = await readJson(path.join(stateDir, name));
@@ -685,6 +720,8 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           reservation.childID = child.id;
           attempt.child_session = child.id;
           attempt.user_message_id = `msg_${Date.now().toString(16).padStart(12, '0')}${randomUUID().replaceAll('-', '').slice(0, 14)}`;
+          attempt.variant = variant;
+          await reservation.bind(child.id, attempt.user_message_id);
           await atomicJson(receiptFile, receipt);
           const verify = await call('session', 'get', sessionArgs(child.id, ctx.directory), ctx.abort);
           if (verify.parentID !== ctx.sessionID || !equalRules(verify.permission, permissions)) {
@@ -718,7 +755,8 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
             await atomicJson(receiptFile, receipt);
             await ctx.metadata?.({ title: `@${agent.name} · Worker started`,
               metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: 'running' } });
-            const releaseDetached = () => {
+            const releaseDetached = async () => {
+              if (receipt.status !== 'stop_unverified') await reservation.releaseDispatch();
               live.delete(child.id);
               const rootSessionID = execution.rootSessionID ?? ctx.sessionID;
               const reservations = activeByParent.get(rootSessionID);
@@ -736,7 +774,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                   ]);
                   if (messages.some(m => m.info?.role === 'assistant' && !m.info.summary && !m.info.agent))
                     throw fault('IdentityUnverified', 'Child message lacks runtime agent identity');
-                  const turnMessages = messages.filter(m => m.info?.parentID === attempt.user_message_id || m.info?.id === attempt.user_message_id);
+                  const turnMessages = messages.slice(Math.max(0, messages.findIndex(m => m.info?.id === attempt.user_message_id)));
                   const observation = observe(turnMessages, selected, agent.id);
                   receipt.worker_result = workerResult(observation.text, { partial: !observation.complete || !!observation.error });
                   receipt.runtime_signals = runtimeSignals(turnMessages);
@@ -768,6 +806,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                     continue;
                   }
                   if (observation.complete && (!statuses?.[child.id] || statuses[child.id].type === 'idle')) {
+                    await reservation.releaseDispatch();
                     attempt.status = 'completed'; attempt.completed_at = stamp(); attempt.elapsed_ms = now() - start;
                     receipt.status = 'completed';
                     await atomicJson(receiptFile, receipt);
@@ -799,7 +838,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                 await ctx.metadata?.({ title: `@${agent.name} · ${receipt.activity.label}`,
                   metadata: { ...displayMetadata, freelancer_activity: receipt.activity, freelancer_status: receipt.status } });
               } finally {
-                releaseDetached();
+                await releaseDetached();
               }
             })();
             release = false;
@@ -817,7 +856,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
               call('session', 'status', { query: query(ctx.directory) }, ctx.abort),
             ]);
             if (messages.some(m => m.info?.role === 'assistant' && !m.info.summary && !m.info.agent)) throw fault('IdentityUnverified', 'Child message lacks runtime agent identity');
-            const turnMessages = messages.filter(m => m.info?.parentID === attempt.user_message_id || m.info?.id === attempt.user_message_id);
+            const turnMessages = messages.slice(Math.max(0, messages.findIndex(m => m.info?.id === attempt.user_message_id)));
             const observation = observe(turnMessages, selected, agent.id);
             receipt.worker_result = workerResult(observation.text, { partial: !observation.complete || !!observation.error });
             receipt.runtime_signals = runtimeSignals(turnMessages);
@@ -880,6 +919,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           // Return to the host; do not silently substitute a different model.
           break;
         } finally {
+          if (release) await reservation?.releaseDispatch();
           if (child?.id && release) live.delete(child.id);
           if (reservation && release) {
             const rootSessionID = execution.rootSessionID ?? ctx.sessionID;
@@ -924,11 +964,11 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       // selected models remain distinct calls.
       const key = hash(JSON.stringify([ctx.sessionID, resolvedParent.execution.id, orderedArgs]));
       if (inFlight.has(key)) return inFlight.get(key);
-      if (args.worker && continuing.has(args.worker)) throw fault('WorkerBusy', 'Another follow-up is already using this worker. Wait for its result.');
-      if (args.worker) continuing.add(args.worker);
+      if (args.worker && !args.delivery && continuing.has(args.worker)) throw fault('WorkerBusy', 'Another follow-up is already using this worker. Wait for its result.');
+      if (args.worker && !args.delivery) continuing.add(args.worker);
       const promise = run(args, ctx, resolvedParent);
       inFlight.set(key, promise);
-      try { return await promise; } finally { inFlight.delete(key); if (args.worker) continuing.delete(args.worker); }
+      try { return await promise; } finally { inFlight.delete(key); if (args.worker && !args.delivery) continuing.delete(args.worker); }
     },
     // Guard before the model request, plus independent message observation after it.
     async checkModel(input) {
@@ -944,6 +984,11 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       const message = rows.findLast(m => input.callID && m.parts?.some(p => p.callID === input.callID)) ??
         rows.findLast(m => m.info?.role === 'assistant');
       const execution = await executionContext(toolkitRoot, d, session, message);
+      if (execution?.goalID) {
+        const goals = await readJson(path.join(toolkitRoot, '.state/webpage/goals.json'));
+        const goal = goals?.records?.[execution.goalID];
+        if (!goal || goal.stopRequested || goal.archived) throw fault('PermissionError', 'This goal was stopped or archived. No new tool work may start until the user resumes it.');
+      }
       const inherited = await lookup(input.sessionID, d);
       if (input.tool === 'task') throw fault('PermissionError', 'Use delegate with a named agentID and bounded task; native task is not a second execution path.');
       if (input.tool === 'delegate') {

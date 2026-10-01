@@ -111,6 +111,7 @@ export function HistoryPage({
   }, [selectedProject, scope, limit]);
   const rows = result?.sessions ?? [];
   const selectedRow = rows.find((row) => selected.has(row.id));
+  const selectedGoal = rows.some((row) => row.goal && selected.has(row.id));
   const actionProject = selectedRow?.project ?? selectedProject;
   const projectArchived = !!data.settings.projects.find(
     (p) => p.id === actionProject,
@@ -332,7 +333,7 @@ export function HistoryPage({
               onClick={() => onOpen(row.project ?? selectedProject, row.id)}
             >
               <strong>
-                {!row.imported && <SessionActivity activity={sessionActivity?.[row.id]} />}
+                {!row.imported && <SessionActivity activity={sessionActivity?.[row.id]} goal={row.goal} />}
                 {row.title}
               </strong>
               <small>
@@ -375,6 +376,7 @@ export function HistoryPage({
           its conversation archives.
         </p>
       )}
+      {selectedGoal && <p>Goal chats can be exported here. Archive or restore them in Project settings → Goals.</p>}
       {confirmation !== null ? (
         <ConfirmDialog ariaLabel="Confirm archive change"
           title={confirmation ? 'Put selected conversations away?' : 'Restore selected conversations?'}
@@ -395,14 +397,14 @@ export function HistoryPage({
           <div className="history-actions">
             <span>{selected.size} selected</span>
             <Button
-              disabled={!selected.size || pending || busy || projectArchived}
+              disabled={!selected.size || pending || busy || projectArchived || selectedGoal}
               onClick={() => setConfirmation(true)}
             >
               <Archive size={16} />
               Archive
             </Button>
             <Button
-              disabled={!selected.size || pending || busy || projectArchived}
+              disabled={!selected.size || pending || busy || projectArchived || selectedGoal}
               onClick={() => setConfirmation(false)}
             >
               <ArchiveRestore size={16} />

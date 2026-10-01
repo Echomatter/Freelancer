@@ -60,7 +60,7 @@ Every named agent can use git_project; there is no Git agent. The service enforc
 
 ## Data and startup
 
-Private JSON lives in ignored `backend/.state/`. Organization, drafts, search and model ratings use `%LOCALAPPDATA%\Freelancer\freelancer.sqlite`, or absolute `FREELANCER_DATA_HOME`. Native data stays with OpenCode. Fresh source imports no old application history, registrations, drafts, receipts, databases or caches.
+Private runtime documents, receipts and usage in `webpage/records.sqlite` live in ignored `backend/.state/`. Organization, drafts, search and model ratings use `%LOCALAPPDATA%\Freelancer\freelancer.sqlite`, or absolute `FREELANCER_DATA_HOME`. Native data stays with OpenCode. Fresh source imports no old application history, registrations, drafts, receipts, databases or caches.
 
 `FREELANCER_APP_ROOT` optionally overrides the source root; `FREELANCER_RUNTIME_ROOT` points plugins at its backend. `OPENCODE_CONFIG_DIR` / `OPENCODE_CONFIG` select local plugins and profiles. `XDG_CONFIG_HOME` isolates configuration. Native `XDG_DATA_HOME` remains the existing OpenCode location, preserving auth without copying it. `FREELANCER_WEB_PORT` optionally fixes the loopback port. LAN phone access is opt-in for a launch and keeps native/shutdown channels loopback-only. [Network access](network-access.md)
 

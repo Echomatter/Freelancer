@@ -1,9 +1,9 @@
+import { readRuntimeText as readFile,stateFiles } from './state-database.mjs';
 // Local presentation adapter over authoritative backend files. No new server,
 // credential store, collector, execution layer or routing implementation.
-import { readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { snapshot as usageSnapshot, refreshQuota } from './quota.mjs';
-import { loadPreferences, savePreferences } from './preferences.mjs';
+import { loadPreferences,savePreferences } from './preferences.mjs';
+import { refreshQuota,snapshot as usageSnapshot } from './quota.mjs';
 
 async function json(file, fallback) {
   try { return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, '')); }
@@ -26,7 +26,7 @@ export function createUiBackend(root, directory) {
         safe('Receipts', async () => {
           if (!sessionID) return [];
           const dir = path.join(root, '.state/delegation');
-          const names = await readdir(dir).catch(e => { if (e.code === 'ENOENT') return []; throw e; });
+          const names = await Promise.resolve(stateFiles(dir)).catch(e => { if (e.code === 'ENOENT') return []; throw e; });
           const rows = [];
           // Sequential bounded batches avoid exhausting handles with long histories.
           for (let i=0; i<names.length; i+=32) {

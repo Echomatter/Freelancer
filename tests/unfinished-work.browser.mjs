@@ -26,11 +26,11 @@ test('unfinished-work', { tag: ["@app","@chat"] }, async ({ appBrowser: browser,
     await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
     await page.locator('.composer-cards .work-card-toggle').click();
     await page.getByText('Response ended with unfinished tasks. Send a follow-up to continue.', { exact: true }).waitFor();
-    await page.locator('.request-dock').getByText(/Response ended · 1 tool failed/).waitFor();
+    if (await page.getByRole('button', { name: /^Commands / }).getAttribute('aria-expanded') !== 'true') await page.getByRole('button', { name: /^Commands / }).click();
+    await page.locator('.chat-tool-overlay').getByText(/Response ended · 1 tool failed/).waitFor();
     assert.equal(await page.locator('.todo-dock-list .spin').count(), 0);
     assert.equal(await page.locator('.todo-dock-list').getByText('unfinished', { exact: true }).count(), 1);
-    await page.locator('.request-dock .request-working > summary').click();
-    await page.locator('.request-dock .tool-card.error').getByText('Failed', { exact: true }).waitFor();
+    await page.locator('.chat-tool-overlay .tool-card.error').getByText('Failed', { exact: true }).waitFor();
     assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).isEnabled(), false);
     await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Continue the unfinished tasks');
     assert.equal(await page.getByRole('button', { name: 'Send message', exact: true }).isEnabled(), true);
@@ -46,15 +46,15 @@ test('unfinished-work', { tag: ["@app","@chat"] }, async ({ appBrowser: browser,
     f.state.messages.ses_history[1].info.time.completed = Date.now();
     f.state.messages.ses_history[1].parts[0].state.metadata.exit = 0;
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await page.locator('.request-dock').getByText(/Response ended · Tasks unfinished/).waitFor();
+    if (await page.getByRole('button', { name: /^Commands / }).getAttribute('aria-expanded') !== 'true') await page.getByRole('button', { name: /^Commands / }).click();
+    await page.locator('.chat-tool-overlay').getByText(/Response ended · Tasks unfinished/).waitFor();
     assert.deepEqual(f.state.todos.ses_history, todos, 'presentation never rewrites native task records');
 
     await f.store.update('settings', s => ({ ...s, appearance: { ...s.appearance, todoLayout: 'inline' } }));
     await page.getByRole('button', { name: 'Refresh', exact: true }).click();
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
-    await page.getByRole('tab', { name: 'tasks', exact: true }).click();
-    await page.locator('.work-details').getByText('unfinished', { exact: true }).waitFor();
-    await page.locator('.work-details').getByText('Response ended with unfinished tasks. Send a follow-up to continue.', { exact: true }).waitFor();
+    if (await page.getByRole('button', { name: /^Commands / }).getAttribute('aria-expanded') !== 'true') await page.getByRole('button', { name: /^Commands / }).click();
+    await page.locator('.chat-tool-overlay').getByText('unfinished', { exact: true }).waitFor();
+    await page.locator('.chat-tool-overlay').getByText('Response ended with unfinished tasks. Send a follow-up to continue.', { exact: true }).waitFor();
     console.log('PASS command failure, unfinished tasks, idle/busy transition, both task placements, sender remains usable');
   } finally { await browser.close(); await f.close(); }
 });

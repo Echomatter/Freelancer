@@ -1,11 +1,12 @@
+import { readStateText as readFile, writeState } from '../backend/tools/runtime/state-database.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm, writeFile, readFile, rename } from "node:fs/promises";
+import { mkdtemp, rm, writeFile, rename } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createSchedules } from "../server/schedules.mjs";
 
-function fixture({ start = Date.parse("2026-01-01T00:00:00.000Z"), file, bootstrap, sender: senderPatch = {}, app: appPatch = {}, replace, readActivity } = {}) {
+function fixture({ start = Date.parse("2026-01-01T00:00:00.000Z"), file, bootstrap, sender: senderPatch = {}, app: appPatch = {}, persist, readActivity } = {}) {
   let clock = start, sessions = 0;
   const sent = [], chats = new Map(), timers = [];
   const app = {
@@ -43,7 +44,7 @@ function fixture({ start = Date.parse("2026-01-01T00:00:00.000Z"), file, bootstr
     sender,
     readActivity,
     file,
-    replace,
+    persist,
     now: () => clock,
     setTimer: (fn, ms) => { const timer = { fn, ms, unref() {} }; timers.push(timer); return timer; },
     clearTimer: (timer) => { if (timer) timer.cleared = true; },
@@ -185,7 +186,7 @@ test("restart marks durable dispatch claim uncertain and paused", async (t) => {
   const disk = JSON.parse(await readFile(file, "utf8"));
   disk.schedules[0].lastStatus = "dispatching";
   disk.schedules[0].enabled = true;
-  await writeFile(file, JSON.stringify(disk));
+  writeState(file, disk);
   const reopened = fixture({ file, start: Date.parse("2026-01-02T00:00:00.000Z") });
   await reopened.schedules.ready;
   const row = (await reopened.schedules.list()).schedules[0];
@@ -211,7 +212,7 @@ test("save failure rolls back create without phantom schedule", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-schedules-save-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   let fail = true;
-  const f = fixture({ file: path.join(root, "schedules.json"), replace: async () => { if (fail) throw Error("disk full"); } });
+  const f = fixture({ file: path.join(root, "schedules.json"), persist: async () => { if (fail) throw Error("disk full"); } });
   await f.schedules.ready;
   await assert.rejects(f.schedules.create(input("2026-01-01T00:01:00.000Z")), /disk full/);
   assert.deepEqual((await f.schedules.list()).schedules, []);
@@ -222,9 +223,9 @@ test("timer callback exposes background failure and keeps scheduler readable", a
   const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-schedules-timer-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   let fail = false;
-  const f = fixture({ file: path.join(root, "schedules.json"), replace: async (source, target) => {
+  const f = fixture({ file: path.join(root, "schedules.json"), persist: async (target, value) => {
     if (fail) throw Error("timer save failed");
-    await import("node:fs/promises").then(fs => fs.rename(source, target));
+    writeState(target, value);
   } });
   await f.schedules.ready;
   await f.schedules.create(input("2026-01-01T00:01:00.000Z"));
@@ -295,9 +296,9 @@ for (const action of ["pause", "edit", "delete"]) test(`failed ${action} preserv
   const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-schedules-rollback-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   let fail = false;
-  const f = fixture({ file: path.join(root, "schedules.json"), replace: async (source, target) => {
+  const f = fixture({ file: path.join(root, "schedules.json"), persist: async (target, value) => {
     if (fail) throw Error("storage unavailable");
-    await rename(source, target);
+    writeState(target, value);
   } });
   const created = await f.schedules.create(input("2026-01-01T00:01:00.000Z"));
   fail = true;

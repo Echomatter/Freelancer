@@ -1,9 +1,9 @@
+import { readRuntimeText as readFile,writeState } from './state-database.mjs';
 // PowerShell supplies eligibility, evidence and cost calculations to the host.
 import { spawn } from 'node:child_process';
-import { mkdir, readFile, writeFile, unlink } from 'node:fs/promises';
-import { createHash, randomUUID } from 'node:crypto';
+import { createHash } from 'node:crypto';
+import { mkdir } from 'node:fs/promises';
 import path from 'node:path';
-import { replaceFile } from '../../../server/replace-file.mjs';
 
 export function runProcess(file, args, { cwd, signal, timeoutMs = 15000, errorOutput = false } = {}) {
   return new Promise((resolve, reject) => {
@@ -100,9 +100,7 @@ export function createBridge(toolkitRoot) {
         recorded_at: a.completed_at, reset_at: null,
         retry_after: ['throttle', 'provider'].includes(a.failure) ? new Date(Date.now() + 120000).toISOString() : null,
         task_id: receipt.task_id };
-      const temp = `${file}.${randomUUID()}.tmp`;
-      try { await writeFile(temp, JSON.stringify(state), { mode: 0o600 }); await replaceFile(temp, file); }
-      finally { await unlink(temp).catch(() => {}); }
+      writeState(file, state);
       if (recordingError) throw recordingError;
     },
   };

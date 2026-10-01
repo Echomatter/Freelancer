@@ -18,6 +18,8 @@ application source; the production journeys deliberately use `dist/`.
 | Inspect the last HTML report and failure traces | `npm run test:report` |
 | Exhaustive 180-palette browser sweep | `npm run test:themes` |
 | Contracts without real Git fixtures | `npm run test:fast` |
+| Focused storage and HTTP contracts | `npm run test:fast -- store http-body` |
+| List selected contracts without running | `npm run test:contracts -- --list store` |
 | All JavaScript contracts, including real Git | `npm run test:contracts` |
 | Real Git fixtures only | `npm run test:git` |
 
@@ -50,6 +52,9 @@ tests must never use a user's native database or authenticated provider.
 Keep contracts for authority checks, routing, idempotency, uncertain delivery,
 restart recovery, data migrations, filesystem races, Git safety, mathematical
 properties and hostile inputs. Browser clicks cannot replace those checks.
+The shared contract runner selects all, fast, Git, application or backend suites.
+Trailing filename fragments are OR filters; unmatched selections fail. Node test
+options such as `--test-name-pattern` remain available. Listings are not test results.
 Node contract workers are bounded to avoid flooding the Windows process pool.
 Python, PowerShell and installed-native startup checks remain separate in CI.
 

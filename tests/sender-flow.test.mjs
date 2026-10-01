@@ -1,6 +1,11 @@
+import { withRecordDatabase } from '../backend/tools/runtime/record-database.mjs';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createSender } from '../server/sender.mjs';
+import { userInitiatedRequest } from '../domain/sender.mjs';
+import { mkdtemp, mkdir, rename, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 
 function fixture() {
   const state = { messages: [], status: { chat: { type: 'busy' } }, permissions: [], questions: [], receipts: [] };
@@ -40,14 +45,14 @@ test('queued messages wait for native completion and dispatch once in FIFO order
   assert.deepEqual(f.sent, []);
   f.state.status = {};
   await f.sender.tick();
-  assert.deepEqual(f.sent, ['First follow-up']);
+  assert.deepEqual(f.sent.map(text => userInitiatedRequest(text)?.text), ['First follow-up']);
   await f.sender.tick();
-  assert.deepEqual(f.sent, ['First follow-up']);
+  assert.deepEqual(f.sent.map(text => userInitiatedRequest(text)?.text), ['First follow-up']);
   f.state.messages.push({ info: { id: 'reply', role: 'assistant', parentID: 'native_0',
     finish: 'stop', time: { completed: Date.now() } }, parts: [{ type: 'text', text: 'Done' }] });
   f.state.status = {};
   await f.sender.tick();
-  assert.deepEqual(f.sent, ['First follow-up', 'Second follow-up']);
+  assert.deepEqual(f.sent.map(text => userInitiatedRequest(text)?.text), ['First follow-up', 'Second follow-up']);
   await f.sender.close();
 });
 
@@ -63,38 +68,56 @@ test('interrupt cancels waiting delivery before aborting native work', async () 
   await f.sender.close();
 });
 
-test('steering interrupts once, cancels old queue, and delivers the captured message once', async () => {
+test('steering preserves Queue, current parent choices and captured constraints without aborting', async () => {
   const f = fixture();
   try {
+    f.state.receipts = [{ id: 'original', status: 'accepted', agent: { id: 'engineer' }, model: { providerID: 'opencode', modelID: 'free' }, variant: 'high' }];
+    f.state.messages = [{ info: { id: 'original', role: 'user', model: { providerID: 'opencode', modelID: 'free' } }, parts: [{ type: 'text', text: 'Original work' }] }];
     await f.queue('queue_before_steer', 'Old queued message');
-    const input = { id: 'steer_request_0001', kind: 'interrupt', text: 'Focus on the new direction', model: 'opencode/free' };
+    const input = { id: 'steer_request_0001', kind: 'steer', text: 'Focus on the new direction', model: 'auto' };
     const first = await f.sender.enqueue('project', 'chat', input);
     assert.equal(first.status, 'waiting');
-    assert.equal(f.stops, 1);
     await f.sender.tick();
-    assert.deepEqual(f.sent, [input.text]);
-    // A lost acknowledgement can be retried even after the replacement starts.
+    assert.equal(f.stops, 0);
+    assert.equal(f.sent.length, 1);
+    assert.match(f.sent[0], /Freelancer Steer handoff/);
+    assert.match(f.sent[0], /Focus on the new direction/);
     await f.sender.enqueue('project', 'chat', input);
     await f.sender.tick();
-    assert.equal(f.stops, 1);
-    assert.deepEqual(f.sent, [input.text]);
+    assert.equal(f.sent.length, 1);
+    assert.equal((await f.sender.list('project', 'chat')).find(r => r.kind === 'queue').status, 'waiting');
     await assert.rejects(f.sender.enqueue('project', 'chat', { ...input, text: 'Changed' }), /different request/);
   } finally { await f.sender.close(); }
 });
 
-test('an unconfirmed interrupt preserves the steering text and never dispatches it automatically', async () => {
+test('pending edits are revision checked and cannot alter submitted input', async () => {
   const f = fixture();
   try {
-    f.app.stop = async () => { throw Error('Native stop acknowledgement lost'); };
-    const input = { id: 'uncertain_steer_0001', kind: 'interrupt', text: 'Keep this direction', model: 'opencode/free' };
-    const row = await f.sender.enqueue('project', 'chat', input);
-    assert.equal(row.status, 'uncertain');
-    assert.equal(row.text, input.text);
+    await f.queue('editable_queue_01', 'First draft');
+    await f.sender.edit('project', 'chat', 'editable_queue_01', 'Revised draft', 0);
+    await assert.rejects(f.sender.edit('project', 'chat', 'editable_queue_01', 'Stale edit', 0), /changed/);
     f.state.status = {};
     await f.sender.tick();
-    assert.deepEqual(f.sent, []);
-    assert.equal((await f.sender.enqueue('project', 'chat', input)).status, 'uncertain');
+    assert.deepEqual(f.sent.map(text => userInitiatedRequest(text)?.text), ['Revised draft']);
+    await assert.rejects(f.sender.edit('project', 'chat', 'editable_queue_01', 'Late edit', 1), /still saved/);
   } finally { await f.sender.close(); }
+});
+
+test('an unsaved pending edit cannot change the next delivered text or edit revision', async t => {
+  const f = fixture();
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-edit-save-'));
+  const file = path.join(root, 'outbox.json');
+  const sender = createSender(f.app, { file });
+  t.after(async () => { await sender.close(); await f.sender.close(); await rm(root, { recursive: true, force: true }); });
+  await sender.enqueue('project', 'chat', { id: 'failed_edit_save_01', kind: 'queue', text: 'Original saved text', model: 'opencode/free' });
+  withRecordDatabase(root, true, db => db.exec("CREATE TRIGGER fail_outbox BEFORE UPDATE ON records BEGIN SELECT RAISE(ABORT,'disk full'); END;"));
+  await assert.rejects(sender.edit('project', 'chat', 'failed_edit_save_01', 'Unsaved text', 0));
+  assert.equal((await sender.list('project', 'chat'))[0].text, 'Original saved text');
+  withRecordDatabase(root, true, db => db.exec('DROP TRIGGER fail_outbox'));
+  await sender.edit('project', 'chat', 'failed_edit_save_01', 'Confirmed text', 0);
+  f.state.status = {};
+  await sender.tick();
+    assert.deepEqual(f.sent.map(text => userInitiatedRequest(text)?.text), ['Confirmed text']);
 });
 
 test('a failed parent turn holds later queued work until its notice is acknowledged', async () => {
@@ -106,11 +129,11 @@ test('a failed parent turn holds later queued work until its notice is acknowled
   f.state.messages.push({ info: { id: 'failed_reply', role: 'assistant', parentID: 'native_0',
     error: 'Provider timed out' }, parts: [] });
   await f.sender.tick();
-  assert.deepEqual(f.sent, ['First follow-up']);
+  assert.deepEqual(f.sent.map(text => userInitiatedRequest(text)?.text), ['First follow-up']);
   const rows = await f.sender.list('project', 'chat');
   assert.equal(rows.find(row => row.id === 'queue_failed_0001')?.status, 'failed');
   await f.sender.cancel('project', 'chat', 'queue_failed_0001');
   await f.sender.tick();
-  assert.deepEqual(f.sent, ['First follow-up', 'Later follow-up']);
+  assert.deepEqual(f.sent.map(text => userInitiatedRequest(text)?.text), ['First follow-up', 'Later follow-up']);
   await f.sender.close();
 });

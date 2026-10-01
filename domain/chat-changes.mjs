@@ -20,6 +20,9 @@ export function chatChanges(diff = [], messages = [], files = [], directory = ''
       if (part.type !== 'tool' || part.state?.status !== 'completed') continue;
       const meta = part.state.metadata ?? {};
       const recorded = meta.filediff ? [meta.filediff] : [];
+      if (!recorded.length && typeof meta.diff === 'string' && part.state.input?.filePath) {
+        recorded.push({ file: part.state.input.filePath, patch: meta.diff });
+      }
       for (const row of recorded) {
         if (!rows.has(`session:${key(row.file ?? row.path)}`)) add(row, 'session');
       }

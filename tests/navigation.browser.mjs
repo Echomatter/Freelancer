@@ -2,6 +2,38 @@ import { mkdir } from 'node:fs/promises';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { test, expect } from './support/browser-test.mjs';
 
+test('compact handoff cards and Agents navigate nested workers', { tag: ['@app', '@chat'] }, async ({ appBrowser, own }) => {
+  const f = await own(localDataFixture({ timers: false }));
+  f.state.sessions.push({ id: 'ses_nested', parentID: 'ses_worker', title: 'Nested inspection', directory: f.directory, time: { created: 120, updated: 300 } });
+  const transcript = (id, child) => [
+    { info: { id: `${id}-user`, role: 'user' }, parts: [{ type: 'text', text: `Inspect ${id}` }] },
+    { info: { id: `${id}-reply`, role: 'assistant' }, parts: child ? [{ type: 'tool', tool: 'task', state: { status: 'completed', input: { role: 'Researcher' }, metadata: { sessionId: child, selected_model: 'opencode/free' } } }] : [{ type: 'text', text: 'Inspection complete.' }] },
+  ];
+  f.state.messages.ses_history = transcript('root', 'ses_worker');
+  f.state.messages.ses_worker = transcript('worker', 'ses_nested');
+  f.state.messages.ses_nested = transcript('nested');
+  const page = await appBrowser.newPage({ viewport: { width: 1440, height: 900 } });
+  await page.goto(f.url);
+  const chatTranscript = page.locator('.chat-transcript');
+  const openWorker = async () => { await chatTranscript.getByRole('button', { name: /Open conversation/ }).click(); };
+  const parent = async () => {
+    await page.getByRole('button', { name: /^Agents / }).click();
+    await page.getByRole('button', { name: 'Back to parent chat', exact: true }).click();
+  };
+  await page.getByRole('button', { name: 'Chats', exact: true }).click();
+  await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
+  for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }, { width: 320, height: 640 }]) {
+    await page.setViewportSize(viewport);
+    await openWorker(); await expect(chatTranscript).toContainText('Inspect worker');
+    await openWorker(); await expect(chatTranscript).toContainText('Inspect nested');
+    await expect(page.getByRole('navigation', { name: 'Breadcrumb', exact: true })).toHaveCount(0);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+    await parent(); await expect(chatTranscript).toContainText('Inspect worker');
+    await parent(); await expect(chatTranscript).toContainText('Inspect root');
+  }
+  expect(f.calls.filter(call => call.route.endsWith('/abort'))).toHaveLength(0);
+});
+
 for (const viewport of [{ width: 390, height: 740 }, { width: 1440, height: 900 }]) {
   test(`compact navigation closes after destinations and preserves non-navigation at ${viewport.width}px`, { tag: ['@app'] }, async ({ appBrowser: browser, own }) => {
     const fixture = await own(localDataFixture());
@@ -47,25 +79,14 @@ for (const viewport of [{ width: 390, height: 740 }, { width: 1440, height: 900 
     await closed();
     await expect(project).toBeFocused();
     await application.click();
-    await page.locator('.topbar strong').click();
+    await page.locator('.topbar').click({ position: { x: 2, y: 2 } });
     await closed();
     await application.click();
     await sidebar.getByRole('button', { name: 'Appearance', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Appearance', exact: true })).toBeVisible();
     await closed();
     await expect(application).toBeFocused();
-    if (viewport.width <= 720) {
-      const header = await page.locator('.topbar').evaluate(node => {
-        const breadcrumb = node.querySelector('.directory-breadcrumb').getBoundingClientRect();
-        const title = node.querySelector('strong').getBoundingClientRect();
-        const frame = node.firstElementChild.getBoundingClientRect();
-        return { gap: title.top - breadcrumb.bottom, titleWidth: title.width, right: title.right, frameRight: frame.right, scrollWidth: node.scrollWidth, width: node.clientWidth };
-      });
-      expect(header.gap).toBeGreaterThanOrEqual(1);
-      expect(header.titleWidth).toBeGreaterThan(60);
-      expect(header.right).toBeLessThanOrEqual(header.frameRight + 1);
-      expect(header.scrollWidth).toBeLessThanOrEqual(header.width + 1);
-    }
+    expect(await page.locator('.topbar').evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
     await page.getByRole('button', { name: 'Close settings', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Appearance', exact: true })).toHaveCount(0);
     await closed();
@@ -121,15 +142,21 @@ for (const viewport of [{ width: 390, height: 740 }, { width: 1440, height: 900 
     await expect(page.getByRole('button', { name: 'Unpin', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Continue in new chat', exact: true }).click();
     await closed();
-    await expect(page.locator('.topbar strong')).toHaveText('Continued conversation');
+    await chats.click();
+    await expect(sidebar.locator('.nav-chat-select').filter({ hasText: 'Continued conversation' })).toHaveAttribute('aria-current', 'page');
+    await chats.click();
     await chats.click();
     await sidebar.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
     await closed();
-    await expect(page.locator('.topbar strong')).toHaveText('Important conversation');
+    await chats.click();
+    await expect(sidebar.locator('.nav-chat-select').filter({ hasText: 'Important conversation' })).toHaveAttribute('aria-current', 'page');
+    await chats.click();
     await chats.click();
     await sidebar.getByRole('button', { name: 'New chat', exact: true }).click();
     await closed();
-    await expect(page.locator('.topbar strong')).toHaveText('New conversation');
+    await chats.click();
+    await expect(sidebar.locator('.nav-chat-select').filter({ hasText: 'New conversation' })).toHaveAttribute('aria-current', 'page');
+    await chats.click();
 
     // Available Usage is another navigation flyout; refresh is not navigation.
     const usage = sidebar.locator('.usage-disclosure');
@@ -143,7 +170,9 @@ for (const viewport of [{ width: 390, height: 740 }, { width: 1440, height: 900 
 
     // Application Back controls return to the selected chat with closed menus.
     await page.getByRole('button', { name: 'Close settings', exact: true }).click();
-    await expect(page.locator('.topbar strong')).toHaveText('New conversation');
+    await chats.click();
+    await expect(sidebar.locator('.nav-chat-select').filter({ hasText: 'New conversation' })).toHaveAttribute('aria-current', 'page');
+    await chats.click();
     await application.click();
     await sidebar.getByRole('button', { name: 'Conversation history', exact: true }).click();
     await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible();
@@ -155,7 +184,9 @@ for (const viewport of [{ width: 390, height: 740 }, { width: 1440, height: 900 
     await expect(application).toBeFocused();
     await expect(page.getByRole('heading', { name: 'Conversation history', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Close history', exact: true }).click();
-    await expect(page.locator('.topbar strong')).toHaveText('New conversation');
+    await chats.click();
+    await expect(sidebar.locator('.nav-chat-select').filter({ hasText: 'New conversation' })).toHaveAttribute('aria-current', 'page');
+    await chats.click();
     if (viewport.width <= 720) {
       await chats.click();
       await page.getByRole('button', { name: 'Hide navigation', exact: true }).click();

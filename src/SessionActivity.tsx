@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { CircleHelp, LoaderCircle, MessageSquare } from "lucide-react";
+import { Target, CircleHelp, LoaderCircle, MessageSquare } from "lucide-react";
 import { api, query } from "./api";
 import { activityLabel, pollActivity } from "../domain/chat-activity.mjs";
 import "./workspace-feedback.css";
@@ -25,11 +25,12 @@ export function useProjectActivity(project: string, enabled: boolean) {
   return enabled && snapshot?.project === project ? snapshot.sessions : undefined;
 }
 
-export function SessionActivity({ activity }: { activity?: Activity }) {
+export function SessionActivity({ activity, goal }: { activity?: Activity; goal?: any }) {
   const label = activityLabel(activity);
   const Icon = activity?.active ? LoaderCircle
     : !activity || activity.waiting ? CircleHelp : MessageSquare;
   return (
+    goal ? <span className="session-activity" role="img" aria-label={`Goal · ${goal.status} · ${label}`} title={`Goal · ${goal.status} · ${label}`}><Target size={14} />{(activity?.active || activity?.waiting) && <span aria-hidden="true">{activity.waiting ? '!' : '·'}</span>}</span> :
     <span className="session-activity" role="img" aria-label={label} title={label}>
       <Icon size={14} aria-hidden="true"
         className={activity?.active ? "session-progress spin" : ""} />

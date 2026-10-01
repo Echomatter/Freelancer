@@ -14,6 +14,7 @@ import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { createApplication } from "../../server/application.mjs";
 import { createStore } from "../../server/store.mjs";
+import { createSender } from '../../server/sender.mjs';
 import {
   checkedCatalog,
   configureAgentProfiles,
@@ -24,7 +25,7 @@ import {
   savePreferences,
 } from "../../backend/tools/runtime/preferences.mjs";
 
-export async function unifiedFixture(t) {
+export async function unifiedFixture(t, { requestMs = 3000 } = {}) {
   const root = await realpath(
     await mkdtemp(path.join(tmpdir(), "freelancer-named-")),
   );
@@ -159,6 +160,7 @@ export async function unifiedFixture(t) {
             sessionID: session.id,
             role: "user",
             model: body.model,
+            variant: body.variant,
             time: { created: when },
           },
           parts: body.parts,
@@ -255,6 +257,12 @@ export async function unifiedFixture(t) {
     client,
     toolkitRoot: root,
     directory,
+    handoff: async input => {
+      app.sender ??= createSender(app);
+      const work = await app.workerHandoff(input);
+      const row = await app.sender.enqueue(work.project, work.session, work.input, work.execution);
+      return { status: 'worker_handoff', worker: work.session, handoff: row };
+    },
     select: async (args) => {
       selections.push(args);
       const selected = args.selectedModel ?? "opencode/free-b";
@@ -271,7 +279,7 @@ export async function unifiedFixture(t) {
     // Successful stop verification still returns after two 1ms polls. Give the
     // event loop room under parallel browser/contract load; a 20ms deadline
     // can expire between those polls even when the simulated worker is idle.
-    limits: { requestMs: 3000, pollMs: 1, taskMs: 1000, stopMs: 1000 },
+    limits: { requestMs, pollMs: 1, taskMs: 1000, stopMs: 1000 },
   });
   const context = (session = parent.id) => ({
     sessionID: session,

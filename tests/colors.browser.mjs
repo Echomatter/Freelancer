@@ -166,7 +166,7 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await colorOf(page.locator('.message.assistant .message-label .provider-identity'), rose);
     const neutral = await page.locator('.message.assistant .markdown p').first().evaluate(e => getComputedStyle(e).color);
     assert.equal(neutral, rgb(palettes.find(p => p.id === 'midnight').tokens.text));
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await page.getByRole('button', { name: /^Agents / }).click();
     await colorOf(page.locator('.activity-summary-button .provider-identity').first(), rgb(providerTokens('opencode', { theme: 'midnight' })['--provider-fg']));
     await page.getByRole('button', { name: 'Message options', exact: true }).click();
     await page.getByLabel('Parent model', { exact: true }).selectOption('github-copilot/forge');
@@ -176,9 +176,9 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     assert.equal(await page.locator('.sender-controls button').count(), 1);
     await readable(page.getByRole('button', { name: 'Stop response', exact: true }), 'dynamic stop');
     await page.getByRole('textbox', { name: 'Message', exact: true }).fill('Keep this typed concern.');
-    assert.equal(await page.getByRole('button', { name: 'Stop response', exact: true }).count(), 0);
-    assert.equal(await page.locator('.sender-controls button').count(), 1);
-    await page.getByRole('button', { name: 'Choose Delegate, Queue, or Interrupt' }).click();
+    assert.equal(await page.getByRole('button', { name: 'Stop response', exact: true }).count(), 1);
+    assert.equal(await page.locator('.sender-controls button').count(), 2);
+    await page.getByRole('button', { name: 'Choose Delegate, Queue, or Steer' }).click();
     const dialog = page.getByRole('dialog', { name: 'While this response runs' });
     await dialog.waitFor();
     await page.getByLabel('Message model override').selectOption('opencode/free');

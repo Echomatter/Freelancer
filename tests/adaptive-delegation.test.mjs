@@ -121,6 +121,28 @@ test('task intent and delegation budget do not introduce a second model pool or 
   assert.ok(pool.includes('opencode/free-b'));
   assert.ok(pool.length > 0);
 });
+
+test('encouraged delegation reaches captured instructions without overriding restrictions', async t => {
+  const encouraged = normalizePreferences({ delegation: 'encouraged', maxParallel: 2, costPreference: 'free-only' });
+  assert.equal(effectiveDelegationPreferences(encouraged).delegation, 'encouraged');
+  assert.match(strategyGuidance(encouraged), /The user encourages delegation/);
+  assert.match(strategyGuidance(encouraged), /ceiling, not a target/);
+  assert.equal(effectiveDelegationPreferences(encouraged, normalizePreferences()).delegation, 'automatic', 'running requests retain their captured guidance');
+  for (const restriction of ['manual', 'ask']) {
+    const restricted = normalizePreferences({ delegation: restriction });
+    assert.equal(effectiveDelegationPreferences(restricted, encouraged).delegation, restriction);
+    assert.equal(effectiveDelegationPreferences(encouraged, restricted).delegation, restriction);
+  }
+  const f = await unifiedFixture(t);
+  await budget(f, encouraged);
+  const ctx = await f.send();
+  assert.match(f.prompts[0].body.system, /The user encourages delegation/);
+  const catalog = await f.delegator.execute({}, ctx);
+  assert.equal(catalog.budget.delegation, 'encouraged');
+  assert.equal(catalog.budget.maxParallel, 2);
+  assert.equal(catalog.budget.freeOnly, true);
+  assert.equal(f.sessions.size, 1, 'encouragement does not automatically create a worker');
+});
 test('duplicate equivalent named assignments coalesce into one child', async t => {
   const f = await unifiedFixture(t), ctx = await f.send();
   const [a, b] = await Promise.all([

@@ -1,6 +1,11 @@
 // Portable preferences only. No filesystem, model inventory or host execution.
 import { delegationGuidance } from '../domain/delegation-policy.mjs';
 import { migrateAgentAccess, normalizeAgentAccess } from '../domain/agent-policy.mjs';
+export const delegationOptions = Object.freeze([
+  { value: 'automatic', label: 'Agent decides' },
+  { value: 'encouraged', label: 'Encourage delegation' },
+  { value: 'manual', label: 'No delegation' },
+]);
 export const defaults = Object.freeze({ schemaVersion: 2, strategy: 'balanced', delegation: 'automatic', subscriptionDelegation: 'ask',
   costPreference: 'prefer-free', maxParallel: 3, maxDepth: 2, childTimeoutSeconds: 600,
   parentModel: 'auto', reasoningVariant: '', childVariant: '',
@@ -32,7 +37,7 @@ export function normalizePreferences(value = {}) {
   if (p.parentModel !== 'auto' && (typeof p.parentModel !== 'string' || !/^[\w.:-]+\/[\w./:-]+$/.test(p.parentModel))) throw new Error('Invalid parent model');
   for (const key of ['reasoningVariant', 'childVariant']) if (typeof p[key] !== 'string' || !/^[\w-]{0,80}$/.test(p[key])) throw new Error(`Invalid ${key}`);
   if (p.schemaVersion !== 2 || !presets[p.strategy]) throw new Error('Unsupported preferences schema or strategy');
-  for (const [key, choices] of Object.entries({ delegation: ['automatic','ask','manual'], subscriptionDelegation: ['ask','automatic'], costPreference: ['free-only','prefer-free','balanced','any','paid-only'], contextPolicy: ['compact','standard','large','max'] })) {
+  for (const [key, choices] of Object.entries({ delegation: ['automatic','encouraged','ask','manual'], subscriptionDelegation: ['ask','automatic'], costPreference: ['free-only','prefer-free','balanced','any','paid-only'], contextPolicy: ['compact','standard','large','max'] })) {
     if (!choices.includes(p[key])) throw new Error(`Invalid ${key}`);
   }
   // The old Balance choice is the new All available choice. Keep old files

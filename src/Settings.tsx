@@ -203,7 +203,12 @@ export function Settings({
           }
           methods={methods[auth.provider] ?? []}
           onClose={() => setAuth(null)}
-          onConnected={refresh}
+          onConnected={async () => {
+            // Authentication succeeded independently of quota telemetry. Refresh
+            // observations now so a repaired sign-in does not look disconnected.
+            await api('usage/refresh', {}).catch(() => {});
+            await refresh();
+          }}
         />
       )}
     </div>

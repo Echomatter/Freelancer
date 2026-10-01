@@ -1,12 +1,91 @@
+import { DatabaseSync } from 'node:sqlite';
+import { recordDatabasePath, readRuntimeRequest, withRecordDatabase } from '../backend/tools/runtime/record-database.mjs';
+import { executionContext } from '../backend/tools/runtime/execution-context.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { createStore } from "../server/store.mjs";
-test('request summaries scope display data before cloning captured catalogs', async t => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-summaries-'));
+async function temporaryRoot(t) {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-store-'));
   t.after(() => rm(root, { recursive: true, force: true }));
+  return root;
+}
+test('legacy ledgers migrate once, retain backup bytes and survive reopening', async t => {
+  const root = await temporaryRoot(t), store = createStore(root);
+  await mkdir(store.directory, { recursive: true });
+  for (const name of ['requests', 'usage']) {
+    const file = path.join(store.directory, `${name}.json`);
+    const legacy = JSON.stringify({ version: 1, records: { old: { id: 'old', tokens: 12 } } }, null, 2);
+    await writeFile(file, legacy);
+    assert.equal((await store.read(name)).records.old.tokens, 12);
+    await store.update(name, data => ({ ...data, records: { ...data.records, new: { id: 'new' } } }));
+    assert.equal(await readFile(file, 'utf8'), legacy);
+    // A leftover or older-version JSON writer must not overwrite migrated rows.
+    await writeFile(file, '{stale');
+    assert.deepEqual(Object.keys((await createStore(root).read(name)).records), ['old', 'new']);
+  }
+  assert.equal((await readRuntimeRequest(root, 'old')).tokens, 12);
+  assert.equal(await readRuntimeRequest(root, 'missing'), null);
+});
+
+test('invalid legacy records abort migration and cannot be overwritten', async t => {
+  const root = await temporaryRoot(t), store = createStore(root);
+  await mkdir(store.directory, { recursive: true });
+  const file = path.join(store.directory, 'requests.json');
+  for (const text of ['{broken', '{"version":2,"records":{}}', '{"version":1,"records":{"valid":{"id":"valid"},"broken":null}}']) {
+    await writeFile(file, text);
+    await assert.rejects(store.recordRequest({ id: 'new' }), /Cannot read requests/);
+    assert.equal(await readFile(file, 'utf8'), text);
+    const db = new DatabaseSync(recordDatabasePath(root), { readOnly: true });
+    try {
+      assert.equal(db.prepare('SELECT count(*) n FROM records').get().n, 0);
+      assert.equal(db.prepare('SELECT count(*) n FROM collections').get().n, 0);
+    } finally { db.close(); }
+  }
+});
+
+test('row transactions roll back a failed batch and the store remains usable', async t => {
+  const root = await temporaryRoot(t), store = createStore(root);
+  await store.observe([{ id: 'one', tokens: 1 }]);
+  const db = new DatabaseSync(recordDatabasePath(root));
+  try {
+    db.exec("CREATE TRIGGER reject_bad BEFORE INSERT ON records WHEN NEW.id='bad' BEGIN SELECT RAISE(ABORT,'injected write failure'); END;");
+    await assert.rejects(store.observe([{ id: 'one', tokens: 99 }, { id: 'bad', tokens: 2 }]), /injected write failure/);
+    assert.deepEqual((await store.read('usage')).records, { one: { id: 'one', tokens: 1 } });
+  } finally { db.close(); }
+  await store.observe([{ id: 'two', tokens: 2 }]);
+  assert.equal((await store.read('usage')).records.two.tokens, 2);
+});
+
+test('an interrupted import transaction leaves its backup and can safely retry', async t => {
+  const root = await temporaryRoot(t), store = createStore(root);
+  withRecordDatabase(root, true, db => db.exec("CREATE TRIGGER fail_import BEFORE INSERT ON records WHEN NEW.id='second' BEGIN SELECT RAISE(ABORT,'import interrupted'); END;"));
+  const file = path.join(store.directory, 'requests.json');
+  const legacy = JSON.stringify({ version: 1, records: { first: { id: 'first' }, second: { id: 'second' } } });
+  await writeFile(file, legacy);
+  await assert.rejects(store.read('requests'), /Cannot read requests/);
+  withRecordDatabase(root, true, db => {
+    assert.equal(db.prepare('SELECT count(*) n FROM records').get().n, 0);
+    assert.equal(db.prepare('SELECT count(*) n FROM collections').get().n, 0);
+    db.exec('DROP TRIGGER fail_import');
+  });
+  assert.deepEqual(Object.keys((await store.read('requests')).records), ['first', 'second']);
+  assert.equal(await readFile(file, 'utf8'), legacy);
+});
+
+test('native authority uses migrated receipts and still rejects an agent mismatch', async t => {
+  const root = await temporaryRoot(t), store = createStore(root);
+  await store.recordRequest({ id: 'msg_root', sessionID: 'ses_root', directory: root,
+    policyVersion: 6, agent: { id: 'engineer', name: 'Captured engineer' }, preferences: { concurrency: 2 } });
+  const message = { role: 'assistant', parentID: 'msg_root', agent: 'engineer' };
+  assert.equal((await executionContext(root, root, { id: 'ses_root' }, message)).preferences.concurrency, 2);
+  await assert.rejects(executionContext(root, root, { id: 'ses_root' }, { ...message, agent: 'designer' }), /Agent identity differs/);
+  assert.equal(await executionContext(root, root, { id: 'ses_other' }, message), null);
+});
+test('request summaries scope display data before cloning captured catalogs', async t => {
+  const root = await temporaryRoot(t);
   const store = createStore(root);
   await store.recordRequest({ id: 'one', projectID: 'project', sessionID: 'chat', status: 'accepted',
     agent: { id: 'engineer', name: 'Engineer', instructions: 'captured' },
@@ -22,8 +101,7 @@ test('request summaries scope display data before cloning captured catalogs', as
   assert.equal((await store.read('requests')).records.one.catalog.instructions.length, 1300000);
 });
 test("concurrent observations persist exactly once and prices can be edited", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-web-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await temporaryRoot(t);
   const s = createStore(root);
   await Promise.all([
     s.observe([{ id: "a", tokens: 10 }]),
@@ -47,10 +125,9 @@ test("concurrent observations persist exactly once and prices can be edited", as
   );
 });
 test("malformed state cannot be overwritten by a save", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-web-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await temporaryRoot(t);
   const s = createStore(root);
-  await s.savePlans({});
+  await mkdir(s.directory, { recursive: true });
   const file = path.join(s.directory, "settings.json");
   await writeFile(file, "{broken");
   await assert.rejects(s.savePlans({}));
@@ -58,8 +135,7 @@ test("malformed state cannot be overwritten by a save", async (t) => {
 });
 
 test("usage stays attached to the agent snapshot for its request across rescans and edits", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-receipts-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await temporaryRoot(t);
   const store = createStore(root);
   await store.recordRequest({
     id: "msg_request1",
@@ -116,15 +192,8 @@ test("usage stays attached to the agent snapshot for its request across rescans 
 });
 
 test("request observations reuse the request snapshot and skip no-op rewrites", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-cache-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
-  let writes = 0;
-  const store = createStore(root, {
-    replace: async (source, target) => {
-      writes++;
-      await writeFile(target, await readFile(source));
-    },
-  });
+  const root = await temporaryRoot(t);
+  const store = createStore(root);
   await store.recordRequest({
     id: "msg_request",
     sessionID: "ses_one",
@@ -149,9 +218,9 @@ test("request observations reuse the request snapshot and skip no-op rewrites", 
     },
   ];
   await store.observe(rows);
-  const afterFirstObserve = writes;
+  const before = await readFile(recordDatabasePath(root));
   await store.observe(rows);
-  assert.equal(writes, afterFirstObserve);
+  assert.deepEqual(await readFile(recordDatabasePath(root)), before);
   assert.equal((await store.read("usage")).records.msg_response.agentID, "engineer");
   assert.equal(
     (await store.read("requests")).records.msg_request.catalog["agent-999"]
@@ -160,9 +229,8 @@ test("request observations reuse the request snapshot and skip no-op rewrites", 
   );
 });
 
-test("cached reads are isolated, stat-invalidated and fail closed on corrupt replacement", async (t) => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-invalidated-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+test("database reads are isolated, current across stores and fail closed on corrupt replacement", async (t) => {
+  const root = await temporaryRoot(t);
   const store = createStore(root);
   await store.recordRequest({
     id: "msg_request",
@@ -175,33 +243,19 @@ test("cached reads are isolated, stat-invalidated and fail closed on corrupt rep
     (await store.read("requests")).records.msg_request.agent.name,
     "Engineer",
   );
-  const file = path.join(store.directory, "requests.json");
-  await writeFile(
-    file,
-    JSON.stringify({
-      version: 1,
-      records: {
-        msg_request: {
-          id: "msg_request",
-          sessionID: "ses_one",
-          agent: { id: "designer", name: "Designer" },
-        },
-      },
-    }),
-  );
-  assert.equal(
-    (await store.read("requests")).records.msg_request.agent.name,
-    "Designer",
-  );
-  await writeFile(file, "{broken");
-  await assert.rejects(store.read("requests"), /Cannot read requests/);
-  await assert.rejects(store.recordRequest({ id: "new" }), /Cannot read requests/);
-  assert.equal(await readFile(file, "utf8"), "{broken");
+  const other = createStore(root);
+  await other.recordRequest({ id: 'msg_request', agent: { id: 'designer', name: 'Designer' } });
+  assert.equal((await store.read('requests')).records.msg_request.agent.name, 'Designer');
+  const file = recordDatabasePath(root);
+  await writeFile(file, '{broken');
+  await assert.rejects(store.read('requests'), /Cannot read requests/);
+  await assert.rejects(store.recordRequest({ id: 'new' }), /Cannot read requests/);
+  await assert.rejects(readRuntimeRequest(root, 'msg_request'));
+  assert.equal(await readFile(file, 'utf8'), '{broken');
 });
 
 test('worker usage attribution retains native identity checks with the shared request reader', async t => {
-  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-worker-usage-'));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await temporaryRoot(t);
   const store = createStore(root);
   const taskID = 'a'.repeat(64);
   await store.recordRequest({ id: 'msg_root', sessionID: 'ses_root', directory: root,
@@ -220,13 +274,12 @@ test('worker usage attribution retains native identity checks with the shared re
   await store.observe([row, { ...row, id: 'msg_answer2' }], { session });
   assert.equal((await store.read('usage')).records.msg_answer.agentID, 'engineer');
   await assert.rejects(store.observe([{ ...row, nativeAgent: 'designer' }], { session }), /Agent identity differs/);
-  await writeFile(path.join(store.directory, 'requests.json'), '{broken');
+  await writeFile(recordDatabasePath(root), '{broken');
   await assert.rejects(store.observe([row], { session }), /Cannot read requests/);
 });
 
 test("update inputs and results cannot mutate cached durable snapshots", async t => {
-  const root = await mkdtemp(path.join(os.tmpdir(), "freelancer-cache-ownership-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
+  const root = await temporaryRoot(t);
   const store = createStore(root);
   const input = { id: "request", agent: { id: "engineer" } };
   const result = await store.recordRequest(input);

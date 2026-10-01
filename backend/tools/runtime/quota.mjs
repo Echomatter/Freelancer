@@ -1,12 +1,14 @@
-// Shared quota collector for the single web/Tauri application; no second server.
-import { readFile } from 'node:fs/promises';
+import { readRuntimeText as readFile } from './state-database.mjs';
+// Shared quota collector for the source-run web application.
+
 import { spawn } from 'node:child_process';
-import path from 'node:path';
+import { readFile as readNativeFile } from 'node:fs/promises';
 import os from 'node:os';
+import path from 'node:path';
 import { usageView } from '../../../shared/usage.mjs';
 
-async function json(file, fallback) {
-  try { return JSON.parse((await readFile(file, 'utf8')).replace(/^\uFEFF/, '')); }
+async function json(file, fallback, reader = readFile) {
+  try { return JSON.parse((await reader(file, 'utf8')).replace(/^\uFEFF/, '')); }
   catch (error) {
     if (error.code === 'ENOENT') return fallback;
     throw new Error(`Invalid local data: ${path.basename(file)}`);
@@ -14,7 +16,7 @@ async function json(file, fallback) {
 }
 export async function snapshot(root, now = Date.now()) {
   const dataRoot = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
-  const auth = await json(path.join(dataRoot, 'opencode', 'auth.json'), {});
+  const auth = await json(path.join(dataRoot, 'opencode', 'auth.json'), {}, readNativeFile);
   const mapping = { openai: 'openai-oauth', 'github-copilot': 'github-copilot-oauth', 'opencode-go': 'opencode-go', opencode: 'opencode-free' };
   const installed = Object.keys(auth).map(id => mapping[id] || id);
   installed.push('opencode-free');

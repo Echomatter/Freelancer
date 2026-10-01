@@ -5,6 +5,7 @@ import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { performance } from 'node:perf_hooks';
+import { recordDatabasePath } from '../backend/tools/runtime/record-database.mjs';
 import { createStore } from '../server/store.mjs';
 import { replaceFile } from '../server/replace-file.mjs';
 
@@ -46,7 +47,7 @@ export async function measureStoreGrowth({ counts = [10, 100, 250], receiptBytes
         samples.push({ operation, run, elapsedMs, cpuMs: (cpu.user + cpu.system) / 1000, replacements: replacements - writes });
       };
       try {
-        // Warm the parse cache separately; do not confuse cold parsing with writes.
+        // Measure first-use migration separately from steady-state row operations.
         await measure('cold scoped read', 0, () => store.requestSummaries('synthetic_project', 'ses_0'));
         for (let run = 0; run < repeats; run++) {
           const row = { id: 'synthetic_response', sessionID: 'ses_0', parentMessageID: 'req0',
@@ -56,6 +57,7 @@ export async function measureStoreGrowth({ counts = [10, 100, 250], receiptBytes
           await measure('warm scoped read', run, () => store.requestSummaries('synthetic_project', 'ses_0'));
         }
         const requestBytes = (await stat(path.join(state, 'requests.json'))).size;
+        const databaseBytes = (await stat(recordDatabasePath(directory))).size;
         const operations = [...new Set(samples.map(sample => sample.operation))].map(operation => {
           const rows = samples.filter(sample => sample.operation === operation);
           const median = key => {
@@ -64,7 +66,7 @@ export async function measureStoreGrowth({ counts = [10, 100, 250], receiptBytes
           };
           return { operation, medianElapsedMs: median('elapsedMs'), medianCpuMs: median('cpuMs'), replacements: rows.reduce((total, row) => total + row.replacements, 0) };
         });
-        results.push({ receipts: count, payloadBytesPerReceipt: receiptBytes, requestBytes, operations, samples });
+        results.push({ receipts: count, payloadBytesPerReceipt: receiptBytes, requestBytes, databaseBytes, operations, samples });
       } finally {
         await store.flush();
       }

@@ -1,7 +1,9 @@
+import { readJsonBody } from './http-body.mjs';
 import http from "node:http";
 import { once } from "node:events";
 import { timingSafeEqual } from "node:crypto";
 import { createSender } from "./sender.mjs";
+import { createGoals } from './goals.mjs';
 import { createSchedules } from "./schedules.mjs";
 import { savedTheme, themeDocument } from "./theme.mjs";
 import { readFile } from "node:fs/promises";
@@ -27,10 +29,13 @@ const safeEqual = (supplied, expected) => {
   return a.length === b.length && timingSafeEqual(a, b);
 };
 
-export async function startServer({ application: app, assets, port = 0, readActivity, shutdownToken, onShutdown, remoteAccess }) {
+export async function startServer({ application: app, assets, port = 0, readActivity, shutdownToken, onShutdown, remoteAccess, timers = true }) {
   const history = app.history;
-  const sender = createSender(app, { beforeSend: history?.ensureWritable });
+  let goals;
+  const sender = createSender(app, { beforeSend: history?.ensureWritable, executionFor: (p, s) => goals?.executionFor(p, s) });
+  app.sender = sender;
   await sender.ready;
+  if (app.goalTree) { goals = createGoals(app, { sender }); await goals.ready; }
   const schedules = createSchedules(app, { sender, readActivity });
   await schedules.ready;
   await app.gitProjects?.recover();
@@ -45,8 +50,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
         "Referrer-Policy": "no-referrer",
       };
       if (publicWeb) headers["Strict-Transport-Security"] = "max-age=31536000";
+      const payload = type === "application/json" ? JSON.stringify(value) : value;
       res.writeHead(status, headers);
-      res.end(type === "application/json" ? JSON.stringify(value) : value);
+      res.end(payload);
     };
     try {
       const host = String(req.headers.host ?? "");
@@ -85,7 +91,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         const lanApi = publicWeb || requestOrigin !== origin || !loopback;
         const pairingRequest = lanApi && route === '/api/access/pair' && req.method === 'POST';
         const lanTokenOk = !lanApi || pairingRequest || remote.authenticate(req, res, publicWeb ? 'web' : 'lan');
-        const agentBridge = loopback && !lanApi && route === "/api/git/agent" && !!expected && safeEqual(supplied, expected);
+        const agentBridge = loopback && !lanApi && ["/api/git/agent", "/api/goals/checkpoint", "/api/delegates/handoff"].includes(route) && !!expected && safeEqual(supplied, expected);
         if (
           (!agentBridge && req.headers["x-freelancer-client"] !== "webpage") ||
           (req.headers.origin && req.headers.origin !== requestOrigin) ||
@@ -95,18 +101,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(403, { error: !lanTokenOk
             ? "Pair this device from Application settings - Remote access on your computer."
             : "Open Freelancer to continue" });
-        let body = {};
-        if (!["GET", "HEAD"].includes(req.method)) {
-          let bytes = 0,
-            chunks = [];
-          for await (const chunk of req) {
-            bytes += chunk.length;
-            if (bytes > (route === "/api/send" ? 9 : 1) * 1024 * 1024)
-              return send(413, { error: "Message is too large" });
-            chunks.push(chunk);
-          }
-          body = JSON.parse(Buffer.concat(chunks).toString() || "{}");
-        }
+        const body = await readJsonBody(req, route);
         if (pairingRequest) {
           const paired = await remote.pair(body, publicWeb ? 'web' : 'lan');
           res.setHeader('Set-Cookie', paired.cookie);
@@ -123,10 +118,45 @@ export async function startServer({ application: app, assets, port = 0, readActi
           if (route === '/api/remote-access/devices' && req.method === 'DELETE') return send(200, await remote.revoke(body.id));
           return send(404, { error: 'Action not found' });
         }
+        if (route === '/api/view-state' && ['GET', 'PUT'].includes(req.method)) {
+          if (req.method === 'GET') return send(200, (await app.store.read('settings')).viewState ?? {});
+          const data = await app.store.update('settings', settings => {
+            const previous = settings.viewState ?? {};
+            if (body.migrate && previous.migrated) return settings;
+            const lastChats = { ...previous.lastChats };
+            for (const [project, session] of Object.entries(body.lastChats ?? {})) {
+              if (typeof session !== 'string' || project.length > 200 || session.length > 200) throw Error('Invalid chat preference');
+              lastChats[project] = session;
+            }
+            return { ...settings, viewState: { ...previous, migrated: true, lastChats,
+              ...(typeof body.navigationCollapsed === 'boolean' ? { navigationCollapsed: body.navigationCollapsed } : {}) } };
+          });
+          return send(200, data.viewState);
+        }
         const queryProject = url.searchParams.get("project");
         if (queryProject && body.project && queryProject !== body.project)
           return send(400, { error: "Project does not match request body" });
         const project = queryProject ?? body.project;
+        if (route === '/api/delegates/handoff') {
+          if (!agentBridge || req.method !== 'POST') return send(403, { error: 'Native delegate tool only' });
+          const work = await app.workerHandoff(body);
+          const row = await sender.enqueue(work.project, work.session, work.input, work.execution);
+          return send(200, { status: 'worker_handoff', worker: work.session, delivery: body.delivery, handoff: row,
+            note: 'Saved for delivery. HTTP acknowledgement is not evidence the worker has received or acted on this input. Inspect the worker transcript.' });
+        }
+        if (route === '/api/goals/checkpoint') {
+          if (!agentBridge || req.method !== 'POST') return send(403, { error: 'Native goal tool only' });
+          return send(200, await goals.checkpoint(body));
+        }
+        if (route === '/api/goals' && req.method === 'GET') return send(200, await goals.list(project));
+        if (route === '/api/goals' && req.method === 'POST') return send(200, await goals.create(project, body));
+        if (route === '/api/goals' && req.method === 'PUT') return send(200, await goals.update(project, body));
+        if (route === '/api/goals/action' && req.method === 'POST') {
+          if (['start','resume'].includes(body.action)) return send(200, await goals.start(project, body.id));
+          if (body.action === 'stop') return send(200, await goals.stop(project, body.id));
+          if (['archive','restore'].includes(body.action)) return send(200, await goals.archive(project, body.id, body.action === 'archive'));
+          throw Error('Unknown goal action.');
+        }
         if (route === "/api/git/agent") {
           if (!agentBridge || req.method !== "POST") return send(403, { error: "Native Git tool only" });
           return send(200, await app.gitAgentAction(body));
@@ -150,6 +180,10 @@ export async function startServer({ application: app, assets, port = 0, readActi
             200,
             await (async () => {
               const result = await app.bootstrap(project, url.searchParams.get("session"));
+              if (goals && result.project) {
+                result.goals = await goals.list(result.project.id);
+                result.sessions = result.sessions.map(s => ({ ...s, goal: result.goals.find(g => g.session === s.id) }));
+              }
               return history ? history.decorateBootstrap(result) : result;
             })(),
           );
@@ -194,6 +228,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(200, await app.updateProject(body.project, body));
         if (req.method === "DELETE" && route === "/api/projects")
           return send(200, await sender.organize(body.project, async (pending) => {
+            if (goals && (await goals.list(body.project)).some(g => !g.archived)) throw Error('Archive this project’s goals before removing it.');
             if (pending.length) throw Error("Resolve queued or uncertain messages before removing this project.");
             return app.removeProject(body.project);
           }));
@@ -210,6 +245,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
             result = await app.chatTranscript(project, id, error.message);
           }
           if (history && id) void history.indexCurrent(project, id, result.messages).catch(() => {});
+          if (goals && id) { const g = await goals.forSession(project, id); if (g) { const { captured, ...visible } = g; result.goal = visible; } }
           if (timings.length) res.setHeader('Server-Timing', timings.join(', '));
           return send(200, result);
         }
@@ -219,10 +255,13 @@ export async function startServer({ application: app, assets, port = 0, readActi
             return app.createChat(project, body.title);
           }));
         }
-        if (req.method === "PATCH" && route === "/api/chat")
-          return send(200, await app.changeChat(project, body.session, body));
+        if (req.method === "PATCH" && route === "/api/chat") {
+          const goal = await goals?.forSession(project, body.session);
+          return send(200, goal ? await goals.update(project, { id: goal.id, revision: goal.revision, objective: goal.objective, title: body.title }) : await app.changeChat(project, body.session, body));
+        }
         if (req.method === "POST" && route === "/api/chat/action") {
           return send(200, await sender.organize(project, async () => {
+            if (await goals?.forSession(project, body.session)) throw Error('Goal chats keep one conversation. Manage this goal in Project settings.');
             await history?.ensureWritable(project, body.session);
             return app.sessionAction(project, body.session, body.action, body);
           }));
@@ -252,14 +291,22 @@ export async function startServer({ application: app, assets, port = 0, readActi
             }));
           if (route === "/api/history/index" && req.method === "POST")
             return send(200, await history.rebuildChatSearch());
-          if (route === "/api/history" && req.method === "GET")
-            return send(200, await history.list(project, Object.fromEntries(url.searchParams)));
+          if (route === "/api/history" && req.method === "GET") {
+            const result = await history.list(project, Object.fromEntries(url.searchParams));
+            const rows = await goals?.list(project) ?? [];
+            result.sessions = result.sessions.map(s => ({ ...s, goal: rows.find(g => g.session === s.id) }));
+            return send(200, result);
+          }
           if (route === "/api/history/pin" && req.method === "PUT")
             return send(200, await history.pin(project, session, body));
-          if (route === "/api/history/archive" && req.method === "PUT")
+          if (route === "/api/history/archive" && req.method === "PUT") {
+            if (await goals?.forSession(project, session)) throw Error('Archive or restore this goal from Project settings → Goals to keep its chat together.');
             return send(200, await history.archive(project, session, body, sender.organize));
-          if (route === "/api/history/project" && req.method === "PUT")
+          }
+          if (route === "/api/history/project" && req.method === "PUT") {
+            if (body.archived && goals && (await goals.list(project)).some(g => !g.archived)) throw Error('Archive this project’s goals first.');
             return send(200, await history.archiveProject(project, body, sender.organize));
+          }
           if (route === "/api/history/export" && req.method === "POST")
             return send(200, await history.export(project, body));
           if (route === "/api/drafts" && req.method === "GET")
@@ -285,12 +332,16 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(200, await schedules.delete(body.id));
         if (req.method === "POST" && route === "/api/sender")
           return send(200, await sender.enqueue(project, body.session, body));
+        if (req.method === "PATCH" && route === "/api/sender")
+          return send(200, await sender.edit(project, body.session, body.id, body.text, body.version));
         if (req.method === "DELETE" && route === "/api/sender")
           return send(200, await sender.cancel(project, body.session, body.id));
         if (req.method === "POST" && route === "/api/send")
           return send(200, await sender.send(project, body.session, body));
-        if (req.method === "POST" && route === "/api/stop")
-          return send(200, await sender.stop(project, body.session));
+        if (req.method === "POST" && route === "/api/stop") {
+          const goal = await goals?.forSession(project, body.session);
+          return send(200, goal && (goal.status === 'running' || goal.transition || goal.unsettled) ? await goals.stop(project, goal.id) : await sender.stop(project, body.session));
+        }
         if (req.method === "POST" && route === "/api/respond")
           return send(
             200,
@@ -411,6 +462,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
   const dispose = () => disposal ??= (async () => {
     await remote.close();
     await schedules.close();
+    await goals?.close();
     await sender.close();
     await app.indexJobs?.close();
     history?.close();
@@ -427,10 +479,11 @@ export async function startServer({ application: app, assets, port = 0, readActi
   });
   origin = `http://127.0.0.1:${server.address().port}`;
   await remote.start(localHandler, publicHandler);
-  sender.start();
-  schedules.start();
+  if (timers) sender.start();
+  if (timers) schedules.start();
+  if (timers) goals?.startTimer();
   return {
-    server, url: origin, get lanUrl() { return remote.origin || undefined; }, sender, schedules,
+    server, url: origin, get lanUrl() { return remote.origin || undefined; }, sender, schedules, goals,
     async close() {
       if (server.listening) {
         await new Promise(resolve => {

@@ -1,4 +1,5 @@
-import { readFile } from "node:fs/promises";
+import { readRuntimeText as readFile } from './state-database.mjs';
+
 import path from "node:path";
 
 // Project Git enforcement is intentionally independent from agent names.
@@ -38,6 +39,7 @@ export async function gitToolGuard({
     "list",
     "question",
     "todoread",
+    "goal_checkpoint",
     "todowrite",
     "task",
     "delegate",

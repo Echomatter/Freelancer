@@ -7,6 +7,8 @@ names the current agent, model and intelligence; the menu holds the labeled
 controls. There is no secondary label row below the input. The enclosing border
 continues along the very bottom of the page. The options sheet mounts only while
 open, keeping its model list out of the closed chat DOM.
+On narrow screens, the text field sits above the controls so a running response's
+Stop button cannot squeeze the draft into a thin column.
 
 ## Alternatives tried
 
@@ -39,24 +41,35 @@ Tasks, attachments and delivery cards share a compact outline and collapsible
 header. A closed task card shows progress and the current task; unfinished work
 is called out when the response ends. Files can be collapsed without being
 removed. New delivery errors open their details. Closing or dismissing a card
-never cancels native work. Cancelling a queued message remains an explicit action.
+never cancels native work. Expand a delivery card to edit or cancel a queued
+message; cancellation remains a separate, explicit action.
 Expanded support cards share one bounded scroll area, keeping the message and
 send action visible even with a long task list.
 
 The upward arrow remains the send affordance. During a response, typed text
-opens the existing Delegate / Queue / Interrupt choice; an empty message shows
+opens the existing Delegate / Queue / Steer choice; an empty message shows
 Stop. Attached files remain in the composer during those text-only handoffs.
 Native permissions, paid consent, draft capture and uncertain-delivery rules
 are unchanged.
 
 ## Tool history
 
-There is one tool card at the top of the chat. It defaults to the current turn
+One top bar combines connection status and refresh activity with equal-width
+**Commands**, **Agents**, and **Models** controls. A goal chat adds **Goals** as
+a fourth equal-width control. Each shows an activity icon and one statistic.
+Selecting a control opens its view below the bar, overlaying the transcript;
+selecting it again or closing the view dismisses it. Escape inside a view returns
+focus to its control. There is no Details sidebar or breadcrumb row.
+
+Commands defaults to the current turn
 and does not switch turns when the transcript scrolls. Each turn has a slim,
 outlined marker that opens its tools in the dock without jumping the transcript.
 Earlier turns are labeled explicitly and provide **Back to current turn**.
 A new turn returns the dock to current work. Expanded tools scroll independently
-and never cover the composer. Tool bodies are not duplicated in the transcript.
+within the overlay. Compact agent and goal handoff cards also appear in the
+transcript; full command bodies remain in Commands. Agents provides worker
+navigation and a parent-chat action. Models shows observed model contributions.
+Goals includes lifecycle controls and handoff history for the current goal.
 
 The [conversation rail](conversation-rail.md) adds an explicit jump: selecting a
 turn dot moves the transcript and opens that turn's tools together. Ordinary
@@ -84,7 +97,7 @@ technology users.
 attachment/task collapse, draft preservation, tool markers and phone overflow.
 `chat-dock.browser.mjs` checks stable current-turn selection, historical review,
 independent output scrolling, streamed tools, delegation handoffs and short
-viewports. Existing send, queue, interrupt and uncertainty journeys retain their
+viewports. Existing send, queue, steer and uncertainty journeys retain their
 transport assertions. These are simulated-provider checks, not live inference.
 `navigation.browser.mjs` covers phone and collapsed desktop menus, destination
 dismissal, nested management actions, focus return, usage navigation and back

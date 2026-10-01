@@ -8,6 +8,7 @@ const root = fileURLToPath(new URL("../", import.meta.url));
 const entrypoints = [
   "README.md", "docs/README.md", "docs/getting-started.md",
   "docs/ARCHITECTURE.md", "docs/local-data.md", "docs/named-agents.md", "docs/delegation-budget.md",
+  "docs/goals.md", "docs/goals-execution.md", "docs/state-aware-sender.md",
 ];
 const read = path => readFileSync(resolve(root, path), "utf8");
 

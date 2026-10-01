@@ -9,7 +9,9 @@ export function senderState(chat, session) {
   const approvals = !!(chat.permissions?.length || chat.questions?.length);
   // Imported records are presentation history, never evidence of native work.
   const messages = chat.messages.filter(message => !message.info?.imported);
-  const user = messages.findLast(m => m.info?.role === 'user');
+  // A native compaction boundary is not newly submitted user work. Native
+  // busy/retry still inhibits dispatch while the compactor is actually active.
+  const user = messages.findLast(m => m.info?.role === 'user' && !m.parts?.some(p => p.type === 'compaction'));
   const receipt = [...(chat.receipts ?? [])].reverse().find(r => ['accepted', 'observed'].includes(r.status));
   const awaitingReceipt = !!(receipt && !messages.some(m => m.info?.id === receipt.id));
   const replies = user ? messages.filter(m => m.info?.role === 'assistant' && m.info?.parentID === user.info.id) : [];
@@ -37,15 +39,35 @@ export function senderState(chat, session) {
 }
 
 export function normalizeIntent(input) {
-  if (!['queue', 'clarify', 'interrupt'].includes(input.kind)) throw Error('Choose Queue, Delegate, or Interrupt.');
+  if (!['queue', 'clarify', 'steer'].includes(input.kind)) throw Error('Choose Queue, Delegate, or Steer.');
   if (typeof input.id !== 'string' || !/^[a-zA-Z0-9_-]{16,80}$/.test(input.id)) throw Error('Invalid delivery ID.');
   if (typeof input.text !== 'string' || !input.text.trim() || input.text.length > 190000) throw Error('Write a message of at most 190,000 characters.');
-  if (!(input.kind === 'clarify' && input.model === 'auto') && (typeof input.model !== 'string' || !/^[\w.:-]+\/[^\s]+$/.test(input.model) || input.model.length > 500)) throw Error('Choose an available model.');
+  if (!(['clarify', 'steer'].includes(input.kind) && input.model === 'auto') && (typeof input.model !== 'string' || !/^[\w.:-]+\/[^\s]+$/.test(input.model) || input.model.length > 500)) throw Error('Choose an available model.');
   for (const key of ['agentID', 'variant']) {
     if (input[key] !== undefined && (typeof input[key] !== 'string' || input[key].length > 100)) throw Error(`Invalid ${key}.`);
   }
   return { id: input.id, kind: input.kind, text: input.text, model: input.model,
     agentID: input.agentID ?? 'engineer', variant: input.variant ?? '' };
+}
+
+export const isInternalMessage = message => message?.info?.role === 'user' && message.parts?.some(p =>
+  p.type === 'text' && /^\[Freelancer (?:Delegate|Queue|Steer|Goal|Delivery) (?:handoff|activity) [\w-]+\]\n/.test(p.text ?? ''));
+
+export function userInitiatedRequest(text) {
+  const match = typeof text === 'string' && text.match(/^\[Freelancer (Delegate|Queue|Steer) handoff [\w-]+\]\n/);
+  if (!match) return null;
+  const marker = match[1] === 'Delegate' ? 'User concern:\n'
+    : match[1] === 'Queue' ? 'User request:\n' : 'User correction:\n';
+  const markerAt = text.lastIndexOf(marker);
+  return { kind: match[1].toLowerCase(), text: markerAt >= 0 ? text.slice(markerAt + marker.length).trim() : text.slice(match[0].length).trim() };
+}
+
+export function queuePrompt(text, id) {
+  return `[Freelancer Queue handoff ${id}]\nQueued user request. Continue it after the current response finishes, preserving the conversation's context and constraints.\n\nUser request:\n${text}`;
+}
+
+export function steerPrompt(text, id) {
+  return `[Freelancer Steer handoff ${id}]\nAdjust the ongoing work at the next supported boundary. Incorporate this correction yourself; delegation is not required. Preserve the original objective except where this update changes it, native todos, outstanding workers, captured constraints, permissions, parent agent/model and goal identity. Do not cancel queued input or restart the assignment. Tools already executing may finish before this update takes effect.\n\nUser correction:\n${text}`;
 }
 
 export function clarifyPrompt(text, model, id, original = '') {
@@ -54,7 +76,7 @@ export function clarifyPrompt(text, model, id, original = '') {
     (model === 'auto'
       ? `At your next safe tool boundary, use delegate with an appropriate named agent and bounded task from the supplied catalog for the concern below, using its saved model default or normal eligible selection when unpinned. Do not change the parent model.\n`
       : `At your next safe tool boundary, use delegate with an appropriate named agent and bounded task using model=${JSON.stringify(model)} for the concern below. The user explicitly selected this worker model. Do not change the parent model.\n`) +
-    `Keep the assignment narrow, pass the relevant original-task context, preserve its exclusions and permissions, and give concurrent writers disjoint files. Do not infer source-write permission from the Delegate action itself. Continue independent original-task work and integrate the worker's result.\n` +
+    `Keep the assignment narrow, include handoff ID ${id} in the worker task for correlation, pass the relevant original-task context, preserve its exclusions and permissions, and give concurrent writers disjoint files. Do not infer source-write permission from the Delegate action itself. Continue independent original-task work and integrate the worker's result.\n` +
     `Use the normal delegation eligibility, quota and native permission checks; do not bypass them. Report a blocked/failed handoff honestly instead of claiming a worker started.\n\n` +
     (original ? `Original parent request (context and constraints, not the worker assignment):\n${original}\n\n` : '') +
     `User concern:\n${text}`;

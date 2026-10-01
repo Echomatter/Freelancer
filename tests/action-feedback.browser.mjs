@@ -1,3 +1,5 @@
+import { defaults } from '../shared/strategy.mjs';
+import { checkedCatalog } from '../backend/tools/runtime/agent-catalog.mjs';
 import assert from "node:assert/strict";
 import { localDataFixture } from "./fixtures/local-data-app.mjs";
 import { test, expect } from './support/browser-test.mjs';
@@ -17,6 +19,7 @@ test('action-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser,
   ];
   f.state.status.ses_history = { type: "busy" };
 
+await f.store.recordRequest({ id: 'busy_user', sessionID: 'ses_history', projectID: f.project.id, status: 'accepted', policyVersion: 6, agent: checkedCatalog(await f.store.read('settings')).agents[0], catalog: checkedCatalog(await f.store.read('settings')), model: { providerID: 'opencode', modelID: 'free' }, preferences: defaults });
   const page = await browser.newPage({ viewport: { width: 1280, height: 850 } });
   // Plain HTTP phone origins do not expose crypto.randomUUID.
   await page.addInitScript(() => Object.defineProperty(crypto, 'randomUUID', { value: undefined }));
@@ -57,7 +60,7 @@ test('action-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser,
 
     const box = page.getByRole("textbox", { name: "Message", exact: true });
     await box.fill("Queue this while the parent is still running");
-    await page.getByRole("button", { name: "Choose Delegate, Queue, or Interrupt", exact: true }).click();
+    await page.getByRole("button", { name: "Choose Delegate, Queue, or Steer", exact: true }).click();
     await page.getByRole("button", { name: /^Queue/ }).click();
     await senderStarted;
 
@@ -70,8 +73,17 @@ test('action-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser,
 
     await box.fill("Newer typing must stay visible");
     releaseSender();
-    await page.getByText("Queue · Waiting", { exact: true }).waitFor();
+    await page.getByText("Queue · Saved for delivery", { exact: true }).waitFor();
     assert.equal(await box.inputValue(), "Newer typing must stay visible");
+    const pendingCard = page.locator('.work-card').filter({ hasText: 'Queue · Saved for delivery' });
+    await pendingCard.locator('.work-card-toggle').click();
+    await pendingCard.getByRole('button', { name: 'Edit pending message' }).click();
+    const pendingEditor = page.getByRole('dialog', { name: 'Edit pending message' });
+    await pendingEditor.getByRole('textbox', { name: 'Pending message' }).fill('Edited queued concern');
+    await pendingEditor.getByRole('button', { name: 'Save message' }).click();
+    await expect(pendingEditor).not.toBeVisible();
+    await expect(pendingCard).toContainText('Edited queued concern');
+    assert.equal(await box.inputValue(), 'Newer typing must stay visible');
 
     await box.fill("");
     await page.getByRole("button", { name: "Stop response", exact: true }).click();
@@ -102,7 +114,7 @@ test('action-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser,
       else await route.fulfill({ response });
     });
     await box.fill('Retry this delivery once');
-    await page.getByRole('button', { name: 'Choose Delegate, Queue, or Interrupt', exact: true }).click();
+    await page.getByRole('button', { name: 'Choose Delegate, Queue, or Steer', exact: true }).click();
     await page.getByRole('button', { name: /^Queue/ }).click();
     await page.getByRole('dialog').getByText(/Delivery unconfirmed/).waitFor();
     assert.equal(await box.inputValue(), 'Retry this delivery once');
@@ -111,15 +123,35 @@ test('action-feedback', { tag: ["@app","@chat"] }, async ({ appBrowser: browser,
     assert.equal(retryIDs.length, 2);
     assert.equal(retryIDs[0], retryIDs[1]);
     await page.unroute('**/api/sender');
+    f.state.messages.ses_history.push({ info: { id: 'retry-parent-reply', role: 'assistant', parentID: 'retry-parent', finish: 'stop', time: { completed: Date.now() } }, parts: [{ type: 'text', text: 'The current response finished.' }] });
+    f.state.status.ses_history = { type: 'idle' };
+    const queuedCard = page.locator('.handoff-card').filter({ hasText: 'Retry this delivery once' });
+    await queuedCard.waitFor();
+    await expect(queuedCard.locator('summary')).toContainText('Queued request');
+    await expect(page.locator('.composer-cards .work-card').filter({ hasText: 'Queue ·' })).toHaveCount(0);
     await box.fill('Steer toward the concrete fix');
-    await page.getByRole('button', { name: 'Choose Delegate, Queue, or Interrupt', exact: true }).click();
-    await page.getByRole('dialog').getByRole('button', { name: /^Interrupt/ }).click();
+    await page.getByRole('button', { name: 'Choose Delegate, Queue, or Steer', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Steer/ }).click();
     await page.waitForFunction(() => document.querySelector('.composer textarea')?.value === '');
     // Assert native transport eventually receives the message, not just a stop.
-    await page.locator('.message.user').filter({ hasText: 'Steer toward the concrete fix' }).waitFor();
-    assert.equal(f.state.messages.ses_history.filter(message => message.parts?.some(part => part.text === 'Steer toward the concrete fix')).length, 1);
+    const steerCard = page.locator('.handoff-card').filter({ hasText: 'Steer toward the concrete fix' });
+    await steerCard.waitFor();
+    await expect(steerCard.locator('summary')).toContainText('Steer request');
+    await expect(steerCard).not.toContainText('Adjust the ongoing work at the next supported boundary');
+    await expect(page.locator('.composer-cards .work-card').filter({ hasText: 'Steer ·' })).toHaveCount(0);
+    assert.equal(f.state.messages.ses_history.filter(message => message.parts?.some(part => part.text?.includes('Steer toward the concrete fix'))).length, 1);
+
+    await box.fill('Delegate just this focused analysis');
+    await page.getByRole('button', { name: 'Choose Delegate, Queue, or Steer', exact: true }).click();
+    await page.getByRole('dialog').getByRole('button', { name: /^Delegate/ }).click();
+    await page.waitForFunction(() => document.querySelector('.composer textarea')?.value === '');
+    const delegateCard = page.locator('.handoff-card').filter({ hasText: 'Delegate just this focused analysis' });
+    await delegateCard.waitFor();
+    await expect(delegateCard.locator('summary')).toContainText('Delegate request');
+    await expect(delegateCard).not.toContainText('The user submitted a bounded concern');
+    await expect(page.locator('.composer-cards .work-card').filter({ hasText: 'Delegate ·' })).toHaveCount(0);
     assert.deepEqual(errors, []);
-    console.log("PASS immediate Queue/Interrupt feedback, duplicate guard, and newer draft preservation");
+    console.log("PASS immediate Queue/Steer feedback, duplicate guard, and newer draft preservation");
   } finally {
     releaseSender();
     releaseStop();

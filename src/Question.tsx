@@ -10,6 +10,7 @@ type Request = {
   worker?: boolean;
   sessionTitle?: string;
   questions: {
+    header?: string;
     question: string;
     multiple?: boolean;
     custom?: boolean;
@@ -59,6 +60,8 @@ export function Question({ request, count = 1, open = true, onLater, onAnswer, o
   const inFlight = useRef(false);
   const answers = questionAnswers(request.questions, selected, custom);
   const canAnswer = answers.length > 0 && answers.every((row) => row.length > 0);
+  const title = request.worker ? 'Subagent question' : request.questions.length === 1 && request.questions[0].header?.trim()
+    ? request.questions[0].header.trim() : 'A quick question';
   async function respond(action: () => Promise<void>) {
     if (inFlight.current) return;
     inFlight.current = true;
@@ -76,7 +79,7 @@ export function Question({ request, count = 1, open = true, onLater, onAnswer, o
   }
   return (
     <Dialog open={open} className="question-dialog" bodyClassName="question-body"
-      title={request.worker ? 'Subagent question' : 'A quick question'}
+      title={title}
       description={request.worker ? request.sessionTitle || 'A subagent needs your answer.'
         : count > 1 ? `${count} requests waiting · one at a time` : 'Your answer lets this chat continue.'}
       priority={request.worker ? 'worker' : 'decision'} busy={pending} closeLabel="Answer later"

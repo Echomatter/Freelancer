@@ -22,6 +22,10 @@ test('stalled project reads recover without stopping native work', { tag: ['@app
     }
   };
   const page = await browser.newPage();
+  await page.addInitScript(() => {
+    for (const method of ['timeout', 'any'])
+      Object.defineProperty(AbortSignal, method, { configurable: true, value: undefined });
+  });
   await page.goto(f.url);
   await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeEnabled();
   await page.getByRole('button', { name: 'Chats', exact: true }).click();

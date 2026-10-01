@@ -1,3 +1,4 @@
+import { readStateText } from '../../tools/runtime/state-database.mjs'
 import { tool, type Plugin } from '@opencode-ai/plugin'
 import fs from 'node:fs'
 import path from 'node:path'
@@ -29,7 +30,20 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
   const { createBridge } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/bridge.mjs')).href)
   const { createDelegator, publicDelegateArgs } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/delegation.mjs')).href)
   const { createPresenter, restoreDelegateTools, completionMetadata } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/presentation.mjs')).href)
-  const delegate = createDelegator({ client, toolkitRoot, directory, ...createBridge(toolkitRoot) })
+  const delegate = createDelegator({ client, toolkitRoot, directory, ...createBridge(toolkitRoot),
+    handoff: async (input: any, signal: AbortSignal) => {
+      const launch = JSON.parse(await readStateText(path.join(toolkitRoot, '.state/webpage/launch.json')))
+      const url = new URL(launch.url)
+      if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw Error('Local worker sender required.')
+      const response = await fetch(new URL('/api/delegates/handoff', url), {
+        method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Freelancer-Git-Bridge': process.env.FREELANCER_GIT_BRIDGE || '' },
+        body: JSON.stringify(input), signal,
+      })
+      const result = await response.json()
+      if (!response.ok) throw Error(result.error || 'Worker delivery rejected.')
+      return result
+    },
+  })
   const present = createPresenter({ client, directory })
   const { loadPreferences } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/preferences.mjs')).href)
   const { strategyGuidance } = await import(pathToFileURL(path.join(toolkitRoot, '../shared/strategy.mjs')).href)
@@ -39,6 +53,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
   const { readAgentCatalog, configureAgentProfiles } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/agent-catalog.mjs')).href)
   const { enableSessionTodos } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/todo-policy.mjs')).href)
   const { configureContextSettings } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/context-settings.mjs')).href)
+  const { recordModelInput } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/input-observations.mjs')).href)
   return {
     config: async config => {
       configureAgentProfiles(config, await readAgentCatalog(toolkitRoot))
@@ -50,7 +65,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
     },
     tool: {
       delegate: tool({
-        description: 'Assign a bounded task to a named agent. Call delegate() with no arguments to inspect current agent IDs and the eligible model pool. Omit model for automatic eligible routing; use freeOnly:true when free capacity is required. A new worker starts in the background. Use workers:true to list durable child assignments; use worker alone to inspect one; use worker with task to continue it. Paid routes use native paid_delegate consent.',
+        description: 'Assign a bounded task to a named agent. Call delegate() with no arguments to inspect current agent IDs and the eligible model pool. Omit model for automatic eligible routing; use freeOnly:true when free capacity is required. A new worker starts in the background. Use workers:true to list assignments; worker alone to inspect one. With worker and task, delivery:"steer" adjusts current work without aborting, delivery:"queue" waits for its current turn. Omitting delivery continues an idle worker. Paid routes use native paid_delegate consent.',
         args: {
           agent: tool.schema.string().optional().describe('Named agent ID from the supplied catalog. Omit all arguments to inspect available agents and budget.'),
           task: tool.schema.string().min(1).optional().describe('A bounded assignment, relevant files and acceptance checks. Give concurrent writers disjoint areas.'),
@@ -59,6 +74,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
           inspectionOnly: tool.schema.boolean().optional().describe('No source modifications.'),
           independentReview: tool.schema.boolean().optional().describe('Seek a different model and exclude prior reviewers.'),
           worker: tool.schema.string().optional().describe('Child session ID. Alone reads its live transcript; with task continues its same agent and model.'),
+          delivery: tool.schema.enum(['steer', 'queue']).optional().describe('With worker and task: steer corrects ongoing work at the next supported boundary without aborting tools; queue appends a FIFO follow-up after its current turn. Preserves the existing assignment, model and constraints.'),
           workers: tool.schema.boolean().optional().describe('List this parent conversation’s saved worker assignments.'),
           from: tool.schema.number().int().min(0).optional().describe('Zero-based native message offset for reading a worker transcript. Omit for the latest messages.'),
           limit: tool.schema.number().int().min(1).max(20).optional().describe('Number of worker messages to read, default 8.'),
@@ -68,7 +84,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
           const receipt = await delegate.execute(publicDelegateArgs(args), { ...context,
             metadata: async (update: any) => { await present.metadata(context, update).catch(() => false) },
           })
-          const output = ['catalog', 'workers', 'worker_transcript'].includes(receipt.status) ? receipt : {
+          const output = ['catalog', 'workers', 'worker_transcript', 'worker_handoff'].includes(receipt.status) ? receipt : {
             status: receipt.status, task_id: receipt.task_id, parent_session: receipt.parent_session,
             agent: receipt.agent && { id: receipt.agent.id, name: receipt.agent.name },
             attempts: receipt.attempts?.map((a: any) => ({ child_session: a.child_session, status: a.status,
@@ -94,7 +110,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
     },
     'chat.params': async input => { await delegate.checkModel(input) },
     'tool.execute.before': async (input, output) => { await delegate.checkTool(input, output) },
-    'experimental.chat.messages.transform': async (_input, output) => { restoreDelegateTools(output.messages) },
+    'experimental.chat.messages.transform': async (_input, output) => { restoreDelegateTools(output.messages); await recordModelInput(toolkitRoot, output.messages) },
     'experimental.chat.system.transform': async (input, output) => {
       try {
         const { preferences } = await loadPreferences(toolkitRoot, directory, input.sessionID)

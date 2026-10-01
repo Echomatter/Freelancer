@@ -20,6 +20,13 @@ const phaseLabel = (status, failure) => {
     provider:'Provider failed',binding:'Blocked · binding',model:'Blocked · model'}[status] || 'Preparing handoff');
 };
 export function completionMetadata(receipt, args) {
+  if (receipt.status === 'worker_handoff') return {
+    sessionId: receipt.worker, parentSessionId: receipt.parent_session,
+    agentID: receipt.agent?.id, agentName: receipt.agent?.name,
+    selected_model: receipt.selected_model, task_id: receipt.task_id,
+    freelancer_status: 'worker_handoff', freelancer_delivery: receipt.handoff?.id,
+    delivery_status: receipt.handoff?.status ?? 'waiting',
+  };
   if (receipt.status === 'worker_transcript') return {
     sessionId: receipt.child_session, parentSessionId: receipt.parent_session,
     agentID: receipt.activity?.agentID, agentName: typeof receipt.agent === 'string' ? receipt.agent : receipt.agent?.name,

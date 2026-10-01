@@ -1,8 +1,7 @@
-import { mkdir, readFile, unlink, writeFile } from "node:fs/promises";
-import path from "node:path";
 import { randomUUID } from "node:crypto";
+import path from "node:path";
+import { readStateText as readFile,writeState } from '../backend/tools/runtime/state-database.mjs';
 import { senderState } from "../domain/sender.mjs";
-import { replaceFile } from "./replace-file.mjs";
 
 const frequencies = new Set(["once", "daily", "weekly"]);
 const intervals = { daily: 24 * 60 * 60 * 1000, weekly: 7 * 24 * 60 * 60 * 1000 };
@@ -73,7 +72,7 @@ export function createSchedules(app, {
   now = () => Date.now(),
   setTimer = setTimeout,
   clearTimer = clearTimeout,
-  replace = replaceFile,
+  persist = writeState,
 } = {}) {
   if (!sender) throw Error("Schedules require the sender service.");
   let rows = [], timer, closed = false, writing = Promise.resolve(), ticking, queue = Promise.resolve(), lastError;
@@ -83,10 +82,7 @@ export function createSchedules(app, {
     if (!file) return;
     const text = JSON.stringify({ version: 1, schedules: rows.map(publicSchedule) }, null, 2);
     const work = writing.then(async () => {
-      await mkdir(path.dirname(file), { recursive: true });
-      const temp = `${file}.${randomUUID()}.tmp`;
-      try { await writeFile(temp, text, { mode: 0o600 }); await replace(temp, file); }
-      finally { await unlink(temp).catch(() => {}); }
+      await persist(file, JSON.parse(text));
     });
     writing = work.catch(error => { lastError = error; arm(); });
     return work;

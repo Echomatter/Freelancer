@@ -6,6 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $appRoot = Split-Path -Parent $PSScriptRoot
 $state = Join-Path $appRoot 'backend\.state\webpage'
+. (Join-Path $appRoot 'backend\scripts\state-database.ps1')
 $mutex = New-Object Threading.Mutex($false, 'Local\FreelancerWebLauncher')
 $held = $false
 function Get-ChromePath {
@@ -30,7 +31,7 @@ function Get-ChromePath {
 }
 function Get-RunningInfo {
     try {
-        $info = Get-Content -LiteralPath (Join-Path $state 'launch.json') -Raw | ConvertFrom-Json
+        $info = Read-FreelancerState (Join-Path $state 'launch.json')
         $lock = Get-Content -LiteralPath (Join-Path $state 'application.lock') -Raw | ConvertFrom-Json
         if ($info.appRoot -ne $appRoot -or $info.pid -ne $lock.pid) { return }
         # Get-Process by ID is instant; a WMI/CIM query here would run on every

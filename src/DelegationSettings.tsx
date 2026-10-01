@@ -2,6 +2,7 @@ import { HelpHint } from "./HelpHint";
 import { useEffect, useRef, useState } from 'react';
 import { Button, Panel, Field } from './echoflex/Controls';
 import { api, query } from './api';
+import { delegationOptions } from '../shared/strategy.mjs';
 
 // Edit the existing revision-checked preference authority, not a second store.
 // Hidden model/context restrictions survive unless the user explicitly clears one.
@@ -58,7 +59,7 @@ export function DelegationSettings({ project, sessionID = '', refresh }: {
       <fieldset disabled={saving} className="delegation-fields">
         <div className="field-grid">
           <Field label="Delegation"><select value={draft.delegation === "ask" ? "automatic" : draft.delegation} onChange={e => change({ delegation: e.target.value })}>
-            <option value="automatic">Agent decides</option><option value="manual">Work directly — no delegated agents</option>
+            {delegationOptions.map(option => <option key={option.value} value={option.value}>{option.label}</option>)}
           </select></Field>
           <Field label="Worker models" help="worker-models"><select value={workerModels} onChange={e => change({
             costPreference: e.target.value === 'all' ? 'any' : e.target.value,

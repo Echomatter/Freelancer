@@ -133,6 +133,19 @@ test('dialogs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
         .toEqual([['Blue'], ['Tests', 'Build', 'Keyboard navigation']]);
       await expect(page.getByText(/Needs your decision/)).toHaveCount(0);
     });
+    f.state.questions = [{ id: 'question_git', sessionID: 'ses_history', questions: [{
+      header: 'Git request', question: 'Run git merge topic in this project?', custom: false,
+      options: [{ label: 'Approve', description: 'Apply the exact request.' }, { label: 'Cancel', description: 'Keep the project unchanged.' }],
+    }] }];
+    const gitQuestion = page.getByRole('dialog', { name: 'Git request', exact: true });
+    await gitQuestion.waitFor();
+    await expect(gitQuestion.getByRole('radio', { name: 'Approve Apply the exact request.' })).toBeVisible();
+    await gitQuestion.getByRole('button', { name: 'Later', exact: true }).click();
+    await page.getByRole('button', { name: 'Review decision', exact: true }).click();
+    await expect(gitQuestion).toBeVisible();
+    await gitQuestion.getByRole('radio', { name: 'Cancel Keep the project unchanged.' }).check();
+    await gitQuestion.getByRole('button', { name: 'Continue', exact: true }).click();
+    expect(replies.find(row => row.route === '/question/question_git/reply').body.answers).toEqual([['Cancel']]);
     assert.deepEqual(errors, []);
     console.log('PASS shared dialogs, worker priority, native replies/errors, preserved covered drafts, focus return, split layout and narrow scrolling');
   } catch (error) { console.error('Browser errors:', errors); await screenshot('failure'); throw error; }

@@ -1,15 +1,15 @@
-import path from "node:path";
 import { randomBytes } from "node:crypto";
-import { writeFile, rename, unlink } from "node:fs/promises";
-import { startHost } from "./host.mjs";
-import { createApplication } from "./application.mjs";
-import { startServer } from "./http.mjs";
+import path from "node:path";
+import { removeState,writeState } from '../backend/tools/runtime/state-database.mjs';
 import { createActivityReader } from "./activity.mjs";
-import { createObserver } from "./observer.mjs";
+import { createApplication } from "./application.mjs";
+import { startHost } from "./host.mjs";
+import { startServer } from "./http.mjs";
 import { acquireLock } from "./lock.mjs";
-import { resolveRuntimeConfig, runtimeEnv } from "./runtime-config.mjs";
+import { createObserver } from "./observer.mjs";
 import { createRemoteAccess } from "./remote-access.mjs";
-import { savedWebPort, rememberWebPort } from "./web-port.mjs";
+import { resolveRuntimeConfig,runtimeEnv } from "./runtime-config.mjs";
+import { rememberWebPort,savedWebPort } from "./web-port.mjs";
 
 // ── Startup migration ──────────────────────────────────────────────────
 // All paths resolve from the source tree. No runtime.json, no
@@ -53,7 +53,7 @@ const shutdown = () => shutdownPromise ??= (async () => {
   try { host.stop(); } catch (error) { console.error("OpenCode shutdown failed", error); }
   try { await observer.stop(); } catch (error) { console.error("Activity observer shutdown failed", error); }
   try { await app.store.flush(); } catch (error) { console.error("Settings flush failed", error); }
-  await unlink(launchFile).catch(() => {});
+  removeState(launchFile);
   await releaseLock();
 })();
 const launchFile = path.join(backendRoot, ".state/webpage/launch.json");
@@ -78,7 +78,6 @@ try {
 }
 await rememberWebPort(webPortFile, webPort);
 console.log(JSON.stringify({ url: runtime.url, pid: process.pid }));
-await writeFile(`${launchFile}.tmp`, JSON.stringify({ url: runtime.url, lanUrl: runtime.lanUrl, pid: process.pid, appRoot: config.appRoot, shutdownToken }));
-await rename(`${launchFile}.tmp`, launchFile);
+writeState(launchFile, { url: runtime.url, lanUrl: runtime.lanUrl, pid: process.pid, appRoot: config.appRoot, shutdownToken });
 process.on("SIGINT", () => { void shutdown(); });
 process.on("SIGTERM", () => { void shutdown(); });

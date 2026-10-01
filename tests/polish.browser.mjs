@@ -1,3 +1,5 @@
+import { defaults } from '../shared/strategy.mjs';
+import { checkedCatalog } from '../backend/tools/runtime/agent-catalog.mjs';
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
@@ -44,11 +46,11 @@ test('polish', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, own }) =
       return { inset: parseFloat(style.paddingLeft), content: e.clientWidth - parseFloat(style.paddingLeft) - parseFloat(style.paddingRight), available };
     });
     const withoutDetails = await transcriptWidth();
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await page.getByRole('button', { name: /^Agents / }).click();
     const withDetails = await transcriptWidth();
     assert.equal(withoutDetails.inset, withDetails.inset, 'Details does not change chat edge padding');
     assert.ok([withoutDetails, withDetails].every(m => m.content / m.available > .85), 'chat fills the available pane in both states');
-    await page.getByRole('button', { name: 'Details', exact: true }).click();
+    await page.getByRole('button', { name: /^Agents / }).click();
     await scroll.evaluate(e=>{e.scrollTop=300;});
     const before=await scroll.evaluate(e=>e.scrollTop);
     await page.getByRole('button',{name:'Application settings',exact:true}).click();
@@ -77,17 +79,20 @@ test('polish', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, own }) =
       { info: { id: 'u-live', role: 'user', time: { created: 100 } }, parts: [{ id: 'up-live', type: 'text', text: 'Continue the layout check.' }] },
       { info: { id: 'a-live', parentID: 'u-live', role: 'assistant', providerID: 'opencode', modelID: 'free', time: { created: 101 } }, parts: [{ id: 'tool-live', type: 'tool', tool: 'read', state: { status: 'running', input: { filePath: 'layout.css' } } }] },
     );
+await f.store.recordRequest({ id: 'u-live', sessionID: 'ses_history', projectID: f.project.id, status: 'accepted', policyVersion: 6, agent: checkedCatalog(await f.store.read('settings')).agents[0], catalog: checkedCatalog(await f.store.read('settings')), model: { providerID: 'opencode', modelID: 'free' }, preferences: defaults });
     await page.reload();
     if (await chatsTrigger.getAttribute('aria-expanded') !== 'true') await chatsTrigger.click();
     await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
     await page.locator('.composer textarea').fill('Check the navigation while the current work continues.');
-    await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
+    await page.getByRole('button',{name:'Choose Delegate, Queue, or Steer',exact:true}).click();
     const dialog=page.getByRole('dialog',{name:'While this response runs'});
-    for (const choice of ['Delegate','Queue','Interrupt']) assert.equal(await dialog.getByRole('button',{name:new RegExp('^'+choice+' ')}).count(),1);
+    for (const choice of ['Delegate','Queue','Steer']) assert.equal(await dialog.getByRole('button',{name:new RegExp('^'+choice+' ')}).count(),1);
     await dialog.getByRole('button',{name:/^Queue Send automatically/}).click();
-    const queued=page.locator('.work-card').filter({hasText:'Queue · Waiting'});
+    const queued=page.locator('.work-card').filter({hasText:'Queue · Saved for delivery'});
     await queued.waitFor();
+    await queued.locator('.work-card-toggle').click();
     assert.equal(await queued.getByRole('button',{name:'Cancel message'}).count(),1);
+    await queued.locator('.work-card-toggle').click();
     const taskCard = page.locator('.work-card').filter({ hasText: 'Tasks · 0/30 complete' });
     const taskToggle = taskCard.getByRole('button', { name: /Tasks · 0\/30 complete/ });
     assert.equal(await taskToggle.getAttribute('aria-expanded'), 'false', 'long task cards start collapsed so they do not create a nested scroll region');
@@ -108,16 +113,17 @@ test('polish', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, own }) =
     await page.getByRole('button',{name:'Show hidden delivery cards'}).click();
     await queued.waitFor();
     await page.screenshot({path:'artifacts/polish/workspace-cards.png'});
+    await queued.locator('.work-card-toggle').click();
     await queued.getByRole('button',{name:'Cancel message'}).click();
     await queued.waitFor({state:'detached'});
     await page.locator('.composer textarea').fill('Continue with this steering message.');
-    await page.getByRole('button',{name:'Choose Delegate, Queue, or Interrupt',exact:true}).click();
-    await dialog.getByRole('button',{name:/^Interrupt Stop the current response/}).click();
+    await page.getByRole('button',{name:'Choose Delegate, Queue, or Steer',exact:true}).click();
+    await dialog.getByRole('button',{name:/^Steer Adjust the ongoing work/}).click();
     await page.getByRole('dialog',{name:'While this response runs'}).waitFor({state:'detached'});
-    await page.locator('.message.user').filter({hasText:'Continue with this steering message.'}).waitFor();
+    await page.locator('.handoff-card').filter({hasText:'Continue with this steering message.'}).waitFor();
     assert.equal(await page.locator('.composer textarea').inputValue(),'');
-    assert.ok(f.calls.some(call=>call.route.endsWith('/abort')),'Interrupt reaches native abort');
-    assert.equal(f.state.messages.ses_history.filter(message=>message.parts?.some(part=>part.text==='Continue with this steering message.')).length,1,'Interrupt sends the captured steer once');
+    assert.ok(!f.calls.some(call=>call.route.endsWith('/abort')),'Steer never aborts native work');
+    assert.equal(f.state.messages.ses_history.filter(message=>message.parts?.some(part=>part.text?.includes('Continue with this steering message.'))).length,1,'Steer sends the captured update once');
     await page.setViewportSize({width:480,height:840});
     await composer.waitFor();
     const mobile=await composer.boundingBox();

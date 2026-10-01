@@ -64,8 +64,10 @@ export function configureAgentProfiles(config, catalog) {
         ? config.permission
         : (config.permission?.[key] ?? config.permission?.["*"])) ??
       otherwise;
-    const globalQuestion = typeof config.permission === "object" ? config.permission?.question : undefined;
-    const question = globalQuestion ?? (["deny", "ask"].includes(permission["*"]) ? permission["*"] : "allow");
+    // This hook sees authored configuration, before native generated-profile
+    // defaults. Preserve explicit per-agent decisions (including deny); only
+    // supply allow when no native/user rule applies.
+    const question = fallback("question", "allow");
     config.agent[agent.id] = {
       ...previous,
       mode: "all",
@@ -76,14 +78,14 @@ export function configureAgentProfiles(config, catalog) {
       model: undefined,
       // OpenCode's generated named profiles otherwise disable its built-in
       // question tool, leaving the browser with no native request to render.
-      tools: { ...previous.tools, question: true },
+      tools: { ...previous.tools, question: previous.tools?.question ?? true },
       permission:
         typeof permission === "string"
           ? permission
           : {
               ...permission,
-              // OpenCode seeds named agents with question=deny. The built-in
-              // question tool must be permitted so its request can reach the UI.
+              // Override the native generated-profile default, not authored
+              // permission decisions, so questions can reach the native UI.
               question,
               paid_delegate: fallback("paid_delegate", "ask"),
               plan_enter: "deny",

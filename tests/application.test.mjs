@@ -1092,3 +1092,26 @@ test("sending a chat never prepares or switches Git branches before an agreement
   await f.app.send(p.id, "ses_owned", { text: "Please change the Git agreement", agentID: "engineer", model: "opencode/free" });
   assert.ok(f.calls.some(c => String(c.route).includes("prompt_async")));
 });
+
+test('file-access scope saves through appearance settings and appears in bootstrap for every project', async t => {
+  const f = await fixture(t);
+  const first = await f.app.addProject(f.directory);
+  const otherDirectory = path.join(f.root, 'other-project');
+  await mkdir(otherDirectory);
+  const other = await f.app.addProject(otherDirectory);
+  const saved = await f.app.saveAppearance({ fileAccessScope: 'project' });
+  assert.equal(saved.fileAccessScope, 'project');
+  assert.equal((await f.store.read('settings')).fileAccessScope, 'project');
+  assert.equal((await f.app.bootstrap(first.id)).settings.fileAccessScope, 'project');
+  assert.equal((await f.app.bootstrap(other.id)).settings.fileAccessScope, 'project');
+  await assert.rejects(f.app.saveAppearance({ fileAccessScope: 'secret-everywhere' }), /which files/);
+  assert.equal((await f.store.read('settings')).fileAccessScope, 'project', 'invalid settings do not mutate saved scope');
+  const computer = await f.app.saveAppearance({ fileAccessScope: 'computer' });
+  assert.equal(computer.fileAccessScope, 'computer');
+  const lsp = await f.app.saveAppearance({ nativeLspToolEnabled: true });
+  assert.equal(lsp.nativeLspToolEnabled, true);
+  assert.equal((await f.app.bootstrap(first.id)).settings.nativeLspToolEnabled, true);
+  await assert.rejects(f.app.saveAppearance({ nativeLspToolEnabled: 'yes' }), /native LSP/);
+  assert.equal((await f.store.read('settings')).nativeLspToolEnabled, true);
+  assert.equal((await f.app.saveAppearance({ nativeLspToolEnabled: false })).nativeLspToolEnabled, false);
+});

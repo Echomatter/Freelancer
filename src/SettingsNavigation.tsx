@@ -1,4 +1,4 @@
-import { Target, Bot, BrainCircuit, CalendarClock, ChevronDown, FileSearch, Files, FolderOpen, Gauge, GitBranch, GitFork, Github, HardDrive, History, MessageSquare, Palette, Settings2, Smartphone, Wallet } from "lucide-react";
+import { Target, Bot, BrainCircuit, CalendarClock, ChevronDown, FileSearch, Files, FolderOpen, Gauge, GitBranch, GitFork, Github, HardDrive, History, MessageSquare, Palette, Settings2, Smartphone, Wallet, Wrench } from "lucide-react";
 import { useNavigationDismiss } from "./NavigationMenus";
 
 export type SettingsScope = "project" | "application";
@@ -31,6 +31,7 @@ const groups = {
       { id: "search", label: "Search all content", icon: FileSearch },
       { id: "content-storage", label: "Content & Storage", icon: HardDrive },
       { id: "git-defaults", label: "Git defaults", icon: GitBranch },
+      { id: "capabilities", label: "Capabilities", icon: Wrench },
     ],
   },
 } as const;

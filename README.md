@@ -97,6 +97,8 @@ Credentials remain with the native/provider authentication systems; Freelancer d
 
 **Application settings → Available Usage** turns provider/model telemetry into a practical view of remaining availability. It is designed around usable capacity rather than presenting token or dollar estimates as if they were provider billing records. Unknown, estimated and unavailable information stays distinguishable.
 
+**Application settings → Capabilities** is a platform-wide, simple, read-only list of available tools, skills and MCP status. Its only control is the advanced native LSP tool opt-in, which takes effect after restarting Freelancer. File access scope is under **Application settings → Content & Storage**. See [Capabilities](docs/capabilities.md) and [File access scope](docs/file-access.md).
+
 The workspace model picker can optionally hide exhausted models. That preference lives under **Available Usage → Model visibility** and retains its saved value from Appearance.
 
 ### Appearance and layout
@@ -184,6 +186,7 @@ Freelancer deliberately separates project-specific choices from application-wide
 |  | **Available Usage** | Remaining provider/model availability, usage observations and exhausted-model visibility |
 |  | **Providers** | Authentication, plan type, optional subscription cost, currency and provider colors |
 |  | **Appearance** | Palette generator, saved custom themes and 300 built-in palettes |
+|  | **Capabilities** | Read-only platform-wide tools, skills and MCP status; advanced native LSP opt-in |
 |  | **Content & Storage** | Data locations, backup guidance, project archive/restore, index refresh and SQLite maintenance |
 |  | **Remote access** | Remembered-device access on a private network or through an optional HTTPS tunnel |
 |  | **Git defaults** | Default managed-Git agreement for projects |

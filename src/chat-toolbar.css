@@ -47,6 +47,8 @@
 
 /* Cards summarize execution; the linked native chat owns handoffs and reports. */
 .agent-status-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; }
+.agent-scope-options { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.agent-scope-options button[aria-pressed=true] { border-color: var(--accent); }
 .agent-turn-entry { min-width: 0; }
 .agent-turn-entry .agent-card { width: 100%; height: auto; }
 .agent-status-card { align-items: flex-start; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); padding: 16px; }
@@ -54,7 +56,6 @@
 .agent-status-card:disabled { opacity: 1; cursor: default; }
 .agent-status-label { color: var(--accent); font-size: 12px; }
 .agent-status-label.failed { color: var(--warning); }
-.agent-chat-hint { display: block; margin: 6px 4px; color: var(--muted); font-size: 11px; }
 .agent-status-grid[data-historical=true] .spin { animation: none; }
 .model-work-overview { padding: 14px; margin-bottom: 18px; border: 1px solid var(--line); border-radius: 12px; background: var(--bg); }
 .model-work-overview h3, .file-changes h3 { margin: 0 0 8px; }

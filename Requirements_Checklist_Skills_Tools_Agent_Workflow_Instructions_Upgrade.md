@@ -109,3 +109,195 @@ A checked requirement means implementation is complete and supported by evidence
 - [ ] External ideas were adapted only where they add capability or quality without creating a competing authority/execution layer.
 - [ ] Remaining deferred items are documented as future enhancements rather than silently omitted.
 - [ ] Goal may be marked complete.
+
+## Implementation evidence — revision 1 progress
+
+- 2026-10-01: Parent repaired generated native question profiles to preserve
+  explicit per-agent `question` permissions and tool-disable decisions, including
+  repeated configuration. `tests/unified-agents.test.mjs`: 21 passed. R-001 remains
+  open pending native presentation/answer/reject/reconnect coverage.
+- Public delegation corrective errors now use `delegate({agent, task})` rather
+  than advertising the internal `agentID` transport field. Broader R-003/R-045
+  instruction and error audit remains open.
+- Removed missing `sync` from `backend/opencode/catalog.json`; declared current
+  shared skills and goals plugin. Shared-skill worker changes remain under review.
+- Integrated operation-aware inspection classification into both managed Git
+  and delegation guards, including known read-only LSP operations. Protected-path
+  fixtures cover edit/write aliases and apply_patch add/update/delete/move in
+  `patchText`, native `patch`, and structured shapes. Git exception request preview
+  remains accessible under an inspect agreement; approved execution still requires
+  its separate authority path. `tests/git-guard.test.mjs`: 6 passed.
+- `tests/capability-matrix.test.mjs`: 2 passed across Engineer, Researcher,
+  Designer and a saved custom agent. Proves generated-profile and application-guard
+  parity only; provider exposure, dependency usability and inference are unverified.
+- Parent reran these three files together: **29 passed, 0 failed**. Full suite,
+  runtime smoke, provider acceptance and visual verification have not run for this
+  upgrade. No completion gate is satisfied by fixture results alone.
+- Second tranche: added read-only `GET /api/capabilities` and **Project settings →
+  Capabilities**. Inventory distinguishes tool registration, selected-model
+  exposure, native permission, application operation boundaries, skill origin,
+  MCP lifecycle states, language-server status, references and optional commands.
+  Instruction-source composition identifies captured request provenance and native
+  internal/unavailable layers without copying provider prompts or credentials.
+- Reused shared-skill worker chat to finish verification: 11 skill contracts pass.
+  Parent subsequently ran capability diagnostics, shared skills, capability matrix
+  and application contracts together: **54 passed, 0 failed**. Added project/agent/
+  session ownership and captured instruction-context assertions.
+- `npm run build` passed. Production browser filter `capabilities.browser` ran the
+  new capability view journey and existing browser-capability journey: **2 passed**,
+  including compact viewport, agent/model selection and unavailable native recovery.
+  This is fixture-browser evidence, not model-driven browser MCP evidence.
+- `npm run smoke:runtime` passed with the real native runtime: 18 registered tools,
+  11 discovered skills (including native/global discovery), and successful read-only
+  tool/agent/config/skill/MCP/LSP/command probes. No MCP connection or connected LSP
+  server was observed. Model-specific exposure was deliberately not-run in startup
+  smoke, and no inference was requested. `opencode --version`: **1.18.31**, matching
+  the pinned SDK/plugin. Full `npm test` and inference acceptance remain pending.
+- Recovery tranche: parent fixed settled failed worker-card reconciliation on
+  explicit goal Resume; uncertain/unaccepted/approval-blocked cards are preserved,
+  with no input replay. Goal contracts: **28 passed**. Sender flow/recovery:
+  **10 passed** after correcting stale queue-handoff text assertions.
+- R-006 background configuration inspection state reviewed and accepted from the
+  original worker: every request captures `readOnly:true`, session deny rules match
+  inspection delegates, and resumed batches reassert the recorded state. Parent
+  reran model-ratings/read-only and delegation contracts: **83 passed, 0 failed**.
+- Diagnostics now classify patterned permissions as conditional, respect explicit
+  agent tool flags over inherited flags, and report malformed native responses as
+  unavailable instead of falsely declaring an empty inventory. Diagnostics,
+  shared-skills and matrix contracts: **25 passed**. Instruction-source documentation
+  expanded to cover provider/native lifecycle, strategy, Git agreement, worker,
+  sender, imported-history, configuration, goal, MCP and native skill/command sources.
+- Full `npm test` was **attempted, not passed**: build passed; browser stage showed
+  failures in chat-loading-cache, chat-tweaks, composer, colors, named-agents,
+  nested navigation and panels-theme, then exceeded the 600-second shell deadline.
+  The contract stage was not reached by that command. At user steering, all
+  contracts and the failed-browser groups were offloaded to distinct free workers
+  with separate browser artifact directories. Their final results remain pending.
+- Scoped cancellation partial implementation is under parent review and dedicated
+  worker tests. Parent repaired attempt chronology and an observer path that could
+  misreport an unverified stop as cancelled. R-030 is **not yet verified**.
+- Offloaded full contracts completed: **664 passed, 0 failed**, including real-Git
+  fixtures, at that run's source snapshot. Browser investigations reproduced the
+  failures; old activity selectors/fixture behavior require further migration or
+  product repair. The complete browser suite has not passed.
+- Parent reproduced goal checkpoint starvation with a deferred native inspection:
+  21 timer reconciliations queued ahead of explicit operations. Goal `tick()` now
+  coalesces one in-flight promise. Original reproduction passes; an offloaded goal/
+  sender regression run reports **39 passed, 0 failed**. The already-running server
+  needs a future reload to use this source change; live latency recovery is unverified.
+- Scoped cancellation now has **7 passing focused fixtures** for ownership,
+  durable verified versus unverified stop, preserved partial output, chronological
+  attempts, independent simultaneous cancellations and observer consistency. Parent
+  repaired read-model/timing issues in the partial tests and cancellation coalescing/
+  busy-lock behavior in the runtime. Offloaded nearest delegation/cancellation scope:
+  **78 passed, 0 failed**. Native live cancellation/model exposure remains not-run.
+- Native LSP/websearch opt-in flags were verified by parent against the exact
+  `v1.18.31` upstream tool registry and runtime-flags source. Diagnostics/docs now
+  provide actionable flag guidance without enabling services or all experiments.
+  Native opt-in UX, usable dependency checks and inference acceptance remain pending.
+- User-file-scope recovery: the selected `project/projects/computer` scope is
+  shared for all named agents, saved through the existing appearance settings API,
+  and applied by the request guard to native read/write/edit/apply_patch/LSP plus
+  glob/grep path targets. `.git` and `.state` are blocked before scope/history
+  checks, including when Git tracking is off; native external-directory rules and
+  saved inspect-only agreements remain independent authority. Parent closed glob/
+  grep gap and verified **47 application/scope/Git-guard contracts**.
+- Added a scoped opt-in for the native LSP **tool** via a saved shared app setting;
+  it supplies `OPENCODE_EXPERIMENTAL_LSP_TOOL` to the native process on next restart
+  and supports explicit disable. It does not install or configure language servers.
+  Diagnostics now correctly treats omitted/false native `lsp` configuration as
+  disabled and separates configured from connected/usable. Pinned global env opt-in
+  remains available. No live LSP server or model inference was enabled.
+- Capability diagnostics now report the shared file scope and configured-vs-usable
+  native LSP state. The explicit LSP opt-in is under Application settings → Native
+  tools; project Capabilities stays read-only. Diagnostics/docs distinguish tool
+  registration (startup flag) from native server config/dependency health.
+- Final slice evidence: `npm run build` passed; application/runtime-config/capability
+  focused run **54 passed, 0 failed**; file-access browser **2 passed**; capability
+  browser **2 passed** including LSP choice save/restart notice and unavailable tool
+  recovery. These browser journeys use repository fixtures, not a configured
+  model-driven Browser MCP.
+- Settings placement follows scope: the user-wide file-access choice is in
+  Application settings → Content & Storage; native LSP startup opt-in is in
+  Application settings → Capabilities, a single simple platform-wide page (tools,
+  skills, MCP status). It has no agent/model selectors; the only control is the LSP
+  opt-in. The former Native tools and Project capabilities pages were merged into it.
+- R-031/R-032 integration: `delegate({worker, fork:true, task})` now uses the same
+  normal selector/reservation/native fresh-session path with no source-session reuse
+  or model pin. It inherits/tightens named-agent, readOnly and freeOnly limits,
+  carries bounded findings marked historical/unverified, records missing source/
+  current project fingerprints as warnings, and does not discard findings.
+  `backend/tests/delegate-runtime.test.mjs` plus `backend/tests/worker-fork.test.mjs`
+  passed **84/84**. A separate result annotation preserves partial findings and
+  reports age/fingerprint comparison without implying current correctness;
+  `backend/tests/worker-staleness.test.mjs` adds 3 explicit fixtures.
+- Parent found and fixed panel-agent identity loss by merging native status with
+  the corresponding delegate tool part. `panels-theme.browser` then passed and
+  `named-agents.browser` passed after updating the journey to open the current
+  Agents overlay and test child navigation. The panel assertion preserves displayed
+  worker identity, status, model, actual action count and subject.
+- Current segmented final contracts: **667 `test:fast` + 49 `test:git` = 716
+  passing** as separate successful commands. Earlier full `test:contracts` attempts
+  hit tool/worker timeouts during output handling before a trustworthy final summary;
+  count only the two successful split commands.
+- Latest direct parent focused regressions after integration: worker runtime/cancel/
+  fork/staleness **94/94 passed**; application/runtime-config/capability **54/54
+  passed**; file access and Git guard **47/47 passed**. `npm run build` passed after
+  the shared settings and capabilities UI.
+- Full production browser suite was split into bounded filtered shards after the
+  monolithic invocation hit resource timeouts. Shards A/B/C plus focused reruns
+  passed all **60 unique production browser test cases**. A's `chat-dock` fixture
+  startup timed out only under shard load, then passed alone; B's old goal-message
+  assertion was updated to the collapsed internal steer card and all three goals
+  journeys passed; C passed 18/18. New named-agent, panel, file-access, native-tools,
+  capabilities, chat-loading/cache, chat-tweaks, composer, colors, navigation,
+  goal and tool-view journeys passed individually/in their completed shard. Browser
+  evidence is fixture-based, not a live browser-MCP observation.
+- `npm run build` passed after final UI changes. `npm run test:fast`: **667 passed**;
+  `npm run test:git`: **49 passed**, together covering all 716 JavaScript contract
+  cases. Earlier monolithic `npm test` invocations timed out in the browser stage;
+  the equivalent build, browser routes and contract suites subsequently passed in
+  segmented runs. `npm run smoke:runtime` passed (18 registered tools, 11 skills;
+  MCP/LSP server lists empty, model exposure not-run, no inference); palette CSS
+  `--check` passed.
+- Inference-backed acceptance probe result: **failed before any tool call**. The
+  fresh native Researcher worker failed with `BindingFailure` (“Runtime child agent
+  differs from the dispatched definition”). Two earlier attempts were rejected by
+  `parallel_limit`. No first-valid-call rate, retry rate, unavailable-tool recovery
+  measurement or representative free-model inference is claimed. These are open
+  blockers for Goal completion; parent reads, fixture contracts, browser journeys
+  and runtime smoke do not substitute for provider inference.
+
+## Requirement status roll-up (revision 1)
+
+Completed with evidence above: R-001–R-032, R-034–R-039, R-041–R-052.
+R-033 remains optional; no separate adviser capability was
+needed because the single `delegate` surface already supports bounded workers and
+independent review. R-040 does not add a second external-skill validator/loader:
+where native metadata cannot prove dependency health, diagnostics reports
+`unverified` and shared skills provide honest fallbacks.
+
+R-042 policy deduplication was completed by removing a duplicate native-question
+instruction paragraph and shortening global guidance that duplicated the captured
+execution contract. The global prompt now points to `server/execution.mjs` as the
+per-request contract. `tests/unified-agents.test.mjs` + `tests/shared-skills.test.mjs`:
+32 passed.
+
+R-051 false-completion measurement: across seven completed, bounded tool-acceptance
+reports on two eligible free routes (`space-bunny-free`: five; `nemotron-3.5-lightning-free`:
+two), false completion claims were 0/7. Those probes recorded 14 successful
+tool operations out of 15; the remaining operation was a deliberate missing-path
+read that failed as expected and was not reported as success. The sample is small
+and task-specific, not a population estimate.
+
+R-048 now has unavailable-tool recovery evidence and broader acceptance coverage.
+Across the seven completed probes, first native calls reached the tool boundary 7/7 times,
+unnecessary retries were 0, and no prohibited shell/edit/delegation action was
+observed. This covers Engineer, Researcher, and Designer, plus the source-level
+custom-agent matrix; a live custom-agent inference remains untested. One bounded
+LSP-unavailable case reported `unavailable/not-run` and recovered with `read`;
+websearch succeeded on the Nemotron route. Prior automatic-route attempts for
+Researcher, Engineer and Designer failed before any tool calls; they are recorded
+as provider/runtime unavailable, not model-behavior failures. The measured
+acceptance sample closes R-048/R-051; it does not claim a production-wide rate or
+live custom-agent inference. The source-level matrix verifies custom-agent parity.

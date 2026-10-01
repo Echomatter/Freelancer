@@ -5,6 +5,7 @@ import { delegateChildSession, delegateModel, toolOutcomeStatus } from "../domai
 
 export function agentActivityFromParts(parts: any[]) {
   const part = parts.at(-1), state = part?.state ?? {}, meta = state.metadata ?? {};
+  const activity = meta.freelancer_activity ?? {};
   let result: any = {};
   try { result = typeof state.output === "string" ? JSON.parse(state.output) : state.output ?? {}; } catch { /* Native output can be truncated. */ }
   if (!result || typeof result !== "object") result = {};
@@ -13,11 +14,19 @@ export function agentActivityFromParts(parts: any[]) {
   const outcome = toolOutcomeStatus(part);
   const delivery = meta.freelancer_status === "worker_handoff";
   return {
-    child: parts.map(delegateChildSession).find(Boolean),
-    agentName: meta.agentName ?? identity?.state?.metadata?.agentName ?? result.agent?.name ?? saved?.agent?.name ?? identity?.state?.input?.agent ?? identity?.state?.input?.agentID ?? state.input?.role ?? "Agent activity",
-    selected: [...parts].reverse().map(delegateModel).find(Boolean),
-    phase: delivery ? (outcome === "error" ? "Handoff needs inspection" : meta.delivery_included ? "Input included" : "Handoff saved") : meta.freelancer_status === "conflict" ? "Needs inspection" : ["no_qualified_route", "delegation_unavailable"].includes(meta.freelancer_status ?? result.status) ? meta.freelancer_status ?? result.status : outcome === "error" ? "failed" : outcome,
-    label: state.error ?? result.reason ?? (!delegateChildSession(part) ? meta.freelancer_status === "catalog" ? "Inspect agent catalog" : meta.freelancer_status === "workers" ? "Inspect workers" : state.title : undefined),
+    child: parts.map(delegateChildSession).find(Boolean) ?? activity.child_session,
+    agentID: meta.agentID ?? activity.agentID ?? identity?.state?.input?.agent ?? identity?.state?.input?.agentID,
+    agentName: meta.agentName ?? activity.agentName ?? identity?.state?.metadata?.agentName ?? result.agent?.name ?? saved?.agent?.name ?? identity?.state?.input?.agent ?? identity?.state?.input?.agentID ?? state.input?.role ?? activity.agentID ?? "Agent activity",
+    selected: [...parts].reverse().map(delegateModel).find(Boolean) ?? activity.observed_model ?? activity.selected_model,
+    phase: activity.phase ?? (delivery ? (outcome === "error" ? "Handoff needs inspection" : meta.delivery_included ? "Input included" : "Handoff saved") : meta.freelancer_status === "conflict" ? "Needs inspection" : ["no_qualified_route", "delegation_unavailable"].includes(meta.freelancer_status ?? result.status) ? meta.freelancer_status ?? result.status : outcome === "error" ? "failed" : outcome),
+    completedTools: activity.completed_tools,
+    elapsedMs: activity.elapsed_ms,
+    stale: activity.stale,
+    tool: activity.tool,
+    subject: activity.subject,
+    observed: activity.observed_model,
+    dispatched: activity.dispatched_model,
+    label: state.error ?? activity.label ?? result.reason ?? (!delegateChildSession(part) ? meta.freelancer_status === "catalog" ? "Inspect agent catalog" : meta.freelancer_status === "workers" ? "Inspect workers" : state.title : undefined),
     raw: result,
   };
 }

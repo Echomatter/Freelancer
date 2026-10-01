@@ -3,7 +3,10 @@ import {
   commandMessages,
   turnTools,
   turnWorking,
+  chatAgentDetails,
 } from "../domain/chat-tools.mjs";
+import { useState } from "react";
+import { buildRequestGroups } from "../domain/chat-view.mjs";
 import { AgentTurnView } from "./AgentTurnView";
 import { resolveTodoLayout } from "../domain/appearance.mjs";
 import {
@@ -38,7 +41,11 @@ export function ChatToolViews({
   session,
   openChild,
 }: any) {
+  const [agentScope, setAgentScope] = useState("turn");
   const details = turnTools(dockRequest, toolbarData.chat?.activity);
+  const chatDetails = chatAgentDetails(buildRequestGroups(messages), toolbarData.chat?.activity);
+  const turnAgentCount = agentTurnEntries(details).entries.length;
+  const chatAgentCount = agentTurnEntries(chatDetails).entries.length;
   const commands = commandMessages(dockRequest?.responseMessages ?? [])
     .reverse()
     .map((message) => ({ ...message, parts: [...(message.parts ?? [])].reverse() }));
@@ -69,7 +76,7 @@ export function ChatToolViews({
       selectedSection={toolSection}
       counts={{
         commands: details.commands.length,
-        agents: agentTurnEntries(details).entries.length,
+        agents: agentScope === "chat" ? chatAgentCount : turnAgentCount,
         models: details.models.length,
         goals: toolbarData.goal?.status,
       }}
@@ -130,7 +137,11 @@ export function ChatToolViews({
             </button>
           )}
           {context}
-          <AgentTurnView details={details} onChild={openChild} current={isCurrentDock} />
+          <div className="agent-scope-options" role="group" aria-label="Agent scope">
+            <button type="button" aria-pressed={agentScope === "turn"} onClick={() => setAgentScope("turn")}>This turn ({turnAgentCount})</button>
+            <button type="button" aria-pressed={agentScope === "chat"} onClick={() => setAgentScope("chat")}>This chat ({chatAgentCount})</button>
+          </div>
+          <AgentTurnView details={agentScope === "chat" ? chatDetails : details} onChild={openChild} current={agentScope === "chat" || isCurrentDock} scope={agentScope} />
         </>
       }
       models={

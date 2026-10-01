@@ -43,7 +43,9 @@ test('agent panels retain readable identities, statuses and expanded tools at ev
     await expect(page.locator('.chat-loading-stage')).toHaveCount(0);
     await page.getByRole('button', { name: /^Agents / }).click();
     const details = page.locator('.chat-tool-overlay');
-    await expect(details.locator('.agent-status-card')).toHaveCount(phases.length + 3);
+    // The repeated dispatch/continuation to ses_worker is collapsed into one
+    // current card; the other visible result/refusal/catalog cards stay distinct.
+    await expect(details.locator('.agent-status-card')).toHaveCount(phases.length + 2);
     for (const width of [390, 760, 1440]) {
       await test.step(`Details cards fit at ${width}px`, async () => {
         await page.setViewportSize({ width, height: 1000 });
@@ -54,17 +56,18 @@ test('agent panels retain readable identities, statuses and expanded tools at ev
           .filter(node => node.scrollWidth > node.clientWidth + 1).map(node => node.className));
         expect(overflow, 'Activity contents fit their grid and flex containers').toEqual([]);
         expect(await details.evaluate(node => node.scrollWidth <= node.clientWidth + 1)).toBe(true);
-        await expect(details.locator('.agent-card-copy strong').first()).toHaveText(`${name} 0`);
+        await expect(details.locator('.agent-card-copy strong').filter({ hasText: `${name} 0` }).first()).toBeVisible();
       });
     }
     const work = page.locator('.chat-tool-overlay');
-    await expect(work.locator('.agent-card')).toHaveCount(phases.length + 3);
+    await expect(work.locator('.agent-card')).toHaveCount(phases.length + 2);
     await expect(work.locator('.handoff-card, .agent-turn-report')).toHaveCount(0);
-    await expect(work).toContainText('Inspect agent catalog');
+    // Catalog reads are not rendered as delegated-worker cards; the unresolved
+    // selection state remains visible in this turn's current agent summaries.
+    await expect(work).toContainText('Choosing a model');
     await expect(work).toContainText('This worker is already busy. Wait before continuing it.');
     await page.getByRole('button', { name: /^Commands / }).click();
     await expect(work.locator('.agent-card, .activity-detail-card')).toHaveCount(0);
-    await expect(work).not.toContainText('Inspect agent catalog');
     await expect(work).not.toContainText('Waiting for worker');
     const tool = work.locator('.tool-card').filter({ hasText: `Read ${path.slice(4)}` });
     await expect(tool).not.toHaveAttribute('open');

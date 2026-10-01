@@ -30,9 +30,13 @@ Edit an active objective to send a revision through Steer; older revisions remai
 available. Execution settings remain visible but locked while the goal runs;
 stop the goal to edit them. Card actions are always visible. Long objectives,
 previous revisions and checkpoint evidence stay within scrollable areas.
-Automatic continuation
-waits for the native response and workers to settle; queued user messages take
-precedence. Missing checkpoints and uncertain delivery pause for inspection.
+Automatic continuation waits for the parent response to settle; queued user
+messages take precedence. A continue checkpoint lets the parent keep doing useful
+independent work while side workers run. Waiting and completion checkpoints wait
+for outstanding worker work. Missing checkpoints trigger bounded same-chat
+recovery. Settled failed worker deliveries are reconciled from native history;
+the parent inspects remaining uncertainty without asking you to confirm routine
+worker statuses. Uncertain input is preserved and never replayed automatically.
 
 Stop prevents further automatic continuations and requests a stop for the parent
 and its descendants. Stopping remains visible while acknowledgement is pending;
@@ -62,8 +66,10 @@ does not authorize later ordinary chat requests.
 Completed chats remain available for questions. Opening one or asking what
 happened does not restart automation. Use Resume explicitly. Archive and Restore
 keep the goal and chat together and preserve history. Missing native conversations
-are reported rather than replaced. After a server restart, inspect the existing
-chat and workers before Resume; uncertain deliveries are never blindly repeated.
+are reported rather than replaced. After a server restart, a running goal
+reconciles its existing chat and continues automatically. Explicit Stop remains
+in effect. Uncertain parent deliveries pause without replay; uncertain worker
+deliveries remain available for the parent to inspect.
 Explicit Resume acknowledges a failed, accepted goal continuation once native
 work is confirmed idle, including interruptions with no assistant error record.
 It creates a fresh continuation in the same chat; it does not replay the old

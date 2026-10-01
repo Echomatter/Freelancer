@@ -8,12 +8,24 @@ import { executionPrompt, policyVersion } from './execution.mjs';
 const active = job => job && ['starting', 'running'].includes(job.status);
 const batchSize = 6;
 const freeWorkerLimit = 4;
+// The same native deny rules normal inspection delegates receive. OpenCode
+// evaluates rules last-match, so the scoped content-index allow follows deny *.
+const readOnlyPermissions = [
+  { permission: 'write', pattern: '*', action: 'deny' },
+  { permission: 'apply_patch', pattern: '*', action: 'deny' },
+  { permission: 'edit', pattern: '*', action: 'deny' },
+  { permission: 'edit', pattern: 'content-index database', action: 'allow' },
+];
+const keepsReadOnly = permission => Array.isArray(permission) &&
+  readOnlyPermissions.slice(0, 3).every(rule => permission.some(row =>
+    row.permission === rule.permission && row.pattern === rule.pattern && row.action === rule.action));
 export function createModelRatingService({ host, backendRoot, dataRoot, project, getCatalog, store,
   localData }) {
   const ownsLocalData = !localData;
   const dataService = localData ?? createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data'));
   let timer, checking = false, starting = false, stopping = false;
   let decisions = { permissions: [], questions: [] };
+  const ensuredReadOnly = new Set();
   const data = () => dataService.get();
   const release = () => {};
   const publicJob = job => job && ({ ...job, progress: undefined,
@@ -55,8 +67,9 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         agentID: 'researcher', mode: 'build', configurationTask: 'model-ratings' };
       if (store) await store.recordRequest({ id: worker.messageID, sessionID: worker.session, projectID: job.project,
         createdAt: Date.now(), status: 'prepared', policyVersion, agent, mode: 'build', catalog: workspace,
-        catalogModels: models, catalogConnected: connected, directory: p.directory,
+        catalogModels: models, catalogConnected: connected, directory: p.directory, readOnly: true,
         model: { providerID, modelID: rest.join('/') }, variant: progress.variant ?? '', delegationPool: [] });
+      ensuredReadOnly.add(worker.messageID);
       try {
         await request(p, `/session/${worker.session}/prompt_async`, { method: 'POST', body: {
           messageID: worker.messageID, model: { providerID, modelID: rest.join('/') }, agent: 'researcher',
@@ -86,6 +99,15 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
           queue: (progress.rows ?? []).slice(offset) } });
       }
       const pool = workers(job);
+      // A resumed service must keep batches dispatched before the restart
+      // inspection-only, not only the prompts it records itself.
+      if (store) for (const worker of pool) {
+        if (worker.status !== 'waiting' || !worker.messageID || ensuredReadOnly.has(worker.messageID)) continue;
+        try {
+          await store.recordRequest({ id: worker.messageID, readOnly: true });
+          ensuredReadOnly.add(worker.messageID);
+        } catch { /* The next observation retries the same captured state. */ }
+      }
       const [messageLists, statuses, permissions, questions] = await Promise.all([
         Promise.all(pool.map(worker => worker.status === 'waiting'
           ? request(p, `/session/${worker.session}/message`).catch(() => null) : [])), request(p, '/session/status'),
@@ -237,9 +259,14 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         const workspace = store ? checkedCatalog(await store.read('settings')) : null;
         const agent = workspace?.agents.find(item => item.id === 'researcher');
         if (store && !agent) throw Error('The research configuration agent is unavailable.');
-        const sessions = await Promise.all(researchModels.map(() => request(p, '/session', { method: 'POST', body: { title: 'Configuration · Update Model Ratings' } })));
+        const sessions = await Promise.all(researchModels.map(() => request(p, '/session', { method: 'POST',
+          body: { title: 'Configuration · Update Model Ratings', permission: readOnlyPermissions } })));
         const ownDirectory = directory => process.platform === 'win32' ? path.resolve(directory).toLowerCase() : path.resolve(directory);
-        if (sessions.some(session => !/^ses_[\w-]+$/.test(session?.id) || !session.directory || ownDirectory(session.directory) !== ownDirectory(p.directory)))
+        // A host that echoes permissions must keep the inspection-only deny
+        // rules; a host that omits them still leaves the recorded execution
+        // context as the authoritative guard for every tool call.
+        if (sessions.some(session => !/^ses_[\w-]+$/.test(session?.id) || !session.directory || ownDirectory(session.directory) !== ownDirectory(p.directory) ||
+          (session.permission !== undefined && !keepsReadOnly(session.permission))))
           throw Error('The native configuration session could not be verified.');
         decisions = { permissions: [], questions: [] };
         data().remember(projectID, sessions);

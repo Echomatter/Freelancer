@@ -9,19 +9,44 @@ param(
     [switch]$MeasureStart, [switch]$MeasureFinalize,
     $InputTokens = $null, $OutputTokens = $null, $CacheReadTokens = $null, $CostDollars = $null,
     [string]$ConsumptionQuality = '', [string]$ConsumptionReason = '',
-    [string]$UserTaskId = '', [string]$ReviewTaskId = '', [switch]$Operational
+    [string]$UserTaskId = '', [string]$ReviewTaskId = '', [switch]$Operational,
+    [ValidateSet('passed','failed','skipped','unavailable','not-run','unverified')][string]$VerificationStatus = ''
 )
 $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot 'state-database.ps1')
 if (-not $Operational -and -not $MeasureStart -and -not $MarkReviewDefect -and
-    (-not $PSBoundParameters.ContainsKey('Success') -or -not $PSBoundParameters.ContainsKey('TestsPassed'))) {
-    throw 'Pass explicit -Success and -TestsPassed values. A missing result must not become a recorded failure.'
+    (-not $PSBoundParameters.ContainsKey('Success') -or (-not $PSBoundParameters.ContainsKey('TestsPassed') -and -not $VerificationStatus))) {
+    throw 'Pass explicit -Success and either -TestsPassed or -VerificationStatus. A missing result must not become a recorded failure.'
 }
 function To-Bool($v) {
     if ($v -is [bool]) { return $v }
     return ("$v".Trim().ToLower() -in @('1','true','yes','$true'))
 }
-$Success=To-Bool $Success; $TestsPassed=To-Bool $TestsPassed
+function Result-Bool($v, [string]$Field) {
+    if ($v -is [bool]) { return $v }
+    $value = "$v".Trim().ToLower()
+    if ($value -in @('1','true','yes','$true')) { return $true }
+    if ($value -in @('0','false','no','$false')) { return $false }
+    throw "-$Field requires an explicit boolean result; use -VerificationStatus for unrun or unknown checks."
+}
+$Success = if ($PSBoundParameters.ContainsKey('Success')) { Result-Bool $Success 'Success' } else { $false }
+$legacyTests = if ($PSBoundParameters.ContainsKey('TestsPassed')) { Result-Bool $TestsPassed 'TestsPassed' } else { $null }
+$verification = if ($VerificationStatus) { $VerificationStatus.ToLower() } elseif ($null -ne $legacyTests) {
+    if ($legacyTests) { 'passed' } else { 'failed' }
+} else { 'unverified' }
+if ($Operational) {
+    if ($legacyTests -eq $true -or $verification -eq 'passed' -or $VerificationStatus -eq 'failed') {
+        throw 'Operational execution records cannot claim passed or failed verification.'
+    }
+    if ($VerificationStatus -and $null -ne $legacyTests) {
+        throw 'Operational verification state conflicts with the legacy -TestsPassed value; omit the legacy flag or record an actual execution check separately.'
+    }
+    $verification = if ($VerificationStatus) { $VerificationStatus.ToLower() } else { 'not-run' }
+} elseif ($VerificationStatus -and $null -ne $legacyTests -and
+    (($verification -eq 'passed' -and -not $legacyTests) -or ($verification -eq 'failed' -and $legacyTests) -or $verification -notin @('passed','failed'))) {
+    throw '-TestsPassed and -VerificationStatus disagree. Supply one authoritative verification result.'
+}
+$TestsPassed = if ($verification -eq 'passed') { $true } elseif ($verification -eq 'failed') { $false } else { $null }
 $Escalated=To-Bool $Escalated; $ReviewFoundDefects=To-Bool $ReviewFoundDefects
 $TaskTypeNorm=@()
 foreach($t in @($TaskType)) {
@@ -142,7 +167,7 @@ try {
             Remove-FreelancerState $mp
         }
         $entry=[ordered]@{task_id=$TaskId;timestamp=$now;repo=$Repo;task_type=$TaskTypeNorm;model=$Model;access=$Access;
-            success=$Success;tests_passed=$TestsPassed;attempts=$Attempts;escalated=$Escalated;
+            success=$Success;tests_passed=$TestsPassed;verification_status=$verification;attempts=$Attempts;escalated=$Escalated;
             review_found_defects=$ReviewFoundDefects;elapsed_band=$ElapsedBand;role=$Role;delegated_model=$DelegatedModel;parent_model=$ParentModel}
         $entry.user_task_id = if ($UserTaskId) { $UserTaskId } else { $TaskId }
         $entry.observation_kind = if ($Role -eq 'review') { 'review' } elseif ($Role -eq 'researcher') { 'research' } else { 'implementation' }
@@ -177,7 +202,7 @@ try {
             $entry.observation_kind=if($receipt.independent_review-or$receipt.workflow.mode-eq'review'-or(-not$receipt.workflow-and$receipt.role-eq'review')){'review'}elseif($receipt.agent.id-eq'researcher'-or$receipt.workflow.mode-in@('plan','explore')-or(-not$receipt.workflow-and$receipt.role-eq'researcher')){'research'}else{'implementation'}
             if($operationalReceipt){
                 $entry.observation_kind='operational';$entry.failure_kind=$attempt.failure
-                $entry.model=$attempt.selected_model;$entry.success=$false;$entry.tests_passed=$false
+                $entry.model=$attempt.selected_model;$entry.success=$false;$entry.tests_passed=$null
             }
             if($attempt.usage){
                 $entry.consumption=[ordered]@{
@@ -193,8 +218,8 @@ try {
         if($priorEntry.Count){
             $prior=$priorEntry[0]
             $entry.revisions=@($prior.revisions|Where-Object{$null-ne$_})
-            if($prior.success-ne$entry.success-or$prior.tests_passed-ne$entry.tests_passed-or$prior.attempts-ne$entry.attempts-or$prior.escalated-ne$entry.escalated-or$prior.observation_kind-ne$entry.observation_kind){
-                $entry.revisions+=@{corrected_at=$now;previous_success=$prior.success;previous_tests_passed=$prior.tests_passed;previous_attempts=$prior.attempts;previous_escalated=$prior.escalated;previous_observation_kind=$prior.observation_kind}
+            if($prior.success-ne$entry.success-or$prior.tests_passed-ne$entry.tests_passed-or$prior.verification_status-ne$entry.verification_status-or$prior.attempts-ne$entry.attempts-or$prior.escalated-ne$entry.escalated-or$prior.observation_kind-ne$entry.observation_kind){
+                $entry.revisions+=@{corrected_at=$now;previous_success=$prior.success;previous_tests_passed=$prior.tests_passed;previous_verification_status=$prior.verification_status;previous_attempts=$prior.attempts;previous_escalated=$prior.escalated;previous_observation_kind=$prior.observation_kind}
             }
         }
         $existing=@($existing|Where-Object{$_.task_id-ne$TaskId})

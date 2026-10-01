@@ -1,6 +1,6 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
-import { removeState,writeState } from '../backend/tools/runtime/state-database.mjs';
+import { readRuntimeText, removeState,writeState } from '../backend/tools/runtime/state-database.mjs';
 import { createActivityReader } from "./activity.mjs";
 import { createApplication } from "./application.mjs";
 import { startHost } from "./host.mjs";
@@ -19,7 +19,10 @@ const { backendRoot } = config;
 
 // Expose runtime root to local plugins and tools loaded later in this
 // process (delegation, content_index, etc.).
-Object.assign(process.env, runtimeEnv(config));
+let savedSettings = {};
+try { savedSettings = JSON.parse(await readRuntimeText(path.join(backendRoot, '.state/webpage/settings.json'), 'utf8')); }
+catch (error) { if (error.code !== 'ENOENT') throw Error('Saved native tool preferences could not be read. OpenCode was not started.'); }
+Object.assign(process.env, runtimeEnv(config, savedSettings));
 // Private process capability, never included in bootstrap or model prompts.
 process.env.FREELANCER_GIT_BRIDGE = randomBytes(32).toString("hex");
 const webPortFile = path.join(backendRoot, '.state/webpage/port.json');

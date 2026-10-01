@@ -208,12 +208,13 @@ test('named-agents', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => 
     parent.info.time.completed = Date.now();
     parent.info.finish = "stop";
     delete f.status[parentID];
-    const work = page.locator('.chat-transcript');
-    const childButton = work.getByRole("button", {
-      name: /Agent finished: Accessibility specialist/,
-    });
+    const agentsTools = page.getByRole("button", { name: /^Agents \d/ });
+    await agentsTools.click();
+    const childButton = page.locator('.chat-tool-overlay .agent-status-card').filter({ hasText: 'Accessibility specialist' });
     await childButton.waitFor();
-    assert.match(await childButton.textContent(), /Accessibility specialist/);
+    assert.match(await childButton.getAttribute('aria-label'), /Accessibility specialist.*Finished.*Open conversation/);
+    assert.match(await childButton.innerText(), /opencode\/free-b/);
+    assert.match(await childButton.innerText(), /0 actions/, 'the fixture child completed without a native tool call');
     await mkdir("artifacts/named-agents", { recursive: true });
     await page.screenshot({ path: "artifacts/named-agents/named-child.png" });
     await childButton.click();

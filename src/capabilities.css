@@ -1,0 +1,8 @@
+.capability-view { display: grid; gap: var(--space-4, 1rem); }
+.capability-table-scroll { overflow-x: auto; }
+.capability-table { width: 100%; border-collapse: collapse; text-align: left; }
+.capability-table th, .capability-table td { padding: .65rem; vertical-align: top; border-bottom: 1px solid var(--border); }
+.capability-table small, .capability-list small { display: block; font-weight: normal; overflow-wrap: anywhere; opacity: .75; }
+.capability-list { display: grid; gap: .75rem; padding-left: 1.25rem; }
+.capability-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; }
+.capability-toggle input { width: auto; accent-color: var(--accent); }

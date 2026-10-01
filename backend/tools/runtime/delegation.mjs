@@ -9,23 +9,33 @@ import { policyInputs } from '../../../shared/strategy.mjs';
 import { activityOf } from './activity.mjs';
 import { answeredChoice,makeDecision } from './decision.mjs';
 import { loadPreferences } from './preferences.mjs';
-import { runtimeSignals,workerResult,workerResultInstruction } from './worker-result.mjs';
+import { annotateWorkerContext,partialText,runtimeSignals,workerResult,workerResultInstruction } from './worker-result.mjs';
+import { composeWorkerFork } from './worker-fork.mjs';
 
 import { agentAssignmentAllowed,legacyTaskPatterns } from '../../../domain/agent-policy.mjs';
 import { legacyModelAllowed } from '../../../domain/workspace.mjs';
 import { executionPrompt,policyVersion } from '../../../server/execution.mjs';
 import { executionContext,workerBindingFile } from './execution-context.mjs';
 import { reserveWorkerSlot } from './worker-dispatch-lock.mjs';
-// Native session metadata is not a project source edit. Host permissions still apply.
-const readers = new Set(['read', 'list', 'glob', 'grep', 'webfetch', 'websearch', 'skill', 'todoread', 'todowrite', 'question']);
+import { isInspectAllowed } from './tool-operations.mjs';
 // Preserve explicit user spending constraints even if a parent omits the tool flag.
 // This is a conservative syntax guard, not a model-ranking or language classifier.
 export const freeOnlyAssignment = text => /\bfreeOnly\s*[:=]?\s*true\b|\b(?:use|using|with)\s+(?:only\s+|some\s+)?free\s+models?\b|\bonly\s+free\s+(?:models|routes)\b|\b(?:use|using)\s+free[- ]only\b/i.test(text || '');
 const hash = x => createHash('sha256').update(x).digest('hex');
 const rule = (permission, action = 'deny', pattern = '*') => ({ permission, pattern, action });
 const routeOf = info => info?.providerID && info?.modelID ? `${info.providerID}/${info.modelID}` : null;
-export const noWriteAssignment = text => /\b(explain[ -]only|read[ -]only|do not (?:modify|edit|change|write)(?: any)? files|just inspect)\b/i.test(text || '') ||
-  /(?:^|[.;:!?,\n])\s*(?:please\s+)?no[ -](?:file[ -])?(?:writes|edits)\b/i.test(text || '');
+// Infer only explicit whole-assignment restrictions. Product descriptions such
+// as "add a read-only view" and scoped exclusions such as "no edits to src"
+// must not turn an authorized test writer into an inspection-only worker.
+// Captured/native inspectionOnly remains authoritative independently of prose.
+export const noWriteAssignment = text => {
+  const value = String(text || '');
+  const start = '(?:^|[.!?;\\n])\\s*(?:please\\s+)?';
+  return new RegExp(start + '(?:explain[ -]only|just inspect)\\b', 'i').test(value) ||
+    new RegExp(start + 'read[ -]only(?:\\s+(?:assignment|task|work|review|research|inspection|orientation|analysis|validation))?(?=\\s*(?:[:;,.!\\n]|$))', 'i').test(value) ||
+    new RegExp(start + 'do not (?:modify|edit|change|write)(?: any)?(?: source)? files\\b(?!\\s+(?:outside|except|in|under|within)\\b)', 'i').test(value) ||
+    new RegExp(start + 'no[ -](?:(?:file|source)[ -])?(?:writes|edits)(?=\\s*(?:[.;!?,\\n]|$))', 'i').test(value);
+};
 export function splitModel(id) {
   if (typeof id !== 'string' || !/^[\w.-]+\/[^\s]+$/.test(id)) throw new Error('Invalid provider-qualified model');
   const at = id.indexOf('/');
@@ -71,6 +81,26 @@ export function failureKind(error) {
   return 'execution';
 }
 function fault(name, message, details = undefined) { return Object.assign(new Error(message), { name, ...(details ? { details } : {}) }); }
+function forkTaskText(fork, task) {
+  return [
+    'Fresh-context fork: this is a new child assignment, not a continuation of the source worker.',
+    `Source worker ${fork.source.worker}, task ${fork.source.task_id}, named agent @${fork.source.agent.name}.`,
+    'Carried findings are historical and unverified. Inspect the source session and re-check claims against the current project before acting on them.',
+    `Project-state comparison: ${fork.project_state.drift.join(', ') || (fork.project_state.consistent ? 'fingerprints match, claims still unverified' : 'no drift could be compared')}.`,
+    ...fork.project_state.warnings.map(warning => `Project-state note: ${warning}`),
+    'Bounded historical evidence:',
+    ...fork.evidence.items.map(item => `- [${item.field}; ${item.status}] ${item.text}`),
+    ...(fork.evidence.dropped.length ? [`${fork.evidence.dropped.reduce((sum, item) => sum + item.dropped, 0)} historical item(s) omitted by transfer bounds.`] : []),
+    '', 'New assignment:', task,
+  ].join('\n');
+}
+function attachForkWarnings(result, fork) {
+  if (!fork || !result) return result;
+  return { ...result, fork_context: { source_worker: fork.source.worker,
+    source_task_id: fork.source.task_id, evidence_status: fork.evidence.status,
+    evidence_count: fork.evidence.item_count, warnings: [...fork.project_state.warnings],
+    drift: [...fork.project_state.drift], findings_preserved: fork.project_state.findings_preserved } };
+}
 export function publicDelegateArgs(args = {}) {
   return Object.keys(args).length ? { ...args, background: !args.worker } : args;
 }
@@ -126,6 +156,10 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
   const live = new Map();
   const inFlight = new Map();
   const continuing = new Set();
+  // Children the parent explicitly cancelled in this process. A detached
+  // monitor must stop polling instead of overwriting the durable cancelled
+  // state with its own timeout or failure receipt.
+  const cancellations = new Map();
   const activeByParent = new Map();
   const slotLocks = new Map();
   async function reserveSlot(rootSessionID, directory, signal, limit) {
@@ -325,6 +359,61 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     }
     return null;
   }
+  // Scoped cancellation. A durable receipt for this parent/project is the
+  // ownership proof; the native abort acknowledgement alone is not proof of
+  // stop. Unknown or failed verification reports stop_unverified so no second
+  // writer is started over possibly live work.
+  async function cancelWorker(args, ctx) {
+    const child = await call('session', 'get', sessionArgs(args.worker, ctx.directory), ctx.abort);
+    const latest = await readJson(workerFile(args.worker));
+    const taskID = latest?.taskID ?? child?.metadata?.freelancer?.taskID;
+    if (!/^[a-f0-9]{64}$/.test(taskID ?? '')) throw fault('InvalidAssignment', 'Unknown managed worker.');
+    const receiptFile = path.join(stateDir, `${taskID}.json`);
+    const prior = await readJson(receiptFile);
+    const attempt = prior?.attempts?.at(-1);
+    if (child?.parentID !== ctx.sessionID || prior?.parent_session !== ctx.sessionID ||
+        prior?.directory !== ctx.directory || attempt?.child_session !== args.worker)
+      throw fault('PermissionError', 'This worker does not belong to this parent and project.');
+    const attemptRow = structuredClone(attempt);
+    if (prior.status === 'completed' && attemptRow.status === 'completed')
+      return { ...prior, status: 'worker_not_running', cancellation: { requested_at: stamp(), child_session: args.worker, stopped: false, reason: 'already_completed' },
+        result: 'This worker already completed. Nothing was stopped and its recorded result stands; start a new bounded assignment instead of cancelling it.' };
+    // Read the transcript before aborting so partial output survives the stop.
+    let messages = null;
+    try { messages = await call('session', 'messages', sessionArgs(args.worker, ctx.directory), ctx.abort); } catch {}
+    const observed = workerResult(partialText(messages), { partial: true });
+    const previous = prior.worker_result;
+    const kept = previous?.summary?.trim()
+      ? { ...previous, summary: previous.summary, resultSource: 'partial' }
+      : observed;
+    const verified = await stopped(args.worker, ctx.directory);
+    const statuses = await call('session', 'status', { query: query(ctx.directory) }).catch(() => null);
+    live.delete(args.worker);
+    const receipt = { ...prior, status: verified ? 'cancelled' : 'stop_unverified',
+      cancellation: { requested_at: stamp(), child_session: args.worker, agent: prior.agent?.id,
+         selected_model: attemptRow.selected_model, native_status: statuses?.[args.worker]?.type || (verified ? 'idle' : 'unknown'),
+        stop_verified: verified, method: 'native_session_abort' },
+      worker_result: kept, ...(verified ? {} : { failure_class: 'uncertain_execution' }),
+      activity: { ...(prior.activity || {}), schema_version: 1, phase: verified ? 'cancelled' : 'stop_unverified',
+        label: verified ? 'Cancelled by parent' : `Stop unverified${attemptRow.failure ? ` · ${attemptRow.failure}` : ''}`,
+        child_session: args.worker, selected_model: attemptRow.selected_model,
+        abort_verified: verified, updated_at: stamp() },
+       attempts: [...(prior.attempts || []).slice(0, -1), { ...attemptRow, status: verified ? 'cancelled' : 'failed', failure: verified ? 'cancelled' : attemptRow.failure ?? 'stop_unverified',
+         abort_verified: verified, cancelled_at: stamp() }] };
+    // Observers await this same persistence claim and retain the distinction
+    // between a verified cancellation and an uncertain stop.
+    const saved = atomicJson(receiptFile, receipt).then(() => receipt);
+    cancellations.set(prior.task_id, saved);
+    await saved;
+    await emit(receipt);
+    await ctx.metadata?.({ title: `@${prior.agent?.name ?? 'Agent'} · ${receipt.activity.label}`,
+      metadata: { sessionId: args.worker, parentSessionId: ctx.sessionID, agentID: prior.agent?.id,
+        agentName: prior.agent?.name, selected_model: attemptRow.selected_model, task_id: prior.task_id,
+        freelancer_activity: receipt.activity, freelancer_status: receipt.status } });
+    return { ...receipt, result: verified
+      ? `Stop verified for child ${args.worker}. The partial result above is preserved for inspection. Cancellation is scoped to this worker: other workers, the parent chat and unrelated work are untouched.`
+      : `Cancellation of child ${args.worker} could not be verified as stopped. Treat the outcome as uncertain: inspect the child session and its partial edits before starting overlapping work. No replacement worker was started.` };
+  }
   async function emit(receipt) {
     try { await record?.(receipt); }
     catch { receipt.recording_error = 'Outcome hook failed; durable execution receipt retained'; }
@@ -342,20 +431,50 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     }
     return rows.sort((a, b) => String(a.created_at).localeCompare(String(b.created_at)));
   }
+  async function reconcileWorker(receipt, child, ctx, statuses) {
+    const attempt = receipt.attempts?.at(-1);
+    if (!attempt || child.parentID !== ctx.sessionID || receipt.parent_session !== ctx.sessionID ||
+        receipt.directory !== ctx.directory || attempt.child_session !== child.id ||
+        !statuses || statuses[child.id]?.type && statuses[child.id].type !== 'idle') return receipt;
+    if (!['running','stop_unverified','failed'].includes(receipt.status) || receipt.status === 'failed' && attempt.abort_verified) return receipt;
+    const messages = await call('session', 'messages', sessionArgs(child.id, ctx.directory), ctx.abort);
+    if (!Array.isArray(messages)) return receipt;
+    const latestUser = messages.findLast(m => m.info?.role === 'user' && !m.parts?.some(p => p.type === 'compaction'));
+    const reply = messages.findLast(m => m.info?.role === 'assistant' && !m.info.summary &&
+      m.info.parentID === (latestUser?.info.id ?? attempt.user_message_id));
+    if (activeTool(messages.filter(m => m.info?.parentID === (latestUser?.info.id ?? attempt.user_message_id)))) return receipt;
+    if (!reply?.info.time?.completed || !(reply.info.error || reply.info.finish && reply.info.finish !== 'tool-calls')) return receipt;
+    if (routeOf(reply.info) !== attempt.selected_model || reply.info.agent !== receipt.agent?.id) return receipt;
+    const failed = !!reply.info.error;
+    const repaired = { ...receipt, status: failed ? 'failed' : 'completed',
+      reconciliation: { at: stamp(), source: 'native_idle_terminal', assistant_id: reply.info.id },
+      worker_result: workerResult(partialText(messages), { partial: failed }),
+      attempts: [...receipt.attempts.slice(0, -1), { ...attempt, status: failed ? 'failed' : 'completed', abort_verified: true }] };
+    await atomicJson(path.join(stateDir, `${receipt.task_id}.json`), repaired);
+    return repaired;
+  }
   async function inspectWorkers(args, ctx) {
-    const receipts = await workerReceipts(ctx);
+    let receipts = await workerReceipts(ctx);
+    const nativeStatuses = await call('session', 'status', { query: query(ctx.directory) }, ctx.abort);
+    receipts = await Promise.all(receipts.map(async receipt => {
+      const id = receipt.attempts?.at(-1)?.child_session;
+      if (!id || !['running','stop_unverified','failed'].includes(receipt.status) || receipt.status === 'failed' && receipt.attempts.at(-1).abort_verified) return receipt;
+      const child = await call('session', 'get', sessionArgs(id, ctx.directory), ctx.abort);
+      return child ? reconcileWorker(receipt, child, ctx, nativeStatuses) : receipt;
+    }));
     const outbox = await readJson(path.join(toolkitRoot, '.state/webpage/sender-outbox.json'));
     const deliveries = worker => (outbox?.rows ?? []).filter(r => r.session === worker && r.execution?.worker?.parent === ctx.sessionID)
       .map(({ id, kind, status, includedAt, actedOn, error, notice }) => ({ id, kind, status, includedAt, actedOn, error, notice }));
     if (!args.worker) {
-      const statuses = await call('session', 'status', { query: query(ctx.directory) }, ctx.abort);
+      const statuses = nativeStatuses;
       return { status: 'workers', workers: receipts.flatMap(receipt =>
       (receipt.attempts || []).filter(attempt => attempt.child_session).map(attempt => ({
         task_id: receipt.task_id, child_session: attempt.child_session,
         agent: receipt.agent?.name, assignment: receipt.activity?.assignment || null,
         receipt_status: receipt.status, native_status: statuses?.[attempt.child_session]?.type || 'idle',
-        attempt_status: attempt.status,
-        created_at: receipt.created_at, activity: receipt.activity || null, deliveries: deliveries(attempt.child_session),
+         attempt_status: attempt.status,
+         created_at: receipt.created_at, activity: receipt.activity || null,
+         worker_result: annotateWorkerContext(receipt.worker_result, receipt), deliveries: deliveries(attempt.child_session),
       }))) };
     }
     const current = await readJson(workerFile(args.worker));
@@ -383,14 +502,14 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     return { status: 'worker_transcript', task_id: receipt.task_id, child_session: args.worker, deliveries: deliveries(args.worker),
       parent_session: ctx.sessionID, agent: receipt.agent?.name, assignment: receipt.activity?.assignment || null,
       receipt_status: receipt.status, native_status: statuses?.[args.worker]?.type || 'idle',
-      activity: receipt.activity || null, worker_result: receipt.worker_result || null,
+       activity: receipt.activity || null, worker_result: annotateWorkerContext(receipt.worker_result, receipt) || null,
       total_messages: messages.length, from, next_from: from + selected.length < messages.length ? from + selected.length : null,
       messages: selected.map(row => ({ id: row.info?.id, role: row.info?.role, agent: row.info?.agent,
         created_at: row.info?.time?.created, completed_at: row.info?.time?.completed,
         error: row.info?.error, parts: parts(row) })) };
   }
   async function run(args, ctx, resolvedParent) {
-    if (args.role !== undefined) throw fault('InvalidAssignment', 'Choose a named agentID and bounded task.');
+    if (args.role !== undefined) throw fault('InvalidAssignment', 'Use delegate({agent, task}) with a named agent and bounded task.');
     const { parent, parentModel, config, assignment, userMessageID, execution, previousReviewModels } = resolvedParent;
     const legacyContract = execution.policyVersion < 5;
     const legacyWorkflowID = args.workflowID ?? execution.workflow?.id;
@@ -419,18 +538,43 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         modelPool: pool(savedPreferences.childVariant) },
       note: delegationGuidance(savedPreferences, pool(savedPreferences.childVariant)) + ' Edits apply to the next main request, not work already in progress.',
     };
-    let continued;
+    let continued, forkContext = null, forkSourceWorker = null;
     if (args.delivery && (!args.worker || !['steer', 'queue'].includes(args.delivery))) throw fault('InvalidAssignment', 'Steer or Queue requires an existing worker and a task.');
+    // Scoped cancellation is one compact delegate surface, not a second tool.
+    // It owns a worker identity and never starts a replacement child.
+    if (args.cancel !== undefined) {
+      if (args.cancel !== true) throw fault('InvalidAssignment', 'cancel:true stops one worker. Omit cancel to inspect, continue, steer or queue.');
+      if (!args.worker) throw fault('InvalidAssignment', 'cancel requires worker: the child session ID from workers:true or a worker receipt.');
+      if (args.task?.trim()) throw fault('InvalidAssignment', 'Cancel stops a worker and takes no task. Continue or correct it with worker and task instead.');
+      if (args.agentID || args.selectedModel || args.delivery || args.workers === true)
+        throw fault('InvalidAssignment', 'Cancel accepts only worker and cancel; it cannot also assign, deliver or list.');
+      return cancelWorker(args, ctx);
+    }
     if (args.worker) {
       const child = await call('session', 'get', sessionArgs(args.worker, ctx.directory), ctx.abort);
       const latest = await readJson(workerFile(args.worker));
       const taskID = latest?.taskID ?? child?.metadata?.freelancer?.taskID;
       if (!/^[a-f0-9]{64}$/.test(taskID ?? '')) throw fault('InvalidAssignment', 'Unknown managed worker.');
-      const prior = await readJson(path.join(stateDir, `${taskID}.json`));
+      let prior = await readJson(path.join(stateDir, `${taskID}.json`));
       const attempt = prior?.attempts?.at(-1);
       if (child?.parentID !== ctx.sessionID || prior?.parent_session !== ctx.sessionID || prior?.directory !== ctx.directory || attempt?.child_session !== args.worker)
         throw fault('PermissionError', 'This worker does not belong to this parent and project.');
-      if (args.delivery) {
+      prior = await reconcileWorker(prior, child, ctx, await call('session', 'status', { query: query(ctx.directory) }, ctx.abort));
+      if (args.fork === true) {
+        const parentConstraint = await lookup(ctx.sessionID, ctx.directory);
+        forkContext = composeWorkerFork({ worker: args.worker, task: args.task,
+          model: args.selectedModel, sourceReceipt: prior, sourceChild: child,
+          parent: { sessionID: ctx.sessionID, directory: ctx.directory,
+            readOnly: parentConstraint?.readOnly === true, freeOnly: parentConstraint?.freeOnly === true },
+          needsWrites: args.needsWrites, inspectionOnly: args.needsWrites === false,
+          freeOnly: args.freeOnly, now: now() });
+        forkSourceWorker = forkContext.source.worker;
+        args = { ...args, agentID: forkContext.dispatch.agentID,
+          needsWrites: forkContext.dispatch.needsWrites, freeOnly: forkContext.dispatch.free_only };
+        // Use the ordinary selector and create path below. Never continue or
+        // model-pin the source worker's native session.
+        delete args.worker; delete args.fork; delete args.selectedModel;
+      } else if (args.delivery) {
         if (!handoff) throw fault('UnsupportedRuntime', 'Worker delivery requires the Freelancer sender.');
         if (!args.task?.trim()) throw fault('InvalidTask', 'A worker handoff needs a bounded task or correction.');
         if (savedPreferences.delegation === 'manual' || /\b(?:do not delegate|don.t delegate|handle (?:it|this) yourself|no (?:workers|delegation))\b/i.test(assignment)) throw fault('PreferenceConstraint', 'Delegation is disabled by the user.');
@@ -449,23 +593,25 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           directory: ctx.directory, sessionID: ctx.sessionID, messageID: ctx.messageID, callID: ctx.callID }, ctx.abort);
         return { ...delivery, parent_session: ctx.sessionID, agent: prior.agent, selected_model: attempt.selected_model, task_id: prior.task_id };
       }
-      const savedDeliveries = await readJson(path.join(toolkitRoot, '.state/webpage/sender-outbox.json'));
-      if (savedDeliveries?.rows?.some(r => r.session === args.worker && ['waiting','sending','submitted','uncertain','failed'].includes(r.status))) throw fault('WorkerBusy', 'This worker has pending or uncertain deliveries. Inspect it; use Steer or Queue without bypassing those deliveries.');
-      if (!(prior.status === 'completed' || prior.status === 'failed' && attempt.abort_verified === true))
-        throw fault('WorkerBusy', 'Worker is active or its delivery/stop is uncertain. Inspect it before continuing.');
-      const statuses = await call('session', 'status', { query: query(ctx.directory) }, ctx.abort);
-      if (!statuses || statuses[args.worker]?.type && statuses[args.worker].type !== 'idle') throw fault('WorkerBusy', 'Worker has not reached an idle boundary.');
-      if (args.agentID && args.agentID !== prior.agent.id || args.selectedModel && args.selectedModel !== attempt.selected_model)
-        throw fault('BindingFailure', 'Continuation preserves the worker agent and model.');
-      args = { ...args, agentID: prior.agent.id, selectedModel: attempt.selected_model,
-        independentReview: args.independentReview ?? prior.independent_review,
-        ...(prior.read_only ? { needsWrites: false } : {}), ...(prior.free_only ? { freeOnly: true } : {}) };
-      continued = child;
+      if (!forkSourceWorker) {
+        const savedDeliveries = await readJson(path.join(toolkitRoot, '.state/webpage/sender-outbox.json'));
+        if (savedDeliveries?.rows?.some(r => r.session === args.worker && ['waiting','sending','submitted','uncertain','failed'].includes(r.status))) throw fault('WorkerBusy', 'This worker has pending or uncertain deliveries. Inspect it; use Steer or Queue without bypassing those deliveries.');
+        if (!(prior.status === 'completed' || ['failed','cancelled'].includes(prior.status) && prior.attempts.at(-1).abort_verified === true))
+          throw fault('WorkerBusy', 'Worker is active or its delivery/stop is uncertain. Inspect it before continuing.');
+        const statuses = await call('session', 'status', { query: query(ctx.directory) }, ctx.abort);
+        if (!statuses || statuses[args.worker]?.type && statuses[args.worker].type !== 'idle') throw fault('WorkerBusy', 'Worker has not reached an idle boundary.');
+        if (args.agentID && args.agentID !== prior.agent.id || args.selectedModel && args.selectedModel !== attempt.selected_model)
+          throw fault('BindingFailure', 'Continuation preserves the worker agent and model.');
+        args = { ...args, agentID: prior.agent.id, selectedModel: attempt.selected_model,
+          independentReview: args.independentReview ?? prior.independent_review,
+          ...(prior.read_only ? { needsWrites: false } : {}), ...(prior.free_only ? { freeOnly: true } : {}) };
+        continued = child;
+      }
     }
     const agent = catalog.agents.find(agent => agent.id === args.agentID);
     if (!args.agentID) throw fault('InvalidAgent', 'Missing agent. Call delegate() to inspect the current catalog, then pass agent with one listed ID.', { valid_agents: catalog.agents.map(item => item.id) });
     if (!agent) throw fault('InvalidAgent', `Unknown agent "${args.agentID}". Call delegate() to refresh the catalog and use one of the returned IDs.`, { supplied_agent: args.agentID, valid_agents: catalog.agents.map(item => item.id) });
-    if (typeof args.task !== 'string' || !args.task.trim()) throw fault('InvalidTask', 'Missing task. Pass a non-empty bounded assignment in task; prompt length is not used to choose an agent.', { agent: agent.id });
+    if (typeof args.task !== 'string' || !args.task.trim()) throw fault('InvalidTask', 'Missing task. Pass a non-empty bounded assignment in task; the assignment text does not choose an agent.', { agent: agent.id });
     if (savedPreferences.delegation === 'manual' || /\b(?:do not delegate|don.t delegate|handle (?:it|this) yourself|no (?:workers|delegation))\b/i.test(assignment)) throw fault('PreferenceConstraint', 'Delegation is disabled by the user. Work directly with permitted tools.');
     if (legacyContract && (!agentAssignmentAllowed(savedPreferences, agent.id, mode) || !agentAssignmentAllowed(captured, agent.id, mode))) throw fault('PreferenceConstraint', 'This named agent assignment is disabled by the captured legacy policy.');
     const inherited = await lookup(ctx.sessionID, ctx.directory);
@@ -513,6 +659,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     const policy = await readJson(path.join(toolkitRoot, 'routing', 'policy.json'));
     const allowed = new Set(policy?.allowed_surfaces || []);
     const { decisionId: suppliedDecisionId, ...assignmentArgs } = args;
+    if (forkSourceWorker) assignmentArgs.forkSourceWorker = forkSourceWorker;
     let decisionId = suppliedDecisionId;
     let choice;
     if (decisionId) {
@@ -533,7 +680,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       throw fault('PermissionError', 'Selected model conflicts with the recorded user choice');
     // One recorded answer authorizes one execution. Explicit and automatic
     // resumes converge on the same decision-backed receipt.
-    const id = hash(JSON.stringify(decisionId ? [ctx.sessionID, decisionId] : [ctx.sessionID, ctx.messageID, assignmentArgs]));
+    const id = hash(JSON.stringify(decisionId ? [ctx.sessionID, decisionId, ...(forkSourceWorker ? [forkSourceWorker] : [])] : [ctx.sessionID, ctx.messageID, assignmentArgs]));
     const receiptFile = path.join(stateDir, `${id}.json`);
     const previous = await readJson(receiptFile);
     // Capacity refusal is not an execution attempt. Retry the same assignment
@@ -553,6 +700,8 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
     // Build owns file/task boundaries; receipts and cancellation stay per child.
     const receipt = { task_id: id, user_task_id: args.userTaskId || `${ctx.sessionID}/${ctx.messageID}`, parent_session: ctx.sessionID, root_session: execution.rootSessionID ?? ctx.sessionID, parent_model: parentModel,
       agent: structuredClone(agent), agent_id: agent.id, mode,
+      ...(forkContext ? { fork: { source_worker: forkContext.source.worker, source_task_id: forkContext.source.task_id,
+        evidence: forkContext.evidence, project_state: forkContext.project_state, requirements: forkContext.requirements } } : {}),
       ...(args.independentReview === true || args.needsModelDiversity === true ? { independent_review: true } : {}),
       ...(legacyContract && legacyWorkflow ? { workflow: structuredClone(legacyWorkflow) } : {}),
       project_id: execution.projectID, parent_message_id: execution.id, parent_assistant_id: ctx.messageID, delegate_call_id: ctx.callID,
@@ -737,7 +886,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           await call('session', 'promptAsync', { ...sessionArgs(child.id, ctx.directory), body: {
             agent: agent.id, model, messageID: attempt.user_message_id, ...(variant ? { variant } : {}),
             system: executionPrompt(agent, { policyVersion, agentID: agent.id, mode: 'build', delegated: true }, catalog) + '\n\n' + workerResultInstruction,
-            parts: [{ type: 'text', text: `${args.task}\n\nWorking directory: ${ctx.directory || directory}. Resolve assignment paths from this root; use glob to locate a missing path before retrying.\nWork directly unless an independent specialist materially helps. Nested delegation shares the configured depth and concurrency ceilings.\nUse content_index status/search for project documentation, plans and mixed data when useful; verify decisive hits against originals. Use grep/glob/read or native code search for code. Missing/stale index coverage never blocks source search.\n${readOnly ? 'READ-ONLY: do not change source files. content_index status/search/rebuild and git_project inspect/preview are permitted retrieval maintenance; use them when useful. Native shell checks are available subject to inherited OpenCode permissions: use inspection commands only, never writes, installs, redirects or tests that create artifacts. Return mutating validation and source writes to the main conversation. Direct edit tools remain unavailable. This is a task contract, not a shell sandbox.' : 'Preserve unrelated work. Validate changes; report unverified checks honestly.'}\nIf any tool is denied or unavailable, do not retry variants to bypass it. Continue with permitted tools and return the exact unresolved check. Prioritize targeted reads and concrete probes over whole-file surveys; stop with supported findings and explicit coverage gaps.` }],
+            parts: [{ type: 'text', text: `${forkContext ? forkTaskText(forkContext, args.task) : args.task}\n\nWorking directory: ${ctx.directory || directory}. Resolve assignment paths from this root; use glob to locate a missing path before retrying.\nWork directly unless an independent specialist materially helps. Nested delegation shares the configured depth and concurrency ceilings.\nUse content_index status/search for project documentation, plans and mixed data when useful; verify decisive hits against originals. Use grep/glob/read or native code search for code. Missing/stale index coverage never blocks source search.\n${readOnly ? 'READ-ONLY: do not change source files. content_index status/search/rebuild and git_project inspect/preview are permitted retrieval maintenance; use them when useful. Native shell checks are available subject to inherited OpenCode permissions: use inspection commands only, never writes, installs, redirects or tests that create artifacts. Return mutating validation and source writes to the main conversation. Direct edit tools remain unavailable. This is a task contract, not a shell sandbox.' : 'Preserve unrelated work. Validate changes; report unverified checks honestly.'}\nIf any tool is denied or unavailable, do not retry variants to bypass it. Continue with permitted tools and return the exact unresolved check. Prioritize targeted reads and concrete probes over whole-file surveys; stop with supported findings and explicit coverage gaps.` }],
           } }, ctx.abort);
           acknowledged = true;
           attempt.dispatched_model = selected;
@@ -768,6 +917,9 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
               let activityKey = '', activityAt = -Infinity, meaningfulAt = stamp();
               try {
                 while (now() - start < (limits.taskMs ?? preferences.childTimeoutSeconds * 1000)) {
+                  // A parent cancellation owns the durable final state; this
+                  // monitor stops observing instead of reporting its own end.
+                  if (cancellations.has(receipt.task_id)) return;
                   const [messages, statuses] = await Promise.all([
                     call('session', 'messages', sessionArgs(child.id, ctx.directory)),
                     call('session', 'status', { query: query(ctx.directory) }),
@@ -776,7 +928,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
                     throw fault('IdentityUnverified', 'Child message lacks runtime agent identity');
                   const turnMessages = messages.slice(Math.max(0, messages.findIndex(m => m.info?.id === attempt.user_message_id)));
                   const observation = observe(turnMessages, selected, agent.id);
-                  receipt.worker_result = workerResult(observation.text, { partial: !observation.complete || !!observation.error });
+                  receipt.worker_result = attachForkWarnings(workerResult(observation.text, { partial: !observation.complete || !!observation.error }), forkContext);
                   receipt.runtime_signals = runtimeSignals(turnMessages);
                   if (receipt.runtime_signals.needsDiagnosis)
                     throw fault('RepeatedFailure', 'Equivalent tool failures repeated three times. Stop and re-diagnose before continuing this worker.');
@@ -849,6 +1001,14 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           let activityKey = '', activityAt = -Infinity, meaningfulAt = stamp();
           while (now() - start < (limits.taskMs ?? preferences.childTimeoutSeconds * 1000)) {
             if (ctx.abort?.aborted) throw fault('AbortError', 'Parent cancelled');
+            // Cancellation already wrote the durable final state and the
+            // verified stop; this observer must not overwrite it.
+            if (cancellations.has(receipt.task_id)) {
+              const cancelled = await cancellations.get(receipt.task_id);
+              return { ...cancelled, result: cancelled.status === 'cancelled'
+                ? 'Cancellation verified; the durable receipt preserves partial output.'
+                : 'Stop could not be verified; inspect the durable receipt before overlapping work.' };
+            }
             // Independent reads: fetch concurrently so each tick costs one
             // round trip instead of two, with up to six children polling.
             const [messages, statuses] = await Promise.all([
@@ -858,7 +1018,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
             if (messages.some(m => m.info?.role === 'assistant' && !m.info.summary && !m.info.agent)) throw fault('IdentityUnverified', 'Child message lacks runtime agent identity');
             const turnMessages = messages.slice(Math.max(0, messages.findIndex(m => m.info?.id === attempt.user_message_id)));
             const observation = observe(turnMessages, selected, agent.id);
-            receipt.worker_result = workerResult(observation.text, { partial: !observation.complete || !!observation.error });
+            receipt.worker_result = attachForkWarnings(workerResult(observation.text, { partial: !observation.complete || !!observation.error }), forkContext);
             receipt.runtime_signals = runtimeSignals(turnMessages);
             if (receipt.runtime_signals.needsDiagnosis) throw fault('RepeatedFailure', 'Equivalent tool failures repeated three times. Stop and re-diagnose before continuing this worker.');
             const activity = activityOf(turnMessages, now() - start);
@@ -948,7 +1108,19 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       // A small public API; operational fields remain internal for diagnostics.
       const { agent, model, inspectionOnly, ...rest } = args;
       args = { ...rest, ...(agent ? { agentID: agent } : {}), ...(model ? { selectedModel: model } : {}), ...(inspectionOnly ? { needsWrites: false } : {}), ...(rest.independentReview ? { needsModelDiversity: true } : {}) };
-      if (args.workers === true || args.worker && !args.task) {
+      // Cancellation is a worker action, not an inspection read.
+      const cancelling = args.cancel !== undefined;
+      const forking = args.fork !== undefined;
+      if (forking && args.fork !== true)
+        throw fault('InvalidAssignment', 'fork:true starts one fresh child from an owned worker. Omit fork to continue, steer or queue that worker.');
+      if (forking && (!args.worker || !args.task?.trim()))
+        throw fault(!args.task?.trim() ? 'InvalidTask' : 'InvalidAssignment', 'A fresh fork requires worker and a new bounded task.');
+      if (forking && (args.cancel !== undefined || args.delivery !== undefined || args.workers === true))
+        throw fault('InvalidAssignment', 'fork is exclusive with cancel, worker delivery, and listing. It starts a separate fresh child.');
+      if (cancelling && args.cancel !== true)
+        throw fault('InvalidAssignment', 'cancel:true stops one worker. Omit cancel to inspect, continue, steer or queue.');
+      if (cancelling && args.workers) throw fault('InvalidAssignment', 'Cancellation accepts only worker and cancel.');
+      if (args.workers === true || args.worker && !args.task && !cancelling) {
         if (args.task || args.agentID || args.selectedModel || args.inspectionOnly || args.independentReview)
           throw fault('InvalidAssignment', 'Worker reads cannot include an assignment.');
         return inspectWorkers(args, ctx);
@@ -957,6 +1129,9 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       const coalesceArgs = {
         ...decisionAssignment(args),
         ...(args.selectedModel ? { selectedModel: args.selectedModel } : {}),
+        ...(args.worker ? { worker: args.worker } : {}),
+        ...(forking ? { fork: true } : {}),
+        ...(cancelling ? { cancel: true } : {}),
       };
       const orderedArgs = Object.fromEntries(Object.entries(coalesceArgs).sort(([a], [b]) => a.localeCompare(b)));
       // Equivalent retries/resumes for the same bounded assignment coalesce even
@@ -964,11 +1139,11 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       // selected models remain distinct calls.
       const key = hash(JSON.stringify([ctx.sessionID, resolvedParent.execution.id, orderedArgs]));
       if (inFlight.has(key)) return inFlight.get(key);
-      if (args.worker && !args.delivery && continuing.has(args.worker)) throw fault('WorkerBusy', 'Another follow-up is already using this worker. Wait for its result.');
-      if (args.worker && !args.delivery) continuing.add(args.worker);
+      if (!cancelling && !forking && args.worker && !args.delivery && continuing.has(args.worker)) throw fault('WorkerBusy', 'Another follow-up is already using this worker. Wait for its result.');
+      if (!cancelling && !forking && args.worker && !args.delivery) continuing.add(args.worker);
       const promise = run(args, ctx, resolvedParent);
       inFlight.set(key, promise);
-      try { return await promise; } finally { inFlight.delete(key); if (args.worker && !args.delivery) continuing.delete(args.worker); }
+      try { return await promise; } finally { inFlight.delete(key); if (!cancelling && !forking && args.worker && !args.delivery) continuing.delete(args.worker); }
     },
     // Guard before the model request, plus independent message observation after it.
     async checkModel(input) {
@@ -990,7 +1165,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         if (!goal || goal.stopRequested || goal.archived) throw fault('PermissionError', 'This goal was stopped or archived. No new tool work may start until the user resumes it.');
       }
       const inherited = await lookup(input.sessionID, d);
-      if (input.tool === 'task') throw fault('PermissionError', 'Use delegate with a named agentID and bounded task; native task is not a second execution path.');
+       if (input.tool === 'task') throw fault('PermissionError', 'Use delegate({agent, task}) with a named agent and bounded task; native task is not a second execution path.');
       if (input.tool === 'delegate') {
         if (!execution) throw fault('PermissionError', 'A current named-agent execution contract is required.');
         if (execution.policyVersion < 5 && session?.parentID) throw fault('PermissionError', 'Nested delegation is disabled for this already-captured legacy request.');
@@ -999,12 +1174,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       }
       if (!execution && !inherited) throw fault('PermissionError', 'Execution contract unavailable. Start a new request in Freelancer; historical conversations remain readable.');
       if (!(execution?.readOnly || inherited?.readOnly)) return;
-      if (readers.has(input.tool) || input.tool === 'bash') return;
-      if (input.tool === 'git_project' && ['inspect', 'preview'].includes(output.args?.action)) return;
-      // Read-only blocks code writes, not retrieval maintenance: allow index
-      // status/search plus rebuild (project DB), and git preview (no save/upload).
-      // git_project execute and mutating checks stay Build-only.
-      if (input.tool === 'content_index' && ['status', 'search', 'chats', 'sources', 'unit', 'facts', 'meta', 'rebuild'].includes(output.args?.operation)) return;
+       if (isInspectAllowed(input.tool, output.args)) return;
       throw fault('PermissionError', 'Read-only assignment cannot execute this tool. Use permitted inspection tools and return required source writes to the main conversation.');
     },
   };

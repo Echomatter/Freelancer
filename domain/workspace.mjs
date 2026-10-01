@@ -137,6 +137,30 @@ export function executionPrompt(agent) {
     .join("\n\n");
 }
 
+// Authored filesystem scope for the application file guard. Persisted as
+// top-level `fileAccessScope` in the existing saved settings document.
+// 'project'  -> Files in this project (current project directory only).
+// 'projects' -> Files in all projects (any registered settings.projects directory).
+// 'computer' -> Files on my computer (default; preserves current
+//   capability-first external-native-boundary behavior: non-private paths
+//   outside projects remain subject to native permissions, not a sandbox).
+// Private Git/application state (.git/.state) stays blocked in every scope
+// and native external-directory permissions still apply; 'computer' never
+// permits credential/private state or bypasses native authority.
+export const fileAccessScopes = Object.freeze(["project", "projects", "computer"]);
+
+export function normalizeFileAccessScope(value) {
+  if (value === undefined || value === null || value === "") return "computer";
+  if (!fileAccessScopes.includes(value))
+    throw Error("Choose which files tools may use.");
+  return value;
+}
+
+export function fileAccessScopeText(scope) {
+  if (scope === "project") return "Files in this project";
+  if (scope === "projects") return "Files in all projects";
+  return "Files on my computer";
+}
 export function normalizeVariant(value = "inherit") {
   if (typeof value !== "string" || !/^[\w-]{0,80}$/.test(value))
     throw Error("Choose a valid intelligence level");

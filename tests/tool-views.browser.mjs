@@ -50,8 +50,8 @@ test('model chart, agent chat reports and project file diffs stay separate and f
   await agents.getByRole('button', { name: /Engineer.*Open conversation/ }).click();
   await page.locator('.chat-transcript .assignment-card summary').click();
   await expect(page.locator('.chat-transcript').getByText('Inspect source and report the edge cases', { exact: true })).toBeVisible();
-  await page.locator('.chat-transcript summary').filter({ hasText: 'Handoff · Steer' }).click();
-  await expect(page.locator('.chat-transcript pre').filter({ hasText: 'Include the missing edge case' })).toBeVisible();
+  await page.locator('.chat-transcript summary').filter({ hasText: 'Steer request' }).click();
+  await expect(page.locator('.chat-transcript').getByText('Include the missing edge case', { exact: true })).toBeVisible();
   await page.locator('.chat-transcript summary').filter({ hasText: 'Handoff · Agent report' }).click();
   await expect(page.locator('.chat-transcript').getByText('Agent report: source edge cases verified.', { exact: true })).toBeVisible();
   await page.getByRole('button', { name: /^Agents / }).click();

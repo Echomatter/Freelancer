@@ -102,4 +102,17 @@ test('one chat toolbar overlays commands, agents, models and goal handoffs at de
   }
   await page.getByRole('button', { name: 'Open models for turn 2', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Models view', exact: true })).toContainText('second-model');
+  f.app.chat = async (...args) => ({ ...await native(...args), activity: [
+    { id: 'older', child: 'ses_worker', requestID: user.info.id, agentName: 'Earlier engineer', phase: 'completed', raw: { created_at: '2026-10-01T01:00:00Z' } },
+    { id: 'newer', child: 'ses_new_worker', requestID: 'later_user', agentName: 'Latest engineer', phase: 'working', raw: { created_at: '2026-10-01T02:00:00Z' } },
+  ] });
+  await page.getByRole('button', { name: 'Refresh', exact: true }).click();
+  await page.locator('.chat-toolbar-tabs button').filter({ hasText: 'Agents' }).click();
+  const agents = page.getByRole('region', { name: 'Agents view', exact: true });
+  await expect(agents.getByRole('button', { name: 'This turn (1)', exact: true })).toBeVisible();
+  await expect(agents.locator('.agent-status-card')).toHaveCount(1);
+  await agents.getByRole('button', { name: 'This chat (2)', exact: true }).click();
+  await expect(agents.locator('.agent-status-card')).toHaveCount(2);
+  await expect(agents.locator('.agent-status-card').first()).toContainText('Latest engineer');
+  await expect(agents.locator('.agent-status-card').last()).toContainText('Earlier engineer');
 });

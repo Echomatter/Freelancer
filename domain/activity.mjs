@@ -21,7 +21,7 @@ export function visibleActivity(rows) {
     if (!row.child) { visible.push(row); continue; }
     const previous = byChild.get(row.child);
     if (!previous) { byChild.set(row.child, row); continue; }
-    const time = (value) => Date.parse(value.updatedAt ?? value.raw?.updated_at ?? value.raw?.created_at) || 0;
+    const time = (value) => Date.parse(value.attempt?.started_at ?? value.raw?.created_at ?? value.updatedAt ?? value.raw?.updated_at) || 0;
     const newer = time(row) >= time(previous) ? row : previous;
     const older = newer === row ? previous : row;
     byChild.set(row.child, {
@@ -37,6 +37,7 @@ export function activityLabel(phase) {
   return (
     {
       completed: "Finished",
+      idle: "Idle · needs recovery",
       no_qualified_route: "Route unavailable",
       delegation_unavailable: "Route unavailable",
       selection_required: "Choosing a model",

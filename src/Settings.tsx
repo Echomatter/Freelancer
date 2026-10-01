@@ -2,6 +2,8 @@ import { DelegationSettings } from "./DelegationSettings";
 import { ProviderColorPicker } from "./ProviderColorPicker";
 import { ProviderText, providerAttributes, type ColorPatch } from "./ProviderColors";
 import { ContentStorage } from "./ContentStorage";
+import { FileAccessSettings } from "./FileAccessSettings";
+
 import { GitDefaults } from "./GitDefaults";
 import { ThemePicker } from "./ThemePicker";
 import { useEffect, useState } from "react";
@@ -12,6 +14,7 @@ import { ProviderConnection } from "./ProviderConnection";
 import { SessionDefaults } from "./SessionDefaults";
 import { ScheduledPrompts } from "./ScheduledPrompts";
 import { RemoteAccess } from "./RemoteAccess";
+import { Capabilities } from './Capabilities';
 import type { SettingsScope } from "./SettingsNavigation";
 const providers = [
   ["openai", "OpenAI"],
@@ -66,9 +69,27 @@ export function Settings({
     <div className="settings-layout">
       <div className="settings-content">
         {tab === "remote-access" && <RemoteAccess onClose={onClose} />}
+        {tab === 'capabilities' && <Capabilities data={data} sessionID={sessionID} onClose={onClose}
+          onSaveLsp={async enabled => {
+            const result = await api('appearance', { nativeLspToolEnabled: enabled }, 'PUT');
+            if (result?.saved !== true || result.nativeLspToolEnabled !== enabled) throw Error('The native tool choice was not confirmed.');
+            await refresh();
+          }} />}
         {tab === "schedules" && <ScheduledPrompts data={data} onClose={onClose} onOpen={onOpenChat} />}
         {tab === "delegation" && <><PageHeading title="Delegation" icon={GitFork} help="delegation" actions={closeAction} /><DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
-        {tab === "content-storage" && <ContentStorage onHistory={() => onHistory?.()} onSearch={() => onSetting("application", "search")} onClose={onClose} onChange={refresh} />}
+        {tab === "content-storage" && <>
+          <ContentStorage onHistory={() => onHistory?.()} onSearch={() => onSetting("application", "search")} onClose={onClose} onChange={refresh} />
+          <FileAccessSettings
+            value={data.settings.fileAccessScope}
+            projectCount={data.settings.projects?.length ?? 0}
+            onSave={async (scope) => {
+              const result = await api("appearance", { fileAccessScope: scope }, "PUT");
+              if (result?.saved !== true || (result.fileAccessScope !== undefined && result.fileAccessScope !== scope))
+                throw Error("The file access choice was not confirmed. Try again.");
+              await refresh();
+            }}
+          />
+        </>}
         {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} onClose={onClose} refresh={refresh} />}
         {tab === "providers" && (
           <>

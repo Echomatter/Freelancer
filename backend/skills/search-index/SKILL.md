@@ -5,6 +5,8 @@ description: Search indexed project documents and data; check index freshness, r
 
 # Search Index
 
+This skill teaches procedure and fallbacks only. It grants no write, paid-model, publication, or integration authority. Native permissions and assignment constraints remain authoritative. Delegation is never required by this skill.
+
 Use the `content_index` tool for mixed project corpora (docs and data: Markdown/text, YAML, CSV/TSV, JSON/JSONL, XML, TOML/INI, DOCX, XLSX, PDF, safe ZIP members). The index is a locator, not source authority.
 
 Use `content_index` with `operation=chats` to locate indexed OpenCode conversation text in the current project, optionally filtered by exact provider/model ID. Current chats refresh when opened in Freelancer; use Application settings → Content & Storage to refresh older chats. The chat index contains titles and user/assistant text, including workers and archived chats. It excludes tool output, reasoning, files, and drafts. Verify decisive results in the native conversation.

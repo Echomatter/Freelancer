@@ -83,7 +83,8 @@ test('composer: symmetric controls, one menu, collapsible context and tools', { 
     await expect(page.locator('.composer-context')).toHaveCount(0);
     expect(await page.locator('.composer').evaluate(el => getComputedStyle(el).borderBottomWidth)).toBe('1px');
     await page.getByRole('button', { name: /^Agents / }).click();
-    const routeCard = page.locator('.chat-tool-overlay .agent-route-unavailable'), routeRect = await routeCard.boundingBox();
+    const routeCard = page.locator('.chat-tool-overlay .agent-route-unavailable, .chat-tool-overlay .agent-activity.agent-card[aria-label*="Route unavailable"]').first(), routeRect = await routeCard.boundingBox();
+    await expect(routeCard).toHaveAttribute('aria-label', /Route unavailable/);
     const viewRect = await page.locator('.chat-view').boundingBox();
     assert.ok(routeRect.x >= viewRect.x && routeRect.x + routeRect.width <= viewRect.x + viewRect.width, 'long worker failures stay inside the chat');
     await page.getByRole('button', { name: 'Close chat tools', exact: true }).click();

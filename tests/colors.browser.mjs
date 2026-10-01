@@ -167,7 +167,11 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     const neutral = await page.locator('.message.assistant .markdown p').first().evaluate(e => getComputedStyle(e).color);
     assert.equal(neutral, rgb(palettes.find(p => p.id === 'midnight').tokens.text));
     await page.getByRole('button', { name: /^Agents / }).click();
-    await colorOf(page.locator('.activity-summary-button .provider-identity').first(), rgb(providerTokens('opencode', { theme: 'midnight' })['--provider-fg']));
+    const agentCard = page.locator('.chat-tool-overlay .agent-status-card').first();
+    await expect(agentCard).toContainText('opencode/free');
+    const workerIdentity = agentCard.locator('[data-provider="opencode"]');
+    await colorOf(workerIdentity, rgb(providerTokens('opencode', { theme: 'midnight' })['--provider-fg']));
+    await readable(workerIdentity, 'agent card model identity');
     await page.getByRole('button', { name: 'Message options', exact: true }).click();
     await page.getByLabel('Parent model', { exact: true }).selectOption('github-copilot/forge');
     assert.equal(await page.getByLabel('Parent model', { exact: true }).getAttribute('data-provider'), 'github-copilot');

@@ -5,6 +5,7 @@ import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import { createSender } from '../server/sender.mjs';
+import { queuePrompt } from '../domain/sender.mjs';
 
 // Real outbox persistence and production sender/state logic; native execution is
 // deliberately simulated. These are lifecycle regressions, not inference proof.
@@ -93,13 +94,13 @@ test('durable queue survives unavailable state, approval, restart and repeated o
   assert.equal(f.accepted.length, 0);
   f.state('parent').permissions = [];
   await Promise.all(Array.from({ length: 8 }, () => f.sender.tick()));
-  assert.deepEqual(f.accepted.map(row => row.text), ['First']);
+  assert.deepEqual(f.accepted.map(row => row.text), [queuePrompt('First', 'queue_first_00001')]);
   await f.restart();
   await Promise.all(Array.from({ length: 8 }, () => f.sender.tick()));
   assert.equal(f.accepted.length, 1, 'A submitted native request is not replayed on restart');
   f.complete();
   await f.sender.tick();
-  assert.deepEqual(f.accepted.map(row => row.text), ['First', 'Second']);
+  assert.deepEqual(f.accepted.map(row => row.text), [queuePrompt('First', 'queue_first_00001'), queuePrompt('Second', 'queue_second_0002')]);
   f.complete();
   await f.sender.tick();
   await f.restart();
@@ -139,7 +140,7 @@ test('an actual persisted sending claim recovers as uncertain and never replays 
   await f.sender.cancel('project', 'parent', 'queue_uncertain_01');
   f.controls.onAccept = null;
   await f.sender.tick();
-  assert.deepEqual(f.accepted.map(row => row.text), ['Accepted once', 'After review']);
+  assert.deepEqual(f.accepted.map(row => row.text), [queuePrompt('Accepted once', 'queue_uncertain_01'), queuePrompt('After review', 'queue_after_loss02')]);
   assert.equal(f.settings.chatChoices.parent.model, 'opencode/original');
 });
 

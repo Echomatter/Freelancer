@@ -62,6 +62,83 @@ test('goal continuation preserves conversation, root assignment, catalog and nat
   assert.equal((await f.current(g)).status, 'running');
 });
 
+test('continue checkpoints dispatch the parent while independent workers stay active', async t => {
+  const f = await fixture(t), g = await f.create();
+  await f.goals.start(f.project.id, g.id); await f.sender.tick();
+  f.state.sessions.push({ id: 'ses_independent_worker', parentID: g.session, directory: f.directory });
+  f.state.status.ses_independent_worker = { type: 'busy' };
+  await f.finish(g, 'continue'); await f.sender.tick();
+  assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 2);
+  assert.equal(f.state.status.ses_independent_worker.type, 'busy');
+  assert.equal((await f.current(g)).status, 'running');
+});
+
+test('missing checkpoint recovers once in the same goal chat without replay or confirmation', async t => {
+  const f = await fixture(t), g = await f.create();
+  await f.goals.start(f.project.id, g.id); await f.sender.tick();
+  const user = f.state.messages[g.session][0];
+  f.state.messages[g.session].push({ info: { id: 'ended_without_checkpoint', role: 'assistant', parentID: user.info.id,
+    finish: 'stop', time: { created: Date.now(), completed: Date.now() } }, parts: [{ type: 'text', text: 'Partial work preserved' }] });
+  delete f.state.status[g.session]; await f.sender.tick();
+  await Promise.all([f.goals.tick(), f.goals.tick()]); await f.sender.tick();
+  assert.equal((await f.current(g)).status, 'running');
+  assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 2);
+  assert.match(f.state.messages[g.session].at(-1).parts[0].text, /Recover from native history/);
+  assert.equal((await f.current(g)).session, g.session);
+});
+
+test('running goal automatically reconciles settled failed worker cards without replay', async t => {
+  const f = await fixture(t), g = await f.create();
+  await f.goals.start(f.project.id, g.id); await f.sender.tick();
+  const worker = 'ses_settled_worker';
+  f.state.sessions.push({ id: worker, parentID: g.session, directory: f.directory });
+  f.state.messages[worker] = [
+    { info: { id: 'settled_input', role: 'user', time: { created: Date.now() - 10000 } }, parts: [] },
+    { info: { id: 'settled_error', role: 'assistant', parentID: 'settled_input', error: { name: 'MessageAbortedError' }, time: { completed: Date.now() } }, parts: [] },
+  ];
+  const records = f.sender.records, cancel = f.sender.cancel;
+  let cards = [{ id: 'settled_worker_card', messageID: 'settled_input', status: 'failed' }];
+  f.sender.records = async (p, s) => s === worker ? cards : records(p, s);
+  f.sender.cancel = async (p, s, id) => s === worker ? (cards = cards.filter(d => d.id !== id)) : cancel(p, s, id);
+  await f.goals.tick();
+  assert.equal(cards.length, 0);
+  assert.equal((await f.current(g)).status, 'running');
+  assert.equal(f.calls.filter(c => c.route === `/session/${worker}/prompt_async`).length, 0);
+});
+
+test('settled parent input belonging to the goal is reconciled without dismissing unrelated input', async t => {
+  const f = await fixture(t), g = await f.create();
+  await f.goals.start(f.project.id, g.id); await f.sender.tick();
+  const user = f.state.messages[g.session][0];
+  f.state.messages[g.session].push({ info: { id: 'goal_input_error', role: 'assistant', parentID: user.info.id,
+    error: { name: 'MessageAbortedError' }, time: { completed: Date.now() } }, parts: [] });
+  delete f.state.status[g.session]; await f.sender.tick();
+  const records = f.sender.records, cancel = f.sender.cancel;
+  let cards = [{ id: 'goal_handoff_card', messageID: user.info.id, includedAt: 1, status: 'failed' },
+    { id: 'unrelated_handoff_card', messageID: 'unaccepted', status: 'failed' }];
+  f.sender.records = async (p, s) => [...await records(p, s), ...cards];
+  f.sender.cancel = async (p, s, id) => cards.some(d => d.id === id) ? (cards = cards.filter(d => d.id !== id)) : cancel(p, s, id);
+  await f.goals.tick();
+  assert.deepEqual(cards.map(d => d.id), ['unrelated_handoff_card']);
+  assert.equal((await f.current(g)).status, 'paused', 'unrelated failure still needs inspection');
+});
+
+test('uncertain worker input is retained for parent reconciliation and cannot silently complete the goal', async t => {
+  const f = await fixture(t), g = await f.create();
+  await f.goals.start(f.project.id, g.id); await f.sender.tick();
+  const worker = 'ses_uncertain_completion_worker';
+  f.state.sessions.push({ id: worker, parentID: g.session, directory: f.directory });
+  f.state.messages[worker] = [];
+  const records = f.sender.records;
+  const card = { id: 'uncertain_completion_input', status: 'uncertain' };
+  f.sender.records = async (p, s) => s === worker ? [card] : records(p, s);
+  await f.finish(g, 'complete'); await f.sender.tick();
+  assert.equal((await f.current(g)).status, 'running');
+  assert.match(f.state.messages[g.session].at(-1).parts[0].text, /Reconcile unresolved worker delivery/);
+  assert.equal(card.status, 'uncertain');
+  assert.equal(f.calls.filter(c => c.route === `/session/${worker}/prompt_async`).length, 0);
+});
+
 test('workers keep a goal running while its parent is idle; Stop covers descendants only', async t => {
   const f = await fixture(t), g = await f.create();
   await f.goals.start(f.project.id, g.id); await f.sender.tick();
@@ -106,13 +183,13 @@ test('completion requires evidence and reconciled tasks; questions after complet
   await f.goals.tick(); assert.equal((await f.current(g)).status, 'complete');
 });
 
-test('restart pauses without replay and archive preserves the linked conversation', async t => {
+test('restart reconciles a running goal without replay and archive preserves the linked conversation', async t => {
   const f = await fixture(t), g = await f.create();
   await f.goals.start(f.project.id, g.id); await f.sender.tick();
   await f.goals.close();
   const recovered = createGoals(f.app, { sender: f.sender }); t.after(() => recovered.close()); await recovered.ready;
-  assert.equal((await recovered.list(f.project.id))[0].status, 'paused');
-  assert.match((await recovered.list(f.project.id))[0].reason, /restarted/);
+  assert.equal((await recovered.list(f.project.id))[0].status, 'running');
+  assert.match((await recovered.list(f.project.id))[0].reason, /restart/);
   await recovered.tick(); assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 1);
   await recovered.stop(f.project.id, g.id);
   await recovered.archive(f.project.id, g.id, true);
@@ -156,15 +233,15 @@ test('a native free-tier retry rotates without waiting for its reset or losing t
   assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 2);
 });
 
-test('restart before dispatch inhibits the saved automatic continuation', async t => {
+test('restart before dispatch preserves the single unsent automatic continuation', async t => {
   const f = await fixture(t), g = await f.create();
   await f.goals.start(f.project.id, g.id);
   await f.goals.close();
   const recovered = createGoals(f.app, { sender: f.sender }); t.after(() => recovered.close()); await recovered.ready;
   await f.sender.tick();
-  assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 0);
-  assert.equal((await f.sender.records(f.project.id, g.session))[0].status, 'cancelled');
-  assert.equal((await recovered.list(f.project.id))[0].status, 'paused');
+  assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 1);
+  assert.equal((await f.sender.records(f.project.id, g.session))[0].status, 'submitted');
+  assert.equal((await recovered.list(f.project.id))[0].status, 'running');
 });
 
 test('explicit queued input takes precedence over an automatic goal continuation', async t => {
@@ -232,6 +309,38 @@ test('free rotation preserves a selected paid parent and reasoning on Start, fai
   assert.equal((await f.current(g)).variant, 'low');
 });
 
+test('explicit Resume reconciles settled failed worker cards without replaying or clearing uncertain input', async t => {
+  for (const scenario of ['settled', 'uncertain', 'unaccepted', 'approval']) await t.test(scenario, async t => {
+    const f = await fixture(t), g = await f.create();
+    const worker = 'ses_delivery_worker';
+    f.state.sessions.push({ id: worker, parentID: g.session, directory: f.directory, title: 'Worker' });
+    f.state.messages[worker] = scenario === 'unaccepted' ? [] : [
+      { info: { id: 'msg_worker_input', role: 'user', time: { created: Date.now() - 10000 } }, parts: [] },
+      { info: { id: 'msg_worker_error', parentID: 'msg_worker_input', role: 'assistant', error: { name: 'MessageAbortedError' },
+        time: { created: Date.now() - 5000, completed: Date.now() - 4000 } }, parts: [] },
+    ];
+    if (scenario === 'approval') f.state.questions.push({ id: 'worker_question', sessionID: worker, questions: [] });
+    let cards = [{ id: 'worker_delivery_card', status: scenario === 'uncertain' ? 'uncertain' : 'failed', messageID: 'msg_worker_input', includedAt: Date.now() - 5000 }];
+    const cancellations = [];
+    const sender = { ...f.sender,
+      list: async (project, session) => session === worker ? cards : f.sender.list(project, session),
+      cancel: async (project, session, id) => {
+        assert.equal(session, worker); cancellations.push(id); cards = cards.filter(row => row.id !== id);
+      },
+    };
+    const recovered = createGoals(f.app, { sender }); await recovered.ready; t.after(() => recovered.close());
+    if (scenario !== 'approval') {
+      assert.equal((await recovered.start(f.project.id, g.id)).status, 'running');
+      assert.deepEqual(cancellations, scenario === 'settled' ? ['worker_delivery_card'] : []);
+    } else {
+      await assert.rejects(recovered.start(f.project.id, g.id), /Worker delivery needs inspection|pending decisions/);
+      assert.deepEqual(cancellations, []);
+      assert.equal(cards.length, 1);
+    }
+    assert.equal(f.calls.filter(call => call.route === `/session/${worker}/prompt_async`).length, 0);
+  });
+});
+
 test('free availability rotation preserves the run and plan; exhaustion requires explicit Resume', async t => {
   const f = await fixture(t);
   f.state.extraModels = { replacement: { cost: { input: 0, output: 0 }, variants: {} } };
@@ -263,14 +372,14 @@ test('free availability rotation preserves the run and plan; exhaustion requires
   assert.equal(f.state.sessions.filter(s => s.id === g.session).length, 1);
 });
 
-test('editing a pending goal continuation retains restart inhibition', async t => {
+test('editing a pending goal continuation retains one delivery across restart', async t => {
   const f = await fixture(t), g = await f.create();
   await f.goals.start(f.project.id, g.id);
   await f.goals.update(f.project.id, { id: g.id, revision: 1, objective: 'Revised before admission' });
   await f.goals.close();
   const recovered = createGoals(f.app, { sender: f.sender }); t.after(() => recovered.close()); await recovered.ready;
   await f.sender.tick();
-  assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 0);
+  assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 1);
 });
 
 test('Stop still addresses workers when parent abort acknowledgement fails', async t => {
@@ -328,7 +437,7 @@ test('Resume acknowledges only a settled accepted goal failure without an assist
   assert.equal((await f.sender.list(f.project.id, g.session))[0].status, 'failed');
   await f.goals.close();
   const recovered = createGoals(f.app, { sender: f.sender }); t.after(() => recovered.close()); await recovered.ready;
-  await recovered.start(f.project.id, g.id); await f.sender.tick();
+  await recovered.tick(); await f.sender.tick();
   assert.equal((await recovered.list(f.project.id))[0].status, 'running');
   assert.equal((await f.sender.records(f.project.id, g.session)).find(d => d.id === original).status, 'dismissed');
   assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 2);
@@ -350,6 +459,7 @@ test('Resume never acknowledges uncertain goal transport or unrelated failed use
   assert.equal((await f.sender.list(f.project.id, g.session))[0].status, 'uncertain');
   await f.goals.close();
   const recovered = createGoals(f.app, { sender: f.sender }); t.after(() => recovered.close()); await recovered.ready;
+  await recovered.tick();
   await assert.rejects(recovered.start(f.project.id, g.id), /pending or uncertain/);
   assert.equal((await f.sender.list(f.project.id, g.session))[0].status, 'uncertain');
   f.app.send = originalSend;

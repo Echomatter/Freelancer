@@ -3,6 +3,8 @@ import { delegationPool, delegationGuidance, effectiveDelegationPreferences, cap
 import { reserveWorkerSlot, releaseWorkerSession } from '../backend/tools/runtime/worker-dispatch-lock.mjs';
 import { workerResultInstruction } from '../backend/tools/runtime/worker-result.mjs';
 import { checkedCatalog } from "../backend/tools/runtime/agent-catalog.mjs";
+import { normalizeFileAccessScope } from "../domain/workspace.mjs";
+import { resolveFileAccessScope } from "../backend/tools/runtime/tool-operations.mjs";
 import { executionContext } from "../backend/tools/runtime/execution-context.mjs";
 import { modelInputEvidence } from '../backend/tools/runtime/input-observations.mjs';
 import { ensureAgentProfiles } from "./agent-profiles.mjs";
@@ -11,6 +13,7 @@ import { createModelRatingService } from "./model-ratings.mjs";
 import { rebuildContentIndex } from "./content-index.mjs";
 import { createIndexJobs } from './index-jobs.mjs';
 import { createChatGPTImport, importedChatID, orientationPart, listProjectFolders } from './chatgpt-import.mjs';
+import { nativeLspToolEnabled } from './runtime-config.mjs';
 import {
   mkdir,
   realpath,
@@ -24,6 +27,7 @@ import { createHash } from "node:crypto";
 import { createUiBackend } from "../backend/tools/runtime/ui.mjs";
 import { loadPreferences } from "../backend/tools/runtime/preferences.mjs";
 import { modelRows, reconcileActivity } from "../shared/view.mjs";
+import { nativeWorkerActivity } from "./worker-activity.mjs";
 import {
   providerCatalog,
   usageRecord,
@@ -49,6 +53,7 @@ import {
 import { executionPrompt, policyVersion } from "./execution.mjs";
 import { createGitProjects } from "./git-project.mjs";
 import { createContextSettings } from './context-settings.mjs';
+import { createCapabilities } from './capabilities.mjs';
 import { gitExecutionContract } from "../domain/git-project.mjs";
 import { senderState } from "../domain/sender.mjs";
 
@@ -208,6 +213,32 @@ export function createApplication({
   const modelRatings = createModelRatingService({ host, backendRoot, dataRoot, localData, project, store,
     getCatalog: async (id) => app.bootstrap(id) });
   const app = {
+    async capabilities(projectID, options = {}) {
+      const p = await project(projectID);
+      let inspectionOnly = null;
+      let instructionContext = {};
+      if (options.sessionID) {
+        const nativeSession = await ownSession(p, options.sessionID);
+        const rows = await request(p, `/session/${part(nativeSession.id)}/message`);
+        const message = rows.findLast(row => row.info?.role === 'assistant');
+        const execution = await executionContext(backendRoot, p.directory, nativeSession, message);
+        inspectionOnly = execution ? execution.readOnly : null;
+        instructionContext = { requestID: execution?.id, policyVersion: execution?.policyVersion,
+          agentName: execution?.agent?.name, orienting: execution?.orienting === true, worker: !!nativeSession.parentID,
+          loadedSkills: [...new Set(rows.flatMap(row => row.parts ?? []).filter(part => part.type === 'tool' && part.tool === 'skill'
+            && part.state?.status === 'completed').map(part => part.state?.input?.name).filter(name => typeof name === 'string'))] };
+      }
+      const settings = await store.read('settings');
+      const catalog = checkedCatalog(settings);
+      const agent = options.agent ?? 'engineer';
+      if (!catalog.agents.some(row => row.id === agent)) throw Error('Choose a named agent');
+      return createCapabilities({ host, backendRoot }).read({ directory: p.directory, projectID,
+        sessionID: options.sessionID ?? null, agent, model: options.model ?? null,
+        boundaries: { inspectionOnly, gitInspectOnly: settings.gitProjects?.[p.id]?.tracking === true && settings.gitProjects?.[p.id]?.preset === 'inspect',
+          fileAccessScope: resolveFileAccessScope(settings),
+          nativeLspToolEnabled: nativeLspToolEnabled() },
+        instructionContext });
+    },
     contextSettings: createContextSettings({ store, host, project,
       canRefresh: () => !connecting && !sending && !refreshingAgents && !refreshingContext,
       setRefreshing: value => { refreshingContext = value; } }),
@@ -604,13 +635,13 @@ export function createApplication({
         const key = JSON.stringify([entry.task_id, entry.model]);
         if (entry.observation_kind !== 'operational' && !outcomes.has(key)) outcomes.set(key, entry);
       }
-      const activity = reconcileActivity(
+      let activity = reconcileActivity(
         rows.flatMap((m) => m.parts ?? []),
         snapshot.receipts,
       ).map((row) => {
         row = {
           ...row,
-          requestID: messageByID.get(row.raw?.user_task_id?.split("/").at(-1))?.info.parentID,
+          requestID: row.raw?.parent_message_id ?? messageByID.get(row.raw?.user_task_id?.split("/").at(-1))?.info.parentID,
         };
         const outcome = outcomes.get(JSON.stringify([row.id, row.observed]));
         return outcome
@@ -624,6 +655,19 @@ export function createApplication({
             }
           : row;
       });
+      if (reads[1].status === 'fulfilled' && reads[1].value === status) {
+        activity = await Promise.all(activity.map(async row => {
+          if (!row.child || !['running', 'stop_unverified'].includes(row.status)) return row;
+          try {
+            const child = await ownSession(p, row.child);
+            if (child.parentID !== session) return row;
+            const native = status[row.child];
+            const transcript = native && native.type !== 'idle' ? [] : await request(p, `/session/${part(row.child)}/message`);
+            if (!Array.isArray(transcript)) return row;
+            return nativeWorkerActivity(row, child, transcript, session, native);
+          } catch { return row; }
+        }));
+      }
       // Native transport can retain `busy` after its assistant message has
       // already ended in an error. Preserve the raw record, but expose an idle
       // status for this failed turn so the composer and durable sender do not
@@ -1233,9 +1277,11 @@ export function createApplication({
       await store.savePlans(plans);
       return { saved: true };
     },
-    async saveAppearance({ theme, customTheme, removeCustomTheme, showDepletedModels, todoLayout, panelWidths, providerColors }) {
+    async saveAppearance({ theme, customTheme, removeCustomTheme, showDepletedModels, todoLayout, panelWidths, providerColors, fileAccessScope, nativeLspToolEnabled }) {
       const colors = providerColors === undefined ? undefined : normalizeProviderPatch(providerColors);
       const widths = panelWidths === undefined ? undefined : validatePanelWidths(panelWidths);
+      const accessScope = fileAccessScope === undefined ? undefined : normalizeFileAccessScope(fileAccessScope);
+      if (nativeLspToolEnabled !== undefined && typeof nativeLspToolEnabled !== 'boolean') throw Error('Choose whether to enable the native LSP tool.');
       if (customTheme !== undefined && removeCustomTheme !== undefined) throw Error('Save or remove one custom theme at a time.');
       if (
         showDepletedModels !== undefined &&
@@ -1257,6 +1303,8 @@ export function createApplication({
         if (theme !== undefined && !isTheme(selected, customThemes)) throw Error('Choose a theme');
         return {
           ...s,
+          ...(accessScope !== undefined ? { fileAccessScope: accessScope } : {}),
+          ...(nativeLspToolEnabled !== undefined ? { nativeLspToolEnabled } : {}),
           appearance: {
             ...s.appearance,
             ...(widths ? { panelWidths: { ...s.appearance?.panelWidths, ...widths } } : {}),
@@ -1271,7 +1319,9 @@ export function createApplication({
       return { saved: true, ...((theme !== undefined || removeCustomTheme !== undefined) ? { theme: saved.appearance.theme } : {}),
         ...((customTheme !== undefined || removeCustomTheme !== undefined) ? { customThemes: saved.appearance.customThemes } : {}),
         ...(widths ? { panelWidths: saved.appearance.panelWidths } : {}),
-        ...(colors ? { providerColors: saved.appearance.providerColors } : {}) };
+        ...(colors ? { providerColors: saved.appearance.providerColors } : {}),
+        ...(accessScope !== undefined ? { fileAccessScope: saved.fileAccessScope } : {}),
+        ...(nativeLspToolEnabled !== undefined ? { nativeLspToolEnabled: saved.nativeLspToolEnabled } : {}) };
     },
     async authMethods() {
       const methods = await host.request("/provider/auth");

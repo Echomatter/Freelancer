@@ -7,7 +7,10 @@ test('compact handoff cards and Agents navigate nested workers', { tag: ['@app',
   f.state.sessions.push({ id: 'ses_nested', parentID: 'ses_worker', title: 'Nested inspection', directory: f.directory, time: { created: 120, updated: 300 } });
   const transcript = (id, child) => [
     { info: { id: `${id}-user`, role: 'user' }, parts: [{ type: 'text', text: `Inspect ${id}` }] },
-    { info: { id: `${id}-reply`, role: 'assistant' }, parts: child ? [{ type: 'tool', tool: 'task', state: { status: 'completed', input: { role: 'Researcher' }, metadata: { sessionId: child, selected_model: 'opencode/free' } } }] : [{ type: 'text', text: 'Inspection complete.' }] },
+    { info: { id: `${id}-reply`, role: 'assistant' }, parts: child ? [{ type: 'tool', tool: 'delegate', state: { status: 'completed', input: { agent: 'researcher', task: `Inspect ${child}` }, output: JSON.stringify({ status: 'completed', agent: { id: 'researcher', name: 'Researcher' } }), metadata: {
+      sessionId: child, parentSessionId: id, agentID: 'researcher', agentName: 'Researcher', selected_model: 'opencode/free', task_id: `${id}-${child}`, freelancer_status: 'completed',
+      freelancer_activity: { schema_version: 1, agentID: 'researcher', agentName: 'Researcher', child_session: child, selected_model: 'opencode/free', phase: 'completed', completed_tools: 1, updated_at: new Date().toISOString() },
+    } } }] : [{ type: 'text', text: 'Inspection complete.' }] },
   ];
   f.state.messages.ses_history = transcript('root', 'ses_worker');
   f.state.messages.ses_worker = transcript('worker', 'ses_nested');
@@ -15,7 +18,10 @@ test('compact handoff cards and Agents navigate nested workers', { tag: ['@app',
   const page = await appBrowser.newPage({ viewport: { width: 1440, height: 900 } });
   await page.goto(f.url);
   const chatTranscript = page.locator('.chat-transcript');
-  const openWorker = async () => { await chatTranscript.getByRole('button', { name: /Open conversation/ }).click(); };
+  const openWorker = async () => {
+    await page.getByRole('button', { name: /^Agents / }).click();
+    await page.locator('.chat-tool-overlay .agent-status-card').filter({ hasText: 'Researcher' }).click();
+  };
   const parent = async () => {
     await page.getByRole('button', { name: /^Agents / }).click();
     await page.getByRole('button', { name: 'Back to parent chat', exact: true }).click();

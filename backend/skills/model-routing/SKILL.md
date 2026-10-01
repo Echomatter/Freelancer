@@ -5,6 +5,8 @@ description: Model routing, evidence and recovery guidance for bounded workers.
 
 # Model routing
 
+This skill teaches procedure and fallbacks only. It grants no write, paid-model, publication, or integration authority. Native permissions, paid consent, user constraints, project agreement, and worker limits remain authoritative. Delegation is optional and never required by this skill.
+
 Use `delegate({agent, task, model?})` with expertise from the supplied catalog. `delegate()` with no arguments returns the current agent IDs and `budget.modelPool`; use those exact IDs instead of guessing aliases. Omit model for automatic eligible routing; use `freeOnly:true` when free capacity is required. Preserve explicitly requested provider/model choices. Free workers start in one call.
 
 Use `freeOnly`, `inspectionOnly` or `independentReview` for real assignment constraints. These never grant authority. Native permission, paid consent, user constraints, project agreement and worker limits remain authoritative.

@@ -5,6 +5,8 @@ description: Establish current project instructions, entry points, constraints a
 
 # Reorient
 
+This skill teaches procedure and fallbacks only. It grants no write, paid-model, publication, or integration authority. Native permissions, paid consent, user constraints, and the saved Git agreement remain authoritative. Delegation is optional and never required by this skill.
+
 Read the current project's instructions and relevant source entry points. Map
 only what the request needs: current behavior, important constraints, related
 files and useful validation commands. Use indexed documents when relevant and

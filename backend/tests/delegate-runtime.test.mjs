@@ -117,6 +117,46 @@ function assistant(id, model, extra = {}) {
     parts: [{ type: 'text', text: 'A verified fixture result, not a live provider result.' }] };
 }
 const args = { agentID: 'engineer', task: 'Perform a bounded task; preserve user changes.', needsWrites: true };
+test('parent inspection repairs stale running receipts from native terminal evidence and continues the same worker', async t => {
+  const f = await fixture(t);
+  const first = await f.service.execute(args, f.ctx);
+  const file = path.join(f.root, '.state', 'delegation', `${first.task_id}.json`);
+  await atomicJson(file, { ...first, status: 'running' });
+  const inspected = await f.service.execute({ workers: true }, f.ctx);
+  assert.equal(inspected.workers.at(-1).receipt_status, 'completed');
+  const next = await f.service.execute({ worker: 'child1', task: 'Continue with the next bounded check.' }, f.ctx);
+  assert.equal(next.status, 'completed');
+  assert.equal(next.attempts.at(-1).child_session, 'child1');
+  assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
+});
+
+test('a verified cancelled worker can continue without carrying cancellation into its next assignment', async t => {
+  const f = await fixture(t);
+  const first = await f.service.execute(args, f.ctx);
+  const file = path.join(f.root, '.state', 'delegation', `${first.task_id}.json`);
+  await atomicJson(file, { ...first, status: 'running' });
+  f.states.child1 = { type: 'busy' };
+  const cancelled = await f.service.execute({ worker: 'child1', cancel: true }, f.ctx);
+  assert.equal(cancelled.status, 'cancelled');
+  const next = await f.service.execute({ worker: 'child1', task: 'Continue after the verified manual stop.' }, f.ctx);
+  assert.equal(next.status, 'completed');
+  assert.equal(next.attempts.at(-1).child_session, 'child1');
+  assert.equal(f.requests.filter(r => r.kind === 'create').length, 1);
+});
+
+test('busy native workers and incomplete transcripts never repair an uncertain stop', async t => {
+  const f = await fixture(t);
+  const first = await f.service.execute(args, f.ctx);
+  const file = path.join(f.root, '.state', 'delegation', `${first.task_id}.json`);
+  await atomicJson(file, { ...first, status: 'stop_unverified' });
+  f.states.child1 = { type: 'busy' };
+  assert.equal((await f.service.execute({ workers: true }, f.ctx)).workers.at(-1).receipt_status, 'stop_unverified');
+  delete f.states.child1;
+  f.messages.set('child1', []);
+  await assert.rejects(f.service.execute({ worker: 'child1', task: 'Unsafe overlap' }, f.ctx), /uncertain/);
+  assert.equal(f.requests.filter(r => r.kind === 'prompt').length, 1);
+});
+
 test('public delegate argument normalization preserves empty catalog discovery', () => {
   assert.deepEqual(publicDelegateArgs({}), {});
   assert.deepEqual(publicDelegateArgs({ agent:'engineer', task:'Inspect one concern.' }), {
@@ -143,7 +183,7 @@ test('delegate validation identifies agent, task and model fields instead of bla
   await assert.rejects(f.service.execute({ agentID:'not-an-agent', task:'Inspect this.' }, f.ctx), error =>
     error.name === 'InvalidAgent' && error.details.supplied_agent === 'not-an-agent');
   await assert.rejects(f.service.execute({ agentID:'engineer', task:'   ' }, f.ctx), error =>
-    error.name === 'InvalidTask');
+    error.name === 'InvalidTask' && /task/.test(error.message) && !/prompt/.test(error.message));
   await assert.rejects(f.service.execute({ ...args, selectedModel:'free' }, f.ctx), error =>
     error.name === 'InvalidModel' && error.details.eligible_models.includes('opencode/muse-spark-1.3-contributor-free'));
   await assert.rejects(f.service.execute({ ...args, selectedModel:'opencode/muse-spark-1.3-free' }, f.ctx), error =>
@@ -249,6 +289,8 @@ test('parent rediscovers workers and reads current native child chat after contr
   assert.equal(current.status, 'worker_transcript');
   assert.equal(current.native_status, 'busy');
   assert.equal(current.total_messages, 2);
+  assert.equal(current.worker_result.context.project_state, 'source_not_recorded');
+  assert.equal(current.worker_result.context.findings_preserved, true);
   assert.equal(current.messages[0].parts[0].text, 'Checking the implementation.');
   assert.equal(current.messages[0].parts[1].tool, 'read');
   assert.equal(current.messages[0].parts[1].status, 'running');
@@ -436,9 +478,9 @@ test('native task stays blocked after runtime restart while delegation remains t
   const f=await fixture(t); await f.service.execute(args,f.ctx);
   const restarted=createDelegator({client:f.client,toolkitRoot:f.root,directory:f.root});
   for (const service of [f.service,restarted]) {
-    await service.checkTool({sessionID:'child1',tool:'delegate'},{args:{agentID:'engineer',task:'bounded follow-up'}});
-    await assert.rejects(service.checkTool({sessionID:'child1',tool:'task'},{args:{subagent_type:'researcher'}}),/named agentID/);
-    await assert.rejects(service.checkTool({sessionID:'child1',tool:'task'},{args:{subagent_type:'explore'}}),/named agentID/);
+    await service.checkTool({sessionID:'child1',tool:'delegate'},{args:{agent:'engineer',task:'bounded follow-up'}});
+    await assert.rejects(service.checkTool({sessionID:'child1',tool:'task'},{args:{subagent_type:'researcher'}}),/delegate\(\{agent, task\}\)/);
+    await assert.rejects(service.checkTool({sessionID:'child1',tool:'task'},{args:{subagent_type:'explore'}}),/delegate\(\{agent, task\}\)/);
   }
 });
 
@@ -797,4 +839,49 @@ test('native subagent depth blocks an over-depth nested assignment', async t => 
   const limited=await fixture(t,{depth:1});
   limited.sessions.set('grandparent',{id:'grandparent'}); limited.sessions.get('parent').parentID='grandparent';
   await assert.rejects(limited.service.execute({...args,agentID:'researcher',needsWrites:false},limited.ctx),/depth/);
+});
+
+test('public fork uses a fresh child, normal model routing, inherited constraints and bounded source evidence', async t => {
+  const f = await fixture(t, { surface:'opencode-free', models:['opencode/free-a','opencode/free-b'] });
+  const source = await f.service.execute({ ...args, task:'Inspect one bounded concern.', needsWrites:false, freeOnly:true }, f.ctx);
+  assert.equal(source.status, 'completed');
+  assert.equal(source.attempts.at(-1).child_session, 'child1');
+  const fork = await f.service.execute({ worker:'child1', fork:true, task:'Inspect one bounded concern.' }, f.ctx);
+  assert.equal(fork.status, 'completed');
+  assert.equal(fork.attempts.at(-1).child_session, 'child2');
+  assert.equal(fork.read_only, true);
+  assert.equal(fork.free_only, true);
+  assert.equal(fork.fork.requirements.fresh_child_session, true);
+  assert.equal(fork.fork.source_worker, 'child1');
+  assert.equal(fork.fork.evidence.status, 'historical_unverified');
+  assert.ok(fork.fork.project_state.findings_preserved);
+  assert.match(fork.worker_result.fork_context.warnings.join(' '), /No current project-state fingerprint/);
+  const creation = f.requests.filter(request => request.kind === 'create');
+  assert.equal(creation.length, 2, 'fork creates exactly one new session rather than reusing the source');
+  assert.equal(creation[0].body.parentID, 'parent');
+  assert.equal(creation[1].body.parentID, 'parent');
+  const childPrompt = f.requests.find(request => request.kind === 'prompt' && request.id === 'child2');
+  assert.match(childPrompt.body.parts[0].text, /Fresh-context fork/);
+  assert.match(childPrompt.body.parts[0].text, /historical and unverified/);
+  assert.match(childPrompt.body.parts[0].text, /Inspect one bounded concern/);
+  assert.ok(creation[1].body.permission.some(rule => rule.permission === 'edit' && rule.action === 'deny'));
+});
+
+test('fork validates ownership/task and rejects conflicting lifecycle operations', async t => {
+  const f = await fixture(t, { surface:'opencode-free', models:['opencode/free-a'] });
+  await assert.rejects(f.service.execute({ worker:'child1', fork:true, task:args.task }, f.ctx), /Unknown managed worker/);
+  await assert.rejects(f.service.execute({ worker:'child1', fork:true }, f.ctx), /fresh fork requires worker and a new bounded task/);
+  await assert.rejects(f.service.execute({ worker:'child1', fork:false, task:'New concern' }, f.ctx), /fork:true/);
+  await assert.rejects(f.service.execute({ worker:'child1', fork:true, delivery:'queue', task:'New concern' }, f.ctx), /exclusive/);
+  const source = await f.service.execute(args, f.ctx);
+  const receiptFile = path.join(f.root, '.state', 'delegation', `${source.task_id}.json`);
+  await atomicJson(receiptFile, { ...source, parent_session:'foreign-parent' });
+  await assert.rejects(f.service.execute({ worker:'child1', fork:true, task:'New separate task' }, f.ctx),
+    error => error.name === 'PermissionError');
+  assert.equal(f.requests.filter(request => request.kind === 'create').length, 1, 'invalid ownership starts no fresh child');
+});
+
+test('public delegate arguments preserve a bounded fork request without backgrounding an unrelated worker', () => {
+  assert.deepEqual(publicDelegateArgs({ worker:'child1', fork:true, task:'A distinct fresh task.' }),
+    { worker:'child1', fork:true, task:'A distinct fresh task.', background:false });
 });

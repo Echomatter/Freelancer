@@ -175,6 +175,12 @@ export async function startServer({ application: app, assets, port = 0, readActi
         if (route === "/api/git/execute" && req.method === "POST") return send(200, await app.gitProjects.execute(project, body, { origin: "panel" }));
         if (req.method === "GET" && route === "/api/activity" && readActivity)
           return send(200, await readActivity(project));
+        if (req.method === 'GET' && route === '/api/capabilities')
+          return send(200, await app.capabilities(project, {
+            sessionID: url.searchParams.get('session') || undefined,
+            agent: url.searchParams.get('agent') || undefined,
+            model: url.searchParams.get('model') || undefined,
+          }));
         if (req.method === "GET" && route === "/api/bootstrap")
           return send(
             200,

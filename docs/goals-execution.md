@@ -18,8 +18,10 @@ model-supplied identity cannot establish that authority.
 
 The shared execution contract and `pursue-goal` skill orient, work, verify/reconcile,
 then propose continue, wait, pause or complete. The controller waits for raw native
-activity and descendants, checks native tasks and evidence, and schedules one compact
-continuation. Responses without a checkpoint pause. Three repeated checkpoints
+parent activity, checks native tasks and evidence, and schedules one compact
+continuation. Continue can advance independently of active descendants; waiting
+and completion wait for their work. Missing checkpoints get up to three same-chat
+recovery turns, preserving native history and todos. Three repeated checkpoints
 without changed native work/tasks pause. Failure counts and worker ownership survive
 request changes and free-model replacement. They are not completion percentages.
 For a native free-tier retry, the controller aborts only the limited parent turn,
@@ -31,8 +33,11 @@ Automatic outbox entries are checked against the current durable goal before
 dispatch. Explicit queued input wins over a waiting automatic continuation. Stop
 persists inhibition before aborting the parent and descendants, rescans for late
 workers, and verifies idle status. The runtime tool guard prevents stopped goal
-assignments from starting subsequent tools. Restart pauses scheduling and inhibits
-waiting automatic entries; it never turns an ambiguous send into a retry.
+assignments from starting subsequent tools. Restart reconciles running goals and
+preserves a single unsent automatic entry; explicit Stop remains inhibited. It
+never turns an ambiguous send into a retry. Accepted, failed, settled goal/worker
+deliveries are acknowledged from native history, without replay. Worker uncertainty
+is retained for parent inspection rather than blocking parent recovery.
 
 Delegate and Steer share the durable non-aborting outbox. Their instructions differ:
 Delegate asks the parent for a bounded worker; Steer asks it to incorporate the

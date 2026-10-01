@@ -11,7 +11,7 @@ const text = (value, max = 190000) => {
 };
 
 export function createGoals(app, { sender, interval = 1500, now = Date.now } = {}) {
-  let queue = Promise.resolve(), timer, closed = false;
+  let queue = Promise.resolve(), timer, ticking, closed = false;
   const all = async () => Object.values((await app.store.read('goals')).records);
   const put = g => app.store.update('goals', d => ({ ...d, records: { ...d.records, [g.id]: structuredClone(g) } }));
   const lock = fn => { const work = queue.catch(() => {}).then(fn); queue = work; return work; };
@@ -21,7 +21,10 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
   const ready = lock(async () => {
     for (const g of await all()) {
       if (g.creation === 'creating') { g.creation = 'uncertain'; await pause(g, 'Chat creation was interrupted. Inspect native history; a replacement will not be created automatically.'); }
-      else if (ongoing(g)) await pause(g, 'Server restarted. Inspect the existing conversation and workers, then Resume. No request was replayed.');
+      else if (ongoing(g)) {
+        if (g.stopRequested || g.transition === 'stopping') await pause(g, 'Stop remains in effect after server restart.');
+        else { g.status = 'running'; delete g.transition; g.reason = 'Reconciling native history after server restart'; await put(g); }
+      }
     }
   });
   async function execution(g) {
@@ -47,6 +50,11 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
       if (chat.availabilityWarnings?.length) throw Error(chat.availabilityWarnings.join(' '));
       const state = senderState(chat, g.session);
       const tree = await app.goalTree(g.project, g.session);
+      await settleFailures(g, g.session, chat);
+      await Promise.all(tree.filter(t => t.id !== g.session && !t.active).map(async t => {
+        const records = await sender.records(g.project, t.id);
+        if (records.some(d => d.status === 'failed')) await settleFailures(g, t.id, await app.chat(g.project, t.id));
+      }));
       const deliveries = await sender.records(g.project, g.session);
       const workerDeliveries = (await Promise.all(tree.filter(t => t.id !== g.session).map(t => sender.records(g.project, t.id)))).flat();
       const own = deliveries.find(d => d.id === g.deliveryID);
@@ -88,18 +96,19 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
         return pause(g, 'Waiting for your permission');
       }
       // Raw native state, not a spinner or a guessed terminal state.
-      if (tree.some(t => t.active)) { g.reason = tree.some(t => t.id !== g.session && t.active) ? 'Working with delegated agents' : 'Working on the goal'; await put(g); return; }
-      if (workerDeliveries.some(d => ['uncertain','failed'].includes(d.status))) return pause(g, 'Worker delivery needs inspection. Review its pending cards before Resume.');
-      if (workerDeliveries.some(d => ['waiting','sending','submitted'].includes(d.status))) { g.reason = 'Waiting for saved worker follow-ups'; await put(g); return; }
-      g.unsettled = false;
+      const workersActive = tree.some(t => t.id !== g.session && t.active);
+      if (tree.find(t => t.id === g.session)?.active || !state.ready) { g.reason = workersActive ? 'Working with delegated agents' : 'Working on the goal'; await put(g); return; }
+      // Worker transport is the parent's recovery task, not a goal-wide user
+      // confirmation. Never replay it; preserve it for native inspection.
+      g.unsettled = workersActive;
       if (!state.ready || !own || ['waiting', 'sending', 'submitted'].includes(own.status)) return;
       // Explicit user input always drains before an automatic continuation.
       if (deliveries.some(d => ['waiting','sending','submitted','uncertain'].includes(d.status))) return;
-      const last = chat.messages.findLast(m => m.info?.role === 'assistant');
-      const turn = last?.info.id;
+      const last = chat.messages.findLast(m => m.info?.role === 'assistant' && !m.info.summary && m.info.parentID === state.userID);
+      const turn = last?.info.id ?? (state.interrupted ? state.userID : undefined);
       if (!turn || g.reconciledTurn === turn) return;
       g.reconciledTurn = turn;
-      if (last.info.error) {
+      if (last?.info.error) {
         g.failures++;
         if (g.settings.freeRotation && availabilityFailure(last.info.error)) {
           const boot = await app.bootstrap(g.project, g.session);
@@ -113,13 +122,29 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
           for (const d of deliveries.filter(d => d.status === 'failed')) await sender.cancel(g.project, g.session, d.id);
           return schedule(g, 'Model availability changed. Continue unfinished work; inspect existing workers first.');
         }
+        if (/abort|cancel/i.test(JSON.stringify(last.info.error)) && g.failures < 3)
+          return schedule(g, 'The parent turn was interrupted. Recover native tasks and worker statuses yourself, preserve partial work, checkpoint and continue.');
         return pause(g, g.failures >= 3 ? 'Repeated failures without progress' : 'Native execution failed. Inspect the error before Resume.');
       }
-      const checkpoint = g.checkpoint;
-      if (!checkpoint || checkpoint.requestID !== last.info.parentID) return pause(g, 'The response ended without a goal checkpoint. Inspect the work before Resume.');
+      const checkpoint = last && g.checkpoint?.requestID === last.info.parentID ? g.checkpoint : undefined;
+      if (!checkpoint) {
+        g.checkpointRecoveries = (g.checkpointRecoveries ?? 0) + 1;
+        if (g.checkpointRecoveries > 3) return pause(g, 'Repeated checkpoint recovery failed. Native history and partial work are preserved.');
+        return schedule(g, 'The last turn ended without a current checkpoint. Recover from native history and todos, inspect and reconcile existing workers yourself, record goal_checkpoint, then continue useful unfinished work. Do not ask the user to confirm worker statuses or replay uncertain input.');
+      }
+      g.checkpointRecoveries = 0;
       if (checkpoint.outcome === 'pause') return pause(g, checkpoint.reason);
+      if ((checkpoint.outcome === 'waiting' || checkpoint.outcome === 'complete') &&
+          (workersActive || workerDeliveries.some(d => ['waiting','sending','submitted'].includes(d.status)))) {
+        g.reason = 'Working with delegated agents'; delete g.reconciledTurn; await put(g); return;
+      }
       const unfinished = chat.todos?.some(t => !['completed','cancelled'].includes(t.status));
       if (checkpoint.outcome === 'complete') {
+        if (workerDeliveries.some(d => ['uncertain','failed'].includes(d.status))) {
+          g.completionRecoveries = (g.completionRecoveries ?? 0) + 1;
+          if (g.completionRecoveries > 3) return pause(g, 'Completion remains unverified: worker delivery reconciliation has not succeeded.');
+          return schedule(g, 'Reconcile unresolved worker delivery from native history before claiming completion. Inspect the workers yourself, preserve uncertain input without replay, and verify the remaining work.');
+        }
         if (unfinished || !checkpoint.evidence?.trim()) return pause(g, 'Completion needs evidence and reconciled native tasks');
         g.status = 'complete'; g.reason = checkpoint.reason; event(g, 'complete', checkpoint.evidence); await put(g); return;
       }
@@ -131,6 +156,23 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
       if (g.failures >= 3) return pause(g, 'Repeated failures without progress');
       await schedule(g, 'Reconcile the latest checkpoint and continue useful unfinished work.');
     } catch (error) { await pause(g, `State needs reconciliation: ${error.message}`); }
+  }
+  async function settleFailures(g, session, chat) {
+    const state = senderState(chat, session);
+    if (!state.ready || state.approvals || ['busy','retry'].includes((chat.nativeStatus ?? chat.status)[session]?.type)) return;
+    for (const d of await sender.records(g.project, session)) {
+      const receipt = chat.receipts?.find(r => r.id === d.messageID);
+      const goalInput = receipt?.goalID === g.id && receipt.goalRunID === g.runID;
+      if (d.status !== 'failed' || session === g.session && d.id !== g.deliveryID && !goalInput) continue;
+      const accepted = chat.messages.some(m => m.info?.role === 'user' && m.info.id === d.messageID);
+      const terminal = chat.messages.some(m => m.info?.role === 'assistant' && m.info.parentID === d.messageID &&
+        (m.info.error || m.info.time?.completed && m.info.finish && m.info.finish !== 'tool-calls'));
+      if (accepted && (terminal || d.includedAt || session === g.session && state.interrupted)) {
+        await sender.cancel(g.project, session, d.id);
+        event(g, 'recovery', `Reconciled settled delivery ${d.id} in ${session}; no input replayed.`);
+        await put(g);
+      }
+    }
   }
   const service = {
     ready,
@@ -210,8 +252,30 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
       }
       const chat = await app.chat(project, g.session);
       if (chat.availabilityWarnings?.length) throw Error(chat.availabilityWarnings.join(' '));
-      if ((await app.goalTree(project, g.session)).some(t => t.active) || chat.questions?.length || chat.permissions?.length) throw Error('Resolve existing native work and pending decisions before Resume.');
+      const tree = await app.goalTree(project, g.session);
+      if (tree.find(t => t.id === g.session)?.active || chat.questions?.length || chat.permissions?.length) throw Error('Resolve existing native work and pending decisions before Resume.');
+      // Resume is explicit recovery after inspection, not permission to replay
+      // worker input. A failed, accepted worker handoff can be acknowledged
+      // only when its own native chat proves a settled turn. Preserve uncertain
+      // and waiting cards so the parent can never silently duplicate work.
+      for (const worker of tree.filter(t => t.id !== g.session)) {
+        const pending = await sender.list(project, worker.id);
+        if (!pending.length) continue;
+        const workerChat = await app.chat(project, worker.id);
+        const workerState = senderState(workerChat, worker.id);
+        const idle = ((workerChat.nativeStatus ?? workerChat.status)[worker.id]?.type ?? 'idle') === 'idle';
+        for (const d of pending) {
+          const accepted = workerChat.messages.some(m => m.info?.role === 'user' && m.info.id === d.messageID);
+          const terminal = workerChat.messages.some(m => m.info?.role === 'assistant' && m.info.parentID === d.messageID &&
+            (m.info.error || (m.info.time?.completed && m.info.finish && m.info.finish !== 'tool-calls')));
+          if (d.status === 'failed' && accepted && idle && workerState.ready && !workerState.approvals &&
+              (terminal || d.includedAt)) await sender.cancel(project, worker.id, d.id);
+        }
+        // Leave uncertain and pending input visible for the parent to inspect.
+        // Resuming the parent never grants permission to replay worker input.
+      }
       const native = (chat.nativeStatus ?? chat.status)[g.session]?.type ?? 'idle';
+      await settleFailures(g, g.session, chat);
       for (const d of await sender.list(project, g.session)) {
         // Resume acknowledges a confirmed, settled native failure. An uncertain
         // transport remains inspect-only and is never made replayable here.
@@ -234,6 +298,8 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
       }
       if (!boot.models.some(m => m.id === g.model)) throw Error('Choose an available parent model in goal settings.');
       g.status = 'running'; g.unsettled = true; g.stopRequested = false; g.runID ??= randomUUID();
+      g.checkpointRecoveries = 0;
+      g.completionRecoveries = 0;
       await schedule(g, g.rootRequestID ? 'Resume this goal from its checkpoint, native tasks and existing workers.' : `Start this saved goal: ${g.objective}`);
       return publicGoal(g);
     }); },
@@ -273,7 +339,16 @@ export function createGoals(app, { sender, interval = 1500, now = Date.now } = {
         interpretation: text(input.interpretation, 12000), checkpoint: text(input.checkpoint, 12000), reason: text(input.reason, 2000), evidence: String(input.evidence ?? '').slice(0,16000) };
       await put(g); return { recorded: true, outcome: input.outcome, note: 'The controller will reconcile native work before changing goal status.' };
     }); },
-    tick() { return lock(async () => { if (!closed) for (const g of await all()) await reconcile(g); }); },
+    tick() {
+      // Slow native reads must not enqueue one reconciliation per timer pulse:
+      // that backlog starves checkpoint, Resume and explicit user operations.
+      if (ticking) return ticking;
+      const work = lock(async () => { if (!closed) for (const g of await all()) await reconcile(g); });
+      ticking = work;
+      const done = () => { if (ticking === work) ticking = undefined; };
+      work.then(done, done);
+      return work;
+    },
     startTimer() { timer = setInterval(() => { void service.tick().catch(() => {}); }, interval); timer.unref?.(); },
     async close() { closed = true; clearInterval(timer); await queue.catch(() => {}); },
   };

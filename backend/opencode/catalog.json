@@ -1,6 +1,6 @@
 {
-  "skills": ["reorient", "search-index", "sync", "model-routing", "record-outcome"],
+  "skills": ["reorient", "search-index", "model-routing", "record-outcome", "pursue-goal", "debug", "verify", "browser-verify", "review", "handoff"],
   "agent_source": "domain/workspace.mjs + private settings overrides",
   "tools": ["content_index"],
-  "plugins": ["delegation", "git-project"]
+  "plugins": ["delegation", "git-project", "goals"]
 }

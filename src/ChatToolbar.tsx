@@ -17,7 +17,7 @@ export function ChatToolbar({
   agents: ReactNode;
   models: ReactNode;
   goal?: ReactNode;
-  counts: { commands: number; agents: number; models: number; goals?: string };
+  counts: { commands: number; agents: number | string; models: number; goals?: string };
   working: {
     commands: boolean;
     agents: boolean;

@@ -16,8 +16,11 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
     time: { created: 300, updated: 400 } });
   f.state.messages.ses_history = [
     { info: { id: 'first-user', role: 'user' }, parts: [{ id: 'first-text', type: 'text', text: 'First project transcript' }] },
-    { info: { id: 'first-assistant', role: 'assistant' }, parts: [{ id: 'worker-tool', type: 'tool', tool: 'task', state: {
-      status: 'completed', input: { role: 'Researcher' }, metadata: { sessionId: 'ses_worker', selected_model: 'opencode/free' },
+    { info: { id: 'first-assistant', role: 'assistant' }, parts: [{ id: 'worker-tool', type: 'tool', tool: 'delegate', state: {
+      status: 'completed', input: { agent: 'researcher', task: 'Inspect the delegated task and preserve the parent constraints.' },
+      output: JSON.stringify({ status: 'completed', agent: { id: 'researcher', name: 'Researcher' } }),
+      metadata: { sessionId: 'ses_worker', agentID: 'researcher', agentName: 'Researcher', selected_model: 'opencode/free',
+        freelancer_status: 'completed', freelancer_activity: { schema_version: 1, agentID: 'researcher', agentName: 'Researcher', child_session: 'ses_worker', phase: 'completed', selected_model: 'opencode/free', completed_tools: 1, updated_at: new Date().toISOString() } },
     } }] },
   ];
   f.state.messages.ses_worker = [
@@ -58,8 +61,8 @@ test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: brows
     await nav.locator('.nav-chat-select').filter({ hasText: title }).click();
   };
   const openWorker = async () => {
-    const work = page.locator('.chat-transcript');
-    await work.getByRole('button', { name: /Agent finished: Researcher .* Open conversation/ }).click();
+    await page.getByRole('button', { name: /^Agents / }).click();
+    await page.locator('.chat-tool-overlay .agent-status-card').filter({ hasText: 'Researcher' }).click();
   };
 
   try {

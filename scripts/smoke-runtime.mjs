@@ -9,6 +9,7 @@ import { startHost } from '../server/host.mjs';
 import { createApplication } from '../server/application.mjs';
 import { startServer } from '../server/http.mjs';
 import { readAgentCatalog, retiredAgents } from '../backend/tools/runtime/agent-catalog.mjs';
+import { createCapabilities } from '../server/capabilities.mjs';
 
 const config = resolveRuntimeConfig();
 Object.assign(process.env, runtimeEnv(config));
@@ -30,10 +31,20 @@ try {
   }
   for (const name of retiredAgents) assert.ok(!agents.some(a => a.name === name), `Retired profile remains selectable: ${name}`);
   const skills = await host.request('/skill', { directory: config.appRoot });
-  for (const name of ['reorient', 'search-index', 'model-routing', 'record-outcome', 'pursue-goal'])
+  for (const name of ['reorient', 'search-index', 'model-routing', 'record-outcome', 'pursue-goal', 'debug', 'verify', 'browser-verify', 'review', 'handoff'])
     assert.ok(skills.some(skill => skill.name === name), `Missing app skill ${name}`);
   const tools = await host.request('/experimental/tool/ids', { directory: config.appRoot });
   for (const name of ['delegate', 'content_index', 'git_project', 'todowrite', 'goal_checkpoint']) assert.ok(tools.includes(name), `Missing native tool ${name}`);
+  const capabilities = await createCapabilities({ host, backendRoot: config.backendRoot }).read({
+    directory: config.appRoot, projectID: 'native-smoke', agent: 'engineer',
+  });
+  assert.equal(capabilities.probes.ids.state, 'observed');
+  assert.equal(capabilities.probes.exposed.state, 'not-run', 'smoke does not select or invoke a model');
+  assert.ok(capabilities.tools.find(row => row.id === 'delegate').discovered);
+  assert.ok(capabilities.skills.find(row => row.name === 'verify').discovered);
+  console.log(JSON.stringify({ nativeCapabilityInspection: { tools: capabilities.tools.filter(row => row.discovered).length,
+    skills: capabilities.skills.length, mcp: capabilities.mcp.map(row => ({ name: row.name, status: row.status })),
+    lsp: capabilities.lsp.servers, probes: capabilities.probes } }));
   const app = createApplication({ backendRoot: config.backendRoot, host, store: createStore(smokeRoot), dataRoot: path.join(smokeRoot, 'data') });
   web = await startServer({ application: app, assets: path.join(config.appRoot, 'dist') });
   const html = await fetch(web.url).then(r => r.text());
@@ -44,7 +55,7 @@ try {
   const bootstrap = await fetch(web.url + '/api/bootstrap', { headers: { 'X-Freelancer-Client': 'webpage' } });
   assert.equal(bootstrap.status, 200);
   assert.ok((await bootstrap.json()).settings.agents.some(agent => agent.id === 'engineer'));
-  console.log('Native app-local startup, one named-agent catalog (main + delegated profiles), five skills, goal checkpoint tool, built UI assets and bootstrap API verified; no inference requested.');
+  console.log('Native app-local startup, named-agent catalog, ten shared skills, sanitized capability inventory, goal checkpoint tool, built UI assets and bootstrap API verified; no inference requested.');
 } finally {
   if (web) { web.server.closeAllConnections(); await new Promise(resolve => web.server.close(resolve)); }
   host.stop();

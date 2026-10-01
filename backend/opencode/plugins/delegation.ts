@@ -54,6 +54,10 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
   const { enableSessionTodos } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/todo-policy.mjs')).href)
   const { configureContextSettings } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/context-settings.mjs')).href)
   const { recordModelInput } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/input-observations.mjs')).href)
+  const { createCapabilityInventory } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/capability-inventory.mjs')).href)
+  let sharedSkills: string[] = []
+  try { sharedSkills = JSON.parse(fs.readFileSync(path.join(toolkitRoot, 'opencode/catalog.json'), 'utf8')).skills ?? [] } catch { /* inventory remains optional */ }
+  const inventory = createCapabilityInventory({ client, directory, skills: sharedSkills })
   return {
     config: async config => {
       configureAgentProfiles(config, await readAgentCatalog(toolkitRoot))
@@ -65,7 +69,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
     },
     tool: {
       delegate: tool({
-        description: 'Assign a bounded task to a named agent. Call delegate() with no arguments to inspect current agent IDs and the eligible model pool. Omit model for automatic eligible routing; use freeOnly:true when free capacity is required. A new worker starts in the background. Use workers:true to list assignments; worker alone to inspect one. With worker and task, delivery:"steer" adjusts current work without aborting, delivery:"queue" waits for its current turn. Omitting delivery continues an idle worker. Paid routes use native paid_delegate consent.',
+        description: 'Assign a bounded task to a named agent. Call delegate() with no arguments to inspect current agent IDs and the eligible model pool. Omit model for automatic eligible routing; use freeOnly:true when free capacity is required. A new worker starts in the background. Use workers:true to list assignments; worker alone to inspect one. With worker and task, delivery:"steer" adjusts current work without aborting, delivery:"queue" waits for its current turn. With worker, fork:true and a new task creates a fresh child through normal routing, carrying bounded historical evidence as unverified; it does not reuse the source session. Omitting delivery continues an idle worker. With worker and cancel:true, stop only that worker: the native stop is verified, the final state is durable, partial output is preserved, and no replacement child starts. Paid routes use native paid_delegate consent.',
         args: {
           agent: tool.schema.string().optional().describe('Named agent ID from the supplied catalog. Omit all arguments to inspect available agents and budget.'),
           task: tool.schema.string().min(1).optional().describe('A bounded assignment, relevant files and acceptance checks. Give concurrent writers disjoint areas.'),
@@ -73,7 +77,9 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
           freeOnly: tool.schema.boolean().optional().describe('Only eligible free capacity, including descendants.'),
           inspectionOnly: tool.schema.boolean().optional().describe('No source modifications.'),
           independentReview: tool.schema.boolean().optional().describe('Seek a different model and exclude prior reviewers.'),
-          worker: tool.schema.string().optional().describe('Child session ID. Alone reads its live transcript; with task continues its same agent and model.'),
+          worker: tool.schema.string().optional().describe('Child session ID. Alone reads its live transcript; with task continues its same agent and model; with cancel:true stops only this worker.'),
+          fork: tool.schema.boolean().optional().describe('With worker and task: start a fresh child context for a new bounded assignment. Preserves source agent/readOnly/free constraints, normal routing and native consent. Prior evidence is bounded, historical and unverified; source findings are annotated for project-state drift and never discarded. Cannot be combined with continuation, cancel, steer, queue or listing.'),
+          cancel: tool.schema.boolean().optional().describe('With worker: stop that one worker. Requires a verified native idle stop, writes a durable cancelled or stop_unverified receipt, preserves partial output, and never starts a replacement child.'),
           delivery: tool.schema.enum(['steer', 'queue']).optional().describe('With worker and task: steer corrects ongoing work at the next supported boundary without aborting tools; queue appends a FIFO follow-up after its current turn. Preserves the existing assignment, model and constraints.'),
           workers: tool.schema.boolean().optional().describe('List this parent conversation’s saved worker assignments.'),
           from: tool.schema.number().int().min(0).optional().describe('Zero-based native message offset for reading a worker transcript. Omit for the latest messages.'),
@@ -89,7 +95,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
             agent: receipt.agent && { id: receipt.agent.id, name: receipt.agent.name },
             attempts: receipt.attempts?.map((a: any) => ({ child_session: a.child_session, status: a.status,
               selected_model: a.selected_model, dispatched_model: a.dispatched_model, observed_model: a.observed_model, abort_verified: a.abort_verified })),
-            worker_result: receipt.worker_result, result: receipt.result, note: receipt.note,
+            worker_result: receipt.worker_result, ...(receipt.fork ? { fork: receipt.fork } : {}), result: receipt.result, note: receipt.note,
             failure_class: receipt.failure_class, failure_summary: receipt.failure_summary,
             ...(receipt.decision ? { decision: receipt.decision } : {}),
           }
@@ -112,6 +118,7 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
     'tool.execute.before': async (input, output) => { await delegate.checkTool(input, output) },
     'experimental.chat.messages.transform': async (_input, output) => { restoreDelegateTools(output.messages); await recordModelInput(toolkitRoot, output.messages) },
     'experimental.chat.system.transform': async (input, output) => {
+      try { output.system.push(await inventory(input.model)) } catch { /* discovery never blocks ordinary work */ }
       try {
         const { preferences } = await loadPreferences(toolkitRoot, directory, input.sessionID)
         output.system.push(strategyGuidance(preferences))

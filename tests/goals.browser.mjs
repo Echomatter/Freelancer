@@ -2,6 +2,32 @@ import assert from 'node:assert/strict';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { test, expect } from './support/browser-test.mjs';
 
+test('a goal continues visibly while an independent worker stays busy', { tag: ['@app', '@chat'] }, async ({ appBrowser, own }) => {
+  const f = await own(localDataFixture({ timers: false }));
+  const g = await f.goals.create(f.project.id, { id: 'parallel_goal_browser_01', objective: 'Continue useful parent work', settings: { model: 'opencode/free' } });
+  await f.goals.start(f.project.id, g.id); await f.sender.tick();
+  const user = f.state.messages[g.session][0];
+  const assistant = { info: { id: 'parallel_checkpoint_reply', role: 'assistant', parentID: user.info.id,
+    agent: 'engineer', providerID: 'opencode', modelID: 'free', finish: 'stop', time: { created: Date.now(), completed: Date.now() } }, parts: [{ type: 'text', text: 'Checkpoint saved; continuing independent work.' }] };
+  f.state.messages[g.session].push(assistant);
+  f.state.sessions.push({ id: 'ses_parallel_goal_worker', parentID: g.session, directory: f.directory });
+  f.state.status.ses_parallel_goal_worker = { type: 'busy' };
+  await f.goals.checkpoint({ directory: f.directory, sessionID: g.session, messageID: assistant.info.id,
+    outcome: 'continue', interpretation: 'Useful parent work remains', checkpoint: 'Partial work retained', reason: 'Continue independently', evidence: 'Worker still running' });
+  delete f.state.status[g.session]; await f.sender.tick(); await f.goals.tick(); await f.sender.tick();
+  const page = await appBrowser.newPage({ viewport: { width: 1280, height: 850 } });
+  await page.goto(f.url);
+  await page.getByRole('button', { name: 'Project settings', exact: true }).click();
+  await page.getByRole('button', { name: 'Goals', exact: true }).click();
+  await page.locator('.goal-row').getByRole('button', { name: 'Open chat', exact: true }).click();
+  if (await page.getByRole('button', { name: /^Goals / }).getAttribute('aria-expanded') !== 'true')
+    await page.getByRole('button', { name: /^Goals / }).click();
+  await expect(page.getByRole('region', { name: 'Current goal' })).toContainText('Running');
+  await expect(page.getByRole('button', { name: 'Stop goal', exact: true })).toBeVisible();
+  assert.equal(f.calls.filter(c => c.route.endsWith('prompt_async')).length, 2);
+  assert.equal(f.state.status.ses_parallel_goal_worker.type, 'busy');
+});
+
 test('goal forms stay consistent and contain large objectives, checkpoints and revisions', { tag: ['@app'] }, async ({ appBrowser, own }) => {
   const f = await own(localDataFixture({ timers: false }));
   const page = await appBrowser.newPage({ viewport: { width: 1280, height: 950 } });
@@ -127,7 +153,11 @@ test('project goals save one chat, steer revisions, stop workers, and preserve m
   if (await page.getByRole('button', { name: /^Goals / }).getAttribute('aria-expanded') !== 'true') await page.getByRole('button', { name: /^Goals / }).click();
   await expect(page.locator('.goal-header-title')).toHaveText('Goal experience');
   await expect(page.locator('.goal-header')).not.toContainText('Verify the project goal experience including narrow layouts');
-  await expect(page.locator('.chat-transcript .message.internal')).toHaveCount(0);
+  const internalActivity = page.locator('.chat-transcript .message.internal');
+  await expect(internalActivity).toHaveCount(1);
+  const goalHandoff = internalActivity.locator('details.handoff-card');
+  await expect(goalHandoff).not.toHaveAttribute('open');
+  await expect(goalHandoff.locator('summary')).toContainText('Steer request');
   await expect(page.getByRole('button', { name: 'Open agents for turn 1', exact: true })).toBeVisible();
   await page.getByRole('button', { name: 'Hide goal', exact: true }).click();
   await expect(page.getByRole('region', { name: 'Current goal', exact: true })).toHaveCount(0);

@@ -1,7 +1,38 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { agentTurnEntries, goalEventsByTurn, turnTools, turnWorking } from '../domain/chat-tools.mjs';
+import { agentTurnEntries, chatAgentDetails, goalEventsByTurn, turnTools, turnWorking } from '../domain/chat-tools.mjs';
 import { isInternalMessage, queuePrompt, userInitiatedRequest } from '../domain/sender.mjs';
+import { nativeWorkerActivity } from '../server/worker-activity.mjs';
+
+test('worker cards separate turn ownership and sort by latest summon rather than progress', () => {
+  const old = { id: 'old', child: 'old-child', requestID: 'turn-1', updatedAt: '2026-10-01T10:00:00Z', raw: { created_at: '2026-10-01T01:00:00Z' } };
+  const recent = { id: 'recent', child: 'recent-child', requestID: 'turn-2', raw: { created_at: '2026-10-01T02:00:00Z' } };
+  const requests = [{ requestID: 'turn-1', allMessages: [] }, { requestID: 'turn-2', allMessages: [] }];
+  assert.deepEqual(agentTurnEntries(turnTools(requests[1], [old, recent])).entries.map(e => e.key), ['recent-child']);
+  requests[1].allMessages = [{ parts: [{ type: 'tool', tool: 'delegate', state: { status: 'completed', input: { worker: 'old-child', limit: 1 }, metadata: { sessionId: 'old-child', freelancer_status: 'running', task_id: 'old' } } }] }];
+  assert.deepEqual(agentTurnEntries(turnTools(requests[1], [old, recent])).entries.map(e => e.key), ['recent-child']);
+  assert.deepEqual(agentTurnEntries(chatAgentDetails(requests, [old, recent])).entries.map(e => e.key), ['recent-child', 'old-child']);
+  old.attempt = { started_at: '2026-10-01T03:00:00Z' };
+  assert.deepEqual(agentTurnEntries(chatAgentDetails(requests, [old, recent])).entries.map(e => e.key), ['old-child', 'recent-child']);
+  const reused = { ...old, id: 'reused', phase: 'working', attempt: { started_at: '2026-10-01T04:00:00Z' }, updatedAt: '2026-10-01T04:01:00Z' };
+  assert.equal(agentTurnEntries(chatAgentDetails(requests, [reused, old, recent])).entries[0].activity.id, 'reused');
+});
+
+test('native worker projection distinguishes terminal execution, idle recovery and unrelated workers', () => {
+  const row = { child: 'child', phase: 'working', selected: 'provider/model', raw: { parent_session: 'parent', agent: { id: 'engineer' } } };
+  const child = { id: 'child', parentID: 'parent' };
+  const messages = [{ info: { id: 'user', role: 'user' } }, { info: { parentID: 'user', role: 'assistant', agent: 'engineer', providerID: 'provider', modelID: 'model', finish: 'stop', time: { completed: 100 } } }];
+  assert.equal(nativeWorkerActivity(row, child, messages, 'parent').phase, 'completed');
+  messages[0].info.time = { created: 1 };
+  messages[0].info.summary = { title: 'Native user summary' };
+  messages[1].info.time.created = 2;
+  assert.equal(nativeWorkerActivity(row, child, [...messages].reverse(), 'parent').phase, 'completed');
+  assert.equal(nativeWorkerActivity(row, child, messages, 'parent', { type: 'busy' }).phase, 'working');
+  assert.equal(nativeWorkerActivity(row, child, messages.slice(0, 1), 'parent').phase, 'idle');
+  assert.equal(nativeWorkerActivity(row, { ...child, parentID: 'other' }, messages, 'parent'), row);
+  messages[1].parts = [{ type: 'tool', state: { status: 'running' } }];
+  assert.equal(nativeWorkerActivity(row, child, messages, 'parent').phase, 'idle');
+});
 
 test('user Queue, Delegate and Steer handoffs retain clean request text for transcript cards', () => {
   const requests = [

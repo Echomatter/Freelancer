@@ -22,6 +22,7 @@ export function turnTools(request, activity = []) {
     // An explicit request identity wins over a reused child session: a later
     // continuation must not replace the earlier turn's recorded report.
     agents: visibleActivity(activity.filter(row => {
+      if (row.requestID) return ids.has(row.requestID);
       const owner = row.requestID ?? row.raw?.user_task_id;
       return assignments.has(row.id) || (owner ? ids.has(owner) || ids.has(owner.split('/').at(-1)) : children.has(row.child));
     })),
@@ -34,6 +35,12 @@ export function turnTools(request, activity = []) {
 export function agentTurnEntries(details) {
   const entries = new Map(details.agents.map(row => [row.child ?? row.id, { key: row.child ?? row.id, activity: row, parts: [], messages: [] }]));
   details.agentTools.forEach((part, index) => {
+    // Discovery and transcript reads are commands, not additional workers.
+    const input = part.state?.input ?? {};
+    if (input.worker && !input.task && !input.prompt && !input.cancel &&
+        part.state?.metadata?.freelancer_status !== 'worker_handoff') return;
+    if (!part.state?.input?.task && !part.state?.input?.prompt &&
+        ['catalog','workers','worker_transcript'].includes(part.state?.metadata?.freelancer_status)) return;
     const key = delegateChildSession(part) ?? part.state?.metadata?.task_id ?? part.callID ?? part.id ?? `agent-${index}`;
     if (!entries.has(key)) entries.set(key, { key, parts: [], messages: [] });
     entries.get(key).parts.push(part);
@@ -45,7 +52,15 @@ export function agentTurnEntries(details) {
     if (entry) entry.messages.push(message);
     else unmatched.push(message);
   }
-  return { entries: [...entries.values()], unmatched };
+  const summoned = entry => Math.max(
+    Date.parse(entry.activity?.attempt?.started_at ?? entry.activity?.raw?.created_at) || 0,
+    ...entry.parts.map(part => part.state?.time?.start ?? part.time?.start ?? 0));
+  return { entries: [...entries.values()].reverse().sort((a, b) => summoned(b) - summoned(a)), unmatched };
+}
+
+export function chatAgentDetails(requests = [], activity = []) {
+  const details = turnTools({ allMessages: requests.flatMap(request => request.allMessages ?? []) }, []);
+  return { ...details, agents: visibleActivity(activity) };
 }
 
 export function turnWorking(details, { current = false, busy = false, blocked = false, goalStatus = '' } = {}) {

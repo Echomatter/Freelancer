@@ -36,6 +36,8 @@ Start with what you are trying to do. These guides describe the **single browser
 | Share of work and native todo placement | [Contributions and todos](contributions-and-todos.md) |
 | Agent-directed teams, project/chat budgets, subscription choices and preserved guards | [Delegation budget](delegation-budget.md) |
 | Shared main/delegated agents, custom definitions and captured prompts | [Named agents](named-agents.md) |
+| Read-only capabilities and effective instruction/tool inspection | [Capabilities](capabilities.md) · [Instruction sources](instruction-sources.md) |
+| Shared file-target scope and native permission boundaries | [File access scope](file-access.md) |
 | Local checkpoints, GitHub setup, working agreements, and managed Sync | [Project history & GitHub](github-projects.md) |
 | Search indexed files across registered projects; inspect local data and history | [Local data and history](local-data.md) |
 | Navigation/Details resizing and saved appearance at startup | [Panels and theme](panels-and-theme.md) |

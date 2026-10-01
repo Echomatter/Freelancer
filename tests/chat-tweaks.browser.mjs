@@ -11,6 +11,9 @@ test('chat-tweaks', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, own
     { id: 'middle', agentName: 'Middle agent', child: 'ses_middle', phase: 'completed', completedTools: 1, raw: { created_at: '2026-09-20T19:00:00Z' } },
   ] });
   f.state.messages.ses_history = [
+    // Handoffs are response/activity cards belonging to an existing parent
+    // request; they are not standalone user turns.
+    { info: { id: 'msg_original', role: 'user' }, parts: [{ id: 'prt_original', type: 'text', text: 'Continue the original review task' }] },
     { info: { id: 'msg_handoff', role: 'user' }, parts: [{ type: 'text', text: '[Freelancer Delegate handoff abc123]\nUser concern:\nCheck this independently' }] },
     { info: { id: 'msg_user', role: 'user' }, parts: [{ id: 'prt_user', type: 'text', text: 'Review the work' }] },
     { info: { id: 'msg_parent', role: 'assistant' }, parts: [{ id: 'prt_agent', type: 'tool', tool: 'delegate',
@@ -61,20 +64,26 @@ test('chat-tweaks', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, own
       const handoff = page.locator('.handoff-card').filter({ hasText: 'Check this independently' });
       await expect(handoff).not.toHaveAttribute('open');
       await handoff.locator('summary').click();
-      await expect(handoff.locator('pre')).toBeVisible();
+      await expect(handoff.getByText('Check this independently', { exact: true })).toBeVisible();
       await handoff.locator('summary').click();
       await page.getByRole('button', { name: /^Agents / }).click();
       const details = page.locator('.chat-tool-overlay');
-      await expect(details.locator('.activity-summary-button strong')).toHaveText(['Newest agent', 'Middle agent', 'Older agent']);
-      await expect(details.locator('.activity-summary-button').first()).toContainText('2 actions');
-      await expect(details.locator('.activity-summary-button').first()).toContainText('Working');
+      await details.getByRole('button', { name: /This chat/ }).click();
+      await expect(details.locator('.agent-status-card .agent-card-copy strong')).toHaveText(['Newest agent', 'Middle agent', 'Older agent']);
+      await expect(details.locator('.agent-status-card').first()).toContainText('2 actions');
+      await expect(details.locator('.agent-status-card').first()).toContainText('Working');
       await expect(details.locator('.activity-detail-body')).toHaveCount(0);
-      await expect(details.locator('.handoff-card')).not.toHaveAttribute('open');
+      await expect(details.locator('.handoff-card')).toHaveCount(0, 'agent overview stays collapsed to summary cards');
       await page.getByRole('button', { name: /^Agents / }).click();
     });
     await page.locator('.chat-toolbar-tabs button').filter({ hasText: 'Commands' }).click();
     await expect(page.getByText(/PRIVATE_HANDOFF_ARGUMENT|PRIVATE_CHILD_OUTPUT/)).toHaveCount(0);
-    await page.locator('.chat-tool-overlay').getByRole('button', { name: /Agent finished: Engineer/ }).click();
+    await page.locator('.chat-toolbar-tabs button').filter({ hasText: 'Commands' }).click();
+    await page.getByRole('button', { name: /^Agents / }).click();
+    const currentAgents = page.locator('.chat-tool-overlay');
+    const completedWorker = currentAgents.locator('.agent-status-card').filter({ hasText: 'Newest agent' }).first();
+    await expect(completedWorker).toContainText('Working');
+    await completedWorker.click();
     const assignment = page.locator('.handoff-card').filter({ hasText: 'Inspect the code' });
     await expect(assignment).not.toHaveAttribute('open');
     await assignment.locator('summary').click();

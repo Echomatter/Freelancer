@@ -688,14 +688,15 @@ foreach ($rm in $routeModels) {
         if ($histN -gt 0) {
             $succ = @($useSet | Where-Object { $_.success -eq $true }).Count
             $histRate = [double]$succ / [double]$histN
-            $testsPass = @($useSet | Where-Object { $_.tests_passed -eq $true }).Count
+            $testedSet = @($useSet | Where-Object { $_.tests_passed -is [bool] })
+            $testsPass = @($testedSet | Where-Object { $_.tests_passed -eq $true }).Count
             $escCount = @($useSet | Where-Object { $_.escalated -eq $true }).Count
             $reviewDefects = @($useSet | Where-Object { $_.review_found_defects -eq $true }).Count
             $attemptTotal = 0.0
             foreach ($he in $useSet) {
                 try { $attemptTotal += [double]$he.attempts } catch { $attemptTotal += 1.0 }
             }
-            $histTestsRate = [double]$testsPass / [double]$histN
+            $histTestsRate = if ($testedSet.Count -gt 0) { [double]$testsPass / [double]$testedSet.Count } else { $null }
             $histEscRate = [double]$escCount / [double]$histN
             $histReviewDefectRate = [double]$reviewDefects / [double]$histN
             $histAvgAttempts = $attemptTotal / [double]$histN
@@ -705,8 +706,8 @@ foreach ($rm in $routeModels) {
                 elseif ($histRate -lt 0.4) { $histAdj -= 1.0 }
                 elseif ($histRate -lt 0.6) { $histAdj -= 0.35 }
 
-                if ($histTestsRate -ge 0.8 -and $histRate -ge 0.6) { $histAdj += 0.15 }
-                elseif ($histTestsRate -lt 0.5) { $histAdj -= 0.2 }
+                if ($null -ne $histTestsRate -and $histTestsRate -ge 0.8 -and $histRate -ge 0.6) { $histAdj += 0.15 }
+                elseif ($null -ne $histTestsRate -and $histTestsRate -lt 0.5) { $histAdj -= 0.2 }
 
                 if ($histAvgAttempts -gt 2.0) { $histAdj -= 0.3 }
                 elseif ($histAvgAttempts -le 1.25 -and $histRate -ge 0.75) { $histAdj += 0.1 }

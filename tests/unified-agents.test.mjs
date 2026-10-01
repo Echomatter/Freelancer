@@ -72,6 +72,24 @@ test("generated profiles preserve whole-agent and global native permission decis
   assert.equal(c.agent.designer.permission.question, "deny");
   assert.equal(configureAgentProfiles({ permission: { question: "ask" } }, checkedCatalog()).agent.engineer.permission.question, "ask");
 });
+test("shared native question exposure preserves explicit agent decisions across reconfiguration", () => {
+  const catalog = checkedCatalog({ agents: [{ ...custom, id: "accessibility" }] });
+  const config = {
+    permission: { question: "allow" },
+    agent: {
+      researcher: { permission: { question: "deny" } },
+      designer: { tools: { question: false } },
+      accessibility: { permission: { question: "ask" } },
+    },
+  };
+  for (let round = 0; round < 2; round++) {
+    configureAgentProfiles(config, catalog);
+    assert.equal(config.agent.engineer.permission.question, "allow");
+    assert.equal(config.agent.researcher.permission.question, "deny");
+    assert.equal(config.agent.designer.tools.question, false);
+    assert.equal(config.agent.accessibility.permission.question, "ask");
+  }
+});
 test("legacy restricted role preferences migrate conservatively without creating executable aliases", () => {
   const p = normalizePreferences({
     schemaVersion: 1,
@@ -240,7 +258,7 @@ test("unknown agents, role-based calls, forged native identity and missing conte
   );
   await assert.rejects(
     f.delegator.execute({ role: "worker", task: "Edit" }, ctx),
-    /named agentID/,
+    /delegate\(\{agent, task\}\)/,
   );
   f.rows.get(f.parent.id).at(-1).info.agent = "researcher";
   await assert.rejects(f.delegator.execute(job, ctx), /identity differs/);

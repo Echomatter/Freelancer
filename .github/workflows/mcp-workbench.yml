@@ -17,14 +17,17 @@ jobs:
         with:
           node-version: 22
           package-manager-cache: false
-      - run: npm ci
-      - name: Package exact review checkout and test dependencies
+      - name: Prepare isolated native verification binaries
         run: |
-          git archive HEAD > /tmp/source.tar
-          tar -rf /tmp/source.tar node_modules
-          gzip /tmp/source.tar
+          mkdir -p "$RUNNER_TEMP/tools"
+          cp "$(command -v node)" "$RUNNER_TEMP/tools/node"
+          npm install --prefix "$RUNNER_TEMP/native" opencode-ai@1.18.31
+          native=$(find "$RUNNER_TEMP/native/node_modules" -type f -path '*/bin/opencode' ! -path '*/opencode-ai/*' | head -n 1)
+          test -n "$native"
+          cp "$native" "$RUNNER_TEMP/tools/opencode"
+          tar -czf "$RUNNER_TEMP/native-tools.tar.gz" -C "$RUNNER_TEMP/tools" .
       - uses: actions/upload-artifact@v7
         with:
-          name: mcp-review-workbench
-          path: /tmp/source.tar.gz
+          name: mcp-native-tools
+          path: ${{ runner.temp }}/native-tools.tar.gz
           retention-days: 1

@@ -12,7 +12,8 @@
 .capability-rows > li:first-child { padding-top: 0; }
 .capability-rows > li:last-child { border-bottom: 0; padding-bottom: 0; }
 .capability-row-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 8px 16px; min-width: 0; }
-.capability-row-heading > :first-child { min-width: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text); }
+.capability-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; font-family: inherit; font-weight: 600; color: var(--accent); }
+.capability-status { flex: 0 0 auto; }
 .capability-rows small, .capability-reason { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; line-height: 1.6; }
 .capability-toggle { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-block: 12px; cursor: pointer; font-size: 13px; }
 .capability-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }

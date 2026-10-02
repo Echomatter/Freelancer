@@ -64,7 +64,7 @@ export function Capabilities({ data, sessionID, onClose }: {
           </details>
         </>}>
           <ul className="capability-rows" aria-label="Tool inventory">{tools.map(row => <li key={row.id}>
-            <div className="capability-row-heading"><code>{row.id}</code><Badge tone={row.discovered === true ? 'success' : 'neutral'}>{toolLabel(row)}</Badge></div>
+            <div className="capability-row-heading"><span className="capability-name">{row.id}</span><Badge tone={toolLabel(row) === 'Available' ? 'success' : 'neutral'}>{toolLabel(row)}</Badge></div>
           </li>)}</ul>
           {!tools.length && <p>No tools were returned by this inspection.</p>}
         </Panel>
@@ -73,7 +73,7 @@ export function Capabilities({ data, sessionID, onClose }: {
           {inventory.probes?.skills?.reason && <p>{inventory.probes.skills.reason}</p>}
         </details>}>
           <ul className="capability-rows" aria-label="Skill inventory">{skills.map((row, index) => <li key={`${row.name}:${row.origin}:${index}`}>
-            <div className="capability-row-heading"><strong>{row.name}</strong><Badge>{skillLabel(row, inventory.probes?.skills)}</Badge></div>
+            <div className="capability-row-heading"><span className="capability-name">{row.name}</span><Badge tone={skillLabel(row, inventory.probes?.skills) === 'Found' ? 'success' : 'neutral'}>{skillLabel(row, inventory.probes?.skills)}</Badge></div>
           </li>)}</ul>
           {!skills.length && <p>{inventory.probes?.skills?.state === 'unavailable'
             ? inventory.probes.skills.reason || 'Skill discovery is unavailable.' : 'No skills were returned by this inspection.'}</p>}

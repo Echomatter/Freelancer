@@ -145,6 +145,10 @@ jobs:
           XDG_DATA_HOME: ${{ runner.temp }}/freelancer-native-data
           FREELANCER_DATA_HOME: ${{ runner.temp }}/freelancer-library
         run: npm run smoke:runtime
+      - name: Native MCP shared configuration and transport (no inference)
+        id: native_mcp
+        shell: powershell
+        run: npm run smoke:mcp
       - name: Record exact-checkout evidence
         if: always()
         env:

@@ -1,8 +1,25 @@
-.capability-view { display: grid; gap: var(--space-4, 1rem); }
-.capability-table-scroll { overflow-x: auto; }
-.capability-table { width: 100%; border-collapse: collapse; text-align: left; }
-.capability-table th, .capability-table td { padding: .65rem; vertical-align: top; border-bottom: 1px solid var(--border); }
-.capability-table small, .capability-list small { display: block; font-weight: normal; overflow-wrap: anywhere; opacity: .75; }
-.capability-list { display: grid; gap: .75rem; padding-left: 1.25rem; }
-.capability-toggle { display: flex; align-items: center; gap: 10px; cursor: pointer; }
-.capability-toggle input { width: auto; accent-color: var(--accent); }
+.capability-view { display: grid; gap: 20px; min-width: 0; }
+.capability-view > .page-title { margin-bottom: 0; }
+.capability-intro, .capability-section-description { font-size: 13px; line-height: 1.6; color: var(--muted); }
+.capability-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: end; }
+.capability-observation { display: grid; gap: 5px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
+.capability-observation strong { color: var(--text); }
+.capability-result-count { color: var(--muted); font-size: 12px; }
+.capability-section { min-width: 0; }
+.capability-section-description { margin-bottom: 16px; }
+.capability-rows { margin: 0; padding: 0; list-style: none; }
+.capability-rows > li { display: grid; gap: 6px; padding: 14px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.capability-rows > li:first-child { padding-top: 0; }
+.capability-rows > li:last-child { border-bottom: 0; padding-bottom: 0; }
+.capability-row-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 8px 16px; min-width: 0; }
+.capability-row-heading > :first-child { min-width: 0; overflow-wrap: anywhere; font-size: 13px; color: var(--text); }
+.capability-rows small, .capability-reason { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; line-height: 1.6; }
+.capability-toggle { display: flex; align-items: center; gap: 12px; min-height: 44px; margin-block: 12px; cursor: pointer; font-size: 13px; }
+.capability-toggle input { width: 18px; height: 18px; margin: 0; accent-color: var(--accent); }
+.capability-native-details { margin-top: 20px; border-top: 1px solid var(--line); padding-top: 12px; }
+.capability-native-details summary { display: list-item; padding-block: 8px; font-size: 13px; color: var(--text); }
+.capability-native-details > p { font-size: 13px; color: var(--muted); overflow-wrap: anywhere; }
+@media (max-width: 720px) {
+  .capability-view { gap: 16px; }
+  .capability-toolbar { grid-template-columns: minmax(0, 1fr); }
+}

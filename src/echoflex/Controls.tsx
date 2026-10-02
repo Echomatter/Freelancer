@@ -2,66 +2,56 @@
 // audio/module runtime; native HTML behavior and accessibility are preserved.
 import { X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
-import { cloneElement, isValidElement, useId, type ReactElement } from "react";
+import { cloneElement, createContext, isValidElement, useContext, useId, type ReactElement } from "react";
 import type { LucideIcon } from "lucide-react";
 import { HelpHint, HelpScope } from "../HelpHint";
 import type { HelpTopic } from "../documentation-help";
-export function Button({
-  variant = "secondary",
-  className = "",
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: "primary" | "secondary" | "danger" | "quiet";
-}) {
+import { settingsPageForTitle } from "../settings-catalog.mjs";
+import "../settings-ux.css";
+
+export function Button({ variant = "secondary", className = "", ...props }:
+  ButtonHTMLAttributes<HTMLButtonElement> & { variant?: "primary" | "secondary" | "danger" | "quiet" }) {
   return <button className={`button ${variant} ${className}`} {...props} />;
 }
 export function PageCloseButton({ onClick, label = "Close settings", disabled = false }: {
-  onClick: () => void;
-  label?: string;
-  disabled?: boolean;
+  onClick: () => void; label?: string; disabled?: boolean;
 }) {
-  return <Button type="button" className="page-close-button" variant="quiet" aria-label={label} title={label} disabled={disabled} onClick={onClick}><X size={18} /></Button>;
+  return <Button type="button" className="page-close-button" variant="quiet" aria-label={label} title={label} disabled={disabled} onClick={onClick}><X size={18} aria-hidden="true" /></Button>;
 }
 
-export function Panel({
-  title,
-  help,
-  children,
-  className = "",
-  ...props
-}: HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic }) {
-  return (
-    <section className={`panel ${className}`} {...props}>
-      <HelpScope topic={help}>
-      {title && <h3>{title}</h3>}
+const PanelLevel = createContext(1);
+export function Panel({ title, help, children, className = "", ...props }:
+  HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic }) {
+  const parentLevel = useContext(PanelLevel);
+  const level = title ? Math.min(6, parentLevel + 1) : parentLevel;
+  const Heading = `h${level}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
+  const headingID = useId();
+  const labelledBy = props['aria-labelledby'] ?? (title && !props['aria-label'] ? headingID : undefined);
+  return <section className={`panel ${className}`} {...props} aria-labelledby={labelledBy}>
+    <PanelLevel.Provider value={level}><HelpScope topic={help}>
+      {title && <Heading id={headingID} className="panel-heading">{title}</Heading>}
       {children}
-      </HelpScope>
-    </section>
-  );
+    </HelpScope></PanelLevel.Provider>
+  </section>;
 }
-export function PageHeading({ title, actions, icon: Icon, help }: {
-  title: string;
-  actions?: ReactNode;
-  icon?: LucideIcon;
-  help?: HelpTopic;
+export function PageHeading({ title, actions, icon: Icon, help, description }: {
+  title: string; actions?: ReactNode; icon?: LucideIcon; help?: HelpTopic; description?: string;
 }) {
-  return <><header className="page-title">
+  const page = settingsPageForTitle(title);
+  const detail = description ?? page?.description;
+  return <><header className="page-title" data-settings-page={page ? `${page.scope}/${page.id}` : undefined} data-settings-layout={page?.layout}>
     <div className="page-title-leading">
       {Icon && <span className="page-title-icon"><Icon size={21} strokeWidth={1.8} aria-hidden="true" /></span>}
-      <div className="page-title-main"><div className="page-title-name"><h1>{title}</h1></div></div>
+      <div className="page-title-main">
+        {page && <span className="settings-page-kind">{page.kind}</span>}
+        <div className="page-title-name"><h1>{title}</h1></div>
+        {detail && <p className="settings-page-description">{detail}</p>}
+      </div>
     </div>
     {actions && <div className="page-title-actions">{actions}</div>}
   </header>{help && <div className="page-help"><HelpHint topic={help} /></div>}</>;
 }
-export function Field({
-  label,
-  help,
-  children,
-}: {
-  label: string;
-  help?: HelpTopic;
-  children: ReactNode;
-}) {
+export function Field({ label, help, children }: { label: string; help?: HelpTopic; children: ReactNode }) {
   const labelID = useId();
   if (help) {
     const child = isValidElement(children) ? children as ReactElement<any> : null;
@@ -72,62 +62,17 @@ export function Field({
       <div className="field-help"><HelpHint topic={help} /></div>
     </div>;
   }
-  return (
-    <label className="field">
-      <span id={labelID}>{label}</span>
-      {isValidElement(children)
-        ? cloneElement(children as ReactElement<any>, {
-            "aria-labelledby": labelID,
-          })
-        : children}
-    </label>
-  );
+  return <label className="field"><span id={labelID}>{label}</span>
+    {isValidElement(children) ? cloneElement(children as ReactElement<any>, { "aria-labelledby": labelID }) : children}
+  </label>;
 }
-export function Badge({
-  children,
-  tone = "neutral",
-}: {
-  children: ReactNode;
-  tone?: string;
-}) {
+export function Badge({ children, tone = "neutral" }: { children: ReactNode; tone?: string }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
-export function Empty({
-  icon: Icon,
-  title,
-  children,
-  action,
-}: {
-  icon: any;
-  title: string;
-  children?: ReactNode;
-  action?: ReactNode;
-}) {
-  return (
-    <div className="empty">
-      <span className="empty-icon">
-        <Icon size={28} />
-      </span>
-      <h2>{title}</h2>
-      {children && <div className="empty-description">{children}</div>}
-      {action}
-    </div>
-  );
+export function Empty({ icon: Icon, title, children, action }: { icon: any; title: string; children?: ReactNode; action?: ReactNode }) {
+  return <div className="empty"><span className="empty-icon"><Icon size={28} aria-hidden="true" /></span>
+    <h2>{title}</h2>{children && <div className="empty-description">{children}</div>}{action}</div>;
 }
-export function Stat({
-  label,
-  value,
-  detail,
-}: {
-  label: string;
-  value: ReactNode;
-  detail?: ReactNode;
-}) {
-  return (
-    <Panel className="stat">
-      <span>{label}</span>
-      <strong>{value}</strong>
-      {detail && <small>{detail}</small>}
-    </Panel>
-  );
+export function Stat({ label, value, detail }: { label: string; value: ReactNode; detail?: ReactNode }) {
+  return <Panel className="stat"><span>{label}</span><strong>{value}</strong>{detail && <small>{detail}</small>}</Panel>;
 }

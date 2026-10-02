@@ -1,0 +1,60 @@
+/* Settings presentation contract. Semantic color values belong to EchoFlex. */
+.panel > .panel-heading { margin: 0 0 22px; font-size: 15px; font-weight: 600; letter-spacing: 0; }
+.page:has(.page-title[data-settings-page]) {
+  --settings-gap: 20px;
+  --settings-panel-padding: 20px;
+  max-width: 1280px;
+  padding: clamp(16px, 2.5vw, 32px);
+  scrollbar-gutter: stable;
+}
+.page:has(.page-title[data-settings-layout="form"]) { max-width: 960px; }
+.page-title[data-settings-page] { align-items: flex-start; gap: 16px; margin-bottom: 20px; }
+.page-title[data-settings-page] .page-title-actions { flex-wrap: wrap; max-width: 45%; }
+.page-title[data-settings-page] h1 { font-size: clamp(24px, 2.5vw, 30px); line-height: 1.2; letter-spacing: -.6px; }
+.settings-page-kind { display: block; margin-bottom: 5px; color: var(--muted); font-size: 12px; font-weight: 600; }
+.settings-page-description { margin-top: 10px; max-width: 76ch; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.page:has(.page-title[data-settings-page]) .panel { padding: var(--settings-panel-padding); border-radius: 12px; }
+.page:has(.page-title[data-settings-page]) .panel-heading { margin: 0 0 14px; font-size: 16px; line-height: 1.4; font-weight: 600; letter-spacing: 0; }
+.settings-content { display: grid; gap: var(--settings-gap, 20px); align-content: start; }
+.settings-content > .panel { margin-block: 0; }
+.settings-content > .page-title, .settings-content > .page-help { margin-bottom: 0; }
+.page:has(.page-title[data-settings-page]) :is(.remote-access, .content-storage-page, .scheduled-prompts, .session-defaults) { min-width: 0; }
+.page:has(.page-title[data-settings-page]) :is(.field-grid, .editor-columns, .remote-fields, .schedule-fields, .goal-fields) { gap: 16px; }
+.page:has(.page-title[data-settings-page]) :is(.field, fieldset, form, .provider-top > div) { min-width: 0; }
+.page:has(.page-title[data-settings-page]) :is(.action-row, .save-row, .editor-footer, .session-defaults-save, .provider-color-actions, .goal-actions, .schedule-actions) { flex-wrap: wrap; gap: 10px; }
+.page:has(.page-title[data-settings-page]) :is(.field input, .field select, .field textarea) { width: 100%; }
+.page:has(.page-title[data-settings-page]) :is(.button, select, summary) { min-height: 40px; }
+.page:has(.page-title[data-settings-page]) :is(.notice, [role="alert"], .data-location, .remote-url code) { overflow-wrap: anywhere; }
+.page:has(.page-title[data-settings-page]) :is(input[type="checkbox"], input[type="radio"]) { accent-color: var(--accent); flex-shrink: 0; }
+.page:has(.page-title[data-settings-page]) :is(.model-grid, .provider-list, .catalog-grid, .git-setup-grid, .overview-grid) { gap: var(--settings-gap); }
+.page:has(.page-title[data-settings-page]) :is(.file-preview, pre) { max-width: 100%; overflow-x: auto; }
+.settings-menu-section + .settings-menu-section { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
+.settings-menu-heading { margin: 4px 10px 5px; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1.4; }
+.settings-drawer-links .settings-menu-label { display: grid; gap: 2px; }
+.settings-menu-label small { font-size: 11px; color: var(--muted); }
+.settings-drawer-links button[aria-current="page"] { box-shadow: inset 3px 0 0 var(--accent); }
+.settings-save-status { min-height: 20px; font-size: 13px; color: var(--muted); }
+.settings-billing-actions { padding-top: 16px; border-top: 1px solid var(--line); }
+.settings-storage-access { min-width: 0; }
+.page:has(.page-title[data-settings-page]) :is(.remote-access, .content-storage-page, .scheduled-prompts) { gap: var(--settings-gap); }
+.page:has(.page-title[data-settings-page]) :is(.remote-access, .content-storage-page, .scheduled-prompts) > :is(.page-title, .page-help) { margin-bottom: 0; }
+.page.overview:has(.page-title[data-settings-page]) > :is(.panel, .overview-grid) { margin-bottom: var(--settings-gap); }
+.page:has(.page-title[data-settings-page]) .storage-locations .panel { padding: 16px; }
+.page:has(.page-title[data-settings-page]) .storage-locations .panel-heading { margin-bottom: 0; font-size: 14px; }
+@media (max-width: 720px) {
+  .page:has(.page-title[data-settings-page]) { --settings-panel-padding: 16px; --settings-gap: 16px; }
+  .page-title[data-settings-page] { flex-wrap: wrap; }
+  .page-title[data-settings-page] .page-title-leading { flex-basis: calc(100% - 60px); }
+  .page-title[data-settings-page] .page-title-actions { max-width: 100%; margin-left: auto; }
+  .page-title[data-settings-page] .page-title-icon { flex-basis: 36px; width: 36px; height: 36px; }
+  .page:has(.page-title[data-settings-page]) :is(.field-grid, .editor-columns, .remote-fields, .schedule-fields, .model-filters, .git-setup-grid, .overview-grid) { grid-template-columns: minmax(0, 1fr); }
+  .page:has(.page-title[data-settings-page]) :is(.save-row, .provider-top, .remote-url, .history-export, .history-actions) { flex-wrap: wrap; }
+  .page:has(.page-title[data-settings-page]) .button { white-space: normal; }
+  .settings-drawer-links button { min-height: 44px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .settings-drawer-links, .page:has(.page-title[data-settings-page]) { animation: none; }
+}
+@media (forced-colors: active) {
+  .settings-drawer-links button[aria-current="page"] { outline: 2px solid Highlight; outline-offset: -2px; }
+}

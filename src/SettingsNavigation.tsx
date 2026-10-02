@@ -1,4 +1,4 @@
-import { Target, Bot, BrainCircuit, CalendarClock, ChevronDown, FileSearch, Files, FolderOpen, Gauge, GitBranch, GitFork, Github, HardDrive, History, MessageSquare, Palette, Settings2, Smartphone, Wallet, Wrench } from "lucide-react";
+import { Target, Bot, BrainCircuit, CalendarClock, ChevronDown, FileSearch, Files, FolderOpen, Gauge, GitFork, Github, HardDrive, MessageSquare, Palette, Settings2, Smartphone, Wallet, Wrench } from "lucide-react";
 import { useNavigationDismiss } from "./NavigationMenus";
 import { settingsGroups, settingsPage } from "./settings-catalog.mjs";
 
@@ -9,12 +9,11 @@ const scopes = {
 };
 const icons = {
   files: Files, search: FileSearch, agents: Bot, goals: Target, sessions: MessageSquare,
-  delegation: GitFork, github: Github, models: BrainCircuit, usage: Gauge, history: History,
+  delegation: GitFork, github: Github, models: BrainCircuit, usage: Gauge,
   providers: Wallet, appearance: Palette, "remote-access": Smartphone, schedules: CalendarClock,
-  "content-storage": HardDrive, "git-defaults": GitBranch, capabilities: Wrench,
+  "content-storage": HardDrive, capabilities: Wrench,
 };
 export function settingsItemLabel(scope: SettingsScope, id: string) {
-  if (id === "history") return "Conversation history";
   return settingsPage(scope, id)?.title ?? "Settings";
 }
 export function SettingsNavigation({ expanded, scope, tab, project, onToggle, onDismiss, onSelect }: {

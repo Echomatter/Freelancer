@@ -7,7 +7,7 @@ import { generateCustomTheme } from '../domain/custom-themes.mjs';
 
 // Exercise actual application destinations, not a second mocked settings renderer.
 for (const mode of ['light', 'dark', 'custom']) for (const width of [360, 1440]) {
-  test(`all 19 settings destinations: ${mode}, ${width}px`, { tag: ['@app', '@settings'] }, async ({ appBrowser, own }) => {
+  test(`all 17 settings destinations: ${mode}, ${width}px`, { tag: ['@app', '@settings'] }, async ({ appBrowser, own }) => {
     test.setTimeout(120000);
     const fixture = await own(localDataFixture());
     const custom = mode === 'custom' ? generateCustomTheme({ mode: 'dark', saved: [], avoid: [] }) : null;

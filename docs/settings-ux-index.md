@@ -71,14 +71,6 @@
 
 **Placement verdict:** application-level is correct because the collection spans projects; the project field is essential. **PR treatment:** standard page description, fields/cards/action wrapping and spacing. Native schedule timing and delivery semantics remain unchanged; “Sent to chat” is not relabeled “Completed.”
 
-### application/history — Conversation history
-
-**Source:** [`History.tsx`](../src/History.tsx). **Scope:** one selected project at a time, reachable across the application. **Width:** collection.
-
-**Anatomy:** heading and pending-aware Close; project selector and help; Active/Archived/All filter; feedback and Undo; loading/empty/result region with row selection, conversation title, activity/goal marker, archive/import/cache/date metadata, and Pin/Unpin; Load more; project/goal archive scope notes. Footer owns selected-count Archive/Restore and export format (Markdown/JSON), Include workers, Export selected. Archive/restore confirmation explains native vs Freelancer-only behavior and preserves related worker history.
-
-**Placement verdict:** correct as cross-project organization, but scope must remain visible. **PR treatment:** standard description and responsive action controls; all archive, export, pinning and undo behavior retained. Sticky selection actions for very long lists are not introduced without a separate overlap/focus review.
-
 ### application/search — Search all content
 
 **Source:** [`IndexedSearch.tsx`](../src/IndexedSearch.tsx). **Type:** global utility; no configuration write. **Width:** collection.
@@ -94,14 +86,6 @@
 **Anatomy after this PR:** heading with Search all content and Close; section-jump links; independent index/storage error-retry notices; index metrics; Projects; Local data; SQLite maintenance. File access has its own Application settings destination. Projects rows show name/path/archive state, file and chat coverage, archive/restore, and file/conversation index refresh actions. Local data shows ownership flow and nested location cards (owner, path, size/note, Open folder), native warning and Export conversations. Maintenance exposes database/WAL/free-page stats, refresh, Start clean, Optimize, Check and Compact, with reset/compaction confirmations. Project archiving has its own index-before-archive confirmation.
 
 **Placement verdict:** shared file access was wrongly buried after database maintenance. **PR treatment:** a real React slot moves the single existing control panel ahead of maintenance, with an anchor; DOM, reading and keyboard order agree. Storage/index APIs, ownership, archive revisions, confirmations and data-retention behavior remain unchanged. No filesystem access policy is broadened or narrowed.
-
-### application/git-defaults — Git defaults
-
-**Source:** [`GitDefaults.tsx`](../src/GitDefaults.tsx). **Scope:** future projects only. **Width:** form.
-
-**Anatomy:** heading/Close; New project working style panel with explanation, working-style radio cards, pending fieldset, unchanged-value save disablement, error, saved confirmation and Save default.
-
-**Placement verdict:** correct. The distinction from an existing project's agreement was too easy to miss in navigation. **PR treatment:** explicit “New projects” page context, consistent form width, radio-panel geometry and spacing. Existing-project agreements are not rewritten.
 
 ### application/remote-access — Remote access
 

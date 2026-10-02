@@ -6,7 +6,7 @@ import { registrationLabel, serviceLabel, skillLabel, toolReason } from '../src/
 
 const original = {
   project: ['files', 'search', 'goals', 'sessions', 'delegation', 'github'],
-  application: ['agents', 'models', 'usage', 'history', 'providers', 'appearance', 'remote-access', 'schedules', 'search', 'content-storage', 'file-access', 'git-defaults', 'capabilities'],
+  application: ['agents', 'models', 'usage', 'providers', 'appearance', 'remote-access', 'schedules', 'search', 'content-storage', 'file-access', 'capabilities'],
 };
 for (const [scope, routes] of Object.entries(original)) test(`${scope} menu preserves every route exactly once`, () => {
   const items = settingsGroups[scope].flatMap(group => group.items);
@@ -20,8 +20,8 @@ for (const [scope, routes] of Object.entries(original)) test(`${scope} menu pres
   }
 });
 test('catalog is complete, scope-aware and presentation-only', () => {
-  assert.equal(settingsPages.length, 19);
-  assert.equal(new Set(settingsPages.map(page => `${page.scope}/${page.id}`)).size, 19);
+  assert.equal(settingsPages.length, 17);
+  assert.equal(new Set(settingsPages.map(page => `${page.scope}/${page.id}`)).size, 17);
   assert.equal(settingsPage('project', 'search').title, 'Search project content');
   assert.equal(settingsPage('application', 'search').title, 'Search all content');
   assert.match(settingsPage('application', 'agents').description, /shared across all projects/);

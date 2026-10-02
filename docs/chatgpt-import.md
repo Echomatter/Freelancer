@@ -12,7 +12,7 @@ The source catalog, transcripts and native OpenCode database are never edited. A
 
 Schema 6 adds `chatgpt_chats`, `chatgpt_messages`, `chatgpt_continuations` and `project_onboarding`. Imported headers/provenance and message records are owned by the first two, separate from OpenCode and derived search. Deterministic `ses_chatgpt_…` IDs are project-scoped. Messages use the existing `info`/`parts` contract and React renderer. Imported IDs cannot reach native chat actions.
 
-Conversation history, pin/hide/restore, JSON/Markdown export and unified content search support snapshots. Original text remains indexed after rebuilds. Import and the setup marker commit together before onboarding invokes index jobs. Response retries are idempotent; completed setup cannot add more conversations. Removing and reopening the same project reuses saved history. Nothing continuously monitors Codex.
+Search content with Manage chats, pin/hide/restore, JSON/Markdown export and unified content search support snapshots. Original text remains indexed after rebuilds. Import and the setup marker commit together before onboarding invokes index jobs. Response retries are idempotent; completed setup cannot add more conversations. Removing and reopening the same project reuses saved history. Nothing continuously monitors Codex.
 
 ## Continuation
 

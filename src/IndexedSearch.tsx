@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { Database, FileSearch, FolderOpen, MessageSquare } from "lucide-react";
+import { useEffect, useState, type ReactNode } from "react";
+import { Database, FileSearch, FolderOpen, MessageSquare, Pin } from "lucide-react";
 import { api } from "./api";
 import { Button, Field, PageCloseButton, PageHeading, Panel } from "./echoflex/Controls";
 import "./indexed-search.css";
@@ -24,6 +24,8 @@ type ConversationHit = {
   excerpt: string;
   imported?: boolean;
   organization?: {
+    pinnedAt?: number | null;
+    revision?: number;
     archiveScope?: string;
     nativeArchived?: boolean;
     projectArchived?: boolean;
@@ -39,18 +41,23 @@ type SearchState<T> = {
 
 const empty = <T,>(): SearchState<T> => ({ results: [], error: "", loading: false, complete: false });
 
-export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex, onClose }: {
+export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex, onClose, onChange, managing, onManage, management }: {
   project?: { id: string; name: string };
   onOpenFile: (project: string, path: string) => Promise<void>;
   onOpenConversation: (project: string, session: string) => Promise<void>;
   onIndex: () => void;
   onClose: () => void;
+  onChange: () => Promise<void>;
+  managing: boolean;
+  onManage: () => void;
+  management: ReactNode;
 }) {
   const [query, setQuery] = useState("");
   const [files, setFiles] = useState<SearchState<FileHit>>(empty);
   const [conversations, setConversations] = useState<SearchState<ConversationHit>>(empty);
   const [opening, setOpening] = useState("");
   const [openError, setOpenError] = useState("");
+  const [pinning, setPinning] = useState("");
   const [revision, setRevision] = useState(0);
   const trimmed = query.trim();
   const scoped = !!project?.id;
@@ -68,12 +75,13 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
     setConversations({ results: [], error: "", loading: true, complete: false });
     const timer = setTimeout(() => {
       void api(`index/search?${params()}`, undefined, undefined, controller.signal)
-        .then((value) => setFiles({ results: value.results, error: "", loading: false, complete: true }))
+        .then((value) => { if (!controller.signal.aborted) setFiles({ results: value.results, error: "", loading: false, complete: true }); })
         .catch((failure) => {
           if (!controller.signal.aborted) setFiles({ results: [], error: (failure as Error).message, loading: false, complete: true });
         });
       void api(`history/search?${params()}`, undefined, undefined, controller.signal)
         .then((value) => {
+          if (controller.signal.aborted) return;
           const unique = new Map<string, ConversationHit>();
           for (const hit of value.results) {
             const key = `${hit.project}:${hit.session}`;
@@ -89,7 +97,7 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
       clearTimeout(timer);
       controller.abort();
     };
-  }, [trimmed, project?.id, revision]);
+  }, [trimmed, project?.id, revision, managing]);
 
   async function open(key: string, action: () => Promise<void>) {
     setOpening(key);
@@ -98,13 +106,29 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
     catch (failure) { setOpenError((failure as Error).message); setOpening(""); }
   }
 
+  async function pin(hit: ConversationHit) {
+    setPinning(hit.project + ":" + hit.session);
+    setOpenError("");
+    let saved = false;
+    try {
+      const organization = await api("history/pin", { project: hit.project, session: hit.session,
+        pinned: !hit.organization?.pinnedAt, revision: hit.organization?.revision ?? 0 }, "PUT");
+      saved = true;
+      setConversations(current => ({ ...current, results: current.results.map(row =>
+        row.project === hit.project && row.session === hit.session ? { ...row, organization: { ...row.organization, ...organization } } : row) }));
+      await onChange();
+    } catch (failure) { setOpenError(saved ? "Pin saved, but the workspace could not refresh. Reopen Search content to refresh." : (failure as Error).message); }
+    finally { setPinning(""); }
+  }
+
   const loading = files.loading || conversations.loading;
   const complete = files.complete && conversations.complete;
   const total = files.results.length + conversations.results.length;
   const searchLabel = scoped ? "Search project content" : "Search all content";
 
+  if (managing) return <>{management}</>;
   return <div className="page indexed-search-page">
-    <PageHeading title={searchLabel} icon={FileSearch} help="file-search" actions={<><Button type="button" onClick={onIndex}><Database size={16} />Content &amp; Storage</Button><PageCloseButton onClick={onClose} /></>} />
+    <PageHeading title={searchLabel} icon={FileSearch} help="file-search" actions={<><Button type="button" onClick={onIndex}><Database size={16} />Content &amp; Storage</Button><Button onClick={onManage}>Manage chats</Button><PageCloseButton onClick={onClose} /></>} />
     <section className="indexed-search-controls" aria-label={searchLabel}>
       <div className="indexed-search-query"><Field label={searchLabel}>
         <input autoFocus type="search" maxLength={200} value={query}
@@ -129,14 +153,14 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
       <div className="indexed-search-results">{conversations.results.map((hit) => {
         const key = `conversation:${hit.project}:${hit.session}`;
         const archived = hit.organization?.archiveScope === "freelancer" || hit.organization?.nativeArchived || hit.organization?.projectArchived;
-        return <button type="button" className="indexed-search-result" key={key}
+        return <div className="content-search-conversation" key={key}><button type="button" className="indexed-search-result"
           aria-label={`Open conversation ${hit.title} in ${hit.projectName}`} disabled={!!opening}
           onClick={() => void open(key, () => onOpenConversation(hit.project, hit.session))}>
           <span className="indexed-result-heading"><strong>{hit.title}</strong><small>{opening === key ? "Opening conversation…" : "Conversation"}</small></span>
           <span className="indexed-result-path"><span>{hit.projectName}</span><span>{hit.imported ? "Imported snapshot" : archived ? "Archived" : "OpenCode conversation"}</span></span>
           <span className="indexed-result-excerpt">{hit.excerpt || "Title match"}</span>
           <span className="indexed-result-open"><MessageSquare size={15} />Open conversation</span>
-        </button>;
+        </button><Button aria-label={`${hit.organization?.pinnedAt ? "Unpin" : "Pin"} ${hit.title}`} aria-pressed={!!hit.organization?.pinnedAt} disabled={!!pinning} onClick={() => void pin(hit)}><Pin size={16} />{hit.organization?.pinnedAt ? "Unpin" : "Pin"}</Button></div>;
       })}</div>
     </section>}
 

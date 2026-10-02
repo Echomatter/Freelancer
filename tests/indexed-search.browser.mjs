@@ -63,6 +63,22 @@ test('indexed-search', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
       await mkdir(process.env.FREELANCER_QA_SHOTS, { recursive: true });
       await page.screenshot({ path: path.join(process.env.FREELANCER_QA_SHOTS, 'search-results.png'), fullPage: true });
     }
+    await expect(page.locator('#application-settings-links').getByRole('button', { name: 'Conversation history', exact: true, includeHidden: true })).toHaveCount(0);
+    await expect(page.locator('#application-settings-links').getByRole('button', { name: 'Git defaults', exact: true, includeHidden: true })).toHaveCount(0);
+    await page.getByRole('button', { name: 'Pin Important conversation', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeEnabled();
+    assert.ok((await f.api('history?project=' + f.project.id)).sessions.find(row => row.id === 'ses_history').organization.pinnedAt);
+    await page.getByRole('button', { name: 'Manage chats', exact: true }).click();
+    await expect(page.locator('.history-page').getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Back to search', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeVisible();
+    await page.route('**/api/history/pin', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Pin unavailable' }) }));
+    await page.getByRole('button', { name: 'Unpin Important conversation', exact: true }).click();
+    await expect(page.getByRole('alert')).toContainText('Pin unavailable');
+    await expect(page.getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeEnabled();
+    await page.unroute('**/api/history/pin');
+    await page.getByRole('button', { name: 'Unpin Important conversation', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Pin Important conversation', exact: true })).toBeEnabled();
     await page.getByRole('button', { name: 'Open conversation Important conversation in History project', exact: true }).click();
     await expect(page.locator('.composer textarea')).toBeVisible();
 

@@ -14,7 +14,7 @@ Reuse EchoFlex. The existing palette and provider identity systems are authorita
 
 Application settings owns shared presentation, providers, file access, server access, cross-project schedules, and local data maintenance. Project settings owns new-chat defaults, project/chat delegation preferences, goals, and the repository agreement. Files, search, models, usage, and conversation history are utility destinations, not a claim that every control on them is configuration.
 
-Agents belongs in Application settings because its catalog is shared across projects. Git defaults affects new projects, while GitHub edits the selected project’s existing agreement. Scheduled prompts is application-wide but each schedule identifies its project. Remote access changes the running server on this computer. Settings menus are flat lists without section headings, separators or agent subtitles.
+Agents belongs in Application settings because its catalog is shared across projects. GitHub edits the selected project’s agreement; there are no application-wide Git defaults. Scheduled prompts is application-wide but each schedule identifies its project. Remote access changes the running server on this computer. Settings menus are flat lists without section headings, separators or agent subtitles.
 
 `src/settings-catalog.mjs` is the single navigation/heading metadata source. Route IDs remain stable and `App.tsx` continues to own routing. The catalog contains presentation metadata only. Preserve the two different search scopes; do not collapse them into a search that silently changes scope.
 

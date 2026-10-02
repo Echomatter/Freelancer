@@ -67,3 +67,6 @@
   .indexed-result-heading { align-items: flex-start; }
   .indexed-result-heading small { max-width: 36%; text-align: right; }
 }
+
+.content-search-conversation { display: flex; align-items: start; gap: .5rem; min-width: 0; }
+.content-search-conversation > .indexed-search-result { flex: 1; min-width: 0; }

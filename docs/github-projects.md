@@ -1,6 +1,6 @@
 # Project history & GitHub
 
-Open **Project settings → GitHub** in the left sidebar. The project history, GitHub setup, and saved working agreement live together on that page. Set the starting style for newly configured projects under **Application settings → Git defaults**.
+Open **Project settings → GitHub** in the left sidebar. The project history, GitHub setup, and saved working agreement live together on that page. Set the working agreement separately for each project here. Application-wide Git defaults are retired; existing project agreements stay intact.
 Git saves local checkpoints; GitHub receives only the checkpoints you choose to
 upload. Connecting an account or enabling history does not upload files.
 

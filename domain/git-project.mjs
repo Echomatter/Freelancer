@@ -30,9 +30,8 @@ export const gitPresets = Object.freeze([
       "Explain the project without saving checkpoints, switching branches or uploading.",
   },
 ]);
-export const gitDefaults = Object.freeze({ preset: "review" });
-export function projectAgreement(value = {}, defaults = gitDefaults) {
-  const preset = value.preset ?? defaults.preset ?? "review";
+export function projectAgreement(value = {}) {
+  const preset = value.preset ?? "review";
   if (!gitPresets.some((p) => p.id === preset))
     throw Error("Choose how this project should be handled.");
   for (const field of ["tracking", "github"])

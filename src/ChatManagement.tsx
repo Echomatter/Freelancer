@@ -31,7 +31,7 @@ export async function saveConversationExport(value: {
   setTimeout(() => URL.revokeObjectURL(url), 30000);
   return true;
 }
-export function HistoryPage({
+export function ChatManagement({
   data,
   project,
   initialSession,
@@ -259,7 +259,7 @@ export function HistoryPage({
     <div
       className="page history-page"
     >
-      <PageHeading title="Conversation history" icon={HistoryIcon} actions={<PageCloseButton label="Close history" disabled={pending} onClick={onClose} />} />
+      <PageHeading title="Manage chats" icon={HistoryIcon} actions={<PageCloseButton label="Back to search" disabled={pending} onClick={onClose} />} />
       <section className="chat-search-panel history-project-filter" aria-label="Conversation history controls">
         <label>Project<select aria-label="History project" value={selectedProject} disabled={pending} onChange={(e) => {
           reset(); setProject(e.target.value); setLimit(1000);

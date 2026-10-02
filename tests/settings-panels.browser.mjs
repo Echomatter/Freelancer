@@ -16,7 +16,7 @@ test('settings headings, provider controls and empty states fit compact screens'
       await page.setViewportSize({ width, height: 740 });
       for (const [scope, title] of [
         ['Application settings', 'Providers'], ['Application settings', 'Content & Storage'],
-        ['Application settings', 'Conversation history'], ['Project settings', 'Session defaults'],
+        ['Application settings', 'Search all content'], ['Project settings', 'Session defaults'],
         ['Project settings', 'GitHub'],
       ]) {
         await test.step(`${width}px ${title}`, async () => {
@@ -150,12 +150,11 @@ test("settings panels share framing, aligned forms, help placement and clickable
     await inspectPanel("Remote access", "Application settings", "Remote access");
     await inspectPanel("Search all content", "Application settings", "Search all content");
     await inspectPanel("Content & Storage", "Application settings", "Content & Storage");
-    await inspectPanel("Git defaults", "Application settings", "Git defaults");
-    await page.getByRole("radio", { name: /Work directly on the main version/ }).check();
-    await page.getByRole("button", { name: "Save default", exact: true }).click();
-    await expect(page.getByText("Default saved for new projects.")).toBeVisible();
-    assert.equal((await fixture.store.read("settings")).gitDefaults.preset, "main");
-    await inspectPanel("Conversation history", "Application settings", "Conversation history", false, "Close history");
+    await select("Application settings", "Search all content");
+    await page.getByRole("button", { name: "Manage chats", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Manage chats", exact: true })).toBeVisible();
+    await page.getByRole("button", { name: "Back to search", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Search all content", exact: true })).toBeVisible();
     await inspectPanel("Models", "Application settings", "Models");
     await inspectPanel("Available Usage", "Application settings", "Available Usage", false);
 

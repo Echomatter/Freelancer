@@ -76,8 +76,8 @@ import { useAvailability } from "./useAvailability";
 import { useDrafts } from "./useDrafts";
 import { useWorkspaceViewState } from "./useWorkspaceViewState";
 import { Files } from "./WorkspacePanels";
-const HistoryPage = lazy(() =>
-  import("./History").then((module) => ({ default: module.HistoryPage })),
+const ChatManagement = lazy(() =>
+  import("./ChatManagement").then((module) => ({ default: module.ChatManagement })),
 );
 const GitHubProject = lazy(() =>
   import("./GitHubProject").then((module) => ({
@@ -256,10 +256,10 @@ export default function App() {
   const warmRunning = useRef(0),
     otherProjectActivityAt = useRef(new Map<string, number>());
   const [choicesKey, setChoicesKey] = useState("");
-  const [historySelection, setHistorySelection] = useState<
+  const [chatSelection, setChatSelection] = useState<
     string | undefined
   >();
-  const historyOpen = view === "history";
+  const [manageChats, setManageChats] = useState(false);
   const compactNavigation = narrowViewport || navigationCollapsed;
   const collapseNavigation = () => {
     setExpandedNavigation(null);
@@ -307,23 +307,29 @@ export default function App() {
     dismissCompactNavigation();
     startTransition(() => setViewState(next));
   };
-  const openHistory = (id?: string) => {
-    setHistorySelection(id);
+  const openChatManagement = (id?: string) => {
+    setChatSelection(id);
     setExpandedNavigation("application");
-    setView("history");
+    setManageChats(true);
+    setSettingsScope("application");
+    setTab("search");
+    setView("search");
   };
   const closeSettings = () => {
     setExpandedNavigation(null);
-    setHistorySelection(undefined);
+    setChatSelection(undefined);
+    setManageChats(false);
     setIndexedFilePath("");
     setFileFolderPath("");
     setView("chat");
   };
   const openSettings = (scope: SettingsScope, item: string) => {
     if (item === "history") {
-      openHistory();
+      openChatManagement();
       return;
     }
+    setManageChats(false);
+    setChatSelection(undefined);
     if (item === "files") {
       setIndexedFilePath("");
       setFileFolderPath("");
@@ -354,18 +360,14 @@ export default function App() {
     setTab("files");
     setView("files");
   };
-  const navigationScope: SettingsScope = historyOpen
-    ? "application"
-    : view === "search"
+  const navigationScope: SettingsScope = view === "search"
       ? settingsScope
       : view === "settings"
         ? settingsScope
         : view === "models" || view === "overview" || view === "agents"
           ? "application"
           : "project";
-  const navigationTab = historyOpen
-    ? "history"
-    : view === "settings"
+  const navigationTab = view === "settings"
       ? tab
       : view === "chat"
         ? ""
@@ -1659,7 +1661,7 @@ export default function App() {
                         onClick={() => {
                           if (data.project?.organization?.archivedAt)
                             openSettings("application", "content-storage");
-                          else openHistory(current?.parentID ?? current?.id);
+                          else openChatManagement(current?.parentID ?? current?.id);
                         }}
                       >
                         Manage archive
@@ -1719,7 +1721,6 @@ export default function App() {
                       requests={chat.questions}
                       suspended={
                         view !== "chat" ||
-                        historyOpen ||
                         folderOpen ||
                         !!projectLoading
                       }
@@ -1933,22 +1934,17 @@ export default function App() {
                     project={
                       settingsScope === "project" ? data.project : undefined
                     }
-                    onOpenFile={openIndexedFile}
-                    onOpenConversation={openIndexedConversation}
-                    onIndex={() =>
-                      openSettings("application", "content-storage")
-                    }
-                    onClose={closeSettings}
-                  />
-                )}
-                {view === "history" && project && (
-                  <HistoryPage
-                    key={historySelection ?? "all"}
+                    managing={manageChats}
+                    onManage={() => setManageChats(true)}
+                    onChange={refresh}
+                    management={project ? (
+                  <ChatManagement
+                    key={chatSelection ?? "all"}
                     data={data}
                     project={project}
                     activity={sessionActivity}
-                    initialSession={historySelection}
-                    onClose={closeSettings}
+                    initialSession={chatSelection}
+                    onClose={() => setManageChats(false)}
                     onChange={refresh}
                     onOpen={async (projectID, id) => {
                       if (projectID !== project) {
@@ -1961,6 +1957,14 @@ export default function App() {
                       }
                       selectSession(id);
                     }}
+                  />
+                    ) : null}
+                    onOpenFile={openIndexedFile}
+                    onOpenConversation={openIndexedConversation}
+                    onIndex={() =>
+                      openSettings("application", "content-storage")
+                    }
+                    onClose={closeSettings}
                   />
                 )}
                 {view === "agents" && (
@@ -1999,7 +2003,7 @@ export default function App() {
                     ) : (
                       <Settings
                         sessionID={session}
-                        onHistory={() => openHistory()}
+                        onHistory={() => openChatManagement()}
                         onOpenChat={async (projectID, id) => {
                           if (projectID !== project) {
                             const selected = data.settings.projects.find(

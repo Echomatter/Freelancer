@@ -89,7 +89,7 @@ export function createGitProjects({
   }
   async function policy(id) {
     const s = await store.read("settings");
-    return projectAgreement(s.gitProjects?.[id], s.gitDefaults);
+    return projectAgreement(s.gitProjects?.[id]);
   }
   async function git(directory, args, options = {}) {
     const result = await runner(
@@ -523,21 +523,14 @@ export function createGitProjects({
         if ((s.gitProjects?.[id]?.revision ?? 0) !== current.revision)
           throw Error("These settings changed elsewhere.");
         s.gitProjects = { ...s.gitProjects, [id]: next };
-        if (input.useForNewProjects === true)
-          s.gitDefaults = { preset: next.preset };
         return s;
       });
       return next;
     };
     return withinLock ? apply() : locked(id, apply);
   }
-  async function updateDefaults(input) {
-    const preset = projectAgreement({ preset: input.preset }).preset;
-    return store.update("settings", (s) => ({
-      ...s,
-      revision: s.revision + 1,
-      gitDefaults: { preset },
-    }));
+  async function updateDefaults() {
+    throw Error("Application Git defaults are retired. Set the working agreement in each project.");
   }
   function chooseMain(state, requested) {
     const value = requested || state.suggestedMain;

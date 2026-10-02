@@ -123,7 +123,8 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
   async function openHistory() {
     const appSettings = page.getByRole("button", { name: "Application settings", exact: true });
     if (await appSettings.getAttribute("aria-expanded") !== "true") await appSettings.click();
-    await page.getByRole("button", { name: "Conversation history", exact: true }).click();
+    await page.getByRole("button", { name: "Search all content", exact: true }).click();
+    await page.getByRole("button", { name: "Manage chats", exact: true }).click();
     await history
       .getByRole("checkbox", {
         name: "Select Important conversation",
@@ -134,7 +135,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
   async function openApplicationTab(tab) {
     const appSettings = page.getByRole("button", { name: "Application settings", exact: true });
     if (await appSettings.getAttribute("aria-expanded") !== "true") await appSettings.click();
-    await page.getByRole("button", { name: tab, exact: true }).click();
+    await page.locator("#application-settings-links").getByRole("button", { name: tab, exact: true }).click();
   }
   async function assertSaved(text) {
     for (let attempt = 0; attempt < 200; attempt++) {
@@ -235,7 +236,8 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       .filter({ hasText: /queued|running/ })
       .waitFor();
     assert.equal(f.exports.length, 0);
-    await history.getByRole("button", { name: "Close history" }).click();
+    await history.getByRole("button", { name: "Back to search" }).click();
+    await page.getByRole("button", { name: "Close settings", exact: true }).click();
     await page
       .getByRole("button", { name: "Stop response", exact: true })
       .click();
@@ -320,7 +322,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     });
     const bounds = await history.boundingBox();
     assert.ok(bounds.x >= 0 && bounds.width <= 420);
-    await history.getByRole("button", { name: "Close history" }).click();
+    await history.getByRole("button", { name: "Back to search" }).click();
     await history.waitFor({ state: 'detached' });
     assert.equal(await history.count(), 0);
     await page.setViewportSize({ width: 1440, height: 960 });

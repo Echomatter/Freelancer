@@ -17,13 +17,14 @@ test('history-search', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
       const chat = page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' });
       await expect(chat.getByRole('img', { name: 'Helper working', exact: true })).toBeVisible();
       await page.getByRole('button', { name: 'Application settings', exact: true }).click();
-      await page.getByRole('button', { name: 'Conversation history', exact: true }).click();
+      await page.getByRole('button', { name: 'Search all content', exact: true }).click();
+      await page.getByRole('button', { name: 'Manage chats', exact: true }).click();
       await expect(page.locator('.history-page').getByRole('img', { name: 'Helper working', exact: true })).toBeVisible();
       delete f.state.status.ses_worker;
       await expect(chat.getByRole('img', { name: 'Helper working', exact: true })).toHaveCount(0);
       await expect(page.locator('.history-page').getByRole('img', { name: 'Helper working', exact: true })).toHaveCount(0);
     });
-    await page.getByRole('heading', { name: 'Conversation history' }).waitFor();
+    await page.getByRole('heading', { name: 'Manage chats' }).waitFor();
     await page.getByRole('checkbox', { name: 'Select Important conversation' }).waitFor();
     assert.equal(await page.getByRole('checkbox', { name: 'Select Important conversation' }).count(), 1);
     await page.getByRole('button', { name: 'Pin Important conversation' }).click();

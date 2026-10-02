@@ -54,7 +54,7 @@ async function fixture(t, preset = "review") {
   await store.update("settings", (s) => ({
     ...s,
     projects: [p],
-    gitDefaults: { preset },
+    gitProjects: { [p.id]: projectAgreement({ preset }) },
   }));
   let status = {},
     connected = true,
@@ -302,7 +302,7 @@ test("first-time setup uses project-local identity and preserves existing ignore
   assert.match(r.result, /Nothing was uploaded/);
   assert.equal(await f.runGit("status", "--porcelain"), "");
 });
-test("tracking off keeps .git/history and future-project style never copies credentials", async (t) => {
+test("tracking off preserves history and retired future-project requests cannot set defaults", async (t) => {
   const f = await fixture(t);
   await f.initialize();
   await f.save([".gitignore"]);
@@ -315,19 +315,17 @@ test("tracking off keeps .git/history and future-project style never copies cred
     useForNewProjects: true,
   });
   assert.ok(await f.runGit("rev-parse", "HEAD"));
-  assert.deepEqual((await f.store.read("settings")).gitDefaults, {
-    preset: "branch",
-  });
+  assert.equal((await f.store.read("settings")).gitDefaults, undefined);
   await assert.rejects(f.save([".gitignore"]), /Turn on/);
 });
-test("global Git defaults are saved separately from a project's agreement", async (t) => {
-  const f = await fixture(t);
-  await f.service.updateDefaults({ preset: "confirm" });
-  assert.deepEqual((await f.store.read("settings")).gitDefaults, {
-    preset: "confirm",
-  });
-  assert.equal((await f.service.policy("a-new-project")).preset, "confirm");
+test("legacy Git defaults cannot affect new or configured project agreements", async (t) => {
+  const f = await fixture(t, "branch");
+  await f.store.update("settings", s => ({ ...s, gitDefaults: { preset: "main" } }));
+  await assert.rejects(f.service.updateDefaults({ preset: "confirm" }), /retired/);
+  assert.equal((await f.service.policy("a-new-project")).preset, "review");
   assert.equal((await f.service.policy("a-new-project")).tracking, false);
+  assert.equal((await f.service.policy(f.p.id)).preset, "branch");
+  assert.deepEqual((await f.store.read("settings")).gitDefaults, { preset: "main" });
 });
 test("existing repository identity, branch names and staged files are preserved by setup", async (t) => {
   const f = await fixture(t);

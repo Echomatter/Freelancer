@@ -5,7 +5,7 @@ export const helpTopicIDs = /** @type {const} */ ([
   "local-data", "local-backup", "storage-freelancer", "storage-runtime", "storage-opencode",
   "project-archive", "history-search", "history-export", "session-defaults", "parent-model",
   "delegation", "delegation-scope", "worker-models", "delegation-limits", "delegation-changes",
-  "git-defaults", "git-history", "git-main", "git-identity", "git-connection", "git-agreement",
+  "git-history", "git-main", "git-identity", "git-connection", "git-agreement",
   "git-explicit-request", "git-sync", "git-first-upload", "git-receipts", "theme", "provider-color",
   "usage-estimate", "contributions", "project-import", "project-indexes", "project-name",
   "message-options", "message-delivery", "model-ratings", "agents", "providers", "project-files", "remote-access",

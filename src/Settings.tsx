@@ -3,7 +3,6 @@ import { ProviderColorPicker } from "./ProviderColorPicker";
 import { ProviderText, providerAttributes, type ColorPatch } from "./ProviderColors";
 import { ContentStorage } from "./ContentStorage";
 import { FileAccessSettings } from "./FileAccessSettings";
-import { GitDefaults } from "./GitDefaults";
 import { ThemePicker } from "./ThemePicker";
 import { useEffect, useRef, useState } from "react";
 import { Check, Files, GitFork, Link2, Palette, Wallet } from "lucide-react";
@@ -70,7 +69,6 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
             throw Error("The file access choice was not confirmed. Try again.");
           await refresh();
         }} /></>}
-    {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} onClose={onClose} refresh={refresh} />}
     {tab === "providers" && <>
       <PageHeading title="Providers" icon={Wallet} help="providers" actions={closeAction} />
       <div className="provider-list">{providers.map(([id, name]) => <Panel key={id} className="provider-card" aria-label={`${name} settings`} {...providerAttributes(id, data.settings.appearance ?? {})}>

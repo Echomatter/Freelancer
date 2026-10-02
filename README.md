@@ -131,7 +131,7 @@ The conversation index covers registered projects and can search titles plus use
 
 ### History, imports and local data
 
-**Conversation history** is a conversation organizer reached from **Archive, pin or export…** in the current chat or **Export conversations** in Content & Storage. Search is handled by the unified project or application content search instead of this management view.
+**Search all content** finds files and conversations across projects and lets you pin chats. Its **Manage chats** action provides archive, restore, and export; **Archive, pin or export…** in a chat and **Export conversations** in Content & Storage open that same management area.
 
 It supports:
 
@@ -164,7 +164,7 @@ Managed Git operations protect unrelated staged work, reject unsupported/conflic
 
 The GitHub panel keeps its heading and close control available while loading. A failed refresh preserves the last loaded status and unsaved form values, marks that status as stale, and requires a successful refresh before another Git action. Closing the panel or a read reaching its deadline does not stop native work or replay an action.
 
-**Application settings → Git defaults** controls the starting Git agreement for newly configured projects. Each project can still have its own agreement. If you explicitly request an operation outside that agreement, Freelancer can show an operation-specific preview and ask for native confirmation. Confirming a one-time request does not change the saved agreement.
+Set the Git agreement separately in **Project settings → GitHub** for each project. Application-wide Git defaults are retired; saved project agreements are preserved. If you explicitly request an operation outside that agreement, Freelancer can show an operation-specific preview and ask for native confirmation. Confirming a one-time request does not change the saved agreement.
 
 See [Git and GitHub projects](docs/github-projects.md) for safeguards and boundaries.
 
@@ -189,7 +189,6 @@ Freelancer deliberately separates project-specific choices from application-wide
 |  | **Capabilities** | Shared MCP connections and authentication; honest tool/skill status and read-only instruction sources |
 |  | **Content & Storage** | Data locations, backup guidance, project archive/restore, index refresh and SQLite maintenance |
 |  | **Remote access** | Remembered-device access on a private network or through an optional HTTPS tunnel |
-|  | **Git defaults** | Default managed-Git agreement for projects |
 
 Settings are intentionally layered: changing an agent definition, theme or project default affects future behavior or presentation; it does not rewrite historical request receipts or native conversations.
 
@@ -406,9 +405,9 @@ Putting a project away hides it from active navigation. Its folder, Git agreemen
 <!-- /help -->
 
 <!-- help:history-search -->
-### Conversation history
+### Managing chats
 
-Conversation history lists the loaded OpenCode window, imported snapshots and previously seen references for one selected project. It manages pins, archive state and exports; cached entries are checked when opened. Use Search project content or Search all content to search indexed conversation titles, user/assistant text, project documents and source files. Refresh older content in Application settings → Content & Storage.
+Search content → Manage chats lists the loaded OpenCode window, imported snapshots and previously seen references for one selected project. It manages pins, archive state and exports; cached entries are checked when opened. Use Search project content or Search all content to search indexed conversation titles, user/assistant text, project documents and source files. Refresh older content in Application settings → Content & Storage.
 <!-- /help -->
 
 <!-- help:history-export -->
@@ -459,11 +458,6 @@ The parallel limit is a ceiling, not a team-size target. Depth limits how far wo
 Saved changes govern the next main request. Active assignments retain their captured budget; tighter limits can block later dispatches but do not silently cancel running work. Native permissions and project agreements remain in effect.
 <!-- /help -->
 
-<!-- help:git-defaults -->
-### Git defaults
-
-This working style is the starting agreement for newly configured projects. Existing projects keep their saved agreements. Change a project's agreement in Project settings → GitHub.
-<!-- /help -->
 
 <!-- help:git-history -->
 ### Local history

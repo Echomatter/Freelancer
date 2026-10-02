@@ -56,12 +56,7 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
   const closeAction = <PageCloseButton onClick={onClose} />;
   return <div className="settings-layout"><div className="settings-content">
     {tab === "remote-access" && <RemoteAccess onClose={onClose} />}
-    {tab === 'capabilities' && <Capabilities data={data} sessionID={sessionID} onClose={onClose}
-      onSaveLsp={async enabled => {
-        const result = await api('appearance', { nativeLspToolEnabled: enabled }, 'PUT');
-        if (result?.saved !== true || result.nativeLspToolEnabled !== enabled) throw Error('The native tool choice was not confirmed.');
-        await refresh();
-      }} />}
+    {tab === 'capabilities' && <Capabilities data={data} sessionID={sessionID} onClose={onClose} />}
     {tab === "schedules" && <ScheduledPrompts data={data} onClose={onClose} onOpen={onOpenChat} />}
     {tab === "delegation" && <><PageHeading title="Delegation" icon={GitFork} help="delegation" actions={closeAction} />
       <DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}

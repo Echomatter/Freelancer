@@ -573,7 +573,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           needsWrites: forkContext.dispatch.needsWrites, freeOnly: forkContext.dispatch.free_only };
         // Use the ordinary selector and create path below. Never continue or
         // model-pin the source worker's native session.
-        delete args.worker; delete args.fork; delete args.selectedModel;
+        delete args.worker; delete args.fork;
       } else if (args.delivery) {
         if (!handoff) throw fault('UnsupportedRuntime', 'Worker delivery requires the Freelancer sender.');
         if (!args.task?.trim()) throw fault('InvalidTask', 'A worker handoff needs a bounded task or correction.');

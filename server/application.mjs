@@ -13,7 +13,7 @@ import { createModelRatingService } from "./model-ratings.mjs";
 import { rebuildContentIndex } from "./content-index.mjs";
 import { createIndexJobs } from './index-jobs.mjs';
 import { createChatGPTImport, importedChatID, orientationPart, listProjectFolders } from './chatgpt-import.mjs';
-import { nativeLspToolEnabled } from './runtime-config.mjs';
+import { createMcpConnections } from './mcp.mjs';
 import {
   mkdir,
   realpath,
@@ -98,8 +98,8 @@ export function createApplication({
   let refreshingUsage;
   let providerFlight;
   let providerSnapshot;
-  async function changeCredentials(change) {
-    if (connecting || sending || refreshingContext)
+  async function changeCredentials(change, checkDecisions = false) {
+    if (connecting || sending || refreshingContext || refreshingAgents)
       throw Error("Wait for the current action to finish before connecting.");
     connecting = true;
     try {
@@ -118,6 +118,13 @@ export function createApplication({
           throw Error(
             "Wait for running chats to finish before changing connections.",
           );
+      }
+      if (checkDecisions) for (const directory of directories) {
+        const [questions, permissions] = await Promise.all([
+          host.request('/question', { directory }), host.request('/permission', { directory }),
+        ]);
+        if (!Array.isArray(questions) || !Array.isArray(permissions) || questions.length || permissions.length)
+          throw Object.assign(Error('Finish pending native decisions before changing connections.'), { status: 409 });
       }
       const result = await change();
       // OpenCode caches provider clients per instance. Its native lifecycle
@@ -216,6 +223,7 @@ export function createApplication({
     async capabilities(projectID, options = {}) {
       const p = await project(projectID);
       let inspectionOnly = null;
+      let observedAgent, observedModel;
       let instructionContext = {};
       if (options.sessionID) {
         const nativeSession = await ownSession(p, options.sessionID);
@@ -223,6 +231,11 @@ export function createApplication({
         const message = rows.findLast(row => row.info?.role === 'assistant');
         const execution = await executionContext(backendRoot, p.directory, nativeSession, message);
         inspectionOnly = execution ? execution.readOnly : null;
+        observedAgent = execution?.agent?.id ?? message?.info?.agent;
+        const nativeModel = rows.findLast(row => row.info?.role === 'user' && row.info?.model)?.info.model;
+        observedModel = message?.info?.providerID && message?.info?.modelID
+          ? `${message.info.providerID}/${message.info.modelID}`
+          : nativeModel?.providerID && nativeModel?.modelID ? `${nativeModel.providerID}/${nativeModel.modelID}` : null;
         instructionContext = { requestID: execution?.id, policyVersion: execution?.policyVersion,
           agentName: execution?.agent?.name, orienting: execution?.orienting === true, worker: !!nativeSession.parentID,
           loadedSkills: [...new Set(rows.flatMap(row => row.parts ?? []).filter(part => part.type === 'tool' && part.tool === 'skill'
@@ -230,15 +243,15 @@ export function createApplication({
       }
       const settings = await store.read('settings');
       const catalog = checkedCatalog(settings);
-      const agent = options.agent ?? 'engineer';
+      const agent = options.agent ?? observedAgent ?? 'engineer';
       if (!catalog.agents.some(row => row.id === agent)) throw Error('Choose a named agent');
       return createCapabilities({ host, backendRoot }).read({ directory: p.directory, projectID,
-        sessionID: options.sessionID ?? null, agent, model: options.model ?? null,
+        sessionID: options.sessionID ?? null, agent, model: options.model ?? observedModel ?? null,
         boundaries: { inspectionOnly, gitInspectOnly: settings.gitProjects?.[p.id]?.tracking === true && settings.gitProjects?.[p.id]?.preset === 'inspect',
-          fileAccessScope: resolveFileAccessScope(settings),
-          nativeLspToolEnabled: nativeLspToolEnabled() },
+          fileAccessScope: resolveFileAccessScope(settings) },
         instructionContext });
     },
+    mcp: createMcpConnections({ host, backendRoot, changeConnections: change => changeCredentials(change, true) }),
     contextSettings: createContextSettings({ store, host, project,
       canRefresh: () => !connecting && !sending && !refreshingAgents && !refreshingContext,
       setRefreshing: value => { refreshingContext = value; } }),
@@ -1277,11 +1290,10 @@ export function createApplication({
       await store.savePlans(plans);
       return { saved: true };
     },
-    async saveAppearance({ theme, customTheme, removeCustomTheme, showDepletedModels, todoLayout, panelWidths, providerColors, fileAccessScope, nativeLspToolEnabled }) {
+    async saveAppearance({ theme, customTheme, removeCustomTheme, showDepletedModels, todoLayout, panelWidths, providerColors, fileAccessScope }) {
       const colors = providerColors === undefined ? undefined : normalizeProviderPatch(providerColors);
       const widths = panelWidths === undefined ? undefined : validatePanelWidths(panelWidths);
       const accessScope = fileAccessScope === undefined ? undefined : normalizeFileAccessScope(fileAccessScope);
-      if (nativeLspToolEnabled !== undefined && typeof nativeLspToolEnabled !== 'boolean') throw Error('Choose whether to enable the native LSP tool.');
       if (customTheme !== undefined && removeCustomTheme !== undefined) throw Error('Save or remove one custom theme at a time.');
       if (
         showDepletedModels !== undefined &&
@@ -1304,7 +1316,6 @@ export function createApplication({
         return {
           ...s,
           ...(accessScope !== undefined ? { fileAccessScope: accessScope } : {}),
-          ...(nativeLspToolEnabled !== undefined ? { nativeLspToolEnabled } : {}),
           appearance: {
             ...s.appearance,
             ...(widths ? { panelWidths: { ...s.appearance?.panelWidths, ...widths } } : {}),
@@ -1320,8 +1331,7 @@ export function createApplication({
         ...((customTheme !== undefined || removeCustomTheme !== undefined) ? { customThemes: saved.appearance.customThemes } : {}),
         ...(widths ? { panelWidths: saved.appearance.panelWidths } : {}),
         ...(colors ? { providerColors: saved.appearance.providerColors } : {}),
-        ...(accessScope !== undefined ? { fileAccessScope: saved.fileAccessScope } : {}),
-        ...(nativeLspToolEnabled !== undefined ? { nativeLspToolEnabled: saved.nativeLspToolEnabled } : {}) };
+        ...(accessScope !== undefined ? { fileAccessScope: saved.fileAccessScope } : {}) };
     },
     async authMethods() {
       const methods = await host.request("/provider/auth");

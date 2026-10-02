@@ -12,7 +12,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { resolveAppRoot, buildRuntimeConfig, runtimeEnv, nativeLspToolEnabled } from "../server/runtime-config.mjs";
+import { resolveAppRoot, buildRuntimeConfig, runtimeEnv } from "../server/runtime-config.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, "..");
@@ -108,15 +108,12 @@ test("runtimeEnv returns app-owned config and native data paths", () => {
   assert.equal(env.XDG_DATA_HOME, cfg.xdgDataHome);
 });
 
-test('native LSP experimental tool requires an explicit saved opt-in and can be turned off', () => {
-  const cfg = buildRuntimeConfig("F:\\Freelancer");
-  assert.equal(runtimeEnv(cfg).OPENCODE_EXPERIMENTAL_LSP_TOOL, undefined);
-  assert.equal(runtimeEnv(cfg, { nativeLspToolEnabled: true }).OPENCODE_EXPERIMENTAL_LSP_TOOL, 'true');
-  assert.equal(runtimeEnv(cfg, { nativeLspToolEnabled: false }).OPENCODE_EXPERIMENTAL_LSP_TOOL, 'false');
-  assert.equal(nativeLspToolEnabled({}), false);
-  assert.equal(nativeLspToolEnabled({ OPENCODE_EXPERIMENTAL: 'true' }), true);
-  assert.equal(nativeLspToolEnabled({ OPENCODE_EXPERIMENTAL: 'true', OPENCODE_EXPERIMENTAL_LSP_TOOL: 'false' }), false);
-  assert.equal(nativeLspToolEnabled({ OPENCODE_EXPERIMENTAL_LSP_TOOL: '1' }), true);
+test('retired app LSP choices do not manage native runtime flags', () => {
+  const cfg = buildRuntimeConfig("F:/Freelancer");
+  for (const nativeLspToolEnabled of [true, false, undefined]) {
+    const env = runtimeEnv(cfg, { nativeLspToolEnabled });
+    assert.equal(Object.hasOwn(env, 'OPENCODE_EXPERIMENTAL_LSP_TOOL'), false);
+  }
 });
 
 test("runtimeEnv FREELANCER_RUNTIME_ROOT points to backend, not app root", () => {

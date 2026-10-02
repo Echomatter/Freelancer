@@ -19,7 +19,7 @@ export function verificationEvidence({ commit, steps, env = process.env, now = n
     runtime: { node: process.version, platform: process.platform, arch: process.arch, osRelease: os.release() },
     checks: Object.entries(steps).map(([id, step]) => ({ id, outcome: status(step?.outcome), conclusion: status(step?.conclusion) })),
     liveProviderInference: 'not-run',
-    coverage: 'Automated contracts, simulated-service browser journeys, and/or installed-runtime startup only; see each check outcome.',
+    coverage: 'Automated contracts, simulated-service browser journeys, and/or installed-runtime startup/MCP transport only; see each check outcome.',
   };
 }
 

@@ -28,10 +28,19 @@ export async function runContracts(args = process.argv.slice(2)) {
   if (!files.length) throw Error('No contract files match the requested suite and filters.');
   if (list) { console.log(files.join('\n')); return 0; }
   console.log(`Running ${files.length} contract files (${suite}${filters.length ? `; ${filters.join(', ')}` : ''}).`);
-  const result = spawnSync(process.execPath, ['--test', `--test-concurrency=${suite === 'git' ? 2 : 4}`, ...nodeArgs,
-    ...files.map(file => path.normalize(file))], { stdio: 'inherit' });
-  if (result.error) throw result.error;
-  return result.status ?? 1;
+  // The PS5.1 recorder starts multiple native processes per assertion. On
+  // Windows isolate it from other file workers instead of multiplying cold
+  // process startup time under suite load. Both batches must pass.
+  const shellFiles = process.platform === 'win32' ? files.filter(file => file.endsWith('/outcome-verification.test.mjs')) : [];
+  const batches = [files.filter(file => !shellFiles.includes(file)), shellFiles].filter(batch => batch.length);
+  let status = 0;
+  for (const batch of batches) {
+    const result = spawnSync(process.execPath, ['--test', `--test-concurrency=${batch === shellFiles ? 1 : suite === 'git' ? 2 : 4}`, ...nodeArgs,
+      ...batch.map(file => path.normalize(file))], { stdio: 'inherit' });
+    if (result.error) throw result.error;
+    if (result.status !== 0) status = result.status ?? 1;
+  }
+  return status;
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href)
   process.exitCode = await runContracts();

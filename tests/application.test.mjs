@@ -1108,10 +1108,7 @@ test('file-access scope saves through appearance settings and appears in bootstr
   assert.equal((await f.store.read('settings')).fileAccessScope, 'project', 'invalid settings do not mutate saved scope');
   const computer = await f.app.saveAppearance({ fileAccessScope: 'computer' });
   assert.equal(computer.fileAccessScope, 'computer');
-  const lsp = await f.app.saveAppearance({ nativeLspToolEnabled: true });
-  assert.equal(lsp.nativeLspToolEnabled, true);
-  assert.equal((await f.app.bootstrap(first.id)).settings.nativeLspToolEnabled, true);
-  await assert.rejects(f.app.saveAppearance({ nativeLspToolEnabled: 'yes' }), /native LSP/);
-  assert.equal((await f.store.read('settings')).nativeLspToolEnabled, true);
-  assert.equal((await f.app.saveAppearance({ nativeLspToolEnabled: false })).nativeLspToolEnabled, false);
+  const appearance = await f.app.saveAppearance({ nativeLspToolEnabled: true });
+  assert.equal(appearance.nativeLspToolEnabled, undefined, 'retired setting cannot re-enable LSP');
+  assert.equal((await f.store.read('settings')).nativeLspToolEnabled, undefined);
 });

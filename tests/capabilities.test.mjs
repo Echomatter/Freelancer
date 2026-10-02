@@ -56,7 +56,7 @@ test("all native probes use the default request with project directory scope", a
   });
   const caps = createCapabilities({ host, backendRoot });
   const result = await caps.read({ directory: dir(), projectID: "p", model: "prov/mod" });
-  assert.equal(host.calls.length, 8);
+  assert.equal(host.calls.length, 7);
   for (const call of host.calls) {
     assert.equal(call.directory, dir());
     assert.deepEqual(call.keys, ["directory", "signal"]);
@@ -116,7 +116,7 @@ test("tools separate registration, model exposure, and explicit denial", async (
     discovered: false, modelExposure: false, nativePermission: 'unknown',
     unavailableReason: 'Native websearch is not registered for this provider/configuration.',
   });
-  assert.match(toolById(result, "lsp").unavailableReason, /OPENCODE_EXPERIMENTAL_LSP_TOOL=true/);
+  assert.equal(toolById(result, "lsp"), undefined);
 });
 
 test('websearch status distinguishes a registered tool not exposed to the selected model', async t => {
@@ -205,46 +205,17 @@ test('malformed endpoint responses are unavailable rather than evidence of empty
   const result = await createCapabilities({ host, backendRoot }).read({ directory: dir(), projectID: 'p' });
   assert.equal(result.probes.ids.state, 'unavailable');
   assert.equal(toolById(result, 'read').discovered, null);
-  assert.equal(result.lsp.configured, null);
   assert.match(result.probes.config.reason, /unsupported response shape/);
 });
 
-test("LSP covers absent, error, and connected servers", async (t) => {
+test('LSP is not a Freelancer setup feature and native tools are not suppressed', async t => {
   const backendRoot = await tempBackend(t);
-  const absent = await createCapabilities({
-    host: fakeHost({ "/lsp": { error: { status: 404, message: "gone" } } }),
-    backendRoot,
-  }).read({ directory: dir(), projectID: "p" });
-  assert.equal(absent.lsp.usable, false);
-  assert.equal(absent.lsp.servers.length, 0);
-  assert.equal(absent.lsp.unavailableReason, "Native endpoint is unsupported.");
-  assert.equal(absent.lsp.configured, null, 'unavailable config is unknown, not configured');
-
-  const mixed = await createCapabilities({
-    host: fakeHost({
-      "/lsp": { value: [{ id: "ts", name: "ts", status: "error" }, { id: "go", status: "connected" }] },
-      "/config": { value: { lsp: false } },
-    }),
-    backendRoot,
-  }).read({ directory: dir(), projectID: "p" });
-  assert.equal(mixed.lsp.usable, true);
-  assert.equal(mixed.lsp.unavailableReason, null);
-  assert.equal(mixed.lsp.configured, false);
-  assert.deepEqual(
-    mixed.lsp.servers.map((row) => row.status),
-    ["error", "connected"],
-  );
-
-  const omitted = await createCapabilities({
-    host: fakeHost({ '/config': { value: {} }, '/lsp': { value: [] } }), backendRoot,
-  }).read({ directory: dir(), projectID: 'p' });
-  assert.equal(omitted.lsp.configured, false, 'native LSP config omission disables language servers');
-  assert.match(omitted.lsp.unavailableReason, /lsp:true or a native lsp server object/);
-  const configured = await createCapabilities({
-    host: fakeHost({ '/config': { value: { lsp: {} } }, '/lsp': { value: [] } }), backendRoot,
-  }).read({ directory: dir(), projectID: 'p' });
-  assert.equal(configured.lsp.configured, true);
-  assert.equal(configured.lsp.usable, false, 'configuration is not evidence of a connected server');
+  const host = fakeHost({ '/experimental/tool/ids': { value: ['lsp', 'custom_tool'] } });
+  const result = await createCapabilities({ host, backendRoot }).read({ directory: dir(), projectID: 'p' });
+  assert.equal(Object.hasOwn(result, 'lsp'), false);
+  assert.equal(host.calls.some(call => call.route === '/lsp'), false);
+  assert.equal(toolById(result, 'lsp').discovered, true, 'native user configuration remains native');
+  assert.equal(toolById(result, 'custom_tool').discovered, true);
 });
 
 test("unsupported and failing endpoints degrade gracefully", async (t) => {

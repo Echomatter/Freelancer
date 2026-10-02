@@ -301,3 +301,21 @@ Researcher, Engineer and Designer failed before any tool calls; they are recorde
 as provider/runtime unavailable, not model-behavior failures. The measured
 acceptance sample closes R-048/R-051; it does not claim a production-wide rate or
 live custom-agent inference. The source-level matrix verifies custom-agent parity.
+
+
+## Follow-up disposition — shared MCP platform, LSP removed
+
+The current product decision supersedes R-011's app-owned LSP opt-in requirement.
+Remove Freelancer's LSP setup and support shared native MCP connection management
+instead. All agents, models and projects use the same toolkit; add no capability
+access matrix. Delegation and Git/GitHub contract exceptions remain on their
+existing permission paths.
+
+The original completion roll-up is historical evidence, not verification of this
+follow-up. The follow-up PR records actual checks separately. Browser fixtures
+and native MCP transport smoke do not constitute model-driven browser acceptance.
+Worker staleness now states whether its basis is age-only or a fingerprint
+comparison; automatic working-tree fingerprint capture remains explicitly not
+implemented. Read-only instruction composition is a source map, not full provider
+prompt capture. Native MCP config-key removal is not exposed by the pinned API;
+Disable is intentionally not labeled Remove.

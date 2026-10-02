@@ -23,3 +23,9 @@
   .capability-view { gap: 16px; }
   .capability-toolbar { grid-template-columns: minmax(0, 1fr); }
 }
+
+.mcp-form { display: grid; gap: .75rem; margin-block: 1rem; min-width: 0; }
+.mcp-form label { display: grid; gap: .35rem; }
+.mcp-form input:not([type="checkbox"]), .mcp-form textarea, .mcp-form select { width: 100%; box-sizing: border-box; }
+.mcp-form input[type="checkbox"] { justify-self: start; }
+.mcp-form textarea { min-height: 4rem; }

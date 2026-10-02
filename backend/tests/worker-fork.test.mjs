@@ -149,7 +149,7 @@ test('an explicit model stays with normal eligible, paid and native routing', ()
   const supplied = fork({}, { model: 'openai/some-model' });
   assert.equal(supplied.routing.supplied_model, 'openai/some-model');
   assert.equal(supplied.routing.selected_model, null);
-  assert.deepEqual(supplied.routing.ignored, ['model']);
+  assert.deepEqual(supplied.routing.ignored, [], 'explicit new model is left for validation by dispatch');
   assert.deepEqual(supplied.routing.granted, []);
   assert.deepEqual(supplied.requirements.permissions_granted, []);
   assert.equal(supplied.source.captured.selected_model, 'opencode/free-worker');

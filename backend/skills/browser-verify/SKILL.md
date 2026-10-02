@@ -12,13 +12,15 @@ Delegation is optional and never required by this skill.
 
 ## Browser integration
 
-- Model-driven browser control uses the official native Playwright browser MCP
-  as its single path, within the existing Playwright ecosystem. Use it only when
-  the user has already configured and enabled it; never install, add, or enable
-  a competing browser stack or MCP during a task.
-- The repository browser journeys (`npm run test:browser`, with filename
-  filters during iteration) are deterministic fixtures, not a model-controlled
-  path.
+- Model-driven browser control uses an already configured browser MCP from the
+  shared platform toolkit. Prefer a suitable existing integration (such as
+  Playwright); its tools are not reserved for a persona, model, or project.
+  Connection setup is a user action in Application settings → Capabilities.
+  Do not silently connect services or change native authentication during a task.
+- Discover the current project's browser journeys and test commands from its
+  instructions. For example, Freelancer's `npm run test:browser` journeys use
+  simulated services; that command is not a requirement for other projects.
+  A fixture run is not a model-controlled path.
 - These are distinct evidence types: distinguish live native browser-MCP
   observation from fixture journey results in every report. Never present
   fixture success as live user-visible proof, and never claim provider

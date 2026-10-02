@@ -14,7 +14,7 @@ prevents the production UI or installed-runtime smoke checks from reporting.
 | --- | --- | --- |
 | Application, Windows and Ubuntu | JavaScript contracts, real local Git fixtures, Python contracts, plugin typecheck, palette checks; Windows also runs PowerShell contracts | Live provider execution or browser behavior |
 | Browser, Windows and Ubuntu | Production build and existing Chromium journeys with simulated services | Provider authentication, real inference, or a measured maximum workload |
-| Native startup, Windows | Built assets and startup against the pinned OpenCode 1.18.31 baseline, using isolated test data | Inference, provider availability, or compatibility with every OpenCode version |
+| Native startup, Windows | Built assets and startup against the pinned OpenCode 1.18.31 baseline, using isolated test data; shared native MCP persistence and local transport | Inference, provider availability, or compatibility with every OpenCode version |
 
 The aggregate **Verify** check fails if any required job fails, is cancelled, or is
 skipped. No `continue-on-error` or automatic retry turns a failure green. Existing
@@ -41,6 +41,7 @@ npm.cmd run build
 npx.cmd playwright install chromium
 npm.cmd run test:browser
 npm.cmd run smoke:runtime
+npm.cmd run smoke:mcp
 ```
 
 The startup smoke needs an installed compatible runtime. The test suite includes

@@ -77,11 +77,11 @@ Use `role="status"` or an existing polite live region for saving/success and `ro
 | Skill file missing | Missing file | Merely not selected |
 | MCP connection observed | Connected | Its tools and dependencies were tested |
 | MCP requests authentication | Sign-in needed | The integration is ready |
-| LSP preference saved | Saved; restart required | The running server was reconfigured |
+| MCP configuration saved | Saved; report observed activation | Every model successfully used the service |
 | Quota data incomplete or old | Partial / not current | Complete current availability |
 | Schedule delivered to a chat | Sent to chat | The work finished |
 
-Capabilities remains a platform inventory with one existing advanced native LSP opt-in. Do not add agent/model selectors, per-agent access switches, MCP installation controls, or a second prompt editor. Its text filter changes presentation only. Report observed project context without claiming the entire environment is project-local or universally verified.
+Capabilities combines platform inventory with shared native MCP connection controls. Do not add agent/model selectors, per-agent access switches, or a second prompt editor. Preserve explicit approval for new connections and native authentication. Its text filter changes presentation only. Report observed project context without claiming the entire environment is project-local or universally verified.
 
 ## Responsive and keyboard behavior
 

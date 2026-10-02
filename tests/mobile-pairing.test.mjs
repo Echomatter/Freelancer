@@ -17,7 +17,9 @@ export async function unusedPort(host) {
   await new Promise(resolve => server.close(resolve));
   return port;
 }
-const headers = { 'X-Freelancer-Client': 'webpage', 'Content-Type': 'application/json' };
+// A restarted listener needs a fresh transport. Do not reuse undici's socket
+// pool from the killed server when testing durable device credentials.
+const headers = { 'X-Freelancer-Client': 'webpage', 'Content-Type': 'application/json', Connection: 'close' };
 const call = (url, route, body, method = body ? 'POST' : 'GET', extra = {}) => fetch(`${url}/api/${route}`, { method, headers: { ...headers, ...extra }, ...(body ? { body: JSON.stringify(body) } : {}) });
 
 test('remembered devices survive restart on a fixed port; pairing, revocation and local controls stay bounded', async t => {

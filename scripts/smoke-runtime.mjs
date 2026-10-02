@@ -44,7 +44,7 @@ try {
   assert.ok(capabilities.skills.find(row => row.name === 'verify').discovered);
   console.log(JSON.stringify({ nativeCapabilityInspection: { tools: capabilities.tools.filter(row => row.discovered).length,
     skills: capabilities.skills.length, mcp: capabilities.mcp.map(row => ({ name: row.name, status: row.status })),
-    lsp: capabilities.lsp.servers, probes: capabilities.probes } }));
+    probes: capabilities.probes } }));
   const app = createApplication({ backendRoot: config.backendRoot, host, store: createStore(smokeRoot), dataRoot: path.join(smokeRoot, 'data') });
   web = await startServer({ application: app, assets: path.join(config.appRoot, 'dist') });
   const html = await fetch(web.url).then(r => r.text());

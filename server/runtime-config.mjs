@@ -66,7 +66,7 @@ export function resolveRuntimeConfig() {
  * (OpenCode server, PowerShell scripts, etc.) so they use this app's
  * isolated config and see the correct runtime root.
  */
-export function runtimeEnv(config, settings = {}) {
+export function runtimeEnv(config) {
   const c = config || resolveRuntimeConfig();
   return {
     FREELANCER_RUNTIME_ROOT: c.backendRoot,
@@ -76,16 +76,7 @@ export function runtimeEnv(config, settings = {}) {
     OPENCODE_CONFIG: path.join(c.opencodeConfigDir, 'opencode.jsonc'),
     XDG_CONFIG_HOME: c.xdgConfigHome,
     XDG_DATA_HOME: c.xdgDataHome,
-    ...(typeof settings.nativeLspToolEnabled === 'boolean'
-      ? { OPENCODE_EXPERIMENTAL_LSP_TOOL: settings.nativeLspToolEnabled ? 'true' : 'false' }
-      : {}),
   };
-}
-
-export function nativeLspToolEnabled(env = process.env) {
-  const enabled = value => ['true', '1'].includes(String(value ?? '').toLowerCase());
-  const explicit = env.OPENCODE_EXPERIMENTAL_LSP_TOOL;
-  return explicit === undefined ? enabled(env.OPENCODE_EXPERIMENTAL) : enabled(explicit);
 }
 
 /** New QOL data only. Existing runtime JSON and native data stay in place. */

@@ -2,11 +2,11 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { settingsGroups, settingsPages, settingsPage, settingsPageForTitle } from '../src/settings-catalog.mjs';
-import { registrationLabel, serviceLabel, skillLabel, toolReason, inventoryMatches } from '../src/capability-presentation.mjs';
+import { registrationLabel, serviceLabel, skillLabel, toolReason } from '../src/capability-presentation.mjs';
 
 const original = {
   project: ['files', 'search', 'goals', 'sessions', 'delegation', 'github'],
-  application: ['agents', 'models', 'usage', 'history', 'providers', 'appearance', 'remote-access', 'schedules', 'search', 'content-storage', 'git-defaults', 'capabilities'],
+  application: ['agents', 'models', 'usage', 'history', 'providers', 'appearance', 'remote-access', 'schedules', 'search', 'content-storage', 'file-access', 'git-defaults', 'capabilities'],
 };
 for (const [scope, routes] of Object.entries(original)) test(`${scope} menu preserves every route exactly once`, () => {
   const items = settingsGroups[scope].flatMap(group => group.items);
@@ -20,8 +20,8 @@ for (const [scope, routes] of Object.entries(original)) test(`${scope} menu pres
   }
 });
 test('catalog is complete, scope-aware and presentation-only', () => {
-  assert.equal(settingsPages.length, 18);
-  assert.equal(new Set(settingsPages.map(page => `${page.scope}/${page.id}`)).size, 18);
+  assert.equal(settingsPages.length, 19);
+  assert.equal(new Set(settingsPages.map(page => `${page.scope}/${page.id}`)).size, 19);
   assert.equal(settingsPage('project', 'search').title, 'Search project content');
   assert.equal(settingsPage('application', 'search').title, 'Search all content');
   assert.match(settingsPage('application', 'agents').description, /shared across all projects/);
@@ -51,13 +51,6 @@ test('missing skills, failed probes and MCP auth remain distinct', () => {
   assert.equal(serviceLabel('connected'), 'Connected');
   assert.equal(serviceLabel('something-new'), 'Unknown');
 });
-test('inventory filter handles names, origins, reasons, empty and malformed fields', () => {
-  assert.ok(inventoryMatches({ name: 'verify' }, '  VERIFY '));
-  assert.ok(inventoryMatches({ origin: 'backend/skills/verify/SKILL.md' }, 'verify'));
-  assert.ok(inventoryMatches({ unavailableReason: 'Missing dependency' }, 'missing'));
-  assert.ok(inventoryMatches({}, '  '));
-  assert.equal(inventoryMatches({ name: null, origin: {} }, 'missing'), false);
-});
 test('new settings styles use only established semantic color tokens', async () => {
   const allowed = new Set(['accent', 'muted', 'text', 'line', 'settings-gap', 'settings-panel-padding']);
   for (const name of ['settings-ux.css', 'capabilities.css']) {
@@ -66,10 +59,4 @@ test('new settings styles use only established semantic color tokens', async () 
     for (const [, token] of css.matchAll(/var\(--([\w-]+)/g)) assert.ok(allowed.has(token), `${name}: ${token}`);
     assert.doesNotMatch(css, /var\(--border\)/);
   }
-});
-test('file access has a real early section, not CSS order or duplicate controls', async () => {
-  const source = await readFile(new URL('../src/ContentStorage.tsx', import.meta.url), 'utf8');
-  assert.ok(source.indexOf('id="content-storage-access"') < source.indexOf('id="content-storage-projects"'));
-  assert.ok(source.indexOf('id="content-storage-access"') < source.indexOf('id="content-storage-maintenance"'));
-  assert.equal((source.match(/\{fileAccess\}<\/div>/g) ?? []).length, 1);
 });

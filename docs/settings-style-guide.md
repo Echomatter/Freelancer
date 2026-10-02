@@ -12,7 +12,7 @@ Reuse EchoFlex. The existing palette and provider identity systems are authorita
 
 ## Ownership and information architecture
 
-Application settings owns shared presentation, providers, shared file scope, server access, cross-project schedules, and local data maintenance. Project settings owns new-chat defaults, project/chat delegation preferences, goals, and the repository agreement. Files, search, models, usage, and conversation history are utility destinations, not a claim that every control on them is configuration.
+Application settings owns shared presentation, providers, file access, server access, cross-project schedules, and local data maintenance. Project settings owns new-chat defaults, project/chat delegation preferences, goals, and the repository agreement. Files, search, models, usage, and conversation history are utility destinations, not a claim that every control on them is configuration.
 
 Agents belongs in Application settings because its catalog is shared across projects. Git defaults affects new projects, while GitHub edits the selected project’s existing agreement. Scheduled prompts is application-wide but each schedule identifies its project. Remote access changes the running server on this computer. Settings menus are flat lists without section headings, separators or agent subtitles.
 
@@ -97,7 +97,7 @@ For a new or changed destination, update the registry, its entry in the [single 
 
 Review the actual page and nested editors, not just source markup. The checklist is: correct scope, correct save boundary, clear title/labels, one reading order, keyboard access, long content, loading, empty/filter-empty, partial/unavailable, save failure/retry, and consistent light/dark/custom themes. Validate provider color separately from semantic status. Check that a style change does not change requests, tool access, paid consent, Git authority, or saved keys.
 
-The new browser sweep covers all 18 current destinations at 360px and 1440px in representative light, dark, and generated custom themes. Existing feature journeys remain necessary for authentication, Git confirmations, goals, theme persistence, schedules, and data maintenance. A layout sweep is not evidence that external integrations work.
+The new browser sweep covers all 19 current destinations at 360px and 1440px in representative light, dark, and generated custom themes. Existing feature journeys remain necessary for authentication, Git confirmations, goals, theme persistence, schedules, and data maintenance. A layout sweep is not evidence that external integrations work.
 
 ## Ownership / contact
 

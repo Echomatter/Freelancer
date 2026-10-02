@@ -26,8 +26,3 @@ export function toolReason(row) {
   return row.discovered !== true || row.configured === false || row.nativePermission === 'deny'
     || row.applicationAccess === 'blocked' || row.modelExposure === false ? row.unavailableReason : null;
 }
-export function inventoryMatches(row, query) {
-  const needle = query.trim().toLocaleLowerCase();
-  return !needle || [row.id, row.name, row.origin, row.status, row.unavailableReason]
-    .filter(value => typeof value === 'string').join(' ').toLocaleLowerCase().includes(needle);
-}

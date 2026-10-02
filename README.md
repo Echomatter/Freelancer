@@ -97,7 +97,7 @@ Credentials remain with the native/provider authentication systems; Freelancer d
 
 **Application settings → Available Usage** turns provider/model telemetry into a practical view of remaining availability. It is designed around usable capacity rather than presenting token or dollar estimates as if they were provider billing records. Unknown, estimated and unavailable information stays distinguishable.
 
-**Application settings → Capabilities** shows tools, skills and shared MCP connections. Use each card’s help bubble for status explanations and technical details. Manage agent definitions under **Application settings → Agents**. File access stays under **Application settings → Content & Storage**. See [Capabilities](docs/capabilities.md) and [File access scope](docs/file-access.md).
+**Application settings → Capabilities** shows tools, skills and shared MCP connections. Use each card’s help bubble for status explanations and technical details. Manage agent definitions under **Application settings → Agents**. File access is under **Application settings → File access**. See [Capabilities](docs/capabilities.md) and [File access scope](docs/file-access.md).
 
 The workspace model picker can optionally hide exhausted models. That preference lives under **Available Usage → Model visibility** and retains its saved value from Appearance.
 
@@ -631,4 +631,12 @@ Skills provide instructions that agents can load when useful. Found means OpenCo
 MCP connects additional services to the shared toolkit. Connections apply to every agent and project. OpenCode manages configuration and sign-in. Connected reports the connection state; model support and native permission still determine whether a tool can be used.
 
 Add a remote service URL or a local command, approve the connection, then sign in when required. Local commands run on this computer. Test / retry checks a connection. Disable keeps its saved configuration. Use native {env:VARIABLE_NAME} references for secrets in headers or environment fields. Configuration is saved by OpenCode.
+<!-- /help -->
+
+<!-- help:file-access -->
+### File access
+
+This shared setting chooses which locations agents can read, search and edit: the current project folder, all registered project folders, or files on this computer. It applies to every agent and model. Native permissions and explicit denials still apply; private Git and application state remain protected.
+
+The choice covers known file and search tools. Shell commands and connected services can have other filesystem effects, so this is not a computer-wide sandbox. It does not change indexing or data storage.
 <!-- /help -->

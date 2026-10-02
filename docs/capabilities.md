@@ -49,17 +49,14 @@ a key from a merge patch or invent a competing config writer.
 
 The inventory reads native registration, current-context model exposure,
 permissions, skills, MCP state, references and commands. It does not change them.
-A row distinguishes **not registered**, **unknown**, **not exposed by this
-model**, **permission required/restricted**, and **registered, use unverified**.
-Registered is not synonymous with usable. The app does not manufacture a green
-success from a tool ID or a connected MCP status.
+The page lists the shared tools and skills without filters or agent/model selectors. Short statuses such as Loaded, Unavailable, Unknown and Needs permission describe the current inspection. Loaded means the tool is present, not that it has successfully run. Details and native permission explanations are in the Tools help bubble.
 
 The current chat supplies the observed agent/model context; the page does not
 hard-code Engineer or offer identity-based access selectors. Without a chat,
 model exposure remains unobserved. Tools and skills stay in the shared catalog.
 Missing skill dependencies remain explicitly unverified or missing.
 
-Expand **Instruction sources (read-only)** to see the captured request identity
+Open **Tools help → Technical details** to see the captured request identity
 and source composition. This is a provenance map, not a full effective provider
 prompt or another editable instruction store. Native-internal layers remain
 labeled as such. No provider prompt, secret or raw MCP server instructions are

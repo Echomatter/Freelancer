@@ -59,7 +59,7 @@
 
 **Source:** [`Capabilities.tsx`](../src/Capabilities.tsx), [`capability-presentation.mjs`](../src/capability-presentation.mjs), [`capabilities.css`](../src/capabilities.css); inventory contract in [`server/capabilities.mjs`](../server/capabilities.mjs).
 
-**Anatomy:** title, refresh and close; searchable Tools and Skills lists; one MCP connection card. Short statuses remain visible. Explanations, origins, inspection errors and captured instruction sources are in the card help bubbles.
+**Anatomy:** title, refresh and close; Tools and Skills lists without filters; one MCP connection card. Short statuses remain visible. Explanations, origins, inspection errors and captured instruction sources are in the card help bubbles.
 
 **Placement:** application-wide tools, skills and MCP connections. Project context is an inspection input, not an access setting. Connection setup retains native permissions and explicit approval.
 
@@ -89,9 +89,9 @@
 
 ### application/content-storage — Content & Storage
 
-**Source:** [`ContentStorage.tsx`](../src/ContentStorage.tsx), [`FileAccessSettings.tsx`](../src/FileAccessSettings.tsx). **Scope:** application-local data and shared file scope. **Width:** collection.
+**Source:** [`ContentStorage.tsx`](../src/ContentStorage.tsx). **Scope:** content indexes and application-local storage. **Width:** collection.
 
-**Anatomy after this PR:** heading with Search all content and Close; section-jump links; independent index/storage error-retry notices; index metrics; **File access before Projects and maintenance**; Projects; Local data; SQLite maintenance. File access contains shared-scope explanation, native-boundary caveat, three radio choices (current project / registered projects / computer), Save, error and confirmed status. Projects rows show name/path/archive state, file and chat coverage, archive/restore, and file/conversation index refresh actions. Local data shows ownership flow and nested location cards (owner, path, size/note, Open folder), native warning and Export conversations. Maintenance exposes database/WAL/free-page stats, refresh, Start clean, Optimize, Check and Compact, with reset/compaction confirmations. Project archiving has its own index-before-archive confirmation.
+**Anatomy after this PR:** heading with Search all content and Close; section-jump links; independent index/storage error-retry notices; index metrics; Projects; Local data; SQLite maintenance. File access has its own Application settings destination. Projects rows show name/path/archive state, file and chat coverage, archive/restore, and file/conversation index refresh actions. Local data shows ownership flow and nested location cards (owner, path, size/note, Open folder), native warning and Export conversations. Maintenance exposes database/WAL/free-page stats, refresh, Start clean, Optimize, Check and Compact, with reset/compaction confirmations. Project archiving has its own index-before-archive confirmation.
 
 **Placement verdict:** shared file access was wrongly buried after database maintenance. **PR treatment:** a real React slot moves the single existing control panel ahead of maintenance, with an anchor; DOM, reading and keyboard order agree. Storage/index APIs, ownership, archive revisions, confirmations and data-retention behavior remain unchanged. No filesystem access policy is broadened or narrowed.
 
@@ -169,13 +169,17 @@
 
 **Placement:** Application settings. Agent catalog/editor headings and active navigation use application scope. Session defaults retains its Manage agents shortcut.
 
+### application/file-access — File access
+
+Choose allowed file locations for agents in a separate application page. Three choices preserve the existing shared setting, native permission checks, save confirmation and failure recovery. It is separate from content indexing, data locations, model selection and agent definitions.
+
 ## Remaining behavior and IA work
 
-The shared presentation standard reaches all 18 destinations, but this is not a claim that every pre-existing behavioral issue has been resolved. The source audit found these follow-ups: duplicate GitHub uploads/sync editing; Recent projects living inside Available Usage; a Remote access initial-load Retry action; consistent dirty-navigation handling across independent editors; and further manual review of long history selection bars and manually composed heading levels. These require targeted behavior changes and feature regression journeys, not cosmetic hiding.
+The shared presentation standard reaches all 19 destinations, but this is not a claim that every pre-existing behavioral issue has been resolved. The source audit found these follow-ups: duplicate GitHub uploads/sync editing; Recent projects living inside Available Usage; a Remote access initial-load Retry action; consistent dirty-navigation handling across independent editors; and further manual review of long history selection bars and manually composed heading levels. These require targeted behavior changes and feature regression journeys, not cosmetic hiding.
 
 ## Verification and evidence boundaries
 
-New code includes `tests/settings-ux.test.mjs` (route preservation, scope descriptions, state semantics, filter behavior, semantic tokens and real file-access DOM placement) and `tests/settings-ux.browser.mjs` (all 18 destinations, representative light/dark/generated themes, narrow/desktop widths, current-page metadata and overflow).
+New code includes `tests/settings-ux.test.mjs` (route preservation, scope descriptions, state semantics and semantic tokens) and `tests/settings-ux.browser.mjs` (all 19 destinations, representative light/dark/generated themes, narrow/desktop widths, current-page metadata and overflow).
 
 During preparation, the focused Node contracts and changed-file syntax/CSS checks were run locally. The full repository could be read and written through the GitHub connector, but could not be cloned into the local test container because network/DNS access was unavailable. Consequently the full app build, existing feature browser suites and new end-to-end sweep must be run in CI or a normal checkout before merge. Isolated layout inspection is not a substitute for those tests. No external provider authentication, Git publication from the application, or tool execution was tested by this UX audit.
 

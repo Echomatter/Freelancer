@@ -58,12 +58,8 @@ test('capability observations and failed MCP actions are honest and sanitized', 
   await openCapabilities(page, fixture.url);
   const readRow = page.getByRole('list', { name: 'Tool inventory' }).getByRole('listitem').filter({ has: page.locator('code').getByText('read', { exact: true }) });
   await expect(readRow).toContainText('Loaded');
-  const filter = page.getByRole('searchbox', { name: 'Filter inventory' });
-  await filter.fill('no-such-tool-or-service');
-  await expect(page.getByText('No tools match this filter.', { exact: true })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Disable browser', exact: true })).toBeVisible();
-  await filter.fill('');
-  await expect(readRow).toContainText('Loaded');
+  await expect(page.getByRole('searchbox')).toHaveCount(0);
+  await expect(page.getByRole('combobox')).toHaveCount(0);
   await expect(page.getByRole('heading', { name: 'MCP', exact: true })).toHaveCount(1);
   await page.screenshot({ path: testInfo.outputPath('capabilities-cleanup.png') });
   await expect(page.getByText(/Registered.*unverified/)).toHaveCount(0);

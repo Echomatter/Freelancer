@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, Wrench } from 'lucide-react';
 import { api } from './api';
-import { Badge, Button, Field, PageCloseButton, PageHeading, Panel } from './echoflex/Controls';
-import { inventoryMatches, skillLabel, toolLabel } from './capability-presentation.mjs';
+import { Badge, Button, PageCloseButton, PageHeading, Panel } from './echoflex/Controls';
+import { skillLabel, toolLabel } from './capability-presentation.mjs';
 import { McpConnections } from './McpConnections';
 import './capabilities.css';
 
@@ -22,7 +22,6 @@ export function Capabilities({ data, sessionID, onClose }: {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [refresh, setRefresh] = useState(0);
-  const [filter, setFilter] = useState('');
   useEffect(() => {
     const controller = new AbortController();
     setInventory(null); setError(''); setLoading(false);
@@ -39,8 +38,8 @@ export function Capabilities({ data, sessionID, onClose }: {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [project, sessionID, refresh]);
-  const tools = inventory?.tools.filter(row => inventoryMatches(row, filter)) ?? [];
-  const skills = inventory?.skills.filter(row => inventoryMatches(row, filter)) ?? [];
+  const tools = inventory?.tools ?? [];
+  const skills = inventory?.skills ?? [];
   return <div className="capability-view">
     <PageHeading compact title="Capabilities" icon={Wrench} actions={<>
       <Button type="button" disabled={!project || loading} onClick={() => setRefresh(n => n + 1)}>
@@ -51,10 +50,7 @@ export function Capabilities({ data, sessionID, onClose }: {
       {loading && <p role="status">Checking capabilities…</p>}
       {error && <Panel title="Inventory unavailable"><p className="notice error" role="alert">{error}</p><Button type="button" onClick={() => setRefresh(n => n + 1)}>Retry</Button></Panel>}
       {inventory && <>
-        <div className="capability-toolbar">
-          <Field label="Filter inventory"><input type="search" value={filter} placeholder="Find a tool or skill…" onChange={event => setFilter(event.target.value)} /></Field>
-        </div>
-        <div className="capability-result-count" role="status">{tools.length} tools · {skills.length} skills{filter.trim() ? ' match this filter' : ''}</div>
+        <div className="capability-result-count" role="status">{tools.length} tools · {skills.length} skills</div>
         <Panel title="Tools" className="capability-section" help="capability-tools" helpDetails={<>
           <details><summary>Technical details</summary>
             <p>Project: {data.project?.name ?? project}</p>
@@ -70,7 +66,7 @@ export function Capabilities({ data, sessionID, onClose }: {
           <ul className="capability-rows" aria-label="Tool inventory">{tools.map(row => <li key={row.id}>
             <div className="capability-row-heading"><code>{row.id}</code><Badge tone={row.discovered === true ? 'success' : 'neutral'}>{toolLabel(row)}</Badge></div>
           </li>)}</ul>
-          {!tools.length && <p>{filter.trim() ? 'No tools match this filter.' : 'No tools were returned by this inspection.'}</p>}
+          {!tools.length && <p>No tools were returned by this inspection.</p>}
         </Panel>
         <Panel title="Skills" className="capability-section" help="capability-skills" helpDetails={<details><summary>Technical details</summary>
           {inventory.skills.map((row, index) => <p key={index}><strong>{row.name}</strong> · {row.origin}{row.unavailableReason && <> — {row.unavailableReason}</>}</p>)}
@@ -79,7 +75,7 @@ export function Capabilities({ data, sessionID, onClose }: {
           <ul className="capability-rows" aria-label="Skill inventory">{skills.map((row, index) => <li key={`${row.name}:${row.origin}:${index}`}>
             <div className="capability-row-heading"><strong>{row.name}</strong><Badge>{skillLabel(row, inventory.probes?.skills)}</Badge></div>
           </li>)}</ul>
-          {!skills.length && <p>{filter.trim() ? 'No skills match this filter.' : inventory.probes?.skills?.state === 'unavailable'
+          {!skills.length && <p>{inventory.probes?.skills?.state === 'unavailable'
             ? inventory.probes.skills.reason || 'Skill discovery is unavailable.' : 'No skills were returned by this inspection.'}</p>}
         </Panel>
 

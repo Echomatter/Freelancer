@@ -7,7 +7,7 @@ import { generateCustomTheme } from '../domain/custom-themes.mjs';
 
 // Exercise actual application destinations, not a second mocked settings renderer.
 for (const mode of ['light', 'dark', 'custom']) for (const width of [360, 1440]) {
-  test(`all 18 settings destinations: ${mode}, ${width}px`, { tag: ['@app', '@settings'] }, async ({ appBrowser, own }) => {
+  test(`all 19 settings destinations: ${mode}, ${width}px`, { tag: ['@app', '@settings'] }, async ({ appBrowser, own }) => {
     test.setTimeout(120000);
     const fixture = await own(localDataFixture());
     const custom = mode === 'custom' ? generateCustomTheme({ mode: 'dark', saved: [], avoid: [] }) : null;
@@ -29,7 +29,7 @@ for (const mode of ['light', 'dark', 'custom']) for (const width of [360, 1440])
         await expect(heading).toBeVisible();
         const header = page.locator(`[data-settings-page="${entry.scope}/${entry.id}"]`);
         await expect(header).toHaveAttribute('data-settings-layout', entry.layout);
-        if (entry.id === 'capabilities') await expect(header.locator('.settings-page-description')).toHaveCount(0);
+        if (['capabilities', 'content-storage'].includes(entry.id)) await expect(header.locator('.settings-page-description')).toHaveCount(0);
         else await expect(header.locator('.settings-page-description')).toHaveText(entry.description);
         await expect(page.locator(`#${entry.scope}-settings-links button[aria-label="${entry.title}"]`)).toHaveAttribute('aria-current', 'page');
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2), `${entry.title}: document overflow`);
@@ -41,9 +41,10 @@ for (const mode of ['light', 'dark', 'custom']) for (const width of [360, 1440])
         // Keep screenshots with Playwright failure artifacts; do not make actions
         // such as auth, sync, archive, or starting a goal part of a layout sweep.
         if (entry.id === 'content-storage') {
-          await expect(page.getByRole('heading', { name: 'File access', exact: true })).toBeVisible();
-          assert.ok(await page.evaluate(() => !!(document.getElementById('content-storage-access').compareDocumentPosition(document.getElementById('content-storage-maintenance')) & Node.DOCUMENT_POSITION_FOLLOWING)));
+          await expect(page.getByRole('radio')).toHaveCount(0);
+          await expect(page.getByRole('heading', { name: 'Projects', exact: true })).toBeVisible();
         }
+        if (entry.id === 'file-access') await expect(page.getByRole('radio')).toHaveCount(3);
       }
       assert.deepEqual(errors, []);
     } finally { await appBrowser.close(); }

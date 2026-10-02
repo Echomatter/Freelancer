@@ -53,17 +53,7 @@ export function FileAccessSettings({
     }
   };
   return (
-    <Panel title="File access">
-        <p>
-          One shared application setting. It applies to every named agent, and
-          “{fileAccessScopeText("projects")}” covers all registered project
-          folders{projectCount > 0 ? ` (${projectCount} registered)` : ""}.
-        </p>
-        <p>
-          Native permissions still apply, and private Git and application state
-          stays blocked in every scope. This setting covers the known file and
-          search tools; it is not a terminal or custom-tool filesystem sandbox.
-        </p>
+    <Panel title="Allowed locations" help="file-access">
         <fieldset className="git-default-choices" disabled={pending}>
           <legend>File scope</legend>
           {SCOPES.map((scope) => (
@@ -81,7 +71,7 @@ export function FileAccessSettings({
               />
               <span>
                 <strong>{fileAccessScopeText(scope)}</strong>
-                <small>{descriptions[scope]}</small>
+                <small>{descriptions[scope]}{scope === "projects" && projectCount > 0 ? ` (${projectCount} registered)` : ""}</small>
               </span>
             </label>
           ))}

@@ -6,7 +6,7 @@ import { FileAccessSettings } from "./FileAccessSettings";
 import { GitDefaults } from "./GitDefaults";
 import { ThemePicker } from "./ThemePicker";
 import { useEffect, useRef, useState } from "react";
-import { Check, GitFork, Link2, Palette, Wallet } from "lucide-react";
+import { Check, Files, GitFork, Link2, Palette, Wallet } from "lucide-react";
 import { Button, Panel, Field, Badge, PageCloseButton, PageHeading } from "./echoflex/Controls";
 import { api } from "./api";
 import { ProviderConnection } from "./ProviderConnection";
@@ -61,13 +61,15 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
     {tab === "delegation" && <><PageHeading title="Delegation" icon={GitFork} help="delegation" actions={closeAction} />
       <DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
     {tab === "content-storage" && <ContentStorage onHistory={() => onHistory?.()} onSearch={() => onSetting("application", "search")}
-      onClose={onClose} onChange={refresh} fileAccess={<FileAccessSettings value={data.settings.fileAccessScope}
+      onClose={onClose} onChange={refresh} />}
+    {tab === "file-access" && <><PageHeading title="File access" icon={Files} actions={closeAction} />
+      <FileAccessSettings value={data.settings.fileAccessScope}
         projectCount={data.settings.projects?.length ?? 0} onSave={async scope => {
           const result = await api("appearance", { fileAccessScope: scope }, "PUT");
           if (result?.saved !== true || (result.fileAccessScope !== undefined && result.fileAccessScope !== scope))
             throw Error("The file access choice was not confirmed. Try again.");
           await refresh();
-        }} />} />}
+        }} /></>}
     {tab === "git-defaults" && <GitDefaults preset={data.settings.gitDefaults?.preset} onClose={onClose} refresh={refresh} />}
     {tab === "providers" && <>
       <PageHeading title="Providers" icon={Wallet} help="providers" actions={closeAction} />

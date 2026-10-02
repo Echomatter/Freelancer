@@ -75,7 +75,7 @@ for (const viewport of [{ width: 390, height: 740 }, { width: 1440, height: 900 
     // Disclosure buttons expose one labeled destination list without navigating.
     await application.click();
     await expect(application).toHaveAttribute('aria-expanded', 'true');
-    await expect(sidebar.getByRole('button', { name: 'Appearance', exact: true }).locator('span')).toBeVisible();
+    await expect(sidebar.getByRole('button', { name: 'Appearance', exact: true }).getByText('Appearance', { exact: true })).toBeVisible();
     await visiblePanelFits('#application-settings-links');
     await project.click();
     await expect(application).toHaveAttribute('aria-expanded', 'false');

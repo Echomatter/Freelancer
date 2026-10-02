@@ -122,7 +122,7 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     assert.equal(await free.getByLabel('OpenCode Free hex color').inputValue(), providerDefaults.opencode);
     const billing = openai.getByLabel('Monthly cost (USD)'); await billing.fill('42');
     await openai.getByRole('button', { name: 'OpenAI: Rose', exact: true }).click();
-    const initialColor = await openai.locator('h3 .provider-identity').evaluate(e => getComputedStyle(e).color);
+    const initialColor = await openai.getByRole('heading', { name: 'OpenAI', exact: true }).locator('.provider-identity').evaluate(e => getComputedStyle(e).color);
     // Choosing a swatch is only a preview until Save color succeeds.
     assert.equal(initialColor, rgb(providerTokens('openai', { theme: 'midnight' })['--provider-fg']));
     let before = saves;
@@ -134,9 +134,9 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     assert.equal(saves - before, 1);
     assert.equal(await billing.inputValue(), '42', 'color save must not erase unsaved billing edits');
     const rose = rgb(providerTokens('openai', { theme: 'midnight', providerColors: { openai: '#c34f85' } })['--provider-fg']);
-    await colorOf(openai.locator('h3 .provider-identity'), rose);
+    await colorOf(openai.getByRole('heading', { name: 'OpenAI', exact: true }).locator('.provider-identity'), rose);
     assert.equal(await free.getByLabel('OpenCode Free hex color').inputValue(), providerDefaults.opencode);
-    await readable(openai.locator('h3 .provider-identity'), 'provider heading');
+    await readable(openai.getByRole('heading', { name: 'OpenAI', exact: true }).locator('.provider-identity'), 'provider heading');
     await readable(openai.locator('.provider-color-preview strong'), 'provider preview text');
     await readable(openai.locator('.provider-preview-icon'), 'provider solid marker');
     await readable(openai.getByRole('button', { name: 'Reconnect', exact: true }), 'secondary action');
@@ -149,7 +149,7 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await openai.getByRole('button', { name: 'Save color', exact: true }).click();
     await openai.getByRole('alert').waitFor();
     await readable(openai.getByRole('alert'), 'custom inline error');
-    await colorOf(openai.locator('h3 .provider-identity'), rose);
+    await colorOf(openai.getByRole('heading', { name: 'OpenAI', exact: true }).locator('.provider-identity'), rose);
     fault = false;
     await openai.getByLabel('OpenAI hex color').fill('invalid');
     assert.equal(await openai.getByRole('button', { name: 'Save color', exact: true }).isDisabled(), true);
@@ -209,7 +209,7 @@ test('colors', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await settings(); await chooseTheme('sandstone');
     await page.getByRole('button', { name: 'Providers', exact: true }).click();
     const sandRose = rgb(providerTokens('openai', { theme: 'sandstone', providerColors: { openai: '#c34f85' } })['--provider-fg']);
-    await colorOf(page.getByRole('region', { name: 'OpenAI settings' }).locator('h3 .provider-identity'), sandRose);
+    await colorOf(page.getByRole('region', { name: 'OpenAI settings' }).getByRole('heading', { name: 'OpenAI', exact: true }).locator('.provider-identity'), sandRose);
     assert.notEqual(sandRose, rose);
     await screenshot('providers-sandstone');
     await load(); await settings('Providers');

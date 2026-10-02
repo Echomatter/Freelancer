@@ -281,8 +281,8 @@ test('preference HTTP reads/writes preserve scope, revisions, hidden limits and 
 test('the retired app-owned Build allowlist cannot silently restrict future custom agents', async () => {
   await assert.rejects(access(new URL('../backend/opencode/agents/build.md', import.meta.url)), { code: 'ENOENT' });
   const prompt = await readFile(new URL('../backend/opencode/global-instructions.md', import.meta.url), 'utf8');
-  assert.match(prompt, /No orientation helper or team topology is mandatory/);
-  assert.match(prompt, /Keep provider\/auth\/quota failures separate/);
+  assert.match(prompt, /delegate` for optional worker work/);
+  assert.match(prompt, /provider, auth and quota failures separate/);
 });
 
 test('a concurrency refusal can retry after capacity frees without replaying any started child', async t => {

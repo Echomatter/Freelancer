@@ -102,3 +102,17 @@ Shell commands still use OpenCode's native shell permissions; Freelancer does
 not parse arbitrary shell programs into read/write classifications or provide a
 filesystem sandbox. An inspection-only instruction must also be honored when
 using shell tools. Agent labels alone never change native permissions.
+
+
+### Explicit model choice and context age
+
+A fresh fork does not inherit its source worker's model pin. An explicit new
+`model` selection is nevertheless honored through the ordinary eligibility and
+paid-consent path; an invalid selection is not silently replaced. Continuation
+and Steer/Queue still retain their existing worker model.
+
+Worker context reports `drift_basis: age-only` when comparable source/current
+fingerprints are absent. That is an age warning, not a claim that files changed.
+`fingerprint-comparison` is used only when both states are supplied. Current
+normal dispatch does not capture a working-tree fingerprint automatically;
+findings remain useful, preserved and subject to rechecking, not blocked.

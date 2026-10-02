@@ -7,7 +7,7 @@ const custom = { id: 'capability-specialist', name: 'Capability specialist',
   prompt: 'Use the shared toolkit to complete the assigned task.', model: 'auto',
   response: 'concise', approach: 'thorough', variant: 'inherit' };
 const shared = ['bash', 'read', 'glob', 'grep', 'edit', 'write', 'apply_patch',
-  'webfetch', 'websearch', 'lsp', 'skill', 'todowrite', 'question', 'content_index'];
+  'webfetch', 'websearch', 'browser_navigate', 'service_custom_action', 'skill', 'todowrite', 'question', 'content_index'];
 
 test('named profiles share native defaults; persona introduces no capability deny', () => {
   const catalog = checkedCatalog({ agents: [custom] });

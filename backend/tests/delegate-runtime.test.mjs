@@ -885,3 +885,22 @@ test('public delegate arguments preserve a bounded fork request without backgrou
   assert.deepEqual(publicDelegateArgs({ worker:'child1', fork:true, task:'A distinct fresh task.' }),
     { worker:'child1', fork:true, task:'A distinct fresh task.', background:false });
 });
+
+test('a fresh fork honors an explicit eligible model without pinning or changing the source worker', async t => {
+  const f = await fixture(t, { surface: 'opencode-free', models: ['opencode/free-a', 'opencode/free-b'] });
+  await f.service.execute({ ...args, selectedModel: 'opencode/free-a', freeOnly: true }, f.ctx);
+  const result = await f.service.execute({ worker: 'child1', fork: true, task: 'Check a separate bounded concern.', model: 'opencode/free-b' }, f.ctx);
+  assert.equal(result.attempts.at(-1).selected_model, 'opencode/free-b');
+  assert.equal(result.attempts.at(-1).child_session, 'child2');
+  const prompts = f.requests.filter(row => row.kind === 'prompt');
+  assert.equal(prompts[0].body.model.modelID, 'free-a');
+  assert.equal(prompts[1].body.model.modelID, 'free-b');
+  const creations = f.requests.filter(row => row.kind === 'create');
+  await assert.rejects(f.service.execute({ worker: 'child1', fork: true, task: 'Invalid explicit route.', selectedModel: 'unknown/model' }, f.ctx), error => error.name === 'InvalidModel');
+  assert.equal(f.requests.filter(row => row.kind === 'create').length, creations.length);
+});
+
+test('public fork model is preserved through public argument normalization', () => {
+  const args = publicDelegateArgs({ worker: 'child1', fork: true, task: 'Fresh work.', model: 'opencode/free-b' });
+  assert.equal(args.model, 'opencode/free-b', 'public naming is retained until the runtime adapter translates it');
+});

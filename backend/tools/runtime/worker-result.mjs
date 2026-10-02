@@ -28,7 +28,7 @@ export function annotateWorkerContext(result, receipt, { now = Date.now(), stale
   else if (projectState === 'current_not_compared') warnings.push('No current project-state fingerprint was observed; project drift cannot be compared.');
   else if (projectState === 'conflicting_fingerprints') warnings.push('The project changed since this worker evidence was recorded; recheck all findings.');
   return { ...result, context: { observed_at: Number.isFinite(observed) ? new Date(observed).toISOString() : null,
-    age_ms: ageMs, stale, stale_after_ms: staleAfterMs, project_state: projectState,
+    age_ms: ageMs, stale, drift_basis: sourceFingerprint && currentFingerprint ? 'fingerprint-comparison' : 'age-only', stale_after_ms: staleAfterMs, project_state: projectState,
     warnings, findings_preserved: true } };
 }
 // Last assistant text of a child turn, read without trusting execution state.

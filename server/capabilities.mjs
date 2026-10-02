@@ -2,7 +2,7 @@ import { readFile } from 'node:fs/promises';
 import path from 'node:path';
 
 const nativeTools = ['bash', 'read', 'glob', 'grep', 'edit', 'write', 'apply_patch',
-  'webfetch', 'websearch', 'lsp', 'skill', 'todowrite', 'question'];
+  'webfetch', 'websearch', 'skill', 'todowrite', 'question'];
 const freelancerTools = ['delegate', 'git_project', 'content_index', 'goal_checkpoint'];
 const text = value => typeof value === 'string' ? value.slice(0, 300) : null;
 const names = value => Array.isArray(value) ? value.filter(v => typeof v === 'string') : [];
@@ -31,7 +31,7 @@ export function createCapabilities({ host, backendRoot }) {
         try {
           const value = await host.request(route, { directory, signal: AbortSignal.timeout(15000) });
           const routePath = route.split('?')[0];
-          const list = ['/experimental/tool/ids', '/experimental/tool', '/agent', '/skill', '/lsp', '/command'].includes(routePath);
+          const list = ['/experimental/tool/ids', '/experimental/tool', '/agent', '/skill', '/command'].includes(routePath);
           if (list ? !Array.isArray(value) : !value || typeof value !== 'object' || Array.isArray(value))
             return { state: 'unavailable', reason: 'Native endpoint returned an unsupported response shape.' };
           return { state: 'observed', value };
@@ -42,9 +42,9 @@ export function createCapabilities({ host, backendRoot }) {
       const slash = typeof model === 'string' ? model.indexOf('/') : -1;
       const modelRoute = slash > 0 && slash < model.length - 1
         ? `/experimental/tool?provider=${encodeURIComponent(model.slice(0, slash))}&model=${encodeURIComponent(model.slice(slash + 1))}` : null;
-      const [ids, exposed, agents, config, skills, mcp, lsp, commands] = await Promise.all([
+      const [ids, exposed, agents, config, skills, mcp, commands] = await Promise.all([
         probe('/experimental/tool/ids'), modelRoute ? probe(modelRoute) : { state: 'not-run', reason: 'Choose a model to inspect its tool exposure.' },
-        probe('/agent'), probe('/config'), probe('/skill'), probe('/mcp'), probe('/lsp'), probe('/command'),
+        probe('/agent'), probe('/config'), probe('/skill'), probe('/mcp'), probe('/command'),
       ]);
       const registered = new Set(names(ids.value));
       const modelTools = new Set(Array.isArray(exposed.value) ? exposed.value.map(row => row?.id).filter(v => typeof v === 'string') : []);
@@ -69,7 +69,7 @@ export function createCapabilities({ host, backendRoot }) {
           : disabled ? 'Explicit native tool configuration disables this tool.'
           : nativePermission === 'deny' ? 'Native permission denies this tool.'
           : discovered === false ? (id === 'websearch' ? 'Native websearch is not registered for this provider/configuration.'
-            : id === 'lsp' ? 'Native LSP tool is not enabled. OpenCode 1.18.31 supports explicit OPENCODE_EXPERIMENTAL_LSP_TOOL=true opt-in; a configured language server is also required.' : 'Tool is not registered in this runtime.')
+            : 'Tool is not registered in this runtime.')
           : exposure === false ? (id === 'websearch' && discovered === false
             ? 'Native websearch requires an eligible OpenCode/OpenCode Go provider or explicit OPENCODE_ENABLE_EXA/OPENCODE_ENABLE_PARALLEL opt-in. Native permissions still apply.'
             : 'Tool is not exposed to the selected model.')
@@ -109,18 +109,12 @@ export function createCapabilities({ host, backendRoot }) {
             : status === 'needs_client_registration' ? 'Native MCP client registration is required.'
             : status === 'failed' ? 'Native MCP connection failed; inspect the native integration.' : mcp.reason ?? 'Connection has not been observed.' };
       });
-      const lspRows = Array.isArray(lsp.value) ? lsp.value.filter(row => typeof row?.id === 'string').map(row => ({
-        id: text(row.id), name: text(row.name), status: ['connected', 'error'].includes(row.status) ? row.status : 'unverified',
-      })) : [];
-      const lspConfig = effectiveConfig.lsp;
-      const lspConfigured = lspConfig === true || !!lspConfig && typeof lspConfig === 'object' && !Array.isArray(lspConfig);
       const referenceRows = effectiveConfig.references && typeof effectiveConfig.references === 'object'
         ? Object.entries(effectiveConfig.references).map(([name, row]) => ({ name, origin: 'OpenCode native reference',
           configured: true, advertised: typeof row?.description === 'string', dependency: 'unverified' })) : [];
       return { version: 1, observedAt: Date.now(), context: { projectID, sessionID, agent, model },
         boundaries: { inspectionOnly: boundaries.inspectionOnly ?? null, gitInspectOnly: boundaries.gitInspectOnly ?? null,
-          fileAccessScope: ['project', 'projects', 'computer'].includes(boundaries.fileAccessScope) ? boundaries.fileAccessScope : 'computer',
-          nativeLspToolEnabled: boundaries.nativeLspToolEnabled === true },
+          fileAccessScope: ['project', 'projects', 'computer'].includes(boundaries.fileAccessScope) ? boundaries.fileAccessScope : 'computer' },
         evidence: 'Read-only native inventory; registration is not proof of successful use.',
         tools, skills: skillRows, mcp: mcpRows,
         // Additive, stable summary for clients that need websearch status
@@ -130,11 +124,6 @@ export function createCapabilities({ host, backendRoot }) {
           return { discovered: row.discovered, modelExposure: row.modelExposure,
             nativePermission: row.nativePermission, unavailableReason: row.unavailableReason };
         })() },
-        lsp: { configured: config.state === 'observed' ? lspConfigured : null, usable: lspRows.some(row => row.status === 'connected'),
-          servers: lspRows, unavailableReason: lspRows.some(row => row.status === 'connected') ? null
-            : config.state !== 'observed' ? config.reason
-            : !lspConfigured ? 'Native language-server configuration is omitted or disabled. Configure lsp:true or a native lsp server object; server dependencies remain unverified.'
-            : lsp.reason ?? 'No connected language server was observed.' },
         references: referenceRows,
         commands: Array.isArray(commands.value) ? commands.value.filter(row => typeof row?.name === 'string').map(row => ({ name: text(row.name), origin: 'OpenCode native command', invocation: 'optional' })) : [],
         experimental: { codeMode: { state: 'deferred', reason: 'No connected-tool-volume need has been demonstrated.' } },
@@ -158,7 +147,7 @@ export function createCapabilities({ host, backendRoot }) {
             { id: 'configuration', origin: 'server/model-ratings.mjs + domain/model-ratings.mjs', state: 'configuration-task-only', note: 'Background configuration prompts do not replace ordinary chat instructions.' },
           ],
         },
-        probes: Object.fromEntries(Object.entries({ ids, exposed, agents, config, skills, mcp, lsp, commands }).map(([key, row]) => [key, { state: row.state, reason: row.reason ?? null }])),
+        probes: Object.fromEntries(Object.entries({ ids, exposed, agents, config, skills, mcp, commands }).map(([key, row]) => [key, { state: row.state, reason: row.reason ?? null }])),
         diagnostics,
       };
     },

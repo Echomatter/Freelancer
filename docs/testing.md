@@ -105,3 +105,25 @@ assertion does not prove that a control works, and a screenshot without an
 assertion is not an acceptance check. Diagnose failures before changing the
 expected result or increasing a timeout. Model inference, authentication,
 physical-phone access and visible Windows launch require separate evidence.
+
+
+### Shared MCP acceptance
+
+`npm run smoke:mcp` launches the pinned native engine with disposable native
+configuration/data and a harmless local stdio service. It validates shared
+configuration save/readback, two-project inheritance, connection, disable and
+re-enable. No model inference, external connection or OAuth account is used.
+`FREELANCER_SMOKE_OPENCODE` may specify an explicit native executable for an
+isolated test environment; otherwise the existing Windows resolver is used.
+
+MCP unit/HTTP tests and the Capabilities browser journeys use stateful native
+fixtures. They cover global scope, error redaction, missing endpoints, stale
+revisions and explicit setup. These do not prove live browser-MCP model use.
+The source/profile matrix checks shared tools for named/custom agents; it does
+not forecast any provider's ability to use them.
+
+PowerShell recorder integration tests are Windows-only and report explicit skips
+on other systems. On Windows the contract runner executes that process-heavy
+file separately from other contract-file workers. The 30-second per-command
+timeout stays bounded; a timeout or nonzero exit still fails the suite. Both
+contract batches must pass.

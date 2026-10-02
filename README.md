@@ -186,7 +186,7 @@ Freelancer deliberately separates project-specific choices from application-wide
 |  | **Available Usage** | Remaining provider/model availability, usage observations and exhausted-model visibility |
 |  | **Providers** | Authentication, plan type, optional subscription cost, currency and provider colors |
 |  | **Appearance** | Palette generator, saved custom themes and 300 built-in palettes |
-|  | **Capabilities** | Read-only platform-wide tools, skills and MCP status; advanced native LSP opt-in |
+|  | **Capabilities** | Shared MCP connections and authentication; honest tool/skill status and read-only instruction sources |
 |  | **Content & Storage** | Data locations, backup guidance, project archive/restore, index refresh and SQLite maintenance |
 |  | **Remote access** | Remembered-device access on a private network or through an optional HTTPS tunnel |
 |  | **Git defaults** | Default managed-Git agreement for projects |

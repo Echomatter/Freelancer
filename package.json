@@ -14,6 +14,7 @@
     "test:backend": "node scripts/test-contracts.mjs --suite backend",
     "test:browser": "node scripts/test-browser.mjs",
     "start": "node server/main.mjs",
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
     "smoke:runtime": "node scripts/smoke-runtime.mjs",
     "test:contracts": "node scripts/test-contracts.mjs --suite all",
     "test:ui": "npm run build && node scripts/test-browser.mjs --ui",

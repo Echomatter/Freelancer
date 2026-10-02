@@ -133,6 +133,13 @@ export async function startServer({ application: app, assets, port = 0, readActi
           });
           return send(200, data.viewState);
         }
+        if (route === '/api/mcp') {
+          if (req.method === 'GET') return send(200, await app.mcp.read());
+          if (req.method === 'POST') {
+            return send(200, await app.mcp.act(body));
+          }
+          return send(405, { error: 'Use GET to inspect or POST for an explicit connection action.' });
+        }
         const queryProject = url.searchParams.get("project");
         if (queryProject && body.project && queryProject !== body.project)
           return send(400, { error: "Project does not match request body" });

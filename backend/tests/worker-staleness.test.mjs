@@ -34,3 +34,14 @@ test('unknown worker age remains unknown and partial claims are preserved', () =
   assert.equal(annotated.resultSource, 'partial');
   assert.ok(annotated.context.warnings.length > 0);
 });
+
+test('age-only warnings never claim that current project files were compared', () => {
+  const result = { summary: 'Preserved finding.' };
+  const annotated = annotateWorkerContext(result, { created_at: '2026-01-01T00:00:00Z' }, { now: Date.parse('2026-01-01T01:00:00Z') });
+  assert.equal(annotated.context.drift_basis, 'age-only');
+  assert.equal(annotated.context.project_state, 'source_not_recorded');
+  assert.equal(annotated.summary, result.summary);
+  const compared = annotateWorkerContext(result, { state_fingerprint: 'old' }, { currentProjectState: { fingerprint: 'new' } });
+  assert.equal(compared.context.drift_basis, 'fingerprint-comparison');
+  assert.equal(compared.context.project_state, 'conflicting_fingerprints');
+});

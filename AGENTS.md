@@ -7,6 +7,13 @@ separate terminal product, hosted Freelancer service, or installer.
 
 ## Product boundaries
 
+- The toolkit is platform-wide: all named/custom agents, models, and projects
+  receive the same shared tools, skills, and connected MCP services. Do not add
+  capability allowlists or setup matrices keyed by those identities. Native
+  model support and connection health are observations, not app entitlements.
+  Delegation constraints and managed Git/GitHub agreements (including explicit
+  permission exceptions) remain independent; preserve explicit user/native denial.
+
 - OpenCode owns conversations, model inventory and authentication, tools,
   permissions, native todos, and execution. Extend its integration; do not build
   a competing engine or copy credentials.

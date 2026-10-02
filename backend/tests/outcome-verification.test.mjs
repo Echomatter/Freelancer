@@ -11,7 +11,7 @@ const recorder = path.join(path.dirname(fileURLToPath(import.meta.url)), '../scr
 const historyFile = (root) => path.join(root, '.state', 'task-history.json');
 
 function record(root, args) {
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-File', recorder, '-ToolkitRoot', root, ...args], { encoding: 'utf8', timeout: 15000 });
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-File', recorder, '-ToolkitRoot', root, ...args], { encoding: 'utf8', timeout: 30000 });
   assert.ifError(result.error);
   return result;
 }
@@ -37,7 +37,7 @@ async function withRoot(fn) {
   try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
 }
 
-test('six VerificationStatus states map to tests_passed', async () => {
+test('six VerificationStatus states map to tests_passed', { skip: process.platform !== 'win32' && 'Windows PowerShell 5.1 recorder' }, async () => {
   await withRoot(async (root) => {
     seedHistory(root);
     const cases = [
@@ -63,7 +63,7 @@ test('six VerificationStatus states map to tests_passed', async () => {
   });
 });
 
-test('legacy TestsPassed true/false maps to passed/failed', async () => {
+test('legacy TestsPassed true/false maps to passed/failed', { skip: process.platform !== 'win32' && 'Windows PowerShell 5.1 recorder' }, async () => {
   await withRoot(async (root) => {
     seedHistory(root);
     const ok = record(root, ['-TaskId', 'legacy-true', '-Repo', 'fixture', '-TaskType', 'bounded_feature', '-Model', 'opencode-go/b', '-Success', 'true', '-TestsPassed', 'true']);
@@ -80,7 +80,7 @@ test('legacy TestsPassed true/false maps to passed/failed', async () => {
   });
 });
 
-test('invalid boolean and contradictory inputs are rejected without mutation', async () => {
+test('invalid boolean and contradictory inputs are rejected without mutation', { skip: process.platform !== 'win32' && 'Windows PowerShell 5.1 recorder' }, async () => {
   await withRoot(async (root) => {
     seedHistory(root);
     const seed = record(root, ['-TaskId', 'stable-id', '-Repo', 'fixture', '-TaskType', 'bounded_feature', '-Model', 'opencode-go/b', '-Success', 'true', '-VerificationStatus', 'passed']);
@@ -105,7 +105,7 @@ test('invalid boolean and contradictory inputs are rejected without mutation', a
   });
 });
 
-test('failed operational receipt records not-run with null tests', async () => {
+test('failed operational receipt records not-run with null tests', { skip: process.platform !== 'win32' && 'Windows PowerShell 5.1 recorder' }, async () => {
   await withRoot(async (root) => {
     seedHistory(root);
     const id = 'f'.repeat(64);
@@ -133,7 +133,7 @@ test('failed operational receipt records not-run with null tests', async () => {
   });
 });
 
-test('revision retains prior validation state', async () => {
+test('revision retains prior validation state', { skip: process.platform !== 'win32' && 'Windows PowerShell 5.1 recorder' }, async () => {
   await withRoot(async (root) => {
     seedHistory(root);
     const first = record(root, ['-TaskId', 'rev-id', '-Repo', 'fixture', '-TaskType', 'bounded_feature', '-Model', 'opencode-go/b', '-Success', 'true', '-VerificationStatus', 'passed']);

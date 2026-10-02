@@ -19,10 +19,7 @@ const { backendRoot } = config;
 
 // Expose runtime root to local plugins and tools loaded later in this
 // process (delegation, content_index, etc.).
-let savedSettings = {};
-try { savedSettings = JSON.parse(await readRuntimeText(path.join(backendRoot, '.state/webpage/settings.json'), 'utf8')); }
-catch (error) { if (error.code !== 'ENOENT') throw Error('Saved native tool preferences could not be read. OpenCode was not started.'); }
-Object.assign(process.env, runtimeEnv(config, savedSettings));
+Object.assign(process.env, runtimeEnv(config));
 // Private process capability, never included in bootstrap or model prompts.
 process.env.FREELANCER_GIT_BRIDGE = randomBytes(32).toString("hex");
 const webPortFile = path.join(backendRoot, '.state/webpage/port.json');

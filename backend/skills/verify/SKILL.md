@@ -13,9 +13,10 @@ Delegation is optional and never required by this skill.
 ## Procedure
 
 1. Choose the smallest check set that covers the change (focused contract or
-   unit test, plus the nearest regression scope). Prefer
-   `node --test <file>` during iteration and the repository's required suite
-   before completion.
+   unit test, plus the nearest regression scope). Read the current project's
+   instructions and configuration to select its real runner and required suite.
+   Use its focused checks during iteration and its required suite before completion;
+   do not assume a language or import Freelancer's own test commands.
 2. Run the checks and retain evidence (command, output excerpt, and outcome).
 3. Classify each check as passed, failed, skipped/not-run, unavailable, or
    unverified. Never encode not-run as failed and never infer success from a
@@ -34,8 +35,8 @@ the supplied catalog for a report-only review. The public schema is
 
 ## Required capabilities and fallbacks
 
-- Required: a runnable check set (node tests and, for UI changes, the repo
-  browser journeys).
+- Required: the current project's appropriate check set (tests, type checks,
+  data assertions, document validation, or browser journeys as applicable).
 - Fallback: if a check cannot run here (missing runner, browser, device, or
   credentials), report it as skipped/unavailable with the reason and exact
   next action. Fixture success does not prove provider authentication or a

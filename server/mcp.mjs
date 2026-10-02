@@ -4,7 +4,17 @@ import { mcpName, mcpConfig } from '../domain/mcp.mjs';
 const record = value => value && typeof value === 'object' && !Array.isArray(value);
 const revision = config => createHash('sha256').update(JSON.stringify(config.mcp ?? {})).digest('hex');
 const conflict = message => Object.assign(Error(message), { status: 409 });
-const statuses = new Set(['connected', 'disabled', 'failed', 'needs_auth', 'needs_client_registration']);
+const statuses = new Set(['connected', 'disabled', 'failed', 'error', 'unavailable', 'needs_setup', 'needs_auth', 'needs_client_registration']);
+const statusReason = status => ({
+  connected: 'OpenCode reports a connected server; a successful model tool call is not verified.',
+  failed: 'OpenCode reports a connection failure. Check the command/dependencies or remote URL/credentials, then retry.',
+  error: 'OpenCode reported an MCP error. Check native diagnostics and retry.',
+  unavailable: 'OpenCode could not inspect this MCP server.',
+  needs_setup: 'OpenCode reports that additional server setup is required.',
+  needs_auth: 'OpenCode reports that this server needs authentication.',
+  needs_client_registration: 'OpenCode reports that OAuth client registration is required.',
+  unverified: 'The server is configured, but OpenCode did not report a recognized connection state.',
+})[status] ?? 'OpenCode did not provide a connection diagnostic.';
 
 // Uses the app-local native global config. No second MCP client, credential store,
 // project selector, tool allowlist or per-persona entitlement is introduced.
@@ -25,10 +35,11 @@ export function createMcpConnections({ host, backendRoot, changeConnections }) {
       services: Object.entries(saved.mcp ?? {}).map(([name, row]) => ({ name,
         type: ['local', 'remote'].includes(row?.type) ? row.type : 'inherited',
         enabled: row?.enabled !== false,
-        status: row?.enabled === false ? 'disabled' : statuses.has(observed?.[name]?.status) ? observed[name].status : 'unverified',
+        status: row?.enabled === false ? 'disabled' : !observed ? 'unavailable' : statuses.has(observed?.[name]?.status) ? observed[name].status : 'unverified',
         authentication: row?.type === 'remote' && row.oauth !== false ? 'native-oauth' : 'external',
         // Do not forward URLs, commands, environment values, tokens or upstream errors.
-        reason: observed ? null : 'Connection health could not be observed. Registration is not proof of successful tool use.' })),
+        reason: !observed ? 'Connection health could not be observed. Registration is not proof of successful tool use.' :
+          statusReason(row?.enabled === false ? 'disabled' : statuses.has(observed?.[name]?.status) ? observed[name].status : 'unverified') })),
       note: 'Shared with every agent, model and project. Native permission decisions and actual model support still apply. A connected service is not proof that a model used its tools.' };
   }
   async function act(input = {}) {

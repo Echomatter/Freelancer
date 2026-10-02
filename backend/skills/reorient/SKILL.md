@@ -13,6 +13,13 @@ files and useful validation commands. Use indexed documents when relevant and
 native source search when the index is missing or incomplete. Verify decisive
 facts in their originals. Reuse valid earlier orientation; recheck stale facts.
 
+Consider relevant Memory for what has been learned about this project: durable
+decisions, constraints and non-obvious lessons. Current source and project state
+remain authoritative; verify consequential remembered implementation, dependency,
+status or behavior claims. Start with local index/search, then authoritative local
+source; consider Context7 or Fetch only when external documentation/evidence is
+needed. Missing Memory never blocks orientation with the repository.
+
 When delegation materially helps, use `delegate({agent, task})` with a named agent from the supplied catalog (Researcher is a useful starting point).
 Give a bounded investigation and request supported
 findings, file locations and coverage gaps. Do not make another

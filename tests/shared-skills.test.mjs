@@ -18,6 +18,10 @@ const EXPECTED = [
   "record-outcome",
   "pursue-goal",
 ];
+const CAPABILITY_SKILLS = [
+  "playwright", "web-research", "remember", "reason-through", "docs-research",
+  "bounded-judgment", "typesafe-ai",
+];
 
 function read(skill, file = "SKILL.md") {
   const p = path.join(SKILLS, skill, file);
@@ -29,13 +33,16 @@ function frontmatter(text) {
   const m = text.match(/^---\r?\n([\s\S]*?)\r?\n---/);
   assert.ok(m, "missing YAML frontmatter");
   const name = (m[1].match(/^name:\s*(.+)$/m) || [])[1]?.trim();
-  const description = (m[1].match(/^description:\s*(.+)$/m) || [])[1]?.trim();
+  const rawDescription = (m[1].match(/^description:\s*(.+)$/m) || [])[1]?.trim();
+  const description = /^[>|]$/.test(rawDescription ?? "")
+    ? (m[1].match(/^description:.*\r?\n((?:[ \t]+[^\n]*\n?)+)/m) || [])[1]?.trim()
+    : rawDescription;
   return { name, description };
 }
 
 test("every shared skill exists with matching manifest frontmatter", () => {
   const names = new Set();
-  for (const skill of EXPECTED) {
+  for (const skill of [...EXPECTED, ...CAPABILITY_SKILLS]) {
     const text = read(skill);
     const { name, description } = frontmatter(text);
     assert.equal(name, skill, `frontmatter name mismatch in ${skill}`);
@@ -151,7 +158,7 @@ test("manifest lists exactly the implemented skills; sync is absent", () => {
   assert.equal(existsSync(manifestPath), true, "missing backend/opencode/catalog.json");
   const manifest = JSON.parse(readFileSync(manifestPath, "utf8"));
   assert.ok(!manifest.skills.includes("sync"), "sync must be absent from the manifest");
-  assert.deepEqual([...manifest.skills].sort(), [...EXPECTED].sort(), "manifest skills must match implemented skills");
+  assert.deepEqual([...manifest.skills].sort(), [...EXPECTED, ...CAPABILITY_SKILLS].sort(), "manifest skills must match implemented skills");
   for (const skill of manifest.skills) {
     assert.equal(
       existsSync(path.join(SKILLS, skill, "SKILL.md")),
@@ -164,5 +171,23 @@ test("manifest lists exactly the implemented skills; sync is absent", () => {
 test("optional flows stay task-triggered", () => {
   for (const skill of ["debug", "verify", "review"]) {
     assert.match(read(skill), /task-triggered only/i, `${skill} must keep extras task-triggered`);
+  }
+});
+
+test("capability guidance keeps historical, advisory and observed evidence distinct", () => {
+  const memory = read("remember");
+  assert.match(memory, /verify[\s\S]*current source/i);
+  assert.match(memory, /never[\s\S]*automatically mirror/i);
+  assert.match(memory, /structured model[\s\S]*outcomes remain authoritative/i);
+  assert.doesNotMatch(memory, /only when the user asks|agreed project workflow/i);
+  const verify = read("verify");
+  assert.match(verify, /unit test does not prove[\s\S]*UI[\s\S]*Playwright interaction does not prove[\s\S]*invariants/);
+  assert.match(verify, /documentation[\s\S]*does not prove the app/);
+  assert.match(read("model-routing"), /JEV cannot set eligibility, override explicit model choices or authorize paid use/);
+  assert.match(read("browser-verify"), /tools can be called directly without loading it/);
+  for (const skill of CAPABILITY_SKILLS) {
+    assert.match(read(skill), /optional/i, `${skill} must remain guidance`);
+    assert.match(read(skill), /not a prerequisite|neither[\s\S]*required|does not grant or gate|neither skill is a prerequisite/i,
+      `${skill} must not become an access prerequisite`);
   }
 });

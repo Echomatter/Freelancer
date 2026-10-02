@@ -29,3 +29,11 @@ your own retry loop or change the executor. Ask native questions for missing use
 input. Report repeated failures or blocked capacity with the partial work intact.
 Native permissions, explicit denials, paid-model consent and Git agreements remain
 authoritative. A goal provides no filesystem isolation.
+
+At meaningful milestones, consider Memory for durable decisions, constraints,
+discoveries and rejected approaches with their reasons that future work may
+revisit; routine todo completion does not merit automatic storage. Sequential
+Thinking can help with complicated dependencies, contradictory evidence or several
+viable paths; JEV may compare a few explicit alternatives. These are optional
+capability-use hints, never Goal stages or checkpoint prerequisites. If unavailable,
+continue normal reasoning and the existing recovery/checkpoint contract.

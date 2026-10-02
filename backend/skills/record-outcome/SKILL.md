@@ -46,3 +46,11 @@ paid escalation remain distinct observations.
 Binding, provider, quota and deployment failures are operational observations, not poor coding performance by the intended model. No fabricated model self-identification, measured zero balances, or subscription-dollar savings. Explicitly inspection-only assignments return findings for authorized recording; a review-flavored assignment alone is not a write restriction.
 
 Actual observations are stored locally in `.state/task-history.json`, never in the public seed. Failed execution is recorded automatically as operational evidence with its actual usage when available; do not mark it successful or treat it as a capability verdict. Correctness still requires explicit validation.
+
+Structured Freelancer model outcomes remain authoritative for performance evidence.
+Consider Memory for useful qualitative observations that do not fit those records,
+such as repeated strength on bounded UI work and unsupported-helper assumptions
+in broad refactors. Keep supporting context and uncertainty; no automatic writes
+or duplicate statistics ledger. Future recommendations may combine task needs,
+structured outcomes and relevant qualitative history, with optional JEV comparison
+only if eligible choices remain ambiguous. Memory/JEV failure never blocks recording.

@@ -99,7 +99,7 @@ export function createCapabilities({ host, backendRoot }) {
       const mcpConfig = effectiveConfig.mcp && typeof effectiveConfig.mcp === 'object' ? effectiveConfig.mcp : {};
       const mcpStatus = mcp.value && typeof mcp.value === 'object' && !Array.isArray(mcp.value) ? mcp.value : {};
       const mcpRows = [...new Set([...Object.keys(mcpConfig), ...Object.keys(mcpStatus)])].sort().map(name => {
-        const status = ['connected', 'disabled', 'failed', 'needs_auth', 'needs_client_registration'].includes(mcpStatus[name]?.status)
+        const status = ['connected', 'disabled', 'failed', 'error', 'unavailable', 'needs_setup', 'needs_auth', 'needs_client_registration'].includes(mcpStatus[name]?.status)
           ? mcpStatus[name].status : mcpConfig[name]?.enabled === false ? 'disabled' : 'unverified';
         return { name, origin: 'OpenCode native MCP', configured: Object.hasOwn(mcpConfig, name), status,
           tools: tools.filter(row => row.id.startsWith(`${name}_`)).map(row => row.id),

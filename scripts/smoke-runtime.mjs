@@ -31,7 +31,7 @@ try {
   }
   for (const name of retiredAgents) assert.ok(!agents.some(a => a.name === name), `Retired profile remains selectable: ${name}`);
   const skills = await host.request('/skill', { directory: config.appRoot });
-  for (const name of ['reorient', 'search-index', 'model-routing', 'record-outcome', 'pursue-goal', 'debug', 'verify', 'browser-verify', 'review', 'handoff'])
+  for (const name of ['reorient', 'search-index', 'model-routing', 'record-outcome', 'pursue-goal', 'debug', 'verify', 'browser-verify', 'playwright', 'web-research', 'remember', 'reason-through', 'docs-research', 'bounded-judgment', 'typesafe-ai', 'review', 'handoff'])
     assert.ok(skills.some(skill => skill.name === name), `Missing app skill ${name}`);
   const tools = await host.request('/experimental/tool/ids', { directory: config.appRoot });
   for (const name of ['delegate', 'content_index', 'git_project', 'todowrite', 'goal_checkpoint']) assert.ok(tools.includes(name), `Missing native tool ${name}`);
@@ -42,6 +42,11 @@ try {
   assert.equal(capabilities.probes.exposed.state, 'not-run', 'smoke does not select or invoke a model');
   assert.ok(capabilities.tools.find(row => row.id === 'delegate').discovered);
   assert.ok(capabilities.skills.find(row => row.name === 'verify').discovered);
+  for (const name of ['playwright', 'fetch', 'memory', 'sequential-thinking', 'context7', 'jev']) {
+    const service = capabilities.mcp.find(row => row.name === name);
+    assert.ok(service, `Missing native shared MCP configuration: ${name}`);
+    assert.equal(service.status, 'connected', `Native MCP connection did not start: ${name}`);
+  }
   console.log(JSON.stringify({ nativeCapabilityInspection: { tools: capabilities.tools.filter(row => row.discovered).length,
     skills: capabilities.skills.length, mcp: capabilities.mcp.map(row => ({ name: row.name, status: row.status })),
     probes: capabilities.probes } }));
@@ -55,7 +60,7 @@ try {
   const bootstrap = await fetch(web.url + '/api/bootstrap', { headers: { 'X-Freelancer-Client': 'webpage' } });
   assert.equal(bootstrap.status, 200);
   assert.ok((await bootstrap.json()).settings.agents.some(agent => agent.id === 'engineer'));
-  console.log('Native app-local startup, named-agent catalog, ten shared skills, sanitized capability inventory, goal checkpoint tool, built UI assets and bootstrap API verified; no inference requested.');
+  console.log('Native app-local startup, named-agent catalog, seventeen catalogued shared skills, sanitized capability inventory, goal checkpoint tool, built UI assets and bootstrap API verified; no inference requested.');
 } finally {
   if (web) { web.server.closeAllConnections(); await new Promise(resolve => web.server.close(resolve)); }
   host.stop();

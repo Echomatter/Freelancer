@@ -16,6 +16,9 @@ export function hostEnvironment(config, env = process.env) {
   // forwarding it, chat tool calls fail even though the web process itself
   // has the setting from runtimeEnv().
   childEnv.FREELANCER_DATA_HOME = config.dataRoot;
+  // Forward-slashed JSONC interpolation keeps Windows paths valid in the
+  // native config parser when the Memory MCP receives its isolated file path.
+  childEnv.FREELANCER_MCP_MEMORY_FILE = path.join(config.dataRoot, 'mcp-memory.jsonl').replace(/\\/g, '/');
   // Preserve native auth/session storage (XDG_DATA_HOME) – do not override
   // if the user has already set it; runtime-config provides the default.
   if (config.xdgDataHome) childEnv.XDG_DATA_HOME = config.xdgDataHome;

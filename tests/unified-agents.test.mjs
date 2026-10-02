@@ -348,7 +348,7 @@ test("web runtime no longer imports or packages Tauri", async () => {
   );
   assert.ok(!Object.keys(manifest.scripts).some((k) => k.startsWith("tauri:")));
   await assert.rejects(access(new URL("../src-tauri/", import.meta.url)));
-  for (const f of ["src/App.tsx", "src/History.tsx", "server/main.mjs"])
+  for (const f of ["src/App.tsx", "src/ChatManagement.tsx", "server/main.mjs"])
     assert.doesNotMatch(
       await readFile(new URL("../" + f, import.meta.url), "utf8"),
       /isTauri|@tauri-apps|syncNativeTheme/,

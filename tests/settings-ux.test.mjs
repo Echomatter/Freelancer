@@ -46,13 +46,13 @@ test('missing skills, failed probes and MCP auth remain distinct', () => {
   assert.equal(skillLabel({ discovered: false }, { state: 'unavailable' }), 'Unknown');
   assert.equal(skillLabel({ discovered: false }, { state: 'observed' }), 'Not found');
   assert.equal(skillLabel({ discovered: true }, { state: 'observed' }), 'Found');
-  assert.equal(serviceLabel('needs_auth'), 'Sign-in needed');
-  assert.equal(serviceLabel('needs_client_registration'), 'Registration needed');
-  assert.equal(serviceLabel('connected'), 'Connected');
+  assert.equal(serviceLabel('needs_auth'), 'Needs authentication');
+  assert.equal(serviceLabel('needs_client_registration'), 'Needs setup');
+  assert.equal(serviceLabel('connected'), 'Available');
   assert.equal(serviceLabel('something-new'), 'Unknown');
 });
 test('new settings styles use only established semantic color tokens', async () => {
-  const allowed = new Set(['accent', 'muted', 'text', 'line', 'settings-gap', 'settings-panel-padding']);
+  const allowed = new Set(['accent', 'muted', 'text', 'line', 'panel', 'radius', 'settings-gap', 'settings-panel-padding']);
   for (const name of ['settings-ux.css', 'capabilities.css']) {
     const css = await readFile(new URL(`../src/${name}`, import.meta.url), 'utf8');
     assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b|rgba?\(/i);

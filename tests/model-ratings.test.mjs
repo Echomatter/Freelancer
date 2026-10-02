@@ -27,6 +27,9 @@ test('partial results preserve complete profiles and natural research accepts pu
   assert.match(prompt, /hosting alias/);
   assert.match(prompt, /SWE-bench/);
   assert.match(prompt, /webfetch/);
+  assert.match(prompt, /Consider shared Fetch/);
+  assert.match(prompt, /optional retrieval methods, not prerequisites/);
+  assert.match(prompt, /do not prove actual Freelancer model outcomes/);
   assert.match(prompt, /inference with low confidence/);
 });
 

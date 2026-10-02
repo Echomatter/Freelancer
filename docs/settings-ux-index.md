@@ -59,7 +59,7 @@
 
 **Source:** [`Capabilities.tsx`](../src/Capabilities.tsx), [`capability-presentation.mjs`](../src/capability-presentation.mjs), [`capabilities.css`](../src/capabilities.css); inventory contract in [`server/capabilities.mjs`](../server/capabilities.mjs).
 
-**Anatomy:** title, refresh and close; Tools and Skills lists without filters; one MCP connection card. Short statuses remain visible. Explanations, origins, inspection errors and captured instruction sources are in the card help bubbles.
+**Anatomy:** title, refresh and close; locally collapsible Tools, Skills and Connected Services (MCP) panels with compact available/ready counts. Expanding reveals shared inventory, six generic service templates, native connection status, setup and diagnostics. Collapse preferences affect presentation only.
 
 **Placement:** application-wide tools, skills and MCP connections. Project context is an inspection input, not an access setting. Connection setup retains native permissions and explicit approval.
 

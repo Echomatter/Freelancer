@@ -25,6 +25,20 @@ Delegation is optional and never required by this skill.
    Classify each check as passed, failed, skipped/not-run, unavailable, or
    unverified; never encode not-run as failed.
 
+## Capability-use hints
+
+Normal debugging is sufficient for straightforward failures. Consider Sequential
+Thinking when plausible causes multiply, observations contradict a hypothesis or
+a causal chain is hard to maintain. Context7 can help when current/version-specific
+framework, library, SDK or API behavior matters; Fetch can retrieve an original
+primary source or an external integration's response when appropriate. For a
+user-facing defect, prefer Playwright when useful to observe the actual failure.
+After collecting evidence, JEV may compare a few explicit competing hypotheses;
+its ranking is advice, so test the cause. Observation, hypothesis exploration,
+documentation, comparison and testing can complement one another without becoming
+required stages. If an auxiliary service fails, continue normal debugging and
+report the remaining evidence gap.
+
 ## Delegation (optional)
 
 Work directly by default. When a separate specialist materially helps, use

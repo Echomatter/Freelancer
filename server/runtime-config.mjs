@@ -72,6 +72,7 @@ export function runtimeEnv(config) {
     FREELANCER_RUNTIME_ROOT: c.backendRoot,
     FREELANCER_NODE: process.execPath,
     FREELANCER_DATA_HOME: c.dataRoot,
+    FREELANCER_MCP_MEMORY_FILE: path.join(c.dataRoot, "mcp-memory.jsonl").replace(/\\/g, "/"),
     OPENCODE_CONFIG_DIR: c.opencodeConfigDir,
     OPENCODE_CONFIG: path.join(c.opencodeConfigDir, 'opencode.jsonc'),
     XDG_CONFIG_HOME: c.xdgConfigHome,

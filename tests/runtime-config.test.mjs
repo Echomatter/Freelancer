@@ -103,6 +103,7 @@ test("runtimeEnv returns app-owned config and native data paths", () => {
   const cfg = buildRuntimeConfig("F:\\Freelancer");
   const env = runtimeEnv(cfg);
   assert.equal(env.FREELANCER_RUNTIME_ROOT, cfg.backendRoot);
+  assert.equal(env.FREELANCER_MCP_MEMORY_FILE, path.join(cfg.dataRoot, 'mcp-memory.jsonl').replace(/\\/g, '/'));
   assert.equal(env.OPENCODE_CONFIG_DIR, cfg.opencodeConfigDir);
   assert.equal(env.XDG_CONFIG_HOME, cfg.xdgConfigHome);
   assert.equal(env.XDG_DATA_HOME, cfg.xdgDataHome);

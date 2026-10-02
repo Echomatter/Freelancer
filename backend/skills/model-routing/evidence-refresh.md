@@ -61,6 +61,12 @@ not model-quality judgments. Keep usage estimates, subscription allocation
 and cash charges distinct. No model reweighting or parent-model switch is
 part of this flow.
 
+Consider Fetch for primary model cards or evaluation sources and Context7 when
+current SDK/API documentation matters. These retrieval options complement the
+existing evidence capture; they do not replace it or establish measured model
+performance. If unavailable, use native web retrieval or cached sources and
+preserve uncertainty. No extra capability call is required for an evidence batch.
+
 Required capabilities: shell/python evidence tooling where enabled. Fallback:
 if the tooling or a source is unavailable, record the gap with its reason and
 continue with cached evidence; do not invent capability or bypass limits.

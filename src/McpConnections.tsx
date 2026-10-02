@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
 import { serviceLabel } from './capability-presentation.mjs';
+import { mcpCatalog, mcpPreset } from './mcp-catalog.mjs';
 import { Button, Panel } from './echoflex/Controls';
 
 type Service = { name: string; type: string; enabled: boolean; status: string; authentication: string; reason?: string };
@@ -16,6 +17,7 @@ export function McpConnections({ onChanged }: { onChanged: () => void }) {
   const [target, setTarget] = useState('');
   const [references, setReferences] = useState('{}');
   const [oauth, setOauth] = useState(true);
+  const [preset, setPreset] = useState('');
   const [consent, setConsent] = useState(false);
   const [refresh, setRefresh] = useState(0);
   useEffect(() => {
@@ -47,26 +49,53 @@ export function McpConnections({ onChanged }: { onChanged: () => void }) {
       void act('add', name.trim(), config);
     } catch { setError('Command arguments and environment/header references must be valid JSON.'); }
   };
-  return <Panel title="MCP" help="mcp-connections">
+  const choosePreset = (id: string) => {
+    const item = mcpPreset(id); if (!item) return;
+    setPreset(id); setName(item.id); setType(item.kind);
+    setTarget(item.kind === 'local' ? JSON.stringify(item.command ?? []) : item.url ?? '');
+    setReferences(item.kind === 'local'
+      ? JSON.stringify(item.environment ?? {}, null, 2)
+      : !item.header || !item.value ? '{}' : JSON.stringify({ [item.header]: item.value }, null, 2));
+    setOauth(false); setAdding(true);
+  };
+  const readiness = mcpCatalog.reduce((n, item) => n + (inventory?.services.some(service => service.name === item.id && service.enabled && service.status === 'connected') ? 1 : 0), 0);
+  return <Panel title="Connected Services (MCP)" help="mcp-connections" collapsible storageKey="mcp" summaryText={`${mcpCatalog.length} · ${readiness} ready`}>
     {error && <p role="alert" className="notice error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!inventory && !error && <p role="status">Checking shared connections…</p>}
     {inventory?.state === 'unavailable' && <p>{inventory.reason}</p>}
     {inventory?.state === 'observed' && <>
-      {!inventory.services.length && <p>No connections.</p>}
-      <ul className="capability-list">{inventory.services.map(service => <li key={service.name}>
-        <strong>{service.name}</strong> — {serviceLabel(service.status)}
-        {service.reason && <small>{service.reason}</small>}
-        <div className="save-row">
-          <Button disabled={busy} onClick={() => void act(service.enabled ? 'disable' : 'enable', service.name)}>{service.enabled ? 'Disable' : 'Enable'} {service.name}</Button>
-          {service.enabled && <Button disabled={busy} onClick={() => void act('retry', service.name)}>Test / retry {service.name}</Button>}
-          {service.enabled && service.authentication === 'native-oauth' && <Button disabled={busy} onClick={() => void act('authenticate', service.name)}>Authenticate {service.name}</Button>}
-          {service.authentication === 'native-oauth' && <Button disabled={busy} onClick={() => void act('logout', service.name)}>Sign out {service.name}</Button>}
-        </div>
-      </li>)}</ul>
+      <p className="mcp-summary">{mcpCatalog.length} suggested · {readiness} ready. Shared native OpenCode connections are available to all agents, models and projects.</p>
+      {!inventory.services.length && <p>No custom MCP connections.</p>}
+      <ul className="capability-list mcp-service-list">{[...mcpCatalog.map(preset => ({
+        name: preset.id, title: preset.name, cost: preset.cost,
+        service: inventory.services.find(row => row.name === preset.id), preset,
+      })), ...inventory.services.filter(row => !mcpCatalog.some(item => item.id === row.name)).map(service => ({
+        name: service.name, title: service.name, cost: 'Custom native OpenCode MCP connection', service, preset: null,
+      }))].map(item => {
+        const service = item.service;
+        return <li key={item.name}>
+          <div className="mcp-service-title"><strong>{item.title}</strong><span>{serviceLabel(service?.status ?? 'needs_setup')}</span></div>
+          <small>{item.cost}</small>
+          <small>{service ? `${service.type} · OpenCode global configuration` : `${item.preset?.provider ?? item.preset?.kind ?? 'custom'} · Suggested setup template`}</small>
+          {item.preset?.dependency && <small>Dependency: {item.preset.dependency}</small>}
+          {service?.reason && <small>{service.reason}</small>}
+          <div className="save-row">
+            {!service && item.preset && <Button disabled={busy} onClick={() => choosePreset(item.preset.id)}>Set up {item.title}</Button>}
+            {service && <Button disabled={busy} onClick={() => void act(service.enabled ? 'disable' : 'enable', service.name)}>{service.enabled ? 'Disable' : 'Enable'} {item.title}</Button>}
+            {service?.enabled && <Button disabled={busy} onClick={() => void act('retry', service.name)}>Test / retry</Button>}
+            {service?.enabled && service.authentication === 'native-oauth' && <Button disabled={busy} onClick={() => void act('authenticate', service.name)}>Authenticate</Button>}
+            {service?.authentication === 'native-oauth' && <Button disabled={busy} onClick={() => void act('logout', service.name)}>Sign out</Button>}
+          </div>
+        </li>;
+      })}</ul>
       <Button disabled={busy} onClick={() => setAdding(value => !value)}>{adding ? 'Cancel new connection' : 'Add connection'}</Button>
       {adding && <fieldset className="mcp-form" disabled={busy}>
         <legend>New shared connection</legend>
+        <label>Service template<select value={preset} onChange={e => choosePreset(e.target.value)}>
+          <option value="">Custom MCP service</option>{mcpCatalog.map(item => <option key={item.id} value={item.id}>{item.name} · {item.cost}</option>)}
+        </select></label>
+        {preset && <p className="capability-reason">{mcpPreset(preset)?.cost}. OpenCode owns the connection and runtime. Set referenced environment variables on the host, restart OpenCode/Freelancer, then test; secrets stay out of Freelancer settings.</p>}
         <label>Service name<input value={name} onChange={e => setName(e.target.value)} autoComplete="off" /></label>
         <label>Connection type<select value={type} onChange={e => { setType(e.target.value); setTarget(''); setConsent(false); }}>
           <option value="remote">Remote URL</option><option value="local">Local command</option>

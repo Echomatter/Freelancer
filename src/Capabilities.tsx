@@ -40,6 +40,8 @@ export function Capabilities({ data, sessionID, onClose }: {
   }, [project, sessionID, refresh]);
   const tools = inventory?.tools ?? [];
   const skills = inventory?.skills ?? [];
+  const availableTools = tools.filter(row => ['Available', 'Loaded'].includes(toolLabel(row))).length;
+  const availableSkills = skills.filter((row, index) => skillLabel(row, inventory?.probes?.skills) === 'Found').length;
   return <div className="capability-view">
     <PageHeading compact title="Capabilities" icon={Wrench} actions={<>
       <Button type="button" disabled={!project || loading} onClick={() => setRefresh(n => n + 1)}>
@@ -50,8 +52,7 @@ export function Capabilities({ data, sessionID, onClose }: {
       {loading && <p role="status">Checking capabilities…</p>}
       {error && <Panel title="Inventory unavailable"><p className="notice error" role="alert">{error}</p><Button type="button" onClick={() => setRefresh(n => n + 1)}>Retry</Button></Panel>}
       {inventory && <>
-        <div className="capability-result-count" role="status">{tools.length} tools · {skills.length} skills</div>
-        <Panel title="Tools" className="capability-section" help="capability-tools" helpDetails={<>
+        <Panel title="Tools" className="capability-section" collapsible storageKey="tools" summaryText={`${tools.length} · ${availableTools} available`} help="capability-tools" helpDetails={<>
           <details><summary>Technical details</summary>
             <p>Project: {data.project?.name ?? project}</p>
             {inventory.observedAt && <p>Checked: {new Date(inventory.observedAt).toLocaleString()}</p>}
@@ -68,7 +69,7 @@ export function Capabilities({ data, sessionID, onClose }: {
           </li>)}</ul>
           {!tools.length && <p>No tools were returned by this inspection.</p>}
         </Panel>
-        <Panel title="Skills" className="capability-section" help="capability-skills" helpDetails={<details><summary>Technical details</summary>
+        <Panel title="Skills" className="capability-section" collapsible storageKey="skills" summaryText={`${skills.length} · ${availableSkills} available`} help="capability-skills" helpDetails={<details><summary>Technical details</summary>
           {inventory.skills.map((row, index) => <p key={index}><strong>{row.name}</strong> · {row.origin}{row.unavailableReason && <> — {row.unavailableReason}</>}</p>)}
           {inventory.probes?.skills?.reason && <p>{inventory.probes.skills.reason}</p>}
         </details>}>

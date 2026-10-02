@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import path from "node:path";
 import { createHost, hostEnvironment } from "../server/host.mjs";
 import { buildRuntimeConfig } from "../server/runtime-config.mjs";
 
@@ -8,6 +9,7 @@ test("native host forwards the content-index data root to chat tools", () => {
   const env = hostEnvironment(config, {});
   assert.equal(env.FREELANCER_RUNTIME_ROOT, config.backendRoot);
   assert.equal(env.FREELANCER_DATA_HOME, config.dataRoot);
+  assert.equal(env.FREELANCER_MCP_MEMORY_FILE, path.join(config.dataRoot, 'mcp-memory.jsonl').replace(/\\/g, '/'));
 });
 
 test("native host preserves provider error details, status and stable code", async () => {

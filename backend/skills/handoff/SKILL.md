@@ -27,6 +27,14 @@ Record a compact checkpoint containing:
 Keep it short enough to resume from; omit full logs and keep pointers to
 evidence instead.
 
+Consider Memory selectively for durable architectural decisions, persistent
+constraints, non-obvious verified lessons, deliberately rejected approaches and
+their reasons, or recurring environmental/integration facts. Keep temporary
+worker state, transient todos, routine progress, every test result and information
+obvious from source in the normal handoff, not automatic Memory writes. Remembered
+knowledge is historical context to recheck, not current execution state. Memory
+failure never prevents a recovery checkpoint or affects Freelancer persistence.
+
 ## Required capabilities and fallbacks
 
 - Required: read access to current state (todos, receipts, changed files).

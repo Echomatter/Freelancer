@@ -17,8 +17,8 @@ export function skillLabel(row, probe) {
   return probe?.state === 'observed' ? 'Not found' : 'Unknown';
 }
 export function serviceLabel(status) {
-  return ({ connected: 'Connected', disabled: 'Disabled', failed: 'Connection failed', needs_auth: 'Sign-in needed',
-    needs_client_registration: 'Registration needed', unverified: 'Unverified' })[status] ?? 'Unknown';
+  return ({ connected: 'Available', disabled: 'Disabled', failed: 'Error', error: 'Error', unavailable: 'Unavailable',
+    needs_auth: 'Needs authentication', needs_setup: 'Needs setup', needs_client_registration: 'Needs setup', unverified: 'Unknown' })[status] ?? 'Unknown';
 }
 export function toolReason(row) {
   // The API can report "choose a model" when its optional model probe did not

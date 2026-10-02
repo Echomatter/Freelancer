@@ -12,8 +12,9 @@ Delegation is optional and never required by this skill.
 
 ## Procedure
 
-1. Choose the smallest check set that covers the change (focused contract or
-   unit test, plus the nearest regression scope). Read the current project's
+1. Identify the claim to establish, then choose the smallest check set covering
+   the change (focused contract or unit test, plus the nearest regression scope).
+   Read the current project's
    instructions and configuration to select its real runner and required suite.
    Use its focused checks during iteration and its required suite before completion;
    do not assume a language or import Freelancer's own test commands.
@@ -23,6 +24,19 @@ Delegation is optional and never required by this skill.
    completed response.
 4. On failure, stop and diagnose (see the `debug` skill) instead of
    re-recording or retrying unchanged.
+
+## Capability-use hints
+
+Prefer evidence suited to the claim: direct source inspection for repository
+facts, project-native tests/checks for implementation invariants, Playwright for
+rendered behavior, interaction, visual state, runtime errors and user journeys,
+Context7 for documented library/API/version behavior, and Fetch for external
+resources, published information or current web content. Local evidence comes
+first for repository questions. A passing unit test does not prove correct UI
+rendering; a Playwright interaction does not prove all implementation invariants;
+documentation of expected behavior does not prove the app currently behaves that
+way. Choose the method that can establish the claim. If unavailable, use another
+appropriate method and state what remains unverified.
 
 ## Delegation (optional)
 

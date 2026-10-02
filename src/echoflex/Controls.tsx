@@ -2,7 +2,7 @@
 // audio/module runtime; native HTML behavior and accessibility are preserved.
 import { X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
-import { cloneElement, createContext, isValidElement, useContext, useId, type ReactElement } from "react";
+import { cloneElement, createContext, isValidElement, useContext, useId, useState, type ReactElement } from "react";
 import type { LucideIcon } from "lucide-react";
 import { HelpHint, HelpScope } from "../HelpHint";
 import type { HelpTopic } from "../documentation-help";
@@ -20,19 +20,30 @@ export function PageCloseButton({ onClick, label = "Close settings", disabled = 
 }
 
 const PanelLevel = createContext(1);
-export function Panel({ title, help, helpDetails, children, className = "", ...props }:
-  HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic; helpDetails?: ReactNode }) {
+export function Panel({ title, help, helpDetails, children, className = "", collapsible = false, summaryText, storageKey, ...props }:
+  HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic; helpDetails?: ReactNode; collapsible?: boolean; summaryText?: string; storageKey?: string }) {
   const parentLevel = useContext(PanelLevel);
   const level = title ? Math.min(6, parentLevel + 1) : parentLevel;
   const Heading = `h${level}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
   const headingID = useId();
+  const [open, setOpen] = useState(() => {
+    if (!collapsible || !storageKey) return true;
+    try { return window.localStorage.getItem(`capability-panel:${storageKey}`) === 'open'; } catch { return false; }
+  });
   const labelledBy = props['aria-labelledby'] ?? (title && !props['aria-label'] ? headingID : undefined);
-  return <section className={`panel ${className}`} {...props} aria-labelledby={labelledBy}>
+  const contents = <section className={`panel ${className}`} {...props} aria-labelledby={labelledBy}>
     <PanelLevel.Provider value={level}><HelpScope topic={help} details={helpDetails}>
-      {title && <Heading id={headingID} className="panel-heading">{title}</Heading>}
+      {title && !collapsible && <Heading id={headingID} className="panel-heading">{title}</Heading>}
       {children}
     </HelpScope></PanelLevel.Provider>
   </section>;
+  if (!collapsible) return contents;
+  return <details className="panel-disclosure" open={open} onToggle={event => {
+    const value = event.currentTarget.open; setOpen(value);
+    if (storageKey) try { window.localStorage.setItem(`capability-panel:${storageKey}`, value ? 'open' : 'collapsed'); } catch { /* local preference is optional */ }
+  }}>
+    <summary>{title && <Heading id={headingID} className="panel-heading">{title}</Heading>}{summaryText && <small>{summaryText}</small>}</summary>{contents}
+  </details>;
 }
 export function PageHeading({ title, actions, icon: Icon, help, description, compact }: {
   title: string; actions?: ReactNode; icon?: LucideIcon; help?: HelpTopic; description?: string; compact?: boolean;

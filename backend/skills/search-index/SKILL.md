@@ -35,3 +35,9 @@ Rebuild modes: `none` (default), `general`, `special`, `both`. Do not rebuild ev
 An explicit index rebuild may trigger a lightweight model-inventory/quota freshness check through existing routing scripts. That is not a full model-research pass and must not recurse.
 
 INDEX != SOURCE. Rank != authority. Fact row != verified fact.
+
+Keep the evidence order: local index/search → authoritative local source →
+external technical documentation/web evidence when needed. Consider Context7 for
+current library/API contracts and Fetch for original primary sources, missing
+Context7 coverage or other web content. Neither is necessary for facts already
+established locally; an unavailable service leaves native search/read usable.

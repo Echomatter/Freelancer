@@ -15,7 +15,7 @@ Sources are composed at different points in native execution. The table is an in
 | 3 | Repository instructions | `AGENTS.md` (repository root) | Repository guide: product boundaries, data rules, validation paths. |
 | 4 | Agent catalog | `domain/workspace.mjs` | Sole authored agent catalog (engineer, researcher, designer) merged with private settings overrides. Names and expertise guide approach; they grant no authority. |
 | 5 | Captured execution prompt | `server/execution.mjs` | Application-owned composition: agent prompt + Freelancer execution contract + request context. Captured at the root request; later edits affect future roots, not running workers. |
-| 6 | Shared skills | `backend/skills/*/SKILL.md` (10 skills) | Application shared skills, listed in `backend/opencode/catalog.json`. Loaded on demand through the native `skill` tool; procedure and fallbacks only, no authority. |
+| 6 | Shared skills | `backend/skills/*/SKILL.md` (17 skills) | Application shared skills, listed in `backend/opencode/catalog.json`. Loaded on demand through the native `skill` tool; procedure and fallbacks only, no authority. |
 | 7 | Native profiles | OpenCode native identity/permission records | Native-owned. Identity and permissions, never a duplicate persona or prompt store. |
 | 8 | Provider prompt and lifecycle prompts | OpenCode runtime/provider implementation (installed native version) | Native-owned. Provider, compaction, title and summary prompts are internal; Freelancer does not copy them into personas. Full content is unavailable through the inventory API. |
 | 9 | User global/project instructions | Native OpenCode configuration `instructions` and native `AGENTS.md` discovery | Native-owned discovery, user/project authored content. The repository guide above is one source, not the complete global discovery set. |
@@ -44,6 +44,21 @@ Sources are composed at different points in native execution. The table is an in
 - There is **no integration gateway** in the instruction path. Sources are files and native records composed by `server/execution.mjs`; they do not call external services to build prompts.
 - Edits to the catalog or execution prompt affect future root requests. Running workers keep their captured instructions until they finish.
 - Native permissions, paid-model consent, delegation ceilings, and the saved GitHub agreement remain the hard authority boundaries across every layer.
+
+## Capability-use hints
+
+The existing captured contract in `server/execution.mjs` carries the general
+meaning and limitations of the six shared MCP capabilities for every main and
+delegated named-agent request. Existing skills add concise contextual hints for
+routing/delegation, debugging, verification, browser investigation, research,
+orientation, handoffs, model outcomes, reviews and Goals. Skills load only when
+useful; direct native MCP use never requires one.
+
+Hints advise suitable methods and evidence. They do not call services while
+composing prompts, add a workflow/permission stage, change deterministic routing
+or delegation contracts, or store Memory automatically. Native discovery and
+permissions remain the source of actual tool exposure; an unavailable auxiliary
+capability leaves ordinary reasoning and other valid methods available.
 
 ## Effective instruction diagnostics
 

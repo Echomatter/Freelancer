@@ -51,12 +51,13 @@ test('adding a shared service persists only native global configuration and read
   assert.deepEqual(f.state.config.mcp.browser, remote);
   assert.ok(f.state.config.mcp.existing);
   assert.equal(result.services.find(row => row.name === 'browser').status, 'needs_auth');
+  assert.equal(typeof result.services.find(row => row.name === 'browser').reason, 'string');
   const patch = f.state.calls.find(call => call.options.method === 'PATCH');
   assert.equal(patch.route, '/global/config');
   assert.equal(patch.options.directory, undefined, 'never saved to an active project');
   assert.deepEqual(Object.keys(patch.options.body), ['mcp']);
   assert.ok(f.state.calls.some(call => call.route === '/global/dispose'));
-  assert.doesNotMatch(JSON.stringify(result), /example\.test|command|private-token/);
+  assert.doesNotMatch(JSON.stringify(result), /example\.test|private-token|C:\\tools/);
 });
 
 test('enable, disable, retry, authentication and sign out use native lifecycle endpoints', async () => {

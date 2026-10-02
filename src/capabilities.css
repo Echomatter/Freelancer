@@ -1,5 +1,20 @@
 .capability-view { display: grid; gap: 20px; min-width: 0; }
 .capability-view > .page-title { margin-bottom: 0; }
+.panel-disclosure { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius, 12px); background: var(--panel); }
+.panel-disclosure > summary { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-height: 48px; padding: 8px 16px; cursor: pointer; list-style: none; }
+.panel-disclosure > summary::-webkit-details-marker { display: none; }
+.panel-disclosure > summary::before { content: '›'; color: var(--muted); transform: rotate(0deg); transition: transform .15s ease; }
+.panel-disclosure[open] > summary::before { transform: rotate(90deg); }
+.panel-disclosure > summary h2, .panel-disclosure > summary h3, .panel-disclosure > summary h4 { margin: 0; font-size: 14px; }
+.panel-disclosure > summary small { margin-left: auto; color: var(--muted); font-size: 12px; text-align: right; }
+.panel-disclosure > .panel { border: 0; box-shadow: none; border-top: 1px solid var(--line); border-radius: 0 0 var(--radius, 12px) var(--radius, 12px); }
+.panel-disclosure > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.mcp-summary { color: var(--muted); font-size: 13px; line-height: 1.5; }
+.mcp-service-list > li { gap: 8px; }
+.mcp-service-list { margin: 0; padding: 0; list-style: none; }
+.mcp-service-title { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.mcp-service-title span { color: var(--muted); font-size: 12px; }
+.mcp-service-list small { color: var(--muted); overflow-wrap: anywhere; }
 .capability-intro, .capability-section-description { font-size: 13px; line-height: 1.6; color: var(--muted); }
 .capability-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: end; }
 .capability-observation { display: grid; gap: 5px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }

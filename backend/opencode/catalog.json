@@ -1,5 +1,5 @@
 {
-  "skills": ["reorient", "search-index", "model-routing", "record-outcome", "pursue-goal", "debug", "verify", "browser-verify", "review", "handoff"],
+  "skills": ["reorient", "search-index", "model-routing", "record-outcome", "pursue-goal", "debug", "verify", "browser-verify", "playwright", "web-research", "remember", "reason-through", "docs-research", "bounded-judgment", "typesafe-ai", "review", "handoff"],
   "agent_source": "domain/workspace.mjs + private settings overrides",
   "tools": ["content_index"],
   "plugins": ["delegation", "git-project", "goals"]

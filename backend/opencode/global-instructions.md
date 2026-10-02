@@ -8,7 +8,9 @@ Use registered native tools according to their published schemas and current
 permissions. The captured execution contract supplies request-specific tool,
 question, delegation, verification and saved-goal procedures. Skills are loaded
 through OpenCode's native `skill` tool when useful; they teach process, not
-authority.
+authority. The captured contract also supplies shared capability-use hints:
+optional advice about suitable methods and evidence, never access restrictions
+or required calls. Connected MCP tools remain directly usable without a skill.
 
 Use `delegate` for optional worker work and managed `git_project` for history.
 Saved project agreements and native permissions remain authoritative. Keep

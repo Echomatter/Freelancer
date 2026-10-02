@@ -26,6 +26,16 @@ A review never approves publication and never mandates delegation.
 4. The parent integrates review output against repository evidence and
    acceptance criteria. Review completion is not proof of correctness.
 
+## Capability-use hints
+
+After collecting source and evidence, consider JEV for bounded triage: blocker /
+significant / minor / uncertain, likely regression, requirement violation versus
+not established, or which finding to investigate first. Its classification is
+not proof; the reviewer remains responsible for grounded findings and locations.
+Context7 can clarify current expected library/API behavior, while Playwright can
+check a suspected user-visible regression. If unavailable, review directly with
+the evidence at hand and report gaps; no auxiliary service is a review gate.
+
 ## Required capabilities and fallbacks
 
 - Required: read access to the changed files and any cited evidence.

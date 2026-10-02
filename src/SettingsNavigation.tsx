@@ -33,9 +33,7 @@ export function SettingsNavigation({ expanded, scope, tab, project, onToggle, on
           <ChevronDown size={15} className={open ? "nav-chevron expanded" : "nav-chevron"} aria-hidden="true" />
         </button>
         <div id={`${group}-settings-links`} className="settings-drawer-links" hidden={!open}>
-          {settingsGroups[group].map(section => <div className="settings-menu-section" key={section.label} role="group" aria-label={section.label}>
-            <p className="settings-menu-heading">{section.label}</p>
-            {section.items.map(id => {
+          {settingsGroups[group].flatMap(section => section.items).map(id => {
               const page = settingsPage(group, id)!;
               const ItemIcon = icons[page.icon as keyof typeof icons];
               const selected = scope === group && tab === id;
@@ -43,10 +41,10 @@ export function SettingsNavigation({ expanded, scope, tab, project, onToggle, on
                 aria-current={selected ? "page" : undefined} aria-label={page.title} title={page.title}
                 onClick={() => onSelect(group, id)}>
                 <ItemIcon size={17} aria-hidden="true" />
-                <span className="settings-menu-label"><span>{page.title}</span>{id === 'agents' && <small>Shared across projects</small>}</span>
+                <span>{page.title}</span>
               </button>;
             })}
-          </div>)}
+
         </div>
       </section>;
     })}

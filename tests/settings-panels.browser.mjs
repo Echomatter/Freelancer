@@ -125,7 +125,7 @@ test("settings panels share framing, aligned forms, help placement and clickable
     assert.ok(Math.abs(fieldRects[2].y - fieldRects[3].y) < 2, "second settings row aligns at the top");
     assert.ok(Math.abs(fieldRects[0].width - fieldRects[1].width) < 2, "settings columns share a width");
 
-    await inspectPanel("Agents", "Project settings", "Agents");
+    await inspectPanel("Agents", "Application settings", "Agents");
     await page.screenshot({ path: "artifacts/settings-panels/agents.png", fullPage: false });
     await inspectPanel("GitHub", "Project settings", "GitHub", false);
     // The persistent heading alone is not evidence that status loaded.

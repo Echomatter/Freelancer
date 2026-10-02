@@ -18,6 +18,9 @@ for (const mode of ['light', 'dark', 'custom']) for (const width of [360, 1440])
     page.on('pageerror', error => errors.push(error.message));
     try {
       await page.goto(fixture.url);
+      await expect(page.locator('.settings-menu-heading, .settings-menu-section')).toHaveCount(0);
+      await expect(page.locator('#project-settings-links').getByRole('button', { name: 'Agents', exact: true, includeHidden: true })).toHaveCount(0);
+      await expect(page.locator('#application-settings-links').getByRole('button', { name: 'Agents', exact: true, includeHidden: true })).toHaveCount(1);
       for (const entry of settingsPages) {
         const trigger = page.getByRole('button', { name: entry.scope === 'project' ? 'Project settings' : 'Application settings', exact: true });
         if (await trigger.getAttribute('aria-expanded') !== 'true') await trigger.click();
@@ -26,7 +29,8 @@ for (const mode of ['light', 'dark', 'custom']) for (const width of [360, 1440])
         await expect(heading).toBeVisible();
         const header = page.locator(`[data-settings-page="${entry.scope}/${entry.id}"]`);
         await expect(header).toHaveAttribute('data-settings-layout', entry.layout);
-        await expect(header.locator('.settings-page-description')).toHaveText(entry.description);
+        if (entry.id === 'capabilities') await expect(header.locator('.settings-page-description')).toHaveCount(0);
+        else await expect(header.locator('.settings-page-description')).toHaveText(entry.description);
         await expect(page.locator(`#${entry.scope}-settings-links button[aria-label="${entry.title}"]`)).toHaveAttribute('aria-current', 'page');
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2), `${entry.title}: document overflow`);
         const overflow = await header.evaluate(element => {

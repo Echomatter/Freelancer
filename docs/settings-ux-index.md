@@ -19,7 +19,7 @@
 | Read-only collections | model cards, tool/skill rows, project/file/search/history lists | Filter before results; name/state/metadata/action ordering; source and scope visible. |
 | Theme sources | `domain/theme.mjs`, provider color modules, `echoflex/tokens.css`, `colors.css` | Existing palette derivation and contrast; no page-owned theme. |
 
-**Menu grouping in this PR:** Project → Chat setup / Project work / Repository / Shared catalog. Application → Personalization / AI and connections / Automation / Content / Defaults and access. These headings organize existing routes; they do not introduce permissions or a new routing system.
+**Menus:** Project and Application settings each use one flat list. Agents is an application destination with no shared-catalog subtitle.
 
 ## Application settings
 
@@ -59,9 +59,9 @@
 
 **Source:** [`Capabilities.tsx`](../src/Capabilities.tsx), [`capability-presentation.mjs`](../src/capability-presentation.mjs), [`capabilities.css`](../src/capabilities.css); inventory contract in [`server/capabilities.mjs`](../server/capabilities.mjs).
 
-**Anatomy after this PR:** shared heading with Refresh and Close; short scope explanation; initial loading/no-project/error/retry state; Filter inventory and observed project/timestamp; textual result counts; Tools panel; Skills panel; Connected services (MCP) panel; shared MCP connection controls and read-only instruction sources. Tool rows contain ID, registration state, origin and relevant unavailable reason. Skill rows contain name, discovery state and file origin, including missing/not-discovered catalog entries. MCP rows translate native connection states and retain reasons. Empty filtered results are distinct from unavailable native inspection. Shared MCP controls add, authenticate, test, disable and re-enable native global connections.
+**Anatomy:** title, refresh and close; searchable Tools and Skills lists; one MCP connection card. Short statuses remain visible. Explanations, origins, inspection errors and captured instruction sources are in the card help bubbles.
 
-**Placement verdict:** correct as application-wide diagnostics observed through a project context. Shared connection setup is separated from observed inventory. **Before:** a raw table, comma-separated discovered skills, missing empty MCP section, incorrect `--border` token and overly faint metadata. **PR treatment:** replacement with themed, readable rows, honest registration language, searchable inventory, visible unknown/missing states, real refresh placement and responsive long-string handling. No agent/model selectors or permission controls are added; MCP setup uses the explicit connection approval and native authentication flows.
+**Placement:** application-wide tools, skills and MCP connections. Project context is an inspection input, not an access setting. Connection setup retains native permissions and explicit approval.
 
 ### application/schedules — Scheduled prompts
 
@@ -161,17 +161,17 @@
 
 **Placement verdict:** project ownership is right; local setup, agreement, work and receipts form a sensible progression. Cloud sync and Working agreement currently both edit the saved `github` permission: this is a real duplication, not two independent permissions. **PR treatment:** page scope, shared cards/headings, responsive grid/action geometry; managed Git previews, revision checks, identity validation, last-known-state behavior and execution receipts are unchanged. Consolidating that duplicated editor is listed as remaining work rather than removing an authority check in a styling PR.
 
-### project/agents — Agents (shared catalog shortcut)
+### application/agents — Agents
 
-**Source:** [`WorkspaceCatalog.tsx`](../src/WorkspaceCatalog.tsx), [`App.tsx`](../src/App.tsx). **Actual scope:** application-shared definitions, despite the project-menu entry. **Width:** collection; editor uses form width.
+**Source:** [`WorkspaceCatalog.tsx`](../src/WorkspaceCatalog.tsx), [`App.tsx`](../src/App.tsx). **Scope:** application-shared definitions. **Width:** collection; editor uses form width.
 
 **Anatomy:** heading with Add agent/Close; search; agent cards with icon, default/custom badge, name, prompt excerpt, response style, approach, model identity, Use agent and Edit. Inline editor contains Name, Prompt, parent-model/reasoning choice, response style (concise/balanced/detailed), approach (practical/thorough/creative), Save, Cancel and custom-agent Delete. There are no per-agent tool/skill access switches.
 
-**Placement verdict:** misleading without a scope label. Retaining a project shortcut is useful for choosing an agent, but editing it must not look project-local. **PR treatment:** a separate Shared catalog menu group, visible “Shared across projects” subtitle, and explicit shared scope on both catalog and editor headings. Route IDs, App's existing agent navigation, agent API and execution behavior are preserved. A future primary application-menu entry requires coordinating App's currently project-derived agent active scope; this PR does not pretend a subtitle performs that routing migration.
+**Placement:** Application settings. Agent catalog/editor headings and active navigation use application scope. Session defaults retains its Manage agents shortcut.
 
 ## Remaining behavior and IA work
 
-The shared presentation standard reaches all 18 destinations, but this is not a claim that every pre-existing behavioral issue has been resolved. The source audit found these follow-ups: duplicate GitHub uploads/sync editing; a possible application-level primary Agents route; Recent projects living inside Available Usage; a Remote access initial-load Retry action; consistent dirty-navigation handling across independent editors; and further manual review of long history selection bars and manually composed heading levels. These require targeted behavior changes and feature regression journeys, not cosmetic hiding.
+The shared presentation standard reaches all 18 destinations, but this is not a claim that every pre-existing behavioral issue has been resolved. The source audit found these follow-ups: duplicate GitHub uploads/sync editing; Recent projects living inside Available Usage; a Remote access initial-load Retry action; consistent dirty-navigation handling across independent editors; and further manual review of long history selection bars and manually composed heading levels. These require targeted behavior changes and feature regression journeys, not cosmetic hiding.
 
 ## Verification and evidence boundaries
 

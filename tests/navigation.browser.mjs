@@ -80,7 +80,7 @@ for (const viewport of [{ width: 390, height: 740 }, { width: 1440, height: 900 
     await project.click();
     await expect(application).toHaveAttribute('aria-expanded', 'false');
     await expect(project).toHaveAttribute('aria-expanded', 'true');
-    await sidebar.getByRole('button', { name: 'Agents', exact: true }).focus();
+    await sidebar.getByRole('button', { name: 'Session defaults', exact: true }).focus();
     await page.keyboard.press('Escape');
     await closed();
     await expect(project).toBeFocused();

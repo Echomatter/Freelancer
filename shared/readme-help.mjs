@@ -10,7 +10,7 @@ export const helpTopicIDs = /** @type {const} */ ([
   "usage-estimate", "contributions", "project-import", "project-indexes", "project-name",
   "message-options", "message-delivery", "model-ratings", "agents", "providers", "project-files", "remote-access",
   "remote-address", "remote-pairing", "remote-devices", "remote-web",
-  "turn-rail", "context-compaction",
+  "turn-rail", "context-compaction", "capability-tools", "capability-skills", "mcp-connections",
 ]);
 
 /** @typedef {typeof helpTopicIDs[number]} HelpTopic */

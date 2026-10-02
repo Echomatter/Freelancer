@@ -5,8 +5,8 @@ import { settingsGroups, settingsPages, settingsPage, settingsPageForTitle } fro
 import { registrationLabel, serviceLabel, skillLabel, toolReason, inventoryMatches } from '../src/capability-presentation.mjs';
 
 const original = {
-  project: ['files', 'search', 'agents', 'goals', 'sessions', 'delegation', 'github'],
-  application: ['models', 'usage', 'history', 'providers', 'appearance', 'remote-access', 'schedules', 'search', 'content-storage', 'git-defaults', 'capabilities'],
+  project: ['files', 'search', 'goals', 'sessions', 'delegation', 'github'],
+  application: ['agents', 'models', 'usage', 'history', 'providers', 'appearance', 'remote-access', 'schedules', 'search', 'content-storage', 'git-defaults', 'capabilities'],
 };
 for (const [scope, routes] of Object.entries(original)) test(`${scope} menu preserves every route exactly once`, () => {
   const items = settingsGroups[scope].flatMap(group => group.items);
@@ -24,7 +24,7 @@ test('catalog is complete, scope-aware and presentation-only', () => {
   assert.equal(new Set(settingsPages.map(page => `${page.scope}/${page.id}`)).size, 18);
   assert.equal(settingsPage('project', 'search').title, 'Search project content');
   assert.equal(settingsPage('application', 'search').title, 'Search all content');
-  assert.match(settingsPage('project', 'agents').description, /shared across all projects/);
+  assert.match(settingsPage('application', 'agents').description, /shared across all projects/);
   assert.equal(settingsPageForTitle('Edit agent').layout, 'form');
   assert.equal(settingsPageForTitle('New agent').id, 'agents');
   assert.equal(settingsPageForTitle('Unrelated chat heading'), undefined);
@@ -44,8 +44,8 @@ test('registration never claims successful execution', () => {
 test('missing skills, failed probes and MCP auth remain distinct', () => {
   assert.equal(skillLabel({ discovered: false, dependency: 'missing' }, { state: 'unavailable' }), 'Missing file');
   assert.equal(skillLabel({ discovered: false }, { state: 'unavailable' }), 'Unknown');
-  assert.equal(skillLabel({ discovered: false }, { state: 'observed' }), 'Not discovered');
-  assert.equal(skillLabel({ discovered: true }, { state: 'observed' }), 'Discovered');
+  assert.equal(skillLabel({ discovered: false }, { state: 'observed' }), 'Not found');
+  assert.equal(skillLabel({ discovered: true }, { state: 'observed' }), 'Found');
   assert.equal(serviceLabel('needs_auth'), 'Sign-in needed');
   assert.equal(serviceLabel('needs_client_registration'), 'Registration needed');
   assert.equal(serviceLabel('connected'), 'Connected');

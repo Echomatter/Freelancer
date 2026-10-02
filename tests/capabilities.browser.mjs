@@ -15,7 +15,7 @@ test('shared MCP connections can be added, authenticated, disabled and re-enable
   const native = attachMcpHost(fixture.host);
   const page = await appBrowser.newPage({ viewport: { width: 1280, height: 900 } });
   await openCapabilities(page, fixture.url);
-  await expect(page.getByText(/No shared services connected/)).toBeVisible();
+  await expect(page.getByText(/No connections/)).toBeVisible();
   await expect(page.getByRole('checkbox', { name: 'Enable native LSP tool' })).toHaveCount(0);
   await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   await page.getByLabel('Service name', { exact: true }).fill('browser');
@@ -28,7 +28,7 @@ test('shared MCP connections can be added, authenticated, disabled and re-enable
   assert.equal(native.config.mcp.browser.type, 'remote');
   assert.equal((await fixture.store.read('settings')).mcp, undefined);
   await page.getByRole('button', { name: 'Authenticate browser', exact: true }).click();
-  await expect(page.getByText('Authentication returned. Check the observed connection status below.')).toBeVisible();
+  await expect(page.getByText('Sign-in finished.')).toBeVisible();
   assert.equal(native.statuses.browser, 'connected');
   await page.getByRole('button', { name: 'Disable browser', exact: true }).click();
   await expect(page.getByRole('button', { name: 'Enable browser', exact: true })).toBeVisible();
@@ -41,7 +41,7 @@ test('shared MCP connections can be added, authenticated, disabled and re-enable
   await expect(page.getByRole('button', { name: 'Disable browser', exact: true })).toBeVisible();
 });
 
-test('capability observations and failed MCP actions are honest and sanitized', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
+test('capability observations and failed MCP actions are honest and sanitized', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }, testInfo) => {
   const fixture = await own(localDataFixture({ timers: false }));
   const native = attachMcpHost(fixture.host, { browser: { type: 'remote', url: 'https://fixture.example/mcp', enabled: true } });
   const original = fixture.host.request.bind(fixture.host);
@@ -57,15 +57,26 @@ test('capability observations and failed MCP actions are honest and sanitized', 
   const page = await appBrowser.newPage();
   await openCapabilities(page, fixture.url);
   const readRow = page.getByRole('list', { name: 'Tool inventory' }).getByRole('listitem').filter({ has: page.locator('code').getByText('read', { exact: true }) });
-  await expect(readRow).toContainText(/Registered.*unverified/);
+  await expect(readRow).toContainText('Loaded');
   const filter = page.getByRole('searchbox', { name: 'Filter inventory' });
   await filter.fill('no-such-tool-or-service');
   await expect(page.getByText('No tools match this filter.', { exact: true })).toBeVisible();
   await expect(page.getByRole('button', { name: 'Disable browser', exact: true })).toBeVisible();
   await filter.fill('');
-  await expect(readRow).toContainText(/Registered.*unverified/);
-  await page.getByText('Instruction sources (read-only)', { exact: true }).click();
-  await expect(page.getByText(/not a complete provider prompt/)).toBeVisible();
+  await expect(readRow).toContainText('Loaded');
+  await expect(page.getByRole('heading', { name: 'MCP', exact: true })).toHaveCount(1);
+  await page.screenshot({ path: testInfo.outputPath('capabilities-cleanup.png') });
+  await expect(page.getByText(/Registered.*unverified/)).toHaveCount(0);
+  await page.getByRole('button', { name: 'Help: Tools', exact: true }).click();
+  await expect(page.getByRole('tooltip')).toContainText('Loaded means OpenCode provides this tool.');
+  await page.getByText('Technical details', { exact: true }).click();
+  await expect(page.getByRole('tooltip')).toContainText('Request:');
+  await page.setViewportSize({ width: 360, height: 740 });
+  await expect.poll(async () => {
+    const box = await page.getByRole('tooltip').boundingBox();
+    return box && box.x >= 0 && box.y >= 0 && box.x + box.width <= 361 && box.y + box.height <= 741;
+  }).toBe(true);
+  await page.keyboard.press('Escape');
   native.fail = true;
   await page.getByRole('button', { name: 'Test / retry browser', exact: true }).click();
   await expect(page.getByRole('alert')).toContainText('not confirmed');
@@ -76,6 +87,9 @@ test('capability observations and failed MCP actions are honest and sanitized', 
   await expect(page.getByRole('button', { name: 'Disable browser', exact: true })).toBeVisible();
   failTools = true;
   await page.getByRole('button', { name: 'Refresh tools', exact: true }).click();
-  await expect(page.getByText('Native inspection failed or timed out.', { exact: true }).first()).toBeVisible();
+  await expect(readRow).toContainText('Unknown');
+  await page.getByRole('button', { name: 'Help: Tools', exact: true }).click();
+  await page.getByText('Technical details', { exact: true }).click();
+  await expect(page.getByRole('tooltip')).toContainText('Native inspection failed or timed out.');
   assert.equal(await page.getByText('private server detail').count(), 0);
 });

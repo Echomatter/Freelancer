@@ -20,22 +20,22 @@ export function PageCloseButton({ onClick, label = "Close settings", disabled = 
 }
 
 const PanelLevel = createContext(1);
-export function Panel({ title, help, children, className = "", ...props }:
-  HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic }) {
+export function Panel({ title, help, helpDetails, children, className = "", ...props }:
+  HTMLAttributes<HTMLElement> & { title?: string; help?: HelpTopic; helpDetails?: ReactNode }) {
   const parentLevel = useContext(PanelLevel);
   const level = title ? Math.min(6, parentLevel + 1) : parentLevel;
   const Heading = `h${level}` as 'h2' | 'h3' | 'h4' | 'h5' | 'h6';
   const headingID = useId();
   const labelledBy = props['aria-labelledby'] ?? (title && !props['aria-label'] ? headingID : undefined);
   return <section className={`panel ${className}`} {...props} aria-labelledby={labelledBy}>
-    <PanelLevel.Provider value={level}><HelpScope topic={help}>
+    <PanelLevel.Provider value={level}><HelpScope topic={help} details={helpDetails}>
       {title && <Heading id={headingID} className="panel-heading">{title}</Heading>}
       {children}
     </HelpScope></PanelLevel.Provider>
   </section>;
 }
-export function PageHeading({ title, actions, icon: Icon, help, description }: {
-  title: string; actions?: ReactNode; icon?: LucideIcon; help?: HelpTopic; description?: string;
+export function PageHeading({ title, actions, icon: Icon, help, description, compact }: {
+  title: string; actions?: ReactNode; icon?: LucideIcon; help?: HelpTopic; description?: string; compact?: boolean;
 }) {
   const page = settingsPageForTitle(title);
   const detail = description ?? page?.description;
@@ -43,9 +43,9 @@ export function PageHeading({ title, actions, icon: Icon, help, description }: {
     <div className="page-title-leading">
       {Icon && <span className="page-title-icon"><Icon size={21} strokeWidth={1.8} aria-hidden="true" /></span>}
       <div className="page-title-main">
-        {page && <span className="settings-page-kind">{page.kind}</span>}
+        {page && !compact && <span className="settings-page-kind">{page.kind}</span>}
         <div className="page-title-name"><h1>{title}</h1></div>
-        {detail && <p className="settings-page-description">{detail}</p>}
+        {detail && !compact && <p className="settings-page-description">{detail}</p>}
       </div>
     </div>
     {actions && <div className="page-title-actions">{actions}</div>}

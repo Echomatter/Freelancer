@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api } from './api';
+import { serviceLabel } from './capability-presentation.mjs';
 import { Button, Panel } from './echoflex/Controls';
 
 type Service = { name: string; type: string; enabled: boolean; status: string; authentication: string; reason?: string };
@@ -29,8 +30,8 @@ export function McpConnections({ onChanged }: { onChanged: () => void }) {
     try {
       const result = await api('mcp', { action, name: service, expectedRevision: inventory?.revision, ...(config ? { config } : {}) }, 'POST');
       setInventory(result);
-      setNotice(result.notice || (action === 'authenticate' ? 'Authentication returned. Check the observed connection status below.'
-        : 'Action returned. Connection health is shown below; model tool use has not been verified.'));
+      setNotice(result.notice || (action === 'authenticate' ? 'Sign-in finished.'
+        : 'Connection updated.'));
       if (action === 'add' && result.saved) { setAdding(false); setName(''); setTarget(''); setReferences('{}'); setConsent(false); }
       onChanged();
     } catch (reason) {
@@ -46,16 +47,15 @@ export function McpConnections({ onChanged }: { onChanged: () => void }) {
       void act('add', name.trim(), config);
     } catch { setError('Command arguments and environment/header references must be valid JSON.'); }
   };
-  return <Panel title="Connected services (MCP)">
-    <p>One shared connection list for all agents, models and projects. OpenCode owns the connections and authentication; Freelancer adds no service access matrix.</p>
+  return <Panel title="MCP" help="mcp-connections">
     {error && <p role="alert" className="notice error">{error}</p>}
     {notice && <p role="status">{notice}</p>}
     {!inventory && !error && <p role="status">Checking shared connections…</p>}
     {inventory?.state === 'unavailable' && <p>{inventory.reason}</p>}
     {inventory?.state === 'observed' && <>
-      {!inventory.services.length && <p>No shared services connected. Add a local command or a remote MCP URL.</p>}
+      {!inventory.services.length && <p>No connections.</p>}
       <ul className="capability-list">{inventory.services.map(service => <li key={service.name}>
-        <strong>{service.name}</strong> — {service.status.replaceAll('_', ' ')}
+        <strong>{service.name}</strong> — {serviceLabel(service.status)}
         {service.reason && <small>{service.reason}</small>}
         <div className="save-row">
           <Button disabled={busy} onClick={() => void act(service.enabled ? 'disable' : 'enable', service.name)}>{service.enabled ? 'Disable' : 'Enable'} {service.name}</Button>
@@ -75,14 +75,13 @@ export function McpConnections({ onChanged }: { onChanged: () => void }) {
           <input value={target} onChange={e => { setTarget(e.target.value); setConsent(false); }} placeholder={type === 'local' ? '["node", "C:/tools/server.mjs"]' : 'https://service.example/mcp'} autoComplete="off" /></label>
         <label>{type === 'local' ? 'Environment references (JSON object)' : 'Header references (JSON object)'}
           <textarea value={references} onChange={e => setReferences(e.target.value)} spellCheck={false} /></label>
-        <small>Prefer native {'{env:VARIABLE_NAME}'} references. Values are saved only by OpenCode, not in Freelancer settings.</small>
         {type === 'remote' && <label><input type="checkbox" checked={oauth} onChange={e => setOauth(e.target.checked)} />Use OpenCode OAuth when required</label>}
         <label><input type="checkbox" checked={consent} onChange={e => setConsent(e.target.checked)} />
           {type === 'local' ? 'I approve running this command on this computer.' : 'I approve connecting to this service.'}</label>
         <Button variant="primary" disabled={!consent || !name.trim() || !target.trim()} onClick={add}>Save shared connection</Button>
       </fieldset>}
     </>}
-    {busy && <p role="status">Applying the native connection action. Authentication may open a browser on this computer.</p>}
+    {busy && <p role="status">Updating connection…</p>}
     <div className="save-row"><Button disabled={busy} onClick={() => { setError(''); setRefresh(n => n + 1); }}>Refresh connections</Button></div>
   </Panel>;
 }

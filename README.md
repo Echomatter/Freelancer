@@ -97,7 +97,7 @@ Credentials remain with the native/provider authentication systems; Freelancer d
 
 **Application settings → Available Usage** turns provider/model telemetry into a practical view of remaining availability. It is designed around usable capacity rather than presenting token or dollar estimates as if they were provider billing records. Unknown, estimated and unavailable information stays distinguishable.
 
-**Application settings → Capabilities** is a platform-wide, simple, read-only list of available tools, skills and MCP status. Its only control is the advanced native LSP tool opt-in, which takes effect after restarting Freelancer. File access scope is under **Application settings → Content & Storage**. See [Capabilities](docs/capabilities.md) and [File access scope](docs/file-access.md).
+**Application settings → Capabilities** shows tools, skills and shared MCP connections. Use each card’s help bubble for status explanations and technical details. Manage agent definitions under **Application settings → Agents**. File access stays under **Application settings → Content & Storage**. See [Capabilities](docs/capabilities.md) and [File access scope](docs/file-access.md).
 
 The workspace model picker can optionally hide exhausted models. That preference lives under **Available Usage → Model visibility** and retains its saved value from Appearance.
 
@@ -609,4 +609,26 @@ Each browser has its own credential and expiry. Removing a device disconnects it
 ### Internet access
 
 Freelancer uses Tailscale Funnel to provide an HTTPS address without opening a router port. The address is reachable from the internet, but API requests remain blocked until that browser is paired here. The web listener is bound to loopback and API access always requires a remembered-device credential. Disable access here to close the listener and remove Freelancer's Funnel route. Other services on occupied ports are left alone.
+<!-- /help -->
+
+<!-- help:capability-tools -->
+### Tools
+
+Loaded means OpenCode provides this tool. Its use still depends on the model and native permissions; the label does not claim a successful call. Available means the current inspection also confirmed model support, permission and dependencies. Needs permission means OpenCode will ask before use. Restricted and Unavailable indicate a permission or dependency limit. Unknown means inspection could not confirm the state.
+
+Tools are shared across agents and projects. Refresh checks the current runtime. The technical details below include tool origins, inspection errors and captured instruction sources; these are read-only and are not the complete provider prompt.
+<!-- /help -->
+
+<!-- help:capability-skills -->
+### Skills
+
+Skills provide instructions that agents can load when useful. Found means OpenCode discovered the skill; it does not prove that its dependencies are installed. Missing file and Not found report missing instructions. Unknown means inspection could not confirm the state. Technical file locations and dependency details appear below.
+<!-- /help -->
+
+<!-- help:mcp-connections -->
+### MCP connections
+
+MCP connects additional services to the shared toolkit. Connections apply to every agent and project. OpenCode manages configuration and sign-in. Connected reports the connection state; model support and native permission still determine whether a tool can be used.
+
+Add a remote service URL or a local command, approve the connection, then sign in when required. Local commands run on this computer. Test / retry checks a connection. Disable keeps its saved configuration. Use native {env:VARIABLE_NAME} references for secrets in headers or environment fields. Configuration is saved by OpenCode.
 <!-- /help -->

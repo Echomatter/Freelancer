@@ -28,10 +28,6 @@
 .page:has(.page-title[data-settings-page]) :is(input[type="checkbox"], input[type="radio"]) { accent-color: var(--accent); flex-shrink: 0; }
 .page:has(.page-title[data-settings-page]) :is(.model-grid, .provider-list, .catalog-grid, .git-setup-grid, .overview-grid) { gap: var(--settings-gap); }
 .page:has(.page-title[data-settings-page]) :is(.file-preview, pre) { max-width: 100%; overflow-x: auto; }
-.settings-menu-section + .settings-menu-section { margin-top: 8px; padding-top: 8px; border-top: 1px solid var(--line); }
-.settings-menu-heading { margin: 4px 10px 5px; color: var(--muted); font-size: 11px; font-weight: 600; line-height: 1.4; }
-.settings-drawer-links .settings-menu-label { display: grid; gap: 2px; }
-.settings-menu-label small { font-size: 11px; color: var(--muted); }
 .settings-drawer-links button[aria-current="page"] { box-shadow: inset 3px 0 0 var(--accent); }
 .settings-save-status { min-height: 20px; font-size: 13px; color: var(--muted); }
 .settings-billing-actions { padding-top: 16px; border-top: 1px solid var(--line); }

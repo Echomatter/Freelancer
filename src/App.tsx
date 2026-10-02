@@ -360,7 +360,7 @@ export default function App() {
       ? settingsScope
       : view === "settings"
         ? settingsScope
-        : view === "models" || view === "overview"
+        : view === "models" || view === "overview" || view === "agents"
           ? "application"
           : "project";
   const navigationTab = historyOpen
@@ -2017,7 +2017,7 @@ export default function App() {
                         onClose={closeSettings}
                         data={data}
                         onColorsSaved={colorsSaved}
-                        onNavigate={setView}
+                        onNavigate={next => next === "agents" ? openSettings("application", "agents") : setView(next)}
                         onSetting={openSettings}
                         tab={tab}
                         run={run}

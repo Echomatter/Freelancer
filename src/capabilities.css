@@ -1,7 +1,7 @@
 .capability-view { display: grid; gap: 20px; min-width: 0; }
 .capability-view > .page-title { margin-bottom: 0; }
 .capability-intro, .capability-section-description { font-size: 13px; line-height: 1.6; color: var(--muted); }
-.capability-toolbar { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: end; }
+.capability-toolbar { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: end; }
 .capability-observation { display: grid; gap: 5px; color: var(--muted); font-size: 12px; overflow-wrap: anywhere; }
 .capability-observation strong { color: var(--text); }
 .capability-result-count { color: var(--muted); font-size: 12px; }

@@ -48,13 +48,15 @@ for (const variants of [true, false]) {
       if (variants) await expect(intelligence).toHaveValue('high');
     });
     await test.step('Agent-owned choices are shown as the source of the default', async () => {
-      await page.locator('.settings-drawer-links').getByRole('button', { name: 'Agents', exact: true }).click();
+      await page.getByRole('button', { name: 'Application settings', exact: true }).click();
+      await page.locator('#application-settings-links').getByRole('button', { name: 'Agents', exact: true }).click();
       await page.locator('.catalog-card').filter({ has: page.getByRole('heading', { name: 'Engineer', exact: true }) }).getByRole('button', { name: 'Edit Engineer', exact: true }).click();
       const editor = page.getByRole('region', { name: 'Agent editor' });
       await editor.getByRole('combobox', { name: 'Default model', exact: true }).selectOption('opencode/free');
       if (variants) await editor.getByRole('combobox', { name: 'Intelligence', exact: true }).selectOption('high');
       await editor.getByRole('button', { name: 'Save agent', exact: true }).click();
       await expect(editor).not.toBeVisible();
+      await page.getByRole('button', { name: 'Project settings', exact: true }).click();
       await page.getByRole('button', { name: 'Session defaults', exact: true }).click();
       const panel = page.locator('.session-defaults');
       await panel.getByRole('combobox', { name: 'Agent', exact: true }).selectOption('engineer');

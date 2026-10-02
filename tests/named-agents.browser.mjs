@@ -100,7 +100,9 @@ test('named-agents', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => 
   }
   const report = (text) => console.log("PASS " + text);
   async function openAgents() {
-    await openProjectTab("Agents");
+    const application = page.getByRole("button", { name: "Application settings", exact: true });
+    if (await application.getAttribute("aria-expanded") !== "true") await application.click();
+    await page.locator("#application-settings-links").getByRole("button", { name: "Agents", exact: true }).click();
   }
   async function openProjectTab(tab) {
     const projectSettings = page.getByRole("button", { name: "Project settings", exact: true });

@@ -4,18 +4,18 @@ import { createPortal } from "react-dom";
 import { helpTopics, type HelpTopic } from "./documentation-help";
 import "./help-hint.css";
 
-type Topic = { topic: HelpTopic; label?: string };
+type Topic = { topic: HelpTopic; label?: string; details?: ReactNode };
 const CardHelp = createContext<((id: string, topic: Topic) => () => void) | null>(null);
 
 // Fields contribute to their containing card's single footer bubble. Nested
 // cards own their help, so controls never collect beside headings or labels.
-export function HelpScope({ children, topic }: { children: ReactNode; topic?: HelpTopic }) {
+export function HelpScope({ children, topic, details }: { children: ReactNode; topic?: HelpTopic; details?: ReactNode }) {
   const [entries, setEntries] = useState<Record<string, Topic>>({});
   const register = useCallback((id: string, item: Topic) => {
     setEntries(previous => ({ ...previous, [id]: item }));
     return () => setEntries(previous => { const next = { ...previous }; delete next[id]; return next; });
   }, []);
-  const topics = [...new Map([...(topic ? [{ topic }] : []), ...Object.values(entries)].map(item => [item.topic, item])).values()];
+  const topics = [...new Map([...(topic ? [{ topic, details }] : []), ...Object.values(entries)].map(item => [item.topic, item])).values()];
   return <CardHelp.Provider value={register}>{children}
     {topics.length > 0 && <div className="card-help"><HelpPopover topics={topics} /></div>}
   </CardHelp.Provider>;
@@ -60,13 +60,16 @@ function HelpPopover({ topics }: { topics: Topic[] }) {
       const edge = 10;
       const left = Math.max(edge, Math.min(anchor.left, window.innerWidth - box.width - edge));
       const below = anchor.bottom + 7;
-      const top = below + box.height < window.innerHeight - edge ? below : Math.max(edge, anchor.top - box.height - 7);
+      const preferredTop = below + box.height < window.innerHeight - edge ? below : anchor.top - box.height - 7;
+      const top = Math.max(edge, Math.min(preferredTop, window.innerHeight - box.height - edge));
       setPosition({ left, top });
     };
     place();
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(place) : null;
+    if (tip.current) observer?.observe(tip.current);
     window.addEventListener("resize", place);
     window.addEventListener("scroll", place, true);
-    return () => { window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
+    return () => { observer?.disconnect(); window.removeEventListener("resize", place); window.removeEventListener("scroll", place, true); };
   }, [open, current.topic]);
   useEffect(() => {
     if (!open) return;
@@ -102,6 +105,7 @@ function HelpPopover({ topics }: { topics: Topic[] }) {
         {topics.map(item => <option key={item.topic} value={item.topic}>{helpTopics[item.topic].title}</option>)}
       </select>}
       {excerpt.paragraphs.map((paragraph, index) => <p key={index}>{paragraph}</p>)}
+      {current.details}
       <small>README · Interface help</small>
     </div>, trigger.current?.closest("dialog") ?? document.body)}
   </span>;

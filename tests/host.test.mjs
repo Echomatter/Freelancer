@@ -309,18 +309,44 @@ test('startHost returns only after actual backend tool inventory while preservin
 });
 
 test('startHost shares one deadline across resolution, listening, health and readiness then confirms cleanup', async t => {
-  const observed = deferred(); let resolverOptions;
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'] });
+  const observed = deferred(), accessStarted = deferred(), resolverStarted = deferred(), spawned = deferred(), healthStarted = deferred();
+  let resolverOptions;
   const fixture = startupFixture(t, { executable: undefined, startupTimeoutMs: 180, listenDelay: 40, closeDelay: 25,
-    accessImpl: async () => { await delay(40); throw Error('not installed here'); },
-    execImpl: async (executable, args, options) => { resolverOptions = options; await delay(40); return { stdout: 'fixture-opencode.exe' }; },
+    diagnostics: event => { if (event.stage === 'spawned') spawned.resolve(); },
+    accessImpl: async () => { accessStarted.resolve(); await delay(40); throw Error('not installed here'); },
+    execImpl: async (executable, args, options) => {
+      resolverOptions = options; resolverStarted.resolve(); await delay(40); return { stdout: 'fixture-opencode.exe' };
+    },
     fetchImpl: async (target, options) => {
-      if (target.pathname === '/global/health') { await delay(20); return json({ version: '1.18.31' }); }
+      if (target.pathname === '/global/health') { healthStarted.resolve(); await delay(20); return json({ version: '1.18.31' }); }
       observed.resolve(options.signal); return new Promise(() => {});
     } });
   const before = Date.now();
   const work = startHost(fixture.settings);
   const rejected = assert.rejects(work, { name: 'TimeoutError' });
-  const readSignal = await observed.work;
+  const waitForStage = async (stage, name) => {
+    const outcome = await Promise.race([
+      stage.then(value => ({ value })),
+      work.then(() => ({ ended: true }), error => ({ error })),
+    ]);
+    if (outcome.error) throw outcome.error;
+    assert.notEqual(outcome.ended, true, `Startup ended before reaching ${name}.`);
+    return outcome.value;
+  };
+  await waitForStage(accessStarted.work, 'native executable resolution');
+  t.mock.timers.tick(40);
+  await waitForStage(resolverStarted.work, 'PowerShell executable fallback');
+  t.mock.timers.tick(40);
+  await waitForStage(spawned.work, 'native process spawn');
+  t.mock.timers.tick(40);
+  await waitForStage(healthStarted.work, 'native health check');
+  t.mock.timers.tick(20);
+  const readSignal = await waitForStage(observed.work, 'tool readiness');
+  const childExited = new Promise(resolve => fixture.child.once('exit', resolve));
+  t.mock.timers.tick(40);
+  await childExited;
+  t.mock.timers.tick(25);
   await rejected;
   assert.equal(readSignal.aborted, true);
   assert.ok(resolverOptions.timeout < 180 && resolverOptions.timeout > 0);

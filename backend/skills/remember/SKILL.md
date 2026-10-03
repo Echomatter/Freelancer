@@ -33,4 +33,15 @@ connected Memory MCP service remains under OpenCode ownership; using Freelancer
 knowledge requires no separate Memory connection and does not import, disable or
 rewrite that service or its configuration.
 
+The graph is part of this same internal knowledge store. `entity` creates an
+entity; `entity-search` preserves exact name/alias lookup; `entity-read` reads a
+node by ID; `open-nodes` resolves exact names or IDs and returns a bounded
+one-hop neighborhood; and `search-nodes` searches entity names, types and
+current claim observations by substring. `read-graph` pages current entities,
+relations and observations independently (up to 100 rows per page); offsets
+follow the moving graph and are not a stable snapshot. Prefer targeted search
+or node reads when possible. Conversation pins also use this same internal
+store: Pin creates or finds the canonical conversation snapshot and pin record.
+No separate Memory setup is needed for graph access or pins.
+
 This skill is optional guidance. It does not grant or gate access to knowledge or other tools.

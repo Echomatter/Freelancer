@@ -9,6 +9,56 @@ import { fileURLToPath } from 'node:url';
 import { snapshot as quotaSnapshot } from '../backend/tools/runtime/quota.mjs';
 import { readState, writeState, updateState, removeState, stateFiles } from '../backend/tools/runtime/state-database.mjs';
 import { recordDatabasePath, withRecordDatabase } from '../backend/tools/runtime/record-database.mjs';
+import { createLocalDataStore } from '../server/data/store.mjs';
+import { withUnifiedTransaction } from '../backend/tools/runtime/unified-database.mjs';
+import { recordModelInput, modelInputEvidence } from '../backend/tools/runtime/input-observations.mjs';
+
+test('fresh unified runtime accepts new session input without per-session migration', async t => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-session-input-'));
+  const backendRoot = path.join(root, 'backend'), dataHome = path.join(root, 'data');
+  const runtimeID = 'session-input-fixture';
+  const store = createLocalDataStore(dataHome);
+  store.initializeFreshRuntime(runtimeID);
+  const keys = ['FREELANCER_RUNTIME_DATA_MODE', 'FREELANCER_RUNTIME_ID', 'FREELANCER_DATA_HOME'];
+  const previous = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  Object.assign(process.env, { FREELANCER_RUNTIME_DATA_MODE:'unified', FREELANCER_RUNTIME_ID:runtimeID, FREELANCER_DATA_HOME:dataHome });
+  t.after(async () => {
+    for (const key of keys) if (previous[key] === undefined) delete process.env[key]; else process.env[key] = previous[key];
+    store.close();
+    await rm(root, { recursive:true, force:true });
+  });
+  const sessionID = 'ses_first', id = 'msg_first';
+  const filename = path.join(backendRoot, '.state/model-input', sessionID, `${id}.json`);
+  await mkdir(path.dirname(filename), { recursive:true });
+  await writeFile(filename, '{"messageIDs":["stale-legacy-input"]}');
+  assert.equal(readState(filename, null), null, 'fresh SQLite reads never import stale JSON');
+  assert.deepEqual(stateFiles(path.dirname(filename)), []);
+  await recordModelInput(backendRoot, [{ info:{ role:'user', sessionID, id } }]);
+  assert.deepEqual(readState(filename).messageIDs, [id]);
+  await recordModelInput(backendRoot, [
+    { info:{ role:'user', sessionID, id:'msg_earlier' } },
+    { info:{ role:'user', sessionID, id } },
+  ]);
+  assert.deepEqual(readState(filename).messageIDs, [id, 'msg_earlier']);
+  assert.deepEqual(stateFiles(path.dirname(filename)), [`${id}.json`]);
+  const evidence = await modelInputEvidence(backendRoot, sessionID, [
+    { info:{ role:'assistant', parentID:id, time:{ completed:1 } }, parts:[] },
+  ]);
+  assert.equal(evidence[0].boundaryID, id);
+  assert.equal(await readFile(filename, 'utf8'), '{"messageIDs":["stale-legacy-input"]}');
+  const secondFile = path.join(backendRoot, '.state/model-input/ses_second/msg_second.json');
+  await recordModelInput(backendRoot, [{ info:{ role:'user', sessionID:'ses_second', id:'msg_second' } }]);
+  assert.deepEqual(readState(secondFile).messageIDs, ['msg_second']);
+  await assert.rejects(readFile(secondFile), { code:'ENOENT' });
+  removeState(secondFile);
+  assert.equal(readState(secondFile, null), null);
+  assert.throws(() => readState(path.join(backendRoot, '.state/unregistered/ses_new/msg_new.json')), /no migration marker/);
+  withUnifiedTransaction({ dataHome, runtimeID }, (db, owner) => {
+    db.prepare("DELETE FROM runtime_collection_markers WHERE runtime_id=? AND collection_name='directory:model-input/'").run(owner);
+  });
+  assert.throws(() => readState(path.join(backendRoot, '.state/model-input/ses_new/msg_new.json')), /no migration marker/);
+  assert.throws(() => stateFiles(path.join(backendRoot, '.state/model-input/ses_new')), /no migration marker/);
+});
 
 test('runtime documents migrate once, survive restarts and never fall back to stale JSON', async t => {
   const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-database-'));

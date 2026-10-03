@@ -66,6 +66,64 @@ test('entity deletion records relation retractions before cascade and leaves dur
   assert.equal(history[0].reason,'fixture removed');
 });
 
+test('graph reads open bounded neighborhoods, page the current graph, and search entity/type/claim substrings',async t=>{
+  const {store}=await fixture(t);
+  const source=store.createEntity({type:'service',name:'Archive Worker',aliases:['Cobalt Runner']});
+  const target=store.createEntity({type:'storage',name:'SQLite Vault'});
+  const unrelated=store.createEntity({type:'tool',name:'Other Index'});
+  const unicode=store.createEntity({type:'service',name:'Équipe Résumé'});
+  const edge=store.addRelation({from:source.id,to:target.id,type:'writes-to',provenance:{source:'fixture'}});
+  const observation=store.addClaim({subjectEntityID:source.id,objectEntityID:target.id,predicate:'retains turquoise snapshots',
+    value:{note:'distinctive cyan payload'},origin:'source-reported',method:'fixture',epistemicState:'supported',
+    evidence:[{id:'fixture:source',detail:'bounded evidence text'}]});
+
+  assert.deepEqual(store.findEntity('Cobalt Runner').map(row=>row.id),[source.id],'legacy exact alias lookup stays exact');
+  assert.equal(store.findEntity('Runner').length,0,'exact lookup does not silently change to substring search');
+  const byID=store.readEntity(source.id);
+  assert.equal(byID.status,'ok');assert.equal(byID.entity.name,'Archive Worker');
+  assert.deepEqual(byID.entity.aliases,['Cobalt Runner']);
+  assert.deepEqual(byID.entity.relations.map(row=>row.id),[edge.id]);
+  assert.deepEqual(byID.entity.observations.map(row=>row.id),[observation.id]);
+  assert.deepEqual(byID.entity.observations[0].evidenceRefs,[{id:'fixture:source',relation:'supports'}]);
+  assert.deepEqual(store.readEntity('missing-node'),{status:'missing',id:'missing-node'});
+
+  const opened=store.openNodes({names:['Archive Worker'],limit:10});
+  assert.deepEqual(opened.requestedEntityIDs,[source.id]);
+  assert.deepEqual(new Set(opened.entities.map(row=>row.id)),new Set([source.id,target.id]));
+  assert.deepEqual(opened.relations.map(row=>row.id),[edge.id]);
+
+  for(const query of ['Worker','service','turquoise','cyan payload']) {
+    const result=store.searchNodes(query,{limit:10});
+    assert.equal(result.status,'ok',query);
+    assert.ok(result.entities.some(row=>row.id===source.id),`observation/entity substring should find source for ${query}`);
+    assert.ok(result.relations.some(row=>row.id===edge.id),`search returns current connected relations for ${query}`);
+    assert.ok(result.observations.some(row=>row.id===observation.id),`search returns stored observations for matched nodes even when the query matched the node name/type`);
+  }
+  assert.ok(store.searchNodes('équipe résumé').entities.some(row=>row.id===unicode.id),'substring matching applies the same Unicode normalization as exact lookup');
+  const first=store.readGraph({limit:1});
+  assert.equal(first.entities.length,1);assert.equal(first.relations.length,1);assert.equal(first.observations.length,1);
+  assert.equal(first.truncated,true);
+  assert.equal(first.nextEntityOffset,1);assert.equal(first.nextRelationOffset,null);assert.equal(first.nextObservationOffset,null);
+  const second=store.readGraph({entityOffset:first.nextEntityOffset,relationOffset:0,observationOffset:0,limit:1});
+  assert.equal(second.entities.length,1);assert.notEqual(second.entities[0].id,first.entities[0].id);
+  assert.ok(store.readGraph({entityOffset:1,relationOffset:0,observationOffset:0,limit:1}).entities.some(row=>row.id===unrelated.id));
+  assert.throws(()=>store.readGraph({entityOffset:100001}),/offset/);
+  assert.throws(()=>store.openNodes({ids:Array.from({length:101},(_,i)=>String(i))}),/at most 100/);
+});
+
+test('a direct fresh conversation pin is audited as a pin, not a legacy migration',async t=>{
+  const {store}=await fixture(t);
+  const db=new DatabaseSync(store.filename);
+  db.prepare('INSERT INTO session_headers VALUES(?,?,?,?,?,?,?,?)').run('fresh-project','fresh-session',null,'Fresh chat',1,1,null,1);
+  db.close();
+  store.setConversationPin({projectID:'fresh-project',sessionID:'fresh-session',title:'Fresh chat',pinned:true,revision:0});
+  const rows=(await store.analyze(`SELECT change_type FROM memory_changes WHERE memory_id=$id ORDER BY rowid`,
+    {$id:'conversation:fresh-project:fresh-session'})).rows.map(row=>row.change_type);
+  assert.ok(rows.includes('snapshot_created'));
+  assert.ok(rows.includes('pin'));
+  assert.equal(rows.includes('legacy_pin_imported'),false);
+});
+
 test('archive and restore are reversible and distinct from forget and unpin; source deletion preserves memory',async t=>{
   const {store}=await fixture(t);
   const memory=store.createMemory({kind:'note',title:'Retained evidence',body:'Durable source observation.',source:{projectID:'project-a'},

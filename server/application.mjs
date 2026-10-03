@@ -237,11 +237,12 @@ export function createApplication({
       if (!allowed) modelRatings.suspendAutomaticWork();
     },
     async capabilities(projectID, options = {}) {
-      const p = await project(projectID);
+      const p = projectID ? await project(projectID) : null;
       let inspectionOnly = null;
       let observedAgent, observedModel;
       let instructionContext = {};
       if (options.sessionID) {
+        if (!p) throw Error('Choose the project for this chat.');
         const nativeSession = await ownSession(p, options.sessionID);
         const rows = await request(p, `/session/${part(nativeSession.id)}/message`);
         const message = rows.findLast(row => row.info?.role === 'assistant');
@@ -259,11 +260,11 @@ export function createApplication({
       }
       const settings = await store.read('settings');
       const catalog = checkedCatalog(settings);
-      const agent = options.agent ?? observedAgent ?? 'engineer';
-      if (!catalog.agents.some(row => row.id === agent)) throw Error('Choose a named agent');
-      return createCapabilities({ host, backendRoot }).read({ directory: p.directory, projectID,
+      const agent = options.agent ?? observedAgent ?? (p ? 'engineer' : null);
+      if (agent !== null && !catalog.agents.some(row => row.id === agent)) throw Error('Choose a named agent');
+      return createCapabilities({ host, backendRoot }).read({ directory: p?.directory ?? backendRoot, projectID: p?.id ?? null,
         sessionID: options.sessionID ?? null, agent, model: options.model ?? observedModel ?? null,
-        boundaries: { inspectionOnly, gitInspectOnly: settings.gitProjects?.[p.id]?.tracking === true && settings.gitProjects?.[p.id]?.preset === 'inspect',
+        boundaries: { inspectionOnly, gitInspectOnly: p ? settings.gitProjects?.[p.id]?.tracking === true && settings.gitProjects?.[p.id]?.preset === 'inspect' : null,
           fileAccessScope: resolveFileAccessScope(settings) },
         instructionContext });
     },

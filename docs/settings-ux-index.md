@@ -59,7 +59,7 @@
 
 **Source:** [`Capabilities.tsx`](../src/Capabilities.tsx), [`capability-presentation.mjs`](../src/capability-presentation.mjs), [`capabilities.css`](../src/capabilities.css); inventory contract in [`server/capabilities.mjs`](../server/capabilities.mjs).
 
-**Anatomy:** title, refresh and close; locally collapsible Tools, Skills and Connected Services (MCP) panels with compact available/ready counts. Expanding reveals shared inventory, six generic service templates, native connection status, setup and diagnostics. Collapse preferences affect presentation only.
+**Anatomy:** title, refresh and close; locally collapsible Tools, Skills and Connected Services (MCP) panels with compact available/ready counts. Expanding reveals shared inventory, five generic service templates, native connection status, setup and diagnostics. Tools and Skills remain available without a selected project. Internal memory and pins require no Memory MCP. Collapse preferences affect presentation only.
 
 **Placement:** application-wide tools, skills and MCP connections. Project context is an inspection input, not an access setting. Connection setup retains native permissions and explicit approval.
 

@@ -17,7 +17,7 @@ connection**, enter a unique name and either a remote HTTP(S) MCP URL or a local
 executable/arguments JSON array, then approve the connection or command. Local
 commands run on the computer hosting Freelancer, not on a paired phone.
 
-Six generic templates are available: Playwright, Fetch, Memory and Sequential
+Five generic templates are available: Playwright, Fetch and Sequential
 Thinking run locally; Context7 connects to its hosted MCP, and JEV uses the
 hosted TypeSafe API through a local MCP adapter. Context7 has free use and an
 optional API key for higher limits; JEV requires a personal key and is usage
@@ -25,11 +25,14 @@ priced. TypeSafe does not publish an MCP server; the template uses the pinned
 community `jev-mcp@0.5.1` adapter in native OpenCode. The
 same editor also supports custom local or remote MCP services. Optional
 environment/header fields accept native string values and
-`{env:VARIABLE_NAME}` references. Prefer references for secrets. The Memory
-template stores its graph in a separate `mcp-memory.jsonl` file under
-Freelancer's resolved user data directory, outside the app database. OpenCode owns
+`{env:VARIABLE_NAME}` references. Prefer references for secrets. OpenCode owns
 persistence, OAuth credentials and resolution. Freelancer does not copy these
 values into its settings, agent prompts or diagnostic responses.
+
+Freelancer's built-in memory and Pinned Memory use the shared application
+database and native `knowledge` tool. No Memory MCP setup is required. An existing
+external Memory connection remains visible as a custom OpenCode service; its
+independent graph is not synchronized with Freelancer memory or pins.
 
 **Authenticate** uses OpenCode's native OAuth browser flow on the host computer.
 **Sign out** uses native logout. **Test / retry** attempts native connection;
@@ -39,9 +42,9 @@ approved local template lets OpenCode resolve and start its command; Freelancer
 does not run a second MCP client.
 
 Configuration is written through the pinned native `PATCH /global/config`,
-read back, and applied through native instance refresh. It lives in this
-Freelancer installation's app-local OpenCode configuration and is inherited by
-all projects. Existing explicit native project overrides are not erased.
+read back, and applied through native instance refresh. It lives in the
+user's native OpenCode configuration and is inherited by all projects. Existing
+explicit native project overrides are not erased.
 There is no per-project copy or second credential database. Stale edits return a
 conflict rather than replacing a newer connection. Running work and pending
 native decisions prevent a disruptive global reload, not ordinary tool use.
@@ -59,7 +62,13 @@ a key from a merge patch or invent a competing config writer.
 
 The inventory reads native registration, current-context model exposure,
 permissions, skills, MCP state, references and commands. It does not change them.
-The page lists the shared tools and skills without filters or agent/model selectors. Short statuses such as Loaded, Unavailable, Unknown and Needs permission describe the current inspection. Loaded means the tool is present, not that it has successfully run. Details and native permission explanations are in the Tools help bubble.
+Tools and Skills remain available as collapsible lists even before opening a
+project. Their saved collapse preferences affect presentation only. The page
+lists the shared tools and skills without filters or agent/model selectors.
+Short statuses such as Loaded, Unavailable, Unknown and Needs permission
+describe the current inspection. Loaded means the tool is present, not that it
+has successfully run. Details and native permission explanations are in the
+Tools help bubble.
 
 The current chat supplies the observed agent/model context; the page does not
 hard-code Engineer or offer identity-based access selectors. Without a chat,
@@ -83,8 +92,9 @@ the platform's ordinary native inventory, not an app-owned LSP feature.
 ## Shared MCP skills
 
 The shared `playwright`, `web-research`, `remember`, `reason-through`,
-`docs-research`, and `bounded-judgment` skills guide use of their corresponding
-MCP services. `browser-verify` covers UI verification and evidence boundaries.
+`docs-research`, and `bounded-judgment` skills guide capability use. `remember`
+uses Freelancer's internal memory; the other hints can describe connected MCP
+services. `browser-verify` covers UI verification and evidence boundaries.
 OpenCode supplies connected tools to eligible models. Skills are optional
 guidance: they never grant access, gate direct tool calls, or restrict a
 capability by agent, model, project or workflow. Memory MCP does not mirror or

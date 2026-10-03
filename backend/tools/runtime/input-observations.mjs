@@ -1,8 +1,5 @@
-import { readRuntimeText as readFile, writeState, readState, stateFiles, updateState } from './state-database.mjs';
-import { mkdir, writeFile, unlink } from 'node:fs/promises';
+import { readRuntimeText as readFile, updateState } from './state-database.mjs';
 import path from 'node:path';
-import { randomUUID } from 'node:crypto';
-import { replaceFile } from '../../../server/replace-file.mjs';
 
 const safe = id => typeof id === 'string' && /^[\w-]+$/.test(id);
 export async function recordModelInput(root, messages) {
@@ -10,10 +7,9 @@ export async function recordModelInput(root, messages) {
   const last = users.at(-1)?.info;
   if (!safe(last?.id) || !safe(last?.sessionID)) return;
   const dir = path.join(root, '.state/model-input', last.sessionID);
-  await mkdir(dir, { recursive: true });
   // Retain observed input IDs across tool rounds and compaction for this native
   // request. Input evidence stores identifiers, never another transcript.
-  const target = path.join(dir, `${last.id}.json`), temp = `${target}.${randomUUID()}.tmp`;
+  const target = path.join(dir, `${last.id}.json`);
   updateState(target, previous => ({
     boundaryID: last.id, sessionID: last.sessionID, at: Date.now(),
     messageIDs: [...new Set([...(previous?.messageIDs ?? []), ...users.map(m => m.info.id)])],

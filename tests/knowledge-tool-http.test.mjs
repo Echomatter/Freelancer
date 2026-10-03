@@ -65,6 +65,18 @@ test('knowledge graph supports bounded relation reads and audited deletes withou
   response=await send({operation:'relate',from:a.id,to:b.id,type:'connects'});assert.equal(response.status,200);const relation=await response.json();
   response=await send({operation:'relations',id:a.id,limit:10});assert.equal(response.status,200);assert.deepEqual((await response.json()).relations.map(row=>row.id),[relation.id]);
   const claim=f.app.localData.get().addClaim({subjectEntityID:a.id,predicate:'supports',origin:'user-stated',epistemicState:'supported',evidence:[{id:'fixture:source#L1'}]});
+  response=await send({operation:'entity-read',id:a.id});assert.equal(response.status,200);const readEntity=await response.json();
+  assert.equal(readEntity.status,'ok');assert.equal(readEntity.entity.id,a.id);assert.deepEqual(readEntity.entity.relations.map(row=>row.id),[relation.id]);
+  assert.deepEqual(readEntity.entity.observations.map(row=>row.id),[claim.id]);
+  response=await send({operation:'open-nodes',ids:[a.id],limit:10});assert.equal(response.status,200);const opened=await response.json();
+  assert.deepEqual(opened.requestedEntityIDs,[a.id]);assert.ok(opened.entities.some(row=>row.id===b.id));
+  assert.deepEqual(opened.relations.map(row=>row.id),[relation.id]);
+  response=await send({operation:'search-nodes',query:'supports'});assert.equal(response.status,200);const searched=await response.json();
+  assert.ok(searched.entities.some(row=>row.id===a.id));assert.ok(searched.relations.some(row=>row.id===relation.id));
+  assert.ok(searched.observations.some(row=>row.id===claim.id));
+  response=await send({operation:'read-graph',limit:1});assert.equal(response.status,200);const graphPage=await response.json();
+  assert.equal(graphPage.entities.length,1);assert.equal(graphPage.relations.length,1);assert.equal(graphPage.observations.length,1);
+  assert.equal(graphPage.nextEntityOffset,1);assert.equal(graphPage.nextRelationOffset,null);assert.equal(graphPage.nextObservationOffset,null);
   response=await send({operation:'delete-relation',relationID:relation.id,reason:'fixture'});assert.equal(response.status,200);assert.deepEqual(await response.json(),{id:relation.id,deleted:true});
   response=await send({operation:'delete-relation',relationID:relation.id});assert.equal(response.status,200);assert.deepEqual(await response.json(),{id:relation.id,deleted:false});
   response=await send({operation:'delete-entity',id:a.id,reason:'must retain claim'});assert.equal(response.status,200);assert.deepEqual(await response.json(),{id:a.id,deleted:false,reason:'claims_reference_entity',claimsRetained:1});

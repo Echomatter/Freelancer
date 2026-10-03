@@ -48,7 +48,7 @@ Sources are composed at different points in native execution. The table is an in
 ## Capability-use hints
 
 The existing captured contract in `server/execution.mjs` carries the general
-meaning and limitations of the six shared MCP capabilities for every main and
+meaning and limitations of shared tools, internal knowledge and MCP services for every main and
 delegated named-agent request. Existing skills add concise contextual hints for
 routing/delegation, debugging, verification, browser investigation, research,
 orientation, handoffs, model outcomes, reviews and Goals. Skills load only when

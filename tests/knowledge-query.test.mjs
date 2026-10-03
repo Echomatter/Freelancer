@@ -310,7 +310,7 @@ test('native knowledge and content tools send canonical bridge queries and ask p
   assert.equal(knowledge.args.expectedRevision.parse(0), 0);
   assert.equal(knowledge.args.cursor.parse('next-page'),'next-page');
   assert.throws(()=>knowledge.args.cursor.parse('x'.repeat(1025)));
-  for (const operation of ['query', 'claims', 'read-claim', 'pin', 'refresh', 'archive', 'restore', 'evidence', 'judgment-evidence', 'query-evidence', 'revise-relation', 'relation-history'])
+  for (const operation of ['query', 'claims', 'read-claim', 'pin', 'refresh', 'archive', 'restore', 'evidence', 'judgment-evidence', 'query-evidence', 'entity-read', 'open-nodes', 'read-graph', 'search-nodes', 'revise-relation', 'relation-history'])
     assert.equal(knowledge.args.operation.parse(operation), operation);
   const context = { directory: root, sessionID: 'session', messageID: 'message', abort: new AbortController().signal,
     ask: async input => { permissions.push(input); } };
@@ -323,6 +323,17 @@ test('native knowledge and content tools send canonical bridge queries and ask p
   await knowledge.execute({ operation: 'query', domain: 'facts', query: '日本語', phrase: true, model: 'fixture/model-a' }, context);
   assert.equal(requests[0].body.projectID, undefined, 'native knowledge defaults globally');
   assert.equal(requests[0].body.phrase, true);
+  const beforeGraphReads=permissions.length;
+  await knowledge.execute({operation:'entity-read',id:'entity:exact'},context);
+  await knowledge.execute({operation:'open-nodes',ids:['entity:a'],names:['Alias A'],limit:25},context);
+  await knowledge.execute({operation:'read-graph',entityOffset:100,relationOffset:200,observationOffset:300,limit:50},context);
+  await knowledge.execute({operation:'search-nodes',query:'cyan',limit:10},context);
+  assert.equal(permissions.length,beforeGraphReads,'graph reads rely on normal native read access without requesting a mutation approval');
+  assert.deepEqual(requests.slice(-4).map(row=>row.body.operation),['entity-read','open-nodes','read-graph','search-nodes']);
+  assert.deepEqual(requests.at(-3).body,{operation:'open-nodes',ids:['entity:a'],names:['Alias A'],limit:25,
+    directory:context.directory,actorSessionID:context.sessionID,messageID:context.messageID});
+  assert.deepEqual(requests.at(-2).body,{operation:'read-graph',entityOffset:100,relationOffset:200,observationOffset:300,limit:50,
+    directory:context.directory,actorSessionID:context.sessionID,messageID:context.messageID});
   await knowledge.execute({operation:'relations',asOf:1234},context);
   assert.equal(requests.at(-1).body.asOf,1234);
   await knowledge.execute({operation:'judgment-evidence',domain:'memories',id:'existing-memory',revision:1},context);

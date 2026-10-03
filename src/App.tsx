@@ -182,6 +182,13 @@ export default function App() {
       : "Collapse navigation";
   const [folderPicker, setFolderPicker] = useState(false),
     [importPreview, setImportPreview] = useState<any>(null);
+  const [importSourcePicker, setImportSourcePicker] = useState(false),
+    [importSourceDirectory, setImportSourceDirectory] = useState(""),
+    [importSelection, setImportSelection] = useState<string[]>([]),
+    [importExplicit, setImportExplicit] = useState(false),
+    [importSubmitting, setImportSubmitting] = useState(false);
+  const importRead = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
+  useEffect(() => () => { importRead.current.generation++; importRead.current.controller?.abort(); }, []);
   const [indexedFilePath, setIndexedFilePath] = useState("");
   const [fileFolderPath, setFileFolderPath] = useState("");
   const [fileNavigation, setFileNavigation] = useState(0);
@@ -1058,6 +1065,10 @@ export default function App() {
   }
   async function openProject(existing?: any) {
     if (projectTransition.current) return false;
+    invalidateImportPreview();
+    setImportBusy(false);
+    setImportExplicit(false);
+    setImportSourcePicker(false);
     setFolderOpen(false);
     setFolderPicker(false);
     setImportPreview(null);
@@ -1169,23 +1180,62 @@ export default function App() {
     }
     selectSession(id);
   }
-  async function previewProject() {
+  function invalidateImportPreview() {
+    importRead.current.generation++;
+    importRead.current.controller?.abort();
+    importRead.current.controller = null;
+  }
+  function closeImportSetup() {
+    if (importSubmitting) return;
+    invalidateImportPreview(); setImportBusy(false); setImportError("");
+    setFolderOpen(false); setFolderPicker(false); setImportSourcePicker(false);
+    setImportPreview(null); setImportSelection([]); setImportExplicit(false);
+  }
+  function backToProjectFolder() {
+    if (importSubmitting) return;
+    invalidateImportPreview(); setImportBusy(false); setImportError("");
+    setImportPreview(null); setImportSelection([]); setImportSourcePicker(false); setFolderOpen(true);
+  }
+  function changeImportSource(directory: string) {
+    invalidateImportPreview(); setImportBusy(false); setImportError("");
+    setImportSourceDirectory(directory); setImportSelection([]);
+  }
+  async function previewProject(directory = folder.trim(), forImport = importExplicit, sourceDirectory?: string) {
+    invalidateImportPreview();
+    const generation = importRead.current.generation, controller = new AbortController();
+    importRead.current.controller = controller;
+    const currentRequest = () => !controller.signal.aborted && importRead.current.generation === generation;
+    const timeout = setTimeout(() => controller.abort(), 30_000);
     setImportBusy(true);
     setImportError("");
     try {
       const preview = await api("projects/import-preview", {
-        directory: folder.trim(),
-      });
+        directory, forImport, ...(sourceDirectory ? { sourceDirectory } : {}),
+      }, "POST", controller.signal);
+      if (!currentRequest()) return;
       if (preview.existing) await openProject(preview.existing);
-      else setImportPreview(preview);
+      else {
+        setFolderOpen(false); setFolderPicker(false); setImportSourcePicker(false);
+        setImportPreview(preview); setImportSourceDirectory(preview.recordedDirectory);
+        setImportSelection([]);
+      }
     } catch (error) {
-      setImportError((error as Error).message);
+      if (importRead.current.generation === generation)
+        setImportError(controller.signal.aborted ? "Reading local history took too long. Preview the folder again or skip import." : (error as Error).message);
     } finally {
-      setImportBusy(false);
+      clearTimeout(timeout);
+      if (importRead.current.generation === generation) { importRead.current.controller = null; setImportBusy(false); }
     }
   }
+  function reviewProjectImport(item: any) {
+    invalidateImportPreview(); setImportError(""); setImportPreview(null); setImportSelection([]);
+    setProjectEdit(null); setFolder(item.directory); setFolderOpen(true); setImportExplicit(true);
+    void previewProject(item.directory, true);
+  }
   async function finishProjectSetup(selected: string[]) {
-    if (importBusy) return;
+    if (importBusy || !importPreview) return;
+    invalidateImportPreview();
+    setImportSubmitting(true);
     setImportBusy(true);
     setImportError("");
     projectTransition.current = true;
@@ -1210,6 +1260,7 @@ export default function App() {
       projectTransition.current = false;
       setProjectLoading(null);
       setImportBusy(false);
+      setImportSubmitting(false);
     }
   }
   async function saveProjectName() {
@@ -1416,6 +1467,7 @@ export default function App() {
                 dismissCompactNavigation();
                 setError("");
                 setImportError("");
+                setImportExplicit(false);
                 setFolderOpen(true);
               }}
               onManage={(p) => {
@@ -2232,13 +2284,13 @@ export default function App() {
               onStart={modelRatings.start}
             />
           )}
-          {folderOpen && !projectLoading && (
+          {folderOpen && !projectLoading && !folderPicker && !importSourcePicker && !importPreview && (
             <Dialog
               title="Open project"
               ariaLabel="Open project"
               icon={<FolderOpen />}
-              onClose={() => setFolderOpen(false)}
-              busy={!!projectLoading || importBusy}
+              onClose={closeImportSetup}
+              busy={!!projectLoading || importSubmitting}
               initialFocus="first"
               size="compact"
               layout="stack"
@@ -2246,8 +2298,8 @@ export default function App() {
                 <>
                   <Button
                     type="button"
-                    disabled={!!projectLoading || importBusy}
-                    onClick={() => setFolderOpen(false)}
+                    disabled={!!projectLoading || importSubmitting}
+                    onClick={closeImportSetup}
                   >
                     Cancel
                   </Button>
@@ -2272,6 +2324,7 @@ export default function App() {
                     autoFocus
                     placeholder="F:\MyProject"
                     value={folder}
+                    disabled={importBusy}
                     onChange={(e) => setFolder(e.target.value)}
                   />
                 </label>
@@ -2306,12 +2359,29 @@ export default function App() {
               }}
             />
           )}
-          {importPreview && (
+          {importSourcePicker && importPreview && (
+            <FolderPicker
+              title="Choose recorded conversation folder"
+              initial={importSourceDirectory.trim()}
+              onClose={() => setImportSourcePicker(false)}
+              onPick={(directory) => { changeImportSource(directory); setImportSourcePicker(false); }}
+            />
+          )}
+          {importPreview && !importSourcePicker && !projectLoading && (
             <ProjectImport
+              key={importPreview.token}
               preview={importPreview}
+              sourceDirectory={importSourceDirectory}
+              selected={importSelection}
               busy={importBusy}
+              submitting={importSubmitting}
               error={importError}
-              onClose={() => setImportPreview(null)}
+              onClose={closeImportSetup}
+              onBack={backToProjectFolder}
+              onSelect={setImportSelection}
+              onChooseSource={() => setImportSourcePicker(true)}
+              onSourceChange={changeImportSource}
+              onPreviewSource={() => void previewProject(importPreview.directory, true, importSourceDirectory.trim())}
               onComplete={(selected) => void finishProjectSetup(selected)}
             />
           )}
@@ -2358,6 +2428,9 @@ export default function App() {
                 <span>Folder</span>
                 <input value={projectEdit.directory} readOnly />
               </label>
+              <Button type="button" disabled={working || importBusy} onClick={() => reviewProjectImport(projectEdit)}>
+                Import ChatGPT / Codex history
+              </Button>
               {error && (
                 <p className="notice error" role="alert">
                   {error}

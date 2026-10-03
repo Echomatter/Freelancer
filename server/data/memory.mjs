@@ -6,6 +6,7 @@ import { installKnowledgeResultFunctions } from './knowledge-result.mjs';
 
 const normalize = value => String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('en-US');
 const json = value => JSON.stringify(value ?? {});
+const graphSearchDatabases = new WeakSet();
 const requiredText = (value, name, limit = 4000) => {
   if (typeof value !== 'string' || !value.trim() || value.length > limit) throw Error(`${name} is required and must be at most ${limit} characters.`);
   return value.trim();
@@ -13,7 +14,12 @@ const requiredText = (value, name, limit = 4000) => {
 
 export function createMemoryService(db, tx) {
   installKnowledgeResultFunctions(db);
-  function pinConversationSnapshotInTransaction({ projectID, sessionID, title, parentID = null, originalPinnedAt, annotationRevision = 0 }) {
+  if (!graphSearchDatabases.has(db)) {
+    db.function('freelancer_memory_contains', { deterministic:true }, (value,query) =>
+      typeof value==='string' && normalize(value).includes(normalize(query)) ? 1 : 0);
+    graphSearchDatabases.add(db);
+  }
+  function pinConversationSnapshotInTransaction({ projectID, sessionID, title, parentID = null, originalPinnedAt, annotationRevision = 0, creationChange = 'snapshot_created' }) {
     if (!projectID || !sessionID || !Number.isFinite(originalPinnedAt)) throw Error('Pinned conversation identity and original timestamp are required.');
     const id = `conversation:${projectID}:${sessionID}`, now = Date.now(), revisionID = randomUUID();
     const existing = db.prepare('SELECT memory_id,deleted_at FROM memory_items WHERE memory_id=?').get(id);
@@ -23,7 +29,9 @@ export function createMemoryService(db, tx) {
       db.prepare('INSERT INTO memory_items VALUES(?,?,?,?,?,?,?,?,?,NULL)').run(id,'conversation_snapshot',String(title || metadata.title).slice(0,1000),'active','opencode',projectID,sessionID,now,now);
       db.prepare('INSERT INTO memory_item_revisions VALUES(?,?,?,?,?,?,?)').run(revisionID,id,1,'',json({ sourceSystem:'opencode', projectID, sessionID, title:metadata.title }),json({ status:'metadata_only', capturedAt:null, originallyPinnedAt:originalPinnedAt, annotationRevision }),now);
       db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)').run(revisionID,0,'conversation',`${projectID}/${sessionID}`,null,json(metadata),null,header ? 'not_captured' : 'missing_source');
-      db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,'legacy_pin_imported',null,revisionID,'migration',`${projectID}/${sessionID}`,'Transcript snapshot was not present in the legacy pin record.',now);
+      db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,creationChange,null,revisionID,
+        creationChange === 'legacy_pin_imported' ? 'migration' : 'user',`${projectID}/${sessionID}`,
+        creationChange === 'legacy_pin_imported' ? 'Transcript snapshot was not present in the legacy pin record.' : 'Conversation snapshot placeholder created.',now);
     }
     if (existing?.deleted_at != null)
       db.prepare("UPDATE memory_items SET status='active',deleted_at=NULL,updated_at=? WHERE memory_id=?").run(now,id);
@@ -74,6 +82,105 @@ export function createMemoryService(db, tx) {
     if (end !== null && end < start) throw Error('Relation validity ends before it begins.');
     return { validFrom: start, validTo: end };
   };
+  const graphLimit = (value, fallback = 50, max = 100) => Math.max(1,Math.min(max,Number.isSafeInteger(value) ? value : fallback));
+  const graphOffset = value => {
+    if (value === undefined) return 0;
+    if (!Number.isSafeInteger(value) || value < 0 || value > 100_000) throw Error('Graph offset must be an integer from 0 to 100000.');
+    return value;
+  };
+  const publicEntity = row => row ? ({ id:row.id,type:row.type,name:row.name,createdAt:row.createdAt,updatedAt:row.updatedAt }) : null;
+  function entityRows(ids, limit = 500) {
+    if (!ids.length) return {entities:[],truncated:false};
+    const rows=db.prepare(`SELECT entity_id AS id,entity_type AS type,canonical_name AS name,created_at AS createdAt,updated_at AS updatedAt
+      FROM entities WHERE entity_id IN (${ids.map(()=>'?').join(',')}) ORDER BY canonical_name,entity_id LIMIT ?`).all(...ids,limit+1);
+    const bounded=rows.slice(0,limit);
+    if(!bounded.length) return {entities:[],truncated:rows.length>limit};
+    const aliases=db.prepare(`WITH ranked AS (
+        SELECT entity_id,alias,row_number() OVER(PARTITION BY entity_id ORDER BY normalized_alias) AS row_no,
+          count(*) OVER(PARTITION BY entity_id) AS total
+        FROM entity_aliases WHERE entity_id IN (${bounded.map(()=>'?').join(',')})
+      ) SELECT entity_id AS entityID,alias,total FROM ranked WHERE row_no<=20 ORDER BY entity_id,row_no`)
+      .all(...bounded.map(row=>row.id));
+    const byID=new Map(bounded.map(row=>[row.id,{...publicEntity(row),aliases:[],aliasesTruncated:false} ]));
+    for (const row of aliases) {
+      const entity=byID.get(row.entityID);
+      if(entity) { entity.aliases.push(row.alias);entity.aliasesTruncated=row.total>20; }
+    }
+    return { entities:[...byID.values()], truncated:rows.length>limit };
+  }
+  function relationRows(ids, limit = 200) {
+    const bounded=graphLimit(limit,200,200);
+    const params=[];
+    let where='1=1';
+    if (ids) {
+      if (!ids.length) return {relations:[],truncated:false};
+      where=`(r.from_entity_id IN (${ids.map(()=>'?').join(',')}) OR r.to_entity_id IN (${ids.map(()=>'?').join(',')}))`;
+      params.push(...ids,...ids);
+    }
+    const rows=db.prepare(`SELECT r.relation_id AS id,r.from_entity_id AS fromEntityID,r.relation_type AS type,r.to_entity_id AS toEntityID,
+        CASE WHEN length(CAST(r.provenance_json AS BLOB))<=8192 THEN r.provenance_json ELSE '{"summaryTruncated":true}' END AS provenanceJSON,
+        length(CAST(r.provenance_json AS BLOB))>8192 AS provenanceTruncated,r.created_at AS createdAt,h.revision,h.valid_from AS validFrom,h.valid_to AS validTo
+      FROM entity_relations r JOIN entity_relation_revisions h ON h.relation_id=r.relation_id
+        AND h.revision=(SELECT max(x.revision) FROM entity_relation_revisions x WHERE x.relation_id=r.relation_id)
+      WHERE ${where} AND h.operation<>'retracted' ORDER BY r.created_at,r.relation_id LIMIT ?`).all(...params,bounded+1);
+    return {relations:rows.slice(0,bounded).map(row=>({...row,provenance:JSON.parse(row.provenanceJSON),provenanceJSON:undefined,
+      provenanceTruncated:!!row.provenanceTruncated})),truncated:rows.length>bounded};
+  }
+  function observationRows(entityIDs, {query='',limit=100}={}) {
+    if (!entityIDs.length) return {observations:[],truncated:false};
+    const bounded=graphLimit(limit,100,200),needle=query?normalize(query):'';
+    const placeholders=entityIDs.map(()=>'?').join(',');
+    const rows=db.prepare(`SELECT c.claim_id AS id,c.subject_entity_id AS subjectEntityID,c.predicate,c.object_entity_id AS objectEntityID,
+        CASE WHEN length(CAST(COALESCE(c.value_json,'') AS BLOB))<=2000 THEN c.value_json ELSE NULL END AS valueJSON,
+        substr(COALESCE(c.value_json,''),1,2000) AS valuePreview,length(CAST(COALESCE(c.value_json,'') AS BLOB))>2000 AS valueTruncated,
+        c.origin,c.method,c.epistemic_state AS epistemicState,c.valid_from AS validFrom,c.valid_to AS validTo,
+        c.observed_at AS observedAt,c.recorded_at AS recordedAt,
+        (SELECT count(*) FROM claim_evidence e WHERE e.claim_id=c.claim_id) AS evidenceCount,
+        (SELECT json_group_array(json_object('id',refs.evidence_id,'relation',refs.relation)) FROM
+          (SELECT evidence_id,relation FROM claim_evidence WHERE claim_id=c.claim_id ORDER BY evidence_id,relation LIMIT 5) refs) AS evidenceRefsJSON,
+        (SELECT count(*)>5 FROM claim_evidence e WHERE e.claim_id=c.claim_id) AS evidenceRefsTruncated
+      FROM claims c WHERE c.superseded_at IS NULL AND c.epistemic_state<>'superseded'
+        AND (c.subject_entity_id IN (${placeholders}) OR c.object_entity_id IN (${placeholders}))
+        AND (?='' OR freelancer_memory_contains(c.predicate||' '||COALESCE(c.value_json,''),?)=1
+          OR EXISTS(SELECT 1 FROM claim_evidence e WHERE e.claim_id=c.claim_id AND freelancer_memory_contains(e.evidence_json,?)=1))
+      ORDER BY c.recorded_at DESC,c.claim_id LIMIT ?`).all(...entityIDs,...entityIDs,needle,needle,needle,bounded+1);
+    return {observations:rows.slice(0,bounded).map(row=>{
+      const {valueJSON,valuePreview,valueTruncated,evidenceRefsJSON,evidenceRefsTruncated,...claim}=row;
+      let value=null;
+      if(valueJSON!==null) { try {value=JSON.parse(valueJSON);} catch {value=valueJSON;} }
+      return {...claim,value,evidenceRefs:JSON.parse(evidenceRefsJSON??'[]'),evidenceRefsTruncated:!!evidenceRefsTruncated,
+        ...(valueTruncated?{valuePreview,valueTruncated:true}:{})};
+    }),truncated:rows.length>bounded};
+  }
+  function graphObservationPage(offset,limit) {
+    const bounded=graphLimit(limit,100,100),start=graphOffset(offset);
+    const rows=db.prepare(`SELECT c.claim_id AS id,c.subject_entity_id AS subjectEntityID,c.predicate,c.object_entity_id AS objectEntityID,
+        CASE WHEN length(CAST(COALESCE(c.value_json,'') AS BLOB))<=2000 THEN c.value_json ELSE NULL END AS valueJSON,
+        substr(COALESCE(c.value_json,''),1,2000) AS valuePreview,length(CAST(COALESCE(c.value_json,'') AS BLOB))>2000 AS valueTruncated,
+        c.origin,c.method,c.epistemic_state AS epistemicState,c.valid_from AS validFrom,c.valid_to AS validTo,
+        c.observed_at AS observedAt,c.recorded_at AS recordedAt,
+        (SELECT count(*) FROM claim_evidence e WHERE e.claim_id=c.claim_id) AS evidenceCount,
+        (SELECT json_group_array(json_object('id',refs.evidence_id,'relation',refs.relation)) FROM
+          (SELECT evidence_id,relation FROM claim_evidence WHERE claim_id=c.claim_id ORDER BY evidence_id,relation LIMIT 5) refs) AS evidenceRefsJSON,
+        (SELECT count(*)>5 FROM claim_evidence e WHERE e.claim_id=c.claim_id) AS evidenceRefsTruncated
+      FROM claims c WHERE c.superseded_at IS NULL AND c.epistemic_state<>'superseded'
+      ORDER BY c.recorded_at DESC,c.claim_id LIMIT ? OFFSET ?`).all(bounded+1,start);
+    const observations=rows.slice(0,bounded).map(row=>{
+      const {valueJSON,valuePreview,valueTruncated,evidenceRefsJSON,evidenceRefsTruncated,...claim}=row;
+      let value=null;
+      if(valueJSON!==null) { try {value=JSON.parse(valueJSON);} catch {value=valueJSON;} }
+      return {...claim,value,evidenceRefs:JSON.parse(evidenceRefsJSON??'[]'),evidenceRefsTruncated:!!evidenceRefsTruncated,
+        ...(valueTruncated?{valuePreview,valueTruncated:true}:{})};
+    });
+    return {observations,truncated:rows.length>bounded,nextOffset:rows.length>bounded?start+bounded:null,offset:start};
+  }
+  function decorateEntity(entity) {
+    if(!entity) return null;
+    const aliases=db.prepare('SELECT alias FROM entity_aliases WHERE entity_id=? ORDER BY normalized_alias LIMIT 101').all(entity.id);
+    const rels=relationRows([entity.id],200),obs=observationRows([entity.id],{limit:100});
+    return {...entity,aliases:aliases.slice(0,100).map(row=>row.alias),aliasesTruncated:aliases.length>100,
+      relations:rels.relations,relationsTruncated:rels.truncated,observations:obs.observations,observationsTruncated:obs.truncated};
+  }
   return {
     ...createKnowledgeQueries(db,tx),
     createEntity,
@@ -110,6 +217,72 @@ export function createMemoryService(db, tx) {
       const exact = db.prepare(`SELECT entity_id AS id,entity_type AS type,canonical_name AS name FROM entities WHERE normalized_name=?
         UNION SELECT e.entity_id,e.entity_type,e.canonical_name FROM entity_aliases a JOIN entities e USING(entity_id) WHERE a.normalized_alias=? LIMIT 20`).all(key, key);
       return exact;
+    },
+    readEntity(id) {
+      const entityID=requiredText(id,'Entity ID',2000);
+      const row=db.prepare(`SELECT entity_id AS id,entity_type AS type,canonical_name AS name,created_at AS createdAt,updated_at AS updatedAt
+        FROM entities WHERE entity_id=?`).get(entityID);
+      return row ? {status:'ok',entity:decorateEntity(row)} : {status:'missing',id:entityID};
+    },
+    openNodes({ids=[],names=[],limit=100}={}) {
+      if(!Array.isArray(ids)||!Array.isArray(names)||ids.length+names.length>100) throw Error('Open nodes accepts at most 100 entity IDs and names combined.');
+      const requested=new Set();
+      for(const id of ids) requested.add(requiredText(id,'Entity ID',2000));
+      for(const name of names) for(const entity of this.findEntity(name)) {
+        if(!requested.has(entity.id)&&requested.size>=100) throw Error('Open nodes resolves to more than 100 entity IDs.');
+        requested.add(entity.id);
+      }
+      const requestedIDs=[...requested];
+      if(!requestedIDs.length) return {status:'empty',entities:[],relations:[],observations:[],truncated:false};
+      const relationLimit=graphLimit(limit,100,200),rels=relationRows(requestedIDs,relationLimit);
+      const neighborIDs=new Set(requestedIDs);
+      for(const relation of rels.relations) { neighborIDs.add(relation.fromEntityID); neighborIDs.add(relation.toEntityID); }
+      const entityLimit=Math.min(500,Math.max(100,requestedIDs.length+relationLimit*2));
+      const found=entityRows([...neighborIDs],entityLimit);
+      const observations=observationRows([...neighborIDs],{limit:200});
+      return {status:'ok',requestedEntityIDs:requestedIDs,entities:found.entities,relations:rels.relations,observations:observations.observations,
+        truncated:rels.truncated||found.truncated||observations.truncated};
+    },
+    readGraph({entityOffset=0,relationOffset=0,observationOffset=0,limit=100}={}) {
+      const bounded=graphLimit(limit,100,100),entityStart=graphOffset(entityOffset),relationStart=graphOffset(relationOffset);
+      const entities=db.prepare(`SELECT entity_id AS id,entity_type AS type,canonical_name AS name,created_at AS createdAt,updated_at AS updatedAt
+        FROM entities ORDER BY canonical_name,entity_id LIMIT ? OFFSET ?`).all(bounded+1,entityStart);
+      const relations=db.prepare(`SELECT r.relation_id AS id,r.from_entity_id AS fromEntityID,r.relation_type AS type,r.to_entity_id AS toEntityID,
+          CASE WHEN length(CAST(r.provenance_json AS BLOB))<=8192 THEN r.provenance_json ELSE '{"summaryTruncated":true}' END AS provenanceJSON,
+          length(CAST(r.provenance_json AS BLOB))>8192 AS provenanceTruncated,r.created_at AS createdAt,h.revision,h.valid_from AS validFrom,h.valid_to AS validTo
+        FROM entity_relations r JOIN entity_relation_revisions h ON h.relation_id=r.relation_id
+          AND h.revision=(SELECT max(x.revision) FROM entity_relation_revisions x WHERE x.relation_id=r.relation_id)
+        WHERE h.operation<>'retracted' ORDER BY r.created_at,r.relation_id LIMIT ? OFFSET ?`).all(bounded+1,relationStart);
+      const entityRowsPage=entities.slice(0,bounded),entityPage=entityRows(entityRowsPage.map(row=>row.id),bounded),relationRowsPage=relations.slice(0,bounded).map(row=>({...row,
+        provenance:JSON.parse(row.provenanceJSON),provenanceJSON:undefined,provenanceTruncated:!!row.provenanceTruncated}));
+      const hasMoreEntities=entities.length>bounded,hasMoreRelations=relations.length>bounded;
+      const observationPage=graphObservationPage(observationOffset,bounded);
+      return {status:'ok',entities:entityPage.entities,relations:relationRowsPage,observations:observationPage.observations,
+        entityOffset:entityStart,relationOffset:relationStart,observationOffset:observationPage.offset,
+        nextEntityOffset:hasMoreEntities?entityStart+bounded:null,nextRelationOffset:hasMoreRelations?relationStart+bounded:null,
+        nextObservationOffset:observationPage.nextOffset,
+        truncated:hasMoreEntities||hasMoreRelations||entityPage.truncated||observationPage.truncated};
+    },
+    searchNodes(query,{limit=50}={}) {
+      const text=requiredText(query,'Graph search query',200),needle=normalize(text),bounded=graphLimit(limit,50,100);
+      const rows=db.prepare(`SELECT e.entity_id AS id,e.entity_type AS type,e.canonical_name AS name,
+          e.created_at AS createdAt,e.updated_at AS updatedAt,
+          CASE WHEN freelancer_memory_contains(e.canonical_name,?)=1 THEN 'name'
+            WHEN freelancer_memory_contains(e.entity_type,?)=1 THEN 'type'
+            WHEN EXISTS(SELECT 1 FROM entity_aliases a WHERE a.entity_id=e.entity_id AND freelancer_memory_contains(a.alias,?)=1) THEN 'alias'
+            ELSE 'observation' END AS matchKind
+        FROM entities e WHERE freelancer_memory_contains(e.canonical_name,?)=1 OR freelancer_memory_contains(e.entity_type,?)=1
+          OR EXISTS(SELECT 1 FROM entity_aliases a WHERE a.entity_id=e.entity_id AND freelancer_memory_contains(a.alias,?)=1)
+          OR EXISTS(SELECT 1 FROM claims c WHERE (c.subject_entity_id=e.entity_id OR c.object_entity_id=e.entity_id)
+            AND c.superseded_at IS NULL AND c.epistemic_state<>'superseded'
+            AND (freelancer_memory_contains(c.predicate||' '||COALESCE(c.value_json,''),?)=1 OR EXISTS(
+              SELECT 1 FROM claim_evidence ce WHERE ce.claim_id=c.claim_id AND freelancer_memory_contains(ce.evidence_json,?)=1)))
+        ORDER BY CASE WHEN freelancer_memory_contains(e.canonical_name,?)=1 THEN 0 WHEN freelancer_memory_contains(e.entity_type,?)=1 THEN 1 ELSE 2 END,
+        e.canonical_name,e.entity_id LIMIT ?`).all(needle,needle,needle,needle,needle,needle,needle,needle,needle,needle,bounded+1);
+      const selected=rows.slice(0,bounded),ids=selected.map(row=>row.id),rels=relationRows(ids,200),obs=observationRows(ids,{limit:200});
+      const entities=entityRows(ids,bounded).entities.map(entity=>({...entity,matchKind:selected.find(row=>row.id===entity.id)?.matchKind ?? 'observation'}));
+      return {status:entities.length?'ok':'empty',query:text,entities,relations:rels.relations,observations:obs.observations,
+        truncated:rows.length>bounded||rels.truncated||obs.truncated};
     },
     addRelation({ id = randomUUID(), from, type, to, provenance = {}, validFrom, validTo, actor = 'user', reason = '' }) {
       const relationType = requiredText(type, 'Relation type', 200);
@@ -344,7 +517,7 @@ export function createMemoryService(db, tx) {
             WHERE m.kind='conversation_snapshot' AND m.source_project_id=? AND m.source_session_id=?`)
             .get(row.projectID,row.sessionID);
           if (memory?.status !== 'forgotten' && memory?.deletedAt == null)
-            pinConversationSnapshotInTransaction({ ...row, originalPinnedAt:row.pinnedAt,annotationRevision:row.revision });
+            pinConversationSnapshotInTransaction({ ...row, originalPinnedAt:row.pinnedAt,annotationRevision:row.revision,creationChange:'legacy_pin_imported' });
           db.prepare('UPDATE session_annotations SET pinned_at=NULL WHERE project_id=? AND session_id=? AND pinned_at=?')
             .run(row.projectID,row.sessionID,row.pinnedAt);
           const remaining = db.prepare('SELECT count(*) n FROM session_annotations WHERE pinned_at IS NOT NULL').get().n;

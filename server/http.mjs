@@ -181,7 +181,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
           if (req.method !== 'POST' || route.endsWith('/agent') && !agentBridge) return send(403, { error: 'Native knowledge tool only' });
           if (body.cursor !== undefined && !['query','search','claims'].includes(body.operation))
             return send(400,{error:'Query continuation is supported only for query, search or claims.'});
-          if (route==='/api/knowledge' && !['query','search','read','status','claims','read-claim','opencode-read','pin','archive','refresh','evidence','remember','revise','forget','entity','entity-search','claim','correct-claim','relate','revise-relation','relation-history','relations','delete-relation','delete-entity'].includes(body.operation))
+          if (route==='/api/knowledge' && !['query','search','read','status','claims','read-claim','opencode-read','pin','archive','refresh','evidence','remember','revise','forget','entity','entity-search','entity-read','open-nodes','read-graph','search-nodes','claim','correct-claim','relate','revise-relation','relation-history','relations','delete-relation','delete-entity'].includes(body.operation))
             return send(403,{error:'This operation requires the native knowledge tool.'});
           const data = app.localData.get();
           // Native tools stamp execution identity separately from a source read
@@ -243,6 +243,10 @@ export async function startServer({ application: app, assets, port = 0, readActi
             case 'evidence': return send(200,data.readContentEvidence(body));
             case 'status': return send(200, data.memoryStatus());
             case 'entity-search': return send(200, { status:'ok', entities:data.findEntity(body.query) });
+            case 'entity-read': return send(200, data.readEntity(body.id));
+            case 'open-nodes': return send(200, data.openNodes({ids:body.ids,names:body.names,limit:body.limit}));
+            case 'read-graph': return send(200, data.readGraph({entityOffset:body.entityOffset,relationOffset:body.relationOffset,observationOffset:body.observationOffset,limit:body.limit}));
+            case 'search-nodes': return send(200, data.searchNodes(body.query,{limit:body.limit}));
             case 'entity': {
               const projectSettings = await app.store.read('settings');
               const projectRow = body.directory ? projectSettings.projects.find(row => path.resolve(row.directory) === path.resolve(body.directory)) : undefined;
@@ -432,6 +436,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         if (req.method === 'GET' && route === '/api/projects/folders')
           return send(200, await app.listProjectFolders(url.searchParams.get('directory') ?? ''));
         if (req.method === 'POST' && route === '/api/projects/import-preview') {
+          if (body.forImport !== undefined && typeof body.forImport !== 'boolean') throw Error('Choose whether to review history import.');
           // Existing projects need no catalog scan; let the client reopen them
           // immediately through the ordinary project path.
           const settings = await app.store.read('settings');
@@ -439,8 +444,8 @@ export async function startServer({ application: app, assets, port = 0, readActi
           const existing = settings.projects.find(row => (process.platform === 'win32'
             ? row.directory.replace(/^\\\\\?\\/, '').toLowerCase() === directory.replace(/^\\\\\?\\/, '').toLowerCase()
             : row.directory === directory));
-          if (existing && !body.sourceDirectory) return send(200, { existing, directory, chats: [], notice: 'This project is already set up. Import is offered only for new projects.' });
-          return send(200, await app.chatgpt.preview(body.directory, body.sourceDirectory));
+          if (existing && !body.sourceDirectory && !body.forImport) return send(200, { existing, directory, chats: [], notice: 'This project is already set up. Use Manage project to review its history import.' });
+          return send(200, await app.chatgpt.preview(body.directory, body.sourceDirectory, { forImport: body.forImport === true }));
         }
         if (req.method === 'POST' && route === '/api/projects/setup')
           return send(200, await app.chatgpt.complete(body.token, body.selected));

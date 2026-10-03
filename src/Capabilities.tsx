@@ -18,6 +18,7 @@ export function Capabilities({ data, sessionID, onClose }: {
   data: any; sessionID?: string; onClose: () => void;
 }) {
   const project = data.project?.id;
+  const inspectedSession = project ? sessionID : undefined;
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -25,10 +26,10 @@ export function Capabilities({ data, sessionID, onClose }: {
   useEffect(() => {
     const controller = new AbortController();
     setInventory(null); setError(''); setLoading(false);
-    if (!project) return;
     setLoading(true);
-    const query = new URLSearchParams({ project, ...(sessionID ? { session: sessionID } : {}) });
-    api(`capabilities?${query}`, undefined, 'GET', controller.signal)
+    const query = new URLSearchParams({ ...(project ? { project } : {}), ...(inspectedSession ? { session: inspectedSession } : {}) });
+    const parameters = query.toString();
+    api(parameters ? `capabilities?${parameters}` : 'capabilities', undefined, 'GET', controller.signal)
       .then(result => {
         if (!Array.isArray(result?.tools) || !Array.isArray(result?.skills) || !Array.isArray(result?.mcp))
           throw Error('The runtime returned an incomplete capability inventory. Retry the inspection.');
@@ -37,24 +38,24 @@ export function Capabilities({ data, sessionID, onClose }: {
       .catch(reason => { if (!controller.signal.aborted) setError(reason instanceof Error ? reason.message : 'Capabilities are unavailable.'); })
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
-  }, [project, sessionID, refresh]);
+  }, [project, inspectedSession, refresh]);
   const tools = inventory?.tools ?? [];
   const skills = inventory?.skills ?? [];
   const availableTools = tools.filter(row => ['Available', 'Loaded'].includes(toolLabel(row))).length;
   const availableSkills = skills.filter((row, index) => skillLabel(row, inventory?.probes?.skills) === 'Found').length;
   return <div className="capability-view">
     <PageHeading compact title="Capabilities" icon={Wrench} actions={<>
-      <Button type="button" disabled={!project || loading} onClick={() => setRefresh(n => n + 1)}>
+      <Button type="button" disabled={loading} onClick={() => setRefresh(n => n + 1)}>
         <RefreshCw size={16} aria-hidden="true" className={loading ? 'spin' : ''} />{loading ? 'Refreshing…' : 'Refresh tools'}
       </Button><PageCloseButton onClick={onClose} />
     </>} />
-    {!project ? <Panel><p>Open a project to see tools and skills.</p></Panel> : <>
+    <>
       {loading && <p role="status">Checking capabilities…</p>}
       {error && <Panel title="Inventory unavailable"><p className="notice error" role="alert">{error}</p><Button type="button" onClick={() => setRefresh(n => n + 1)}>Retry</Button></Panel>}
       {inventory && <>
         <Panel title="Tools" className="capability-section" collapsible storageKey="tools" summaryText={`${tools.length} · ${availableTools} available`} help="capability-tools" helpDetails={<>
           <details><summary>Technical details</summary>
-            <p>Project: {data.project?.name ?? project}</p>
+            <p>{project ? `Project: ${data.project?.name ?? project}` : 'Context: Application · No project or chat selected'}</p>
             {inventory.observedAt && <p>Checked: {new Date(inventory.observedAt).toLocaleString()}</p>}
             {inventory.tools.map(row => <p key={row.id}><strong>{row.id}</strong> · {row.origin}{row.unavailableReason && <> — {row.unavailableReason}</>}</p>)}
             {inventory.instructions && <>
@@ -81,7 +82,7 @@ export function Capabilities({ data, sessionID, onClose }: {
         </Panel>
 
       </>}
-    </>}
+    </>
     <McpConnections onChanged={() => setRefresh(n => n + 1)} />
   </div>;
 }

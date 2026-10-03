@@ -2,10 +2,15 @@ const plain = row => row && { ...row };
 
 export function createImportedChats(db, tx) {
   return {
-    onboarding(project) { return plain(db.prepare('SELECT * FROM project_onboarding WHERE project_id=?').get(project)); },
+    onboarding(project) { return plain(db.prepare(`SELECT p.*,
+      (SELECT count(*) FROM chatgpt_chats WHERE project_id=p.project_id) AS stored_count
+      FROM project_onboarding p WHERE project_id=?`).get(project)); },
     importChatGPT(project, chats) {
       return tx(() => {
-        if (this.onboarding(project)) throw Error('Project setup is already complete. Import is available only during setup.');
+        const prior=this.onboarding(project);
+        if (prior?.imported_count>0 || db.prepare('SELECT 1 FROM chatgpt_chats WHERE project_id=? LIMIT 1').get(project))
+          throw Error('History import is already complete. Its saved conversations were not changed.');
+        if (prior && !chats.length) return { imported: 0, messages: 0 };
         for (const chat of chats) {
           db.prepare('INSERT INTO chatgpt_chats VALUES(?,?,?,?,?,?,?,?,?)').run(project, chat.id, chat.sourceID,
             chat.title, chat.directory, chat.time.created, chat.time.updated, Date.now(), JSON.stringify(chat.source));
@@ -14,7 +19,8 @@ export function createImportedChats(db, tx) {
           db.prepare('INSERT INTO session_headers VALUES(?,?,?,?,?,?,?,?)').run(project, chat.id, null,
             chat.title, chat.time.created, chat.time.updated, null, Date.now());
         }
-        db.prepare('INSERT INTO project_onboarding VALUES(?,?,?)').run(project, Date.now(), chats.length);
+        db.prepare(`INSERT INTO project_onboarding VALUES(?,?,?) ON CONFLICT(project_id)
+          DO UPDATE SET completed_at=excluded.completed_at,imported_count=excluded.imported_count`).run(project, Date.now(), chats.length);
         return { imported: chats.length, messages: chats.reduce((sum, chat) => sum + chat.messages.length, 0) };
       });
     },

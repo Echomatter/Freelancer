@@ -1,6 +1,10 @@
 # ChatGPT / Codex project import
 
-Open project → **Browse folders…** selects a folder, including local drive roots. Paths typed while a folder listing is loading are preserved. Use **Go to folder** to load a typed path before **Use this folder** becomes available. **Next** checks for local Codex history. New projects offer **Bring your chats along?** before file and conversation indexing. Select conversations or **Skip import**. Nothing is selected by default. Already registered projects open normally without rescanning import history. An explicitly requested import from a former same-named folder can use `sourceDirectory` in the import preview for an existing project that has not completed onboarding.
+Open project → **Browse folders…** selects a folder, including local drive roots. Paths typed while a folder listing is loading are preserved. Use **Go to folder** to load a typed path before **Use this folder** becomes available. **Next** checks for local Codex history. New projects show **Import conversations** before file and conversation indexing. Select conversations or **Skip import**. Nothing is selected by default. Already registered projects open normally without rescanning import history.
+
+For an existing project, open **Manage project** → **Import ChatGPT / Codex history**. A previous Skip allows a later deliberate import. A completed import shows its saved conversation count and date; it cannot import another batch or overwrite its snapshots. **Open project** returns to the saved project.
+
+The **Recorded conversation folder** initially matches the destination project. Use **Choose source folder…** to browse an existing folder, or type the exact historical path. The old folder need not still exist. Suggested **Other recorded folders for this project** have the same folder name at another path. Choose or type a source, then click **Preview conversations**. Changing the source clears the selection. Importing from a former folder requires explicit approval to copy its snapshots into the current project. **Back** returns to the destination folder; closing or cancelling a preview prevents a late response from reopening it. The source chooser and import preview appear one at a time.
 
 This is a one-time, one-way snapshot. Ordinary setup only offers entries whose recorded working directory matches the exact resolved project folder. Sibling folders, nested folders and other worktrees are not combined by remote URL or name. If matching folder names exist under another path, setup says so. When the user explicitly approves an old-folder import, the selected recorded folder must have the same basename as the destination, each transcript is checked against its recorded folder, and that folder is retained in provenance. The transcript's session ID must also match. Archived source chats are offered; their imported copies are available, with original archive status retained as provenance.
 
@@ -12,7 +16,7 @@ The source catalog, transcripts and native OpenCode database are never edited. A
 
 Schema 6 adds `chatgpt_chats`, `chatgpt_messages`, `chatgpt_continuations` and `project_onboarding`. Imported headers/provenance and message records are owned by the first two, separate from OpenCode and derived search. Deterministic `ses_chatgpt_…` IDs are project-scoped. Messages use the existing `info`/`parts` contract and React renderer. Imported IDs cannot reach native chat actions.
 
-Search content with Manage chats, pin/hide/restore, JSON/Markdown export and unified content search support snapshots. Original text remains indexed after rebuilds. Import and the setup marker commit together before onboarding invokes index jobs. Response retries are idempotent; completed setup cannot add more conversations. Removing and reopening the same project reuses saved history. Nothing continuously monitors Codex.
+Search content with Manage chats, pin/hide/restore, JSON/Markdown export and unified content search support snapshots. Original text remains indexed after rebuilds. Import and the setup marker commit together before onboarding invokes index jobs. Response retries are idempotent; a completed positive import cannot add more conversations. A zero-count Skip receipt can be replaced by a later deliberate import only when no imported chats exist. Removing and reopening the same project reuses saved history. Nothing continuously monitors Codex.
 
 ## Continuation
 
@@ -26,6 +30,6 @@ Creation is serialized and durably marked before native creation. An uncertain c
 
 ## Verification
 
-`tests/chatgpt-import.test.mjs` covers scope, identity, exclusions, snapshots, replay protection, search, archive/export, native continuation and source preservation. `tests/chatgpt-import.browser.mjs` covers folder browsing, optional import, narrow layout, import-before-index sequencing, shared rendering and orientation. Provider responses are simulated. Local format inspection is distinct from live inference.
+`tests/chatgpt-import.test.mjs` covers scope, identity, exclusions, snapshots, replay protection, Skip followed by deliberate import, existing project review, completed import protection, search, archive/export, native continuation and source preservation. `tests/chatgpt-import.browser.mjs` covers folder browsing, optional import, narrow layout, import-before-index sequencing, shared rendering, source selection, preview cancellation and orientation. Provider responses are simulated. Local format inspection is distinct from live inference.
 
 Rebuild and restart for UI contract 10 and schema 6. Existing drafts, history, ratings and indexes migrate in place.

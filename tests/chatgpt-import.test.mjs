@@ -66,7 +66,7 @@ test('setup imports exact-folder snapshots once before indexing, shares chat/his
   await assert.rejects(f.app.chat(f.project.id, imported.id), /Choose a project/);
 });
 
-test('skip is final, missing installations are optional, and malformed/foreign transcripts cannot import', async t => {
+test('skipped setup permits a later deliberate import while completed snapshots stay once-only', async t => {
   const f = await localDataFixture(); t.after(() => f.close());
   const source = await codexHistoryFixture(f);
   const preview = await f.app.chatgpt.preview(f.directory);
@@ -80,14 +80,58 @@ test('skip is final, missing installations are optional, and malformed/foreign t
   assert.ok((await f.app.chatgpt.preview(f.directory)).existing);
   await f.store.update('settings', settings => ({ ...settings, projects: [] }));
   const reopen = await f.app.chatgpt.preview(f.directory);
-  assert.equal(reopen.chats.length, 0);
+  assert.equal(reopen.chats.length, 1);
+  assert.equal(reopen.previouslySkipped, true);
+  assert.equal(reopen.setupComplete, false);
   const reopened = await f.app.chatgpt.complete(reopen.token, []);
   assert.equal(reopened.project.id, skipped.project.id);
-  await f.store.update('settings', settings => ({ ...settings, projects: [] }));
   const noInstallation = createChatGPTImport({ app: f.app, backendRoot: f.root, localData: f.app.localData, codexHome: path.join(f.root, 'absent') });
-  assert.deepEqual((await noInstallation.preview(f.directory)).chats, []);
+  assert.deepEqual((await noInstallation.preview(f.directory, undefined, { forImport: true })).chats, []);
+  const deliberate = await f.api('projects/import-preview', { directory: f.directory, forImport: true });
+  assert.equal(deliberate.previouslySkipped, true);
+  assert.deepEqual(deliberate.chats.map(chat => chat.id), ['codex-exact']);
+  const imported = await f.api('projects/setup', { token: deliberate.token, selected: ['codex-exact'] });
+  assert.equal(imported.project.id, skipped.project.id);
+  assert.equal(imported.imported, 1);
+  assert.deepEqual(await f.api('projects/setup', { token: deliberate.token, selected: ['codex-exact'] }), imported);
+  const completed = await f.api('projects/import-preview', { directory: f.directory, forImport: true });
+  assert.equal(completed.setupComplete, true);
+  assert.equal(completed.previouslySkipped, false);
+  assert.equal(completed.importedCount, 1);
+  assert.ok(completed.completedAt > 0);
+  assert.deepEqual(completed.chats, []);
+  const saved = f.app.chatgpt.get(imported.project.id, f.app.chatgpt.list(imported.project.id)[0].id);
+  const opened = await f.api('projects/setup', { token: completed.token, selected: [] });
+  assert.equal(opened.imported, 0);
+  assert.deepEqual(f.app.chatgpt.get(imported.project.id, saved.id), saved);
+  assert.equal((await f.api('projects/import-preview', { directory: f.directory, forImport: true })).completedAt, completed.completedAt);
   await assert.rejects(access(path.join(f.root,'.state','local-data','freelancer.sqlite')),/ENOENT/,
     'the optional importer uses the application-owned store instead of leaking a second SQLite handle');
+});
+
+test('registered project history preview is deliberate and does not require unfinished onboarding', async t => {
+  const f = await localDataFixture(); t.after(() => f.close());
+  await codexHistoryFixture(f);
+  await f.store.update('settings', settings => ({ ...settings, projects: [f.project] }));
+  let reads = 0;
+  const preview = f.app.chatgpt.preview.bind(f.app.chatgpt);
+  f.app.chatgpt.preview = (...args) => { reads++; return preview(...args); };
+  const ordinary = await f.api('projects/import-preview', { directory: f.directory });
+  assert.equal(ordinary.existing.id, f.project.id);
+  assert.equal(reads, 0, 'ordinary reopen avoids catalog scanning');
+  await assert.rejects(f.api('projects/import-preview', { directory: f.directory, forImport: 'true' }), /whether to review/);
+  const deliberate = await f.api('projects/import-preview', { directory: f.directory, forImport: true });
+  assert.equal(deliberate.existing, undefined);
+  assert.equal(deliberate.setupComplete, false);
+  assert.equal(deliberate.previouslySkipped, false);
+  assert.deepEqual(deliberate.chats.map(chat => chat.id), ['codex-exact']);
+  const competing = await f.api('projects/import-preview', { directory: f.directory, forImport: true });
+  const result = await f.api('projects/setup', { token: deliberate.token, selected: ['codex-exact'] });
+  assert.equal(result.project.id, f.project.id);
+  assert.equal(result.imported, 1);
+  await assert.rejects(f.api('projects/setup', { token: competing.token, selected: ['codex-exact'] }), /already complete/);
+  assert.equal(f.app.chatgpt.list(f.project.id).length, 1, 'a second preview cannot overwrite or duplicate completed snapshots');
+  assert.equal((await f.api('projects/import-preview', { directory: f.directory, forImport: true })).importedCount, 1);
 });
 
 test('same-name old-folder chats require an explicit source and preserve that provenance', async t => {

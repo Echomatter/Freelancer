@@ -119,6 +119,58 @@ test('capability panels start compact and remember their local disclosure state'
     await expect.poll(() => page.evaluate(key => localStorage.getItem(`capability-panel:${key}`), key)).toBe('open');
 });
 
+test('fresh no-project workspace shows shared Tools and Skills with persistent independent collapse states', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
+  const fixture = await own(localDataFixture({ timers: false }));
+  await fixture.store.update('settings', settings => ({ ...settings, projects: [], lastProjectID: undefined }));
+  const native = attachMcpHost(fixture.host);
+  const original = fixture.host.request.bind(fixture.host);
+  fixture.host.request = async (route, options) => {
+    if (route === '/experimental/tool/ids') return ['read', 'knowledge', 'skill'];
+    if (route === '/skill') return [{ name: 'verify', location: 'native/skills/verify/SKILL.md' }];
+    return original(route, options);
+  };
+  const page = await appBrowser.newPage({ viewport: { width: 1280, height: 900 } });
+  const inspections = [];
+  await page.route('**/api/capabilities*', route => {
+    inspections.push(new URL(route.request().url()).searchParams);
+    return route.continue();
+  });
+  await openCapabilities(page, fixture.url, { expand: false });
+  const panel = name => page.locator('details.panel-disclosure').filter({ has: page.getByRole('heading', { name, exact: true }) });
+  const tools = panel('Tools'), skills = panel('Skills');
+  for (const name of ['Tools', 'Skills']) {
+    await expect(panel(name)).not.toHaveAttribute('open', '');
+    await page.getByRole('heading', { name, exact: true }).click();
+    await expect(panel(name)).toHaveAttribute('open', '');
+  }
+  await expect(page.getByRole('list', { name: 'Tool inventory' })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Skill inventory' })).toBeVisible();
+  await expect(page.getByRole('list', { name: 'Skill inventory' }).getByText('verify', { exact: true })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Refresh tools', exact: true })).toBeEnabled();
+  await page.getByRole('heading', { name: 'Tools', exact: true }).click();
+  await expect(tools).not.toHaveAttribute('open', '');
+  await expect(skills).toHaveAttribute('open', '');
+  await openCapabilities(page, fixture.url, { expand: false });
+  await expect(page.getByRole('heading', { name: 'Tools', exact: true })).toBeVisible();
+  await expect(tools).not.toHaveAttribute('open', '');
+  await expect(skills).toHaveAttribute('open', '');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole('heading', { name: 'Tools', exact: true }).click();
+  await expect(page.getByRole('list', { name: 'Tool inventory' })).toBeVisible();
+  const refreshed = page.waitForResponse(response => new URL(response.url()).pathname === '/api/capabilities' && response.ok());
+  await page.getByRole('button', { name: 'Refresh tools', exact: true }).click();
+  await refreshed;
+  await expect(page.getByRole('list', { name: 'Tool inventory' })).toBeVisible();
+  await expect(tools).toHaveAttribute('open', '');
+  await expect(skills).toHaveAttribute('open', '');
+  assert.ok(inspections.length >= 3);
+  assert.ok(inspections.every(parameters => !parameters.has('project') && !parameters.has('session')));
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  assert.deepEqual((await fixture.store.read('settings')).projects, []);
+  assert.ok(native.calls.every(call => !['POST', 'PATCH', 'DELETE'].includes(call.options.method)), 'inventory and disclosure actions do not change MCP configuration');
+  assert.equal(fixture.calls.filter(call => /\/prompt(?:_async)?$/.test(call.route)).length, 0);
+});
+
 test('native service states are shown distinctly for every shared service', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
   const fixture = await own(localDataFixture({ timers: false }));
   const native = attachMcpHost(fixture.host, {
@@ -147,9 +199,12 @@ test('generic service templates persist native configuration and keep credential
   const native = attachMcpHost(fixture.host);
   const page = await appBrowser.newPage({ viewport: { width: 1280, height: 900 } });
   await openCapabilities(page, fixture.url);
-  for (const name of ['Playwright', 'Fetch', 'Memory', 'Sequential Thinking', 'Context7', 'JEV'])
+  await expect(page.locator('.mcp-service-list li')).toHaveCount(5);
+  for (const name of ['Playwright', 'Fetch', 'Sequential Thinking', 'Context7', 'JEV'])
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Set up Memory', exact: true })).toHaveCount(0);
   await page.getByRole('button', { name: 'Add connection', exact: true }).click();
+  await expect(page.getByLabel('Service template').getByRole('option', { name: 'Memory', exact: true })).toHaveCount(0);
   await page.getByLabel('Service template').selectOption('jev');
   await expect(page.getByLabel('Executable and arguments (JSON array)')).toHaveValue(JSON.stringify(['npx', '-y', 'jev-mcp@0.5.1']));
   await expect(page.getByLabel('Environment references (JSON object)')).toHaveValue(JSON.stringify({ TYPESAFE_API_KEY: '{env:JEV_API_KEY}' }, null, 2));

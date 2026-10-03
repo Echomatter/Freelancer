@@ -125,9 +125,10 @@ export function createChatGPTImport({ app, backendRoot, dataRoot,
       const notice = chats.length
         ? 'One-time local copy. Only conversations recorded in this exact project folder are listed, including archived chats. No live sync.'
         : otherDirectories.size
-          ? `Local Codex chats with this folder name were found under a different path (${[...otherDirectories].slice(0, 2).join(', ')}). Open that exact folder to import them; chats are not reassigned by folder name.`
+          ? `Local Codex chats with this folder name were found under a different path (${[...otherDirectories].slice(0, 2).join(', ')}). Choose that recorded source folder to preview an explicit copy; chats are not reassigned by folder name.`
           : 'One-time local copy. Only conversations recorded in this exact project folder are listed, including archived chats. No live sync.';
-      return { detected: true, chats: chats.sort((a, b) => b.updatedAt - a.updatedAt), notice };
+      return { detected: true, chats: chats.sort((a, b) => b.updatedAt - a.updatedAt), notice,
+        relatedDirectories: [...otherDirectories].sort().slice(0,20) };
     } catch { return { detected: true, chats: [], notice: 'Codex was detected, but its conversation catalog could not be read. Close Codex and retry, or skip import.' }; }
     finally { db?.close(); }
   }
@@ -136,7 +137,7 @@ export function createChatGPTImport({ app, backendRoot, dataRoot,
     list: project => data(db => db.chatGPTChats(project)),
     get: (project, id) => data(db => db.chatGPTChat(project, id)),
     source: (project, nativeID) => data(db => db.chatGPTSource(project, nativeID)),
-    async preview(directory, recordedDirectory) {
+    async preview(directory, recordedDirectory, { forImport = false } = {}) {
       if (typeof directory !== 'string' || !path.isAbsolute(directory)) throw Error('Choose an existing project folder.');
       directory = await realpath(directory);
       if (!(await stat(directory)).isDirectory()) throw Error('Choose a folder.');
@@ -146,16 +147,20 @@ export function createChatGPTImport({ app, backendRoot, dataRoot,
       if (!same(recordedDirectory, directory) && path.basename(recordedDirectory).toLowerCase() !== path.basename(directory).toLowerCase())
         throw Error('Recorded chats must belong to the same named project folder.');
       const existing = (await app.store.read('settings')).projects.find(row => same(row.directory, directory));
-      if (existing && same(recordedDirectory,directory)) return { existing, directory, chats: [], notice: 'This project is already set up. Import is offered only for new projects.' };
+      if (existing && same(recordedDirectory,directory) && !forImport) return { existing, directory, chats: [], notice: 'This project is already set up. Use Manage project to review its history import.' };
       const projectID = existing?.id ?? createHash('sha256').update(pathKey(directory)).digest('hex').slice(0, 24);
-      const completed = data(db => db.onboarding(projectID));
+      const setup = data(db => db.onboarding(projectID));
+      const completed = setup && (setup.imported_count>0 || setup.stored_count>0) ? setup : null;
       const result = completed ? { detected: true, chats: [], notice: 'This folder was previously set up. Its saved imported history will be reused; no new import or sync will run.' } : await inventory(directory,recordedDirectory), token = randomUUID();
       if (!same(recordedDirectory,directory) && result.chats.length)
         result.notice = `These local Codex chats were recorded under ${recordedDirectory}. Selected snapshots will appear in ${directory}; the originals stay unchanged.`;
       for (const [key, value] of previews) if (value.expires < Date.now()) previews.delete(key);
       if (previews.size >= 20) throw Error('Too many setup windows are open. Close one and try again shortly.');
       previews.set(token, { directory, recordedDirectory, projectID, completed: !!completed, chats: result.chats, expires: Date.now() + 30 * 60 * 1000 });
-      return { ...result, directory, recordedDirectory, token, chats: result.chats.map(({ filename, model, ...chat }) => chat) };
+      return { ...result, directory, recordedDirectory, token, setupComplete: !!completed,
+        importedCount: completed ? Math.max(completed.imported_count,completed.stored_count) : 0,
+        completedAt: completed?.completed_at ?? null, previouslySkipped: !!setup&&!completed,
+        chats: result.chats.map(({ filename, model, ...chat }) => chat) };
     },
     async complete(token, selected = []) {
       if (flights.has(token)) return flights.get(token);

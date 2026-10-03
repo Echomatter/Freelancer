@@ -3,5 +3,8 @@
 .project-import-list > label { display: flex; align-items: flex-start; gap: 10px; padding: 8px; }
 .project-import-list small { display: block; margin-top: 4px; color: var(--muted); }
 .project-import-list span, .project-import-path { overflow-wrap: anywhere; min-width: 0; }
+.project-import-approval { display: flex; align-items: flex-start; gap: 10px; }
+.project-import-approval > input { flex-shrink: 0; }
+.project-import-approval > span { min-width: 0; overflow-wrap: anywhere; }
 .imported-chat-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; font-size: 13px; border-bottom: 1px solid var(--line); background: var(--paper); }
 .imported-chat-notice > span { flex: 1; }

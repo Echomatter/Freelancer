@@ -66,8 +66,14 @@ function migrate(db, key, file) {
 }
 const directoryMarker = key => `directory:${path.posix.dirname(key) === '.' ? '' : `${path.posix.dirname(key)}/`}`;
 function requireUnifiedDirectory(db, runtimeID, key) {
-  if (!db.prepare('SELECT 1 FROM runtime_collection_markers WHERE runtime_id=? AND collection_name=?')
-    .get(runtimeID, directoryMarker(key)))
+  const marked = db.prepare('SELECT 1 FROM runtime_collection_markers WHERE runtime_id=? AND collection_name=?');
+  const marker = directoryMarker(key);
+  // Native session IDs are created after runtime activation. The registered
+  // model-input collection owns their dynamic directories; it does not require
+  // a separate migration for each new chat. Other directories still fail closed.
+  const sessionInput = /^directory:model-input\/[\w-]+\/$/.test(marker);
+  if (!marked.get(runtimeID, marker) &&
+    !(sessionInput && marked.get(runtimeID, 'directory:model-input/')))
     throw Error(`Unified runtime directory for ${key} has no migration marker; cutover is incomplete.`);
 }
 function launchPath(root) { return path.join(root,'.state','webpage','launch.json'); }
@@ -220,9 +226,7 @@ export function stateFiles(directory) {
   const prefix = key.slice(0, -1), marker = `directory:${prefix}`;
   const config = unifiedConfig(root);
   if (config) return withUnifiedTransaction(config, (db, runtimeID) => {
-    if (!db.prepare('SELECT 1 FROM runtime_collection_markers WHERE runtime_id=? AND collection_name=?').get(runtimeID, marker)) {
-      throw Error(`Unified runtime directory ${prefix} has no migration marker; cutover is incomplete.`);
-    }
+    requireUnifiedDirectory(db, runtimeID, key);
     const names = new Set(db.prepare('SELECT document_key FROM application_documents WHERE runtime_id=? AND substr(document_key,1,?)=?').all(runtimeID, prefix.length, prefix)
       .map(row => row.document_key.slice(prefix.length)).filter(name => !name.includes('/')));
     if (prefix === 'webpage/' && db.prepare('SELECT 1 FROM runtime_collection_markers WHERE runtime_id=? AND collection_name=?').get(runtimeID,'document:webpage/settings.json')) names.add('settings.json');

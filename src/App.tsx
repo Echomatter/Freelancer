@@ -386,7 +386,8 @@ export default function App() {
       ? key
       : `${key}:${data?.sessionDefaults?.revision ?? 0}`;
     if (
-      data?.project?.id !== project ||
+      !data ||
+      (data.project?.id ?? "") !== project ||
       (!session && data.selectionKey !== key) ||
       restoredChoices.current === restorationKey
     )

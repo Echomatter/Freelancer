@@ -4,6 +4,59 @@ import path from 'node:path';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { test, expect } from './support/browser-test.mjs';
 
+test('fresh workspace shows setup after bootstrap without waiting for chat choices', { tag: ['@app', '@chat'] }, async ({ appBrowser: browser, own }) => {
+  const f = await own(localDataFixture({ timers: false }));
+  await f.store.update('settings', settings => ({ ...settings, projects: [], lastProjectID: undefined }));
+  const bootstrap = await f.api('bootstrap');
+  assert.equal(bootstrap.project, null);
+  assert.equal(bootstrap.sessionDefaults, null);
+  assert.deepEqual(bootstrap.settings.projects, []);
+  assert.deepEqual(bootstrap.sessions, []);
+
+  const page = await browser.newPage({ viewport: { width: 1440, height: 900 } });
+  let releaseBootstrap, markBootstrapStarted;
+  const bootstrapGate = new Promise(resolve => { releaseBootstrap = resolve; });
+  const bootstrapStarted = new Promise(resolve => { markBootstrapStarted = resolve; });
+  let holdBootstrap = true;
+  await page.route('**/api/bootstrap**', async route => {
+    if (holdBootstrap) {
+      holdBootstrap = false;
+      markBootstrapStarted();
+      await bootstrapGate;
+    }
+    await route.continue();
+  });
+  try {
+    await page.goto(f.url);
+    await bootstrapStarted;
+    await expect(page.locator('.chat-loading-stage')).toBeVisible();
+    releaseBootstrap();
+    for (const width of [1440, 390]) {
+      await page.setViewportSize({ width, height: 900 });
+      if (width === 390) await page.reload();
+      await expect(page.getByRole('heading', { name: 'What shall we make?', exact: true })).toBeVisible();
+      await expect(page.locator('.chat-loading-stage')).toHaveCount(0);
+      await expect(page.getByRole('textbox', { name: 'Message', exact: true })).toBeDisabled();
+      await expect(page.getByRole('button', { name: 'Project settings', exact: true })).toBeDisabled();
+      await page.getByRole('button', { name: 'Chats', exact: true }).click();
+      await page.getByRole('button', { name: 'New chat', exact: true }).click();
+      const setup = page.getByRole('dialog', { name: 'Open project', exact: true });
+      await expect(setup).toBeVisible();
+      await expect(setup.getByLabel('Project folder', { exact: true })).toBeVisible();
+      await setup.getByRole('button', { name: 'Cancel', exact: true }).click();
+      await page.getByRole('button', { name: 'Application settings', exact: true }).click();
+      await page.locator('#application-settings-links').getByRole('button', { name: 'Providers', exact: true }).click();
+      await expect(page.locator('.page-title').getByRole('heading', { name: 'Providers', exact: true })).toBeVisible();
+    }
+    assert.deepEqual((await f.store.read('settings')).projects, [], 'setup inspection does not register a project');
+    assert.equal(f.calls.filter(call => /\/prompt(?:_async)?$/.test(call.route)).length, 0, 'fresh setup never submits model work');
+  } finally {
+    releaseBootstrap();
+    await browser.close();
+    await f.close();
+  }
+});
+
 test('chat-loading-cache', { tag: ["@app","@chat"] }, async ({ appBrowser: browser, own }) => {
   const f = await own(localDataFixture());
   const secondDirectory = path.join(f.root, 'another-project');

@@ -73,7 +73,9 @@ test('diagnostic control modes use exact native file URLs and fully disposable h
     const fixture = diagnosticFixture({ root, baseConfig, parentEnv, options, marker: 'fixture-initialized' });
     assert.equal(fixture.config.backendRoot, baseConfig.backendRoot);
     assert.equal(fixture.backendRoot, path.join(root, 'backend'));
-    assert.equal(fixture.config.opencodeConfigDir, path.join(root, 'native-config'));
+    assert.equal(fixture.config.opencodeConfigDir, path.join(root, 'native-config', 'opencode'));
+    assert.equal(fixture.env.XDG_CONFIG_HOME, path.join(root, 'native-config'));
+    assert.equal(path.join(fixture.env.XDG_CONFIG_HOME, 'opencode'), fixture.config.opencodeConfigDir);
     assert.equal(fixture.env.PATH, parentEnv.PATH);
     for (const name of ['OPENCODE_TEST_HOME', 'HOME', 'USERPROFILE', 'APPDATA', 'LOCALAPPDATA', 'TEMP', 'TMP',
       'OPENCODE_CONFIG_DIR', 'XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME', 'FREELANCER_DATA_HOME']) {
@@ -110,7 +112,7 @@ test('diagnostic empty control observes its initialization marker and seeds only
     startHostImpl: async args => {
       launchArguments = args;
       for (const folder of [args.backendRoot, args.env.HOME, args.env.APPDATA, args.env.LOCALAPPDATA, args.env.TEMP,
-        args.env.XDG_DATA_HOME, args.env.XDG_STATE_HOME, args.env.XDG_CACHE_HOME]) assert.ok((await stat(folder)).isDirectory());
+        args.env.XDG_CONFIG_HOME, args.env.OPENCODE_CONFIG_DIR, args.env.XDG_DATA_HOME, args.env.XDG_STATE_HOME, args.env.XDG_CACHE_HOME]) assert.ok((await stat(folder)).isDirectory());
       const overlay = JSON.parse(hostEnvironment(args.config, args.env).OPENCODE_CONFIG_CONTENT);
       assert.equal(overlay.plugin.length, 1);
       const source = await readFile(fileURLToPath(overlay.plugin[0]), 'utf8');
@@ -124,6 +126,9 @@ test('diagnostic empty control observes its initialization marker and seeds only
   assert.equal(result.emptyPluginInitialized, true);
   assert.equal(result.requestTimeoutMs, 120_000);
   assert.ok(reports.some(row => row.stage === 'empty-plugin-initialized'));
+  const initial = reports.find(row => row.fixtureRoot);
+  assert.equal(initial.opencodeConfigDir, path.join(initial.fixtureRoot, 'native-config', 'opencode'));
+  assert.equal(initial.xdgConfigHome, path.join(initial.fixtureRoot, 'native-config'));
   assert.equal(launchArguments.backendRoot, path.join(result.fixtureRoot, 'backend'));
   assert.equal(launchArguments.config.backendRoot, baseConfig.backendRoot);
   assert.deepEqual(seedArguments.projectDirectories, [launchArguments.backendRoot, path.join(result.fixtureRoot, 'project')]);

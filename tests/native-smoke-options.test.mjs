@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { fileURLToPath } from 'node:url';
-import { parseLauncherSmokeOptions,launcherDescendantWalk,readDescendants,launcherSmokeAPI } from '../scripts/smoke-launcher.mjs';
+import { parseLauncherSmokeOptions,launcherDescendantWalk,readDescendants,launcherSmokeAPI,observeLauncherStartup } from '../scripts/smoke-launcher.mjs';
 import { parseRuntimeSmokeOptions } from '../scripts/smoke-runtime.mjs';
 
 const exec=promisify(execFile);
@@ -65,6 +65,55 @@ test('launcher descendant reader and API receipts preserve deadlines and omit pr
   ]);
   assert.equal(receipts[1].error,'TimeoutError');
   assert.doesNotMatch(JSON.stringify(receipts),/fixture-only-secret|49156|directory|http:/);
+});
+
+test('launcher startup observer records only the fresh lock owner and its native descendants',async()=>{
+  let clock=0,settled=false,lockReads=0;
+  const captured=[];
+  const observation=await observeLauncherStartup({
+    timeoutMs:1000,pollMs:10,now:()=>clock,
+    sleep:async duration=>{clock+=duration;},
+    readLock:async()=>++lockReads===1?null:{pid:4321,nonce:'fresh-lock-nonce'},
+    readDescendants:async pid=>{
+      assert.equal(pid,4321);
+      settled=true;
+      return [
+        {ProcessId:9876,ParentProcessId:4321,Name:'opencode.exe'},
+        {ProcessId:2222,ParentProcessId:9876,Name:'worker.exe'},
+        {ProcessId:3333,ParentProcessId:9999,Name:'unrelated.exe'},
+      ];
+    },
+    isSettled:()=>settled,onIdentity:identity=>captured.push(identity.pid),
+  });
+  assert.deepEqual(observation.processIDs,[4321,9876,2222]);
+  assert.equal(observation.serverPID,4321);
+  assert.equal(observation.nativeObserved,true);
+  assert.equal(observation.launchSettled,true);
+  assert.deepEqual(captured,[4321,9876,2222]);
+});
+
+test('launcher startup observer reports missing process identities as unobserved within its bound',async()=>{
+  let clock=0;
+  const observation=await observeLauncherStartup({
+    timeoutMs:300,pollMs:100,now:()=>clock,
+    sleep:async duration=>{clock+=duration;},
+    readLock:async()=>null,readDescendants:async()=>[],isSettled:()=>false,
+  });
+  assert.deepEqual(observation.processIDs,[]);
+  assert.equal(observation.serverPID,null);
+  assert.equal(observation.nativeObserved,false);
+  assert.equal(observation.timedOut,true);
+  assert.ok(clock<=300);
+  await assert.rejects(observeLauncherStartup({readLock:async()=>null,readDescendants:async()=>[],isSettled:()=>false,timeoutMs:10001}),/10 second bound/);
+});
+
+test('launcher startup observer stops waiting when launch exits before a lock appears',async()=>{
+  const observation=await observeLauncherStartup({
+    timeoutMs:1000,pollMs:10,readLock:async()=>null,readDescendants:async()=>[],isSettled:()=>true,
+  });
+  assert.deepEqual(observation.processIDs,[]);
+  assert.equal(observation.launchSettled,true);
+  assert.equal(observation.timedOut,false);
 });
 
 const walkFixture=async(rows,options)=>{

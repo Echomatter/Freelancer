@@ -428,7 +428,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         if (route === '/api/index/jobs/dismiss' && req.method === 'POST')
           return send(200, { job: app.indexJobs.dismiss(body.id) });
         if (req.method === "POST" && route === "/api/projects")
-          return send(200, await app.addProject(body.directory));
+          return send(200, await app.addProject(body.directory, { signal: requestAbort.signal }));
         if (req.method === 'GET' && route === '/api/projects/folders')
           return send(200, await app.listProjectFolders(url.searchParams.get('directory') ?? ''));
         if (req.method === 'POST' && route === '/api/projects/import-preview') {

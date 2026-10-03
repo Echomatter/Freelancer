@@ -9,20 +9,20 @@ import os from 'node:os';
 import { startHost } from '../server/host.mjs';
 import { FRESH_RUNTIME_ID, runtimeEnv } from '../server/runtime-config.mjs';
 import { assertFreshRuntimeRoot, createLocalDataStore } from '../server/data/store.mjs';
-import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { nativeSmokeConfigPaths, seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
 import { fileURLToPath } from 'node:url';
 import { createMcpConnections } from '../server/mcp.mjs';
 import { updateOpenCodeProjectModel } from '../server/opencode-project-config.mjs';
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-mcp-smoke-'));
 const backendRoot = path.join(root, 'backend');
-const nativeConfig = path.join(root, 'native-config');
+const { xdgConfigHome, nativeConfig } = nativeSmokeConfigPaths(root);
 const nativeHome = path.join(root, 'native-home'), nativeTemp = path.join(root, 'native-temp');
 const config = { backendRoot, opencodePlugins: [], instructions: [], dataRoot: path.join(root, 'app-data'), runtimeID:FRESH_RUNTIME_ID };
 const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
 const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR: nativeConfig,
-  XDG_CONFIG_HOME: nativeConfig, XDG_DATA_HOME: path.join(root, 'native-data'),
+  XDG_CONFIG_HOME: xdgConfigHome, XDG_DATA_HOME: path.join(root, 'native-data'),
   XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'),
   OPENCODE_TEST_HOME: nativeHome, HOME: nativeHome, USERPROFILE: nativeHome,
   APPDATA: path.join(nativeHome, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(nativeHome, 'AppData', 'Local'),
@@ -31,7 +31,7 @@ delete env.OPENCODE_CONFIG;
 delete env.OPENCODE_CONFIG_CONTENT;
 let host;
 try {
-  await Promise.all([backendRoot,nativeConfig,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
+  await Promise.all([backendRoot,xdgConfigHome,nativeConfig,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
     .map(folder=>mkdir(folder,{recursive:true})));
   assertFreshRuntimeRoot(config.dataRoot,config.runtimeID);
   const initialData = createLocalDataStore(config.dataRoot);
@@ -90,7 +90,9 @@ try {
     const result = await connections.act({ action, name: 'smoke', expectedRevision: (await connections.read()).revision });
     assert.equal(result.saved, true); assert.equal(result.services[0].status, status);
   }
-  console.log(`Native provider inventory/auth, ${modelChoice ? 'project model readback from root and .opencode config files, ' : ''}MCP global save/readback, two-project inheritance, local stdio connection, disable and re-enable passed. No OAuth credentials, external services or model inference used.`);
+  console.log(JSON.stringify({ proof:'native-mcp-persistence', opencodeConfigDir:nativeConfig, xdgConfigHome,
+    verified:`Native provider inventory/auth, ${modelChoice ? 'project model readback from root and .opencode config files, ' : ''}MCP global save/readback, two-project inheritance, local stdio connection, disable and re-enable passed.`,
+    oauth:false, externalServices:false, inference:false }));
 } finally {
   if (host?.process && host.process.exitCode === null && host.process.signalCode === null) {
     await host.request('/global/dispose', { method: 'POST', signal:AbortSignal.timeout(5000) }).catch(() => {});

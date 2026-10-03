@@ -3,14 +3,21 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import os from 'node:os';
 import { mkdtemp, mkdir, writeFile, readFile, realpath, symlink, stat, rm } from 'node:fs/promises';
-import { seedNativeSmokeDependencies } from '../scripts/native-smoke-fixture.mjs';
+import { nativeSmokeConfigPaths, seedNativeSmokeDependencies } from '../scripts/native-smoke-fixture.mjs';
+
+test('native smoke config paths match OpenCode XDG global config resolution',()=>{
+  const root=path.join(os.tmpdir(),'freelancer-config-layout');
+  const {xdgConfigHome,nativeConfig}=nativeSmokeConfigPaths(root);
+  assert.equal(xdgConfigHome,path.join(root,'native-config'));
+  assert.equal(nativeConfig,path.join(xdgConfigHome,'opencode'));
+});
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-smoke-seeder-'));
   t.after(() => rm(root, {recursive:true,force:true}));
-  const appRoot=path.join(root,'app'), nativeConfig=path.join(root,'native'), directory=path.join(root,'project');
+  const appRoot=path.join(root,'app'), {nativeConfig}=nativeSmokeConfigPaths(root), directory=path.join(root,'project');
   await mkdir(path.join(appRoot,'node_modules'),{recursive:true});
-  await mkdir(nativeConfig); await mkdir(directory);
+  await mkdir(nativeConfig,{recursive:true}); await mkdir(directory);
   await writeFile(path.join(appRoot,'node_modules','source-marker'),'retained');
   await writeFile(path.join(appRoot,'package-lock.json'),JSON.stringify({packages:{'':{dependencies:{'@opencode-ai/plugin':'1.18.31'}},'node_modules/@opencode-ai/plugin':{version:'1.18.31'}}}));
   return {fixtureRoot:root,appRoot,nativeConfig,projectDirectories:[directory]};
@@ -21,7 +28,10 @@ test('native fixture dependencies are idempotent and preserve authored native co
   const bytes=Buffer.from('{\n // native settings\n "permission": {"edit":"ask"}\n}\n');
   await writeFile(config,bytes);
   const first=await seedNativeSmokeDependencies(input);
-  assert.equal(first.destinations.length,3);
+  assert.equal(first.destinations.length,2);
+  assert.ok(first.destinations.includes(input.nativeConfig));
+  assert.ok(!first.destinations.includes(path.join(input.nativeConfig,'opencode')),
+    'The global config root must not be seeded a second time beneath the configured directory.');
   assert.deepEqual(await seedNativeSmokeDependencies(input),first);
   for (const destination of first.destinations) {
     assert.equal(await realpath(path.join(destination,'node_modules')),await realpath(path.join(input.appRoot,'node_modules')));

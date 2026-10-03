@@ -10,15 +10,16 @@ import { startHost } from '../server/host.mjs';
 import { createHistoryService } from '../server/history.mjs';
 import { createLocalDataStore } from '../server/data/store.mjs';
 import { FRESH_RUNTIME_ID, runtimeEnv } from '../server/runtime-config.mjs';
-import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { nativeSmokeConfigPaths, seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
 
 const fixtureRoot=await mkdtemp(path.join(os.tmpdir(),'freelancer-history-pagination-'));
-const backendRoot=path.join(fixtureRoot,'backend'),directory=path.join(fixtureRoot,'project'),nativeConfig=path.join(fixtureRoot,'native-config');
+const backendRoot=path.join(fixtureRoot,'backend'),directory=path.join(fixtureRoot,'project');
+const { xdgConfigHome, nativeConfig } = nativeSmokeConfigPaths(fixtureRoot);
 const nativeHome=path.join(fixtureRoot,'native-home'),nativeTemp=path.join(fixtureRoot,'native-temp');
 const config={backendRoot,dataRoot:path.join(fixtureRoot,'data'),runtimeID:FRESH_RUNTIME_ID,opencodePlugins:[],instructions:[]};
 const inherited=Object.fromEntries(Object.entries(process.env).filter(([key])=>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
-const env={...inherited,...runtimeEnv(config),OPENCODE_CONFIG_DIR:nativeConfig,XDG_CONFIG_HOME:nativeConfig,
+const env={...inherited,...runtimeEnv(config),OPENCODE_CONFIG_DIR:nativeConfig,XDG_CONFIG_HOME:xdgConfigHome,
   XDG_DATA_HOME:path.join(fixtureRoot,'native-data'),XDG_CACHE_HOME:path.join(fixtureRoot,'cache'),XDG_STATE_HOME:path.join(fixtureRoot,'state'),
   OPENCODE_TEST_HOME:nativeHome,HOME:nativeHome,USERPROFILE:nativeHome,
   APPDATA:path.join(nativeHome,'AppData','Roaming'),LOCALAPPDATA:path.join(nativeHome,'AppData','Local'),TEMP:nativeTemp,TMP:nativeTemp};
@@ -32,7 +33,7 @@ const start=()=>startHost({backendRoot,config,env,
   ...(process.env.FREELANCER_SMOKE_OPENCODE?{executable:process.env.FREELANCER_SMOKE_OPENCODE}:{})});
 const read=(route,options={})=>host.request(route,{directory,signal:AbortSignal.timeout(15_000),...options});
 try {
-  await Promise.all([backendRoot,directory,nativeConfig,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
+  await Promise.all([backendRoot,directory,xdgConfigHome,nativeConfig,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
     .map(folder=>mkdir(folder,{recursive:true})));
   await writeFile(path.join(nativeConfig,'opencode.jsonc'),' {"autoupdate":false,"share":"disabled"}\n');
   await seedNativeSmokeDependencies({fixtureRoot,appRoot:fileURLToPath(new URL('..',import.meta.url)),nativeConfig,projectDirectories:[backendRoot,directory]});
@@ -85,7 +86,9 @@ try {
   assert.equal(store.openCodeCoverage()[0].sessions,5);
   assert.ok(store.searchChats(sessions[4].id,{project:project.id}).some(hit=>hit.session===sessions[4].id));
   assert.ok((await history.searchChats(sessions[4].id,{project:project.id})).results.some(hit=>hit.session===sessions[4].id));
-  console.log('OpenCode 1.18.31 native HTTP confirmed start as an inclusive updated-time lower bound, exclusive experimental cursor, x-next-cursor, archived/child inclusion, durable pageSize=2 capture of every equal-time sibling, and common search retrieval of the oldest backfilled conversation. Fixture timestamps were set only while its disposable native database was stopped. Installed dependencies; no credentials or model inference.');
+  console.log(JSON.stringify({ proof:'native-history-pagination', opencodeConfigDir:nativeConfig, xdgConfigHome,
+    verified:'OpenCode 1.18.31 start lower bound, exclusive cursor, x-next-cursor, archived/child inclusion, equal-time pagination and oldest common-search retrieval.',
+    fixtureTimestampsChangedWhileNativeStopped:true, dependencies:'installed-source', credentials:false, inference:false }));
 } finally {
   await history?.close();store?.close();await stop();
   const resolved=path.resolve(fixtureRoot),temporary=path.resolve(os.tmpdir())+path.sep;

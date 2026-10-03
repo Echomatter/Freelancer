@@ -7,6 +7,14 @@ const inside = (root, destination) => {
   return relative !== '' && relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative);
 };
 
+/** Use XDG's standard app directory as the one effective global config directory. */
+export function nativeSmokeConfigPaths(fixtureRoot) {
+  if (typeof fixtureRoot !== 'string' || !path.isAbsolute(fixtureRoot))
+    throw Error('Native smoke config root must be an absolute path.');
+  const xdgConfigHome = path.join(fixtureRoot, 'native-config');
+  return { xdgConfigHome, nativeConfig: path.join(xdgConfigHome, 'opencode') };
+}
+
 /** Reuse installed source dependencies only inside an explicit disposable fixture. */
 export async function seedNativeSmokeDependencies({ fixtureRoot, appRoot, nativeConfig, projectDirectories = [] }) {
   if (![fixtureRoot, appRoot, nativeConfig, ...projectDirectories].every(value => typeof value === 'string' && path.isAbsolute(value)))
@@ -14,7 +22,7 @@ export async function seedNativeSmokeDependencies({ fixtureRoot, appRoot, native
   const root = await realpath(fixtureRoot);
   if (!inside(await realpath(os.tmpdir()), root) || !path.basename(root).startsWith('freelancer-'))
     throw Error('Native smoke dependencies require a disposable freelancer directory inside the system temporary folder.');
-  const destinations = [...new Set([nativeConfig, path.join(nativeConfig, 'opencode'), ...projectDirectories.map(directory => path.join(directory, '.opencode'))].map(value => path.resolve(value)))];
+  const destinations = [...new Set([nativeConfig, ...projectDirectories.map(directory => path.join(directory, '.opencode'))].map(value => path.resolve(value)))];
   for (const destination of destinations) if (!inside(root, destination))
     throw Error('Native smoke dependencies must stay inside the disposable fixture root.');
   const dependencies = await realpath(path.join(appRoot, 'node_modules'));

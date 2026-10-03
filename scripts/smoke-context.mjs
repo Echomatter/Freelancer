@@ -9,23 +9,23 @@ import { startHost } from '../server/host.mjs';
 import { createContextSettings } from '../server/context-settings.mjs';
 import { FRESH_RUNTIME_ID, runtimeEnv } from '../server/runtime-config.mjs';
 import { assertFreshRuntimeRoot, createLocalDataStore } from '../server/data/store.mjs';
-import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { nativeSmokeConfigPaths, seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
 import { fileURLToPath } from 'node:url';
 
 const tempRoot = await mkdtemp(path.join(os.tmpdir(),'freelancer-context-smoke-'));
 const root=path.join(tempRoot,'backend'), directory=path.join(tempRoot,'project');
-const nativeConfig=path.join(tempRoot,'native-config');
+const { xdgConfigHome, nativeConfig } = nativeSmokeConfigPaths(tempRoot);
 const nativeHome=path.join(tempRoot,'native-home'),nativeTemp=path.join(tempRoot,'native-temp');
 const config={backendRoot:root,opencodePlugins:[],instructions:[],dataRoot:path.join(tempRoot,'user-data'),runtimeID:FRESH_RUNTIME_ID};
 const inherited=Object.fromEntries(Object.entries(process.env).filter(([key])=>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
-const env={...inherited,...runtimeEnv(config),OPENCODE_CONFIG_DIR:nativeConfig,XDG_CONFIG_HOME:nativeConfig,
+const env={...inherited,...runtimeEnv(config),OPENCODE_CONFIG_DIR:nativeConfig,XDG_CONFIG_HOME:xdgConfigHome,
   XDG_DATA_HOME:path.join(tempRoot,'native-data'),XDG_CACHE_HOME:path.join(tempRoot,'cache'),XDG_STATE_HOME:path.join(tempRoot,'state'),
   OPENCODE_TEST_HOME:nativeHome,HOME:nativeHome,USERPROFILE:nativeHome,
   APPDATA:path.join(nativeHome,'AppData','Roaming'),LOCALAPPDATA:path.join(nativeHome,'AppData','Local'),TEMP:nativeTemp,TMP:nativeTemp};
 let host;
 try {
-  await Promise.all([root,nativeConfig,directory,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
+  await Promise.all([root,xdgConfigHome,nativeConfig,directory,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
     .map(folder=>mkdir(folder,{recursive:true})));
   assertFreshRuntimeRoot(config.dataRoot,config.runtimeID);
   const initial=createLocalDataStore(config.dataRoot);
@@ -54,7 +54,9 @@ try {
   host=await start();
   native=await host.request('/config',{directory});
   assert.equal(native.compaction.auto,false); assert.equal(native.compaction.prune,false); assert.equal(native.compaction.reserved,8192);
-  console.log('Disposable OpenCode confirmed project compaction persistence across restart and preserved JSONC comments, pruning and reserved context. No credentials or inference used.');
+  console.log(JSON.stringify({ proof:'native-context-settings', opencodeConfigDir:nativeConfig, xdgConfigHome,
+    verified:'project compaction persistence across restart and preserved JSONC comments, pruning and reserved context',
+    credentials:false, inference:false }));
 } finally {
   if (host?.process&&host.process.exitCode===null&&host.process.signalCode===null) {
     await host.request('/global/dispose',{method:'POST',signal:AbortSignal.timeout(5000)}).catch(()=>{});

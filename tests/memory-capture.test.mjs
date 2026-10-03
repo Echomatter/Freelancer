@@ -1,7 +1,10 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { setTimeout as delay } from 'node:timers/promises';
+import { DatabaseSync } from 'node:sqlite';
+import { createHash } from 'node:crypto';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
+import { openCodeSourceIdentity } from '../server/data/opencode-warehouse.mjs';
 
 const initialMessages=()=>[
   {info:{id:'msg_export',role:'user',time:{created:250}},parts:[{type:'text',text:'Original conversation text'}]},
@@ -156,4 +159,110 @@ test('authored memory pins reject stale revisions even after unpin and share Uni
   const native=await f.api('knowledge',{operation:'search',query:'Café 日本語',projectID:f.project.id});
   assert.deepEqual(ui.results.map(row=>row.id),native.items.map(row=>row.id));
   assert.equal((await f.api(`memory/item?id=${saved.id}`)).pinRevision,2);
+});
+
+test('newer retained warehouse content is indicated without rewriting pinned or historical memory or reading native sources',async t=>{
+  const f=await localDataFixture({timers:false});t.after(()=>f.close());
+  f.state.messages.ses_history=[{info:{id:'msg_retained',role:'user'},parts:[{type:'text',text:'Original curated source.'}]}];
+  await f.api('history/pin',{project:f.project.id,session:'ses_history',pinned:true,revision:0},'PUT');
+  const id=`conversation:${f.project.id}:ses_history`, original=await complete(f,id), data=f.app.localData.get();
+  const before=data.getMemory(id), source=openCodeSourceIdentity(f.nativeFile);
+  assert.match(before.revision.provenance.sourceSnapshotRevisionSha256,/^[a-f0-9]{64}$/);
+  assert.equal(original.sourceUpdates.state,'unchanged-retained');
+  const capture=(origin,text,projectID=f.project.id)=>data.recordOpenCodeSnapshot({...origin,projectID,
+    session:f.state.sessions.find(row=>row.id==='ses_history'),
+    messages:[{info:{id:'msg_retained',role:'user'},parts:[{type:'text',text}]}],projectionSafe:true});
+  capture(openCodeSourceIdentity(f.nativeFile+'-other'),'Other origin must not count.');
+  capture(source,'Other project must not count.','another-project');
+  let calls=f.calls.length;
+  assert.equal((await f.app.history.readMemory(id)).sourceUpdates.state,'unchanged-retained');
+  assert.equal(f.calls.length,calls);
+  // Same native session header/time, different retained message revision.
+  capture(source,'Newly retained warehouse content.');
+  calls=f.calls.length;
+  const changed=await f.app.history.readMemory(id,original.revision);
+  assert.equal(changed.sourceUpdates.state,'newer-retained');assert.equal(changed.sourceUpdates.changedSources,1);
+  assert.equal(changed.sourceUpdates.liveSource,'not-checked');assert.equal(f.calls.length,calls);
+  assert.equal(changed.revision,original.revision);assert.equal(changed.snapshotHash,original.snapshotHash);
+  assert.equal(changed.pinnedAt,original.pinnedAt);assert.equal(changed.pinRevision,original.pinRevision);
+  assert.equal(changed.messages[0].text,'Original curated source.');
+  assert.deepEqual(data.getMemory(id),before,'A source comparison must not revise memory, membership, origin or pin state.');
+  f.state.unavailable=true;
+  assert.equal((await f.app.history.readMemory(id)).sourceUpdates.state,'newer-retained','Retained comparison works while native OpenCode is offline.');
+});
+
+test('legacy captured message refs compare retained changes while unavailable or failed comparisons remain unknown',async t=>{
+  const f=await localDataFixture({timers:false});t.after(()=>f.close());
+  const data=f.app.localData.get(), source=openCodeSourceIdentity(f.nativeFile), session=f.state.sessions[0];
+  const messages=text=>[{info:{id:'msg_legacy',role:'user'},parts:[{type:'text',text}]}];
+  data.recordOpenCodeSnapshot({...source,projectID:f.project.id,session,messages:messages('Legacy retained original.'),projectionSafe:true});
+  const ref=data.openCodeMessageRefs({sourceSystemID:source.sourceSystemID,projectID:f.project.id,sessionID:session.id}).messages[0];
+  const saved=data.createMemory({kind:'conversation_snapshot',title:'Legacy evidence',body:'Legacy retained original.',
+    source:{projectID:f.project.id,sessionID:session.id},provenance:{sourceSystem:source.sourceSystemID},
+    boundary:{status:'complete',capturedAt:Date.now(),sourceUpdatedAt:session.time.updated},
+    members:[{kind:'message',ref:`${source.sourceSystemID}/${f.project.id}/${session.id}/${ref.messageID}@${ref.revisionSha256}`,
+      revision:ref.revisionSha256,locator:{role:'user',text:'Legacy retained original.'},availability:'retained'}]});
+  assert.equal((await f.app.history.readMemory(saved.id)).sourceUpdates.state,'unchanged-retained');
+  data.recordOpenCodeSnapshot({...source,projectID:f.project.id,session,messages:messages('Legacy retained changed.'),projectionSafe:true});
+  assert.equal((await f.app.history.readMemory(saved.id)).sourceUpdates.state,'newer-retained');
+  const missing=data.createMemory({kind:'conversation_snapshot',title:'Unknown source',body:'Historical text stays.',
+    source:{projectID:f.project.id,sessionID:'ses_absent'},provenance:{sourceSystem:source.sourceSystemID},boundary:{status:'unknown_source'}});
+  const unknown=await f.app.history.readMemory(missing.id);
+  assert.equal(unknown.sourceUpdates.state,'unknown');assert.equal(unknown.coverage,'unknown_source');assert.equal(unknown.body,'Historical text stays.');
+  const analyze=data.analyze;
+  data.analyze=async()=>{throw Error('Local analysis unavailable.');};
+  try {
+    const failed=await f.app.history.readMemory(saved.id);
+    assert.equal(failed.sourceUpdates.state,'unknown');assert.equal(failed.sourceUpdates.reason,'local-comparison-unavailable');
+    assert.equal(failed.body,'Legacy retained original.');assert.equal(failed.coverage,'complete');
+  } finally {data.analyze=analyze;}
+});
+
+test('file-backed memory compares exact retained source revisions and keeps missing or oversized bindings unknown',async t=>{
+  const f=await localDataFixture({timers:false});t.after(()=>f.close());
+  const data=f.app.localData.get(), db=new DatabaseSync(data.filename), sourceID='source:retained-file';
+  const sha=text=>createHash('sha256').update(text).digest('hex'), original=sha('original'), current=sha('current');
+  try {
+    db.prepare(`INSERT INTO content_sources(project_key,filename,virtual_path,container_path,extension,source_role,status,routing_rank,
+      file_size_bytes,modified_utc,sha256,unit_count,locator_kind,extraction_method,extraction_status,text_chars,word_count,source_identity,revision_identity)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run(f.directory,'evidence.txt','evidence.txt',f.directory,'.txt','document','active',1,
+        8,new Date().toISOString(),original,1,'lines','text','ok',8,1,sourceID,original);
+    db.prepare('INSERT INTO content_source_revisions VALUES(?,?,?,?,?,?)').run(sourceID,original,f.directory,'evidence.txt','{}',Date.now());
+    const memory=data.createMemory({kind:'note',title:'Curated file note',body:'Keep the originally selected evidence.',source:{projectID:f.project.id},
+      members:[{kind:'content-unit',ref:sourceID,revision:original,availability:'retained'}]});
+    const before=data.getMemory(memory.id), calls=f.calls.length;
+    assert.equal((await f.app.history.readMemory(memory.id)).sourceUpdates.state,'unchanged-retained');
+    db.prepare('INSERT INTO content_source_revisions VALUES(?,?,?,?,?,?)').run(sourceID,current,f.directory,'evidence.txt','{}',Date.now());
+    db.prepare('UPDATE content_sources SET revision_identity=?,sha256=? WHERE source_identity=?').run(current,current,sourceID);
+    assert.equal((await f.app.history.readMemory(memory.id)).sourceUpdates.state,'newer-retained');
+    db.prepare('DELETE FROM content_sources WHERE source_identity=?').run(sourceID);
+    const unknown=await f.app.history.readMemory(memory.id);
+    assert.equal(unknown.sourceUpdates.state,'unknown');assert.equal(unknown.status,'active');
+    assert.equal(unknown.members[0].availability,'retained');assert.deepEqual(data.getMemory(memory.id),before);assert.equal(f.calls.length,calls);
+    const oversized=data.createMemory({kind:'note',title:'Oversized binding',body:'Its exact evidence remains retained.',
+      members:[{kind:'content-unit',ref:sourceID,revision:'x'.repeat(20_000),availability:'retained'}]});
+    const bounded=await f.app.history.readMemory(oversized.id);
+    assert.equal(bounded.sourceUpdates.state,'unknown');assert.equal(bounded.sourceUpdates.truncated,true);
+    assert.equal(bounded.members[0].revision.length,20_000,'Comparison bounds must not truncate the exact retained reader.');
+  } finally {db.close();}
+});
+
+test('unbound authored notes skip analytics while imported and unbound snapshots remain unknown without native reads',async t=>{
+  const f=await localDataFixture({timers:false});t.after(()=>f.close());
+  const data=f.app.localData.get(), calls=f.calls.length;
+  const note=data.createMemory({kind:'note',title:'Plain authored note',body:'No source binding to compare.'});
+  const imported=data.createMemory({kind:'conversation_snapshot',title:'Imported evidence',body:'Imported retained text.',
+    source:{projectID:f.project.id,sessionID:'imported-conversation'},provenance:{sourceSystem:'imported'}});
+  const unbound=data.createMemory({kind:'conversation_snapshot',title:'Unbound evidence',body:'Historical retained text.'});
+  const analyze=data.analyze;let analyzed=0;
+  data.analyze=async()=>{analyzed++;throw Error('An unbound memory must not open an analytics worker.');};
+  try {
+    assert.equal((await f.app.history.readMemory(note.id)).sourceUpdates.state,'not-applicable');
+    for (const memory of [imported,unbound]) {
+      const read=await f.app.history.readMemory(memory.id);
+      assert.equal(read.sourceUpdates.state,'unknown');assert.equal(read.sourceUpdates.liveSource,'not-checked');
+      assert.equal(read.sourceUpdates.unknownSources,1);assert.equal(read.body,data.getMemory(memory.id).revision.body);
+    }
+    assert.equal(analyzed,0);assert.equal(f.calls.length,calls);
+  } finally {data.analyze=analyze;}
 });

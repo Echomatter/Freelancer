@@ -12,19 +12,19 @@ import { createApplication } from '../server/application.mjs';
 import { createOpenCodeEventCoordinator } from '../server/opencode-event-coordinator.mjs';
 import { createLocalDataStore } from '../server/data/store.mjs';
 import { FRESH_RUNTIME_ID, runtimeEnv } from '../server/runtime-config.mjs';
-import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { nativeSmokeConfigPaths, seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
 
 const fixtureRoot = await mkdtemp(path.join(os.tmpdir(), 'freelancer-warehouse-events-'));
 const backendRoot = path.join(fixtureRoot, 'backend');
 const directory = path.join(fixtureRoot, 'project');
-const nativeConfig = path.join(fixtureRoot, 'native-config');
+const { xdgConfigHome, nativeConfig } = nativeSmokeConfigPaths(fixtureRoot);
 const nativeHome = path.join(fixtureRoot, 'native-home');
 const nativeTemp = path.join(fixtureRoot, 'native-temp');
 const config = { backendRoot, dataRoot: path.join(fixtureRoot, 'data'), runtimeID: FRESH_RUNTIME_ID,
   opencodePlugins: [], instructions: [] };
 const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
-const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR: nativeConfig, XDG_CONFIG_HOME: nativeConfig,
+const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR: nativeConfig, XDG_CONFIG_HOME: xdgConfigHome,
   XDG_DATA_HOME: path.join(fixtureRoot, 'native-data'), XDG_CACHE_HOME: path.join(fixtureRoot, 'cache'),
   XDG_STATE_HOME: path.join(fixtureRoot, 'state'), OPENCODE_TEST_HOME: nativeHome, HOME: nativeHome, USERPROFILE: nativeHome,
   APPDATA: path.join(nativeHome, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(nativeHome, 'AppData', 'Local'),
@@ -66,7 +66,7 @@ async function stopNative() {
 }
 
 try {
-  await Promise.all([backendRoot, directory, nativeConfig, nativeHome, nativeTemp, env.APPDATA, env.LOCALAPPDATA]
+  await Promise.all([backendRoot, directory, xdgConfigHome, nativeConfig, nativeHome, nativeTemp, env.APPDATA, env.LOCALAPPDATA]
     .map(folder => mkdir(folder, { recursive: true })));
   await writeFile(path.join(nativeConfig, 'opencode.jsonc'), '{"autoupdate":false,"share":"disabled"}\n');
   await seedNativeSmokeDependencies({ fixtureRoot, appRoot: fileURLToPath(new URL('..', import.meta.url)),
@@ -160,7 +160,7 @@ try {
     { $source: initial[0].session.sourceSystemID });
   assert.equal(sourceVersion.rows[0]?.version, health.version, 'Warehouse source metadata records the observed native version.');
   assert.ok(sessions.every(session => data.searchChats(session.id, { project: project.id }).some(hit => hit.session === session.id)));
-  console.log(JSON.stringify({ proof: 'native-warehouse-events', nativeVersion: health.version,
+  console.log(JSON.stringify({ proof: 'native-warehouse-events', opencodeConfigDir:nativeConfig, xdgConfigHome, nativeVersion: health.version,
     sessions: sessions.length, emptyMessages: true, retainedHeaderRevisions: retainedRevisions,
     eventSnapshots: coordinator.status.snapshots, eventFailures: coordinator.status.failures,
     dependencies: 'installed-source-disposable-fixture', inference: false }));

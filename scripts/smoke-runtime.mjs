@@ -15,7 +15,7 @@ import { createCapabilities } from '../server/capabilities.mjs';
 import { assertFreshRuntimeRoot, createLocalDataStore } from '../server/data/store.mjs';
 import { observeStorageDriver } from '../backend/tools/runtime/storage-diagnostics.mjs';
 import { withUnifiedDatabase } from '../backend/tools/runtime/unified-database.mjs';
-import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { nativeSmokeConfigPaths, seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
 
 export function parseRuntimeSmokeOptions(args) {
   const options={coldDependencies:false,help:false};
@@ -49,14 +49,14 @@ const sourcesBefore=await sourceFingerprint(baseConfig.appRoot);
 const smokeRoot = await mkdtemp(path.join(os.tmpdir(), 'freelancer-native-smoke-'));
 const config = { ...baseConfig, dataRoot:path.join(smokeRoot, 'data') };
 const directory = path.join(smokeRoot, 'project');
-const nativeConfig = path.join(smokeRoot, 'native-config');
+const { xdgConfigHome, nativeConfig } = nativeSmokeConfigPaths(smokeRoot);
 const nativeHome = path.join(smokeRoot, 'native-home');
 const nativeTemp = path.join(smokeRoot, 'native-temp');
 // Keep OS launch variables, excluding provider credentials and caller config overrides.
 const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
 const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR:nativeConfig,
-  XDG_CONFIG_HOME:nativeConfig, XDG_DATA_HOME:path.join(smokeRoot,'native-data'),
+  XDG_CONFIG_HOME:xdgConfigHome, XDG_DATA_HOME:path.join(smokeRoot,'native-data'),
   XDG_CACHE_HOME:path.join(smokeRoot,'cache'), XDG_STATE_HOME:path.join(smokeRoot,'state'),
   OPENCODE_TEST_HOME:nativeHome, HOME:nativeHome, USERPROFILE:nativeHome,
   APPDATA:path.join(nativeHome,'AppData','Roaming'), LOCALAPPDATA:path.join(nativeHome,'AppData','Local'),
@@ -68,12 +68,12 @@ const dependencies=coldDependencies?'cold-unseeded':'installed-source';
 const sentinel='{"$schema":"https://opencode.ai/config.json","autoupdate":false,"share":"disabled"}';
 const previousEnv=Object.fromEntries(Object.keys(runtimeEnv(config)).map(key=>[key,process.env[key]]));
 try {
-  await Promise.all([nativeConfig,directory,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
+  await Promise.all([xdgConfigHome,nativeConfig,directory,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
     .map(folder=>mkdir(folder,{recursive:true})));
   await writeFile(path.join(nativeConfig,'opencode.jsonc'),sentinel);
   configWritten=true;
   if (!coldDependencies) await seedNativeSmokeDependencies({fixtureRoot:smokeRoot,appRoot:config.appRoot,nativeConfig,projectDirectories:[directory]});
-  console.log(JSON.stringify({stage:'native-smoke-starting',dependencies,hostRequestTimeoutMs:90000,apiTimeoutMs:60000}));
+  console.log(JSON.stringify({stage:'native-smoke-starting',dependencies,opencodeConfigDir:nativeConfig,xdgConfigHome,hostRequestTimeoutMs:90000,apiTimeoutMs:60000}));
   assertFreshRuntimeRoot(config.dataRoot, config.runtimeID);
   const initialData = createLocalDataStore(config.dataRoot);
   try { initialData.initializeFreshRuntime(config.runtimeID); }
@@ -130,7 +130,7 @@ try {
   assert.ok((await bootstrap.json()).settings.agents.some(agent=>agent.id==='engineer'));
   assert.equal(await readFile(path.join(nativeConfig,'opencode.jsonc'),'utf8'),sentinel);
   proof={verified:'Disposable native startup, unified runtime registration, named agents, actual shared skills/tools, empty optional MCP inventory, built UI assets and bootstrap',
-    dependencies,nativeVersion:host.nativeVersion,nativeConfigSha256:createHash('sha256').update(sentinel).digest('hex'),source:sourcesBefore,
+    dependencies,opencodeConfigDir:nativeConfig,xdgConfigHome,nativeVersion:host.nativeVersion,nativeConfigSha256:createHash('sha256').update(sentinel).digest('hex'),source:sourcesBefore,
     inference:'not-run',providerSignIn:'not-run'};
 } finally {
   if (web) {web.server.closeAllConnections(); await new Promise(resolve=>web.server.close(resolve));}

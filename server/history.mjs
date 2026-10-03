@@ -188,14 +188,14 @@ export function createHistoryService({
         provenance:{...(previous?.revision.provenance ?? {}),projectID:job.projectID,sessionID:job.sessionID,
           sourceAvailability:availability,attemptedAt:startedAt}};
     }
-    const messages=[],members=[]; let bytes=0,omitted=0,truncated=false,retainedNative=native;
+    const messages=[],members=[]; let bytes=0,omitted=0,truncated=false,retainedNative=native,retainedSnapshot;
     if (!session.imported) {
       let projectionSafe=false;
       const bounded=boundedEventMessages(native,job.sessionID);
       retainedNative=bounded.messages;
       truncated=bounded.truncated;
       projectionSafe=!bounded.truncated&&bounded.messages.length===native.length&&native.length<=5000;
-      await captureOpenCode(job.projectID,session,retainedNative,projectionSafe,signal,undefined,projectionSafe);
+      retainedSnapshot=await captureOpenCode(job.projectID,session,retainedNative,projectionSafe,signal,undefined,projectionSafe);
     }
     const source = session.imported ? undefined : await sourceIdentity({ signal });
     const retained = source ? data().openCodeMessageRefs({projectID:job.projectID,sessionID:job.sessionID,sourceSystemID:source.sourceSystemID,limit:5000}) : null;
@@ -229,8 +229,83 @@ export function createHistoryService({
       startedAt,attemptedAt:startedAt,sourceUpdatedAt:session.time?.updated ?? null,sourceMessageCount:native.length,messageCount:messages.length,
       omittedMessages:omitted,firstMessageID:messages[0]?.messageID ?? null,lastMessageID:messages.at(-1)?.messageID ?? null,
       scope:'user and assistant text from the observed conversation window; tool output, reasoning and attachments are excluded'},
-      provenance:{sourceSystem:source?.sourceSystemID ?? 'imported',projectID:job.projectID,sessionID:job.sessionID}};
+      provenance:{sourceSystem:source?.sourceSystemID ?? 'imported',projectID:job.projectID,sessionID:job.sessionID,
+        sourceSnapshotRevisionSha256:retainedSnapshot?.snapshotRevisionSha256 ?? null,
+        sourceSessionRevisionSha256:retainedSnapshot?.sessionRevisionSha256 ?? null}};
   }});
+  async function retainedSourceUpdates(memory) {
+    const result={state:'unknown',basis:'retained-local-data',liveSource:'not-checked',checkedAt:Date.now(),
+      comparedSources:0,changedSources:0,unknownSources:0,truncated:false};
+    const provenance=memory.revision.provenance, boundary=memory.revision.captureBoundary;
+    const identity=value=>typeof value==='string'&&value.length>0&&Buffer.byteLength(value)<=2000?value:null;
+    const source=identity(provenance.sourceSystem ?? memory.source_system);
+    const project=identity(memory.source_project_id),session=identity(memory.source_session_id);
+    const native=memory.kind==='conversation_snapshot'&&!!source&&source!=='imported';
+    const hasFileBindings=memory.members.some(member=>['content-unit','file','source'].includes(member.kind));
+    if (!native&&!hasFileBindings) return {...result,
+      state:memory.kind==='conversation_snapshot'?'unknown':'not-applicable',
+      unknownSources:memory.kind==='conversation_snapshot'?1:0};
+    const sha=value=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)?value:null;
+    try {
+      // Compare immutable bindings with current LOCAL pointers. The aggregate
+      // reads no source bodies/locator JSON, caps member identifiers at 1 MiB
+      // and 5,000 rows, and never turns an absent projection into deletion.
+      const query=await data().analyze(`WITH raw AS (
+        SELECT ordinal,member_kind,
+          length(CAST(source_ref AS BLOB))+COALESCE(length(CAST(source_revision AS BLOB)),0) AS bytes
+        FROM memory_members WHERE revision_id=$revision ORDER BY ordinal LIMIT 5000
+      ), budget AS (
+        SELECT *,sum(bytes) OVER (ORDER BY ordinal) AS total_bytes FROM raw
+      ), members AS (
+        SELECT b.member_kind,CASE WHEN b.bytes<=8192 AND b.total_bytes<=1048576 THEN mm.source_ref END AS ref,
+          CASE WHEN b.bytes<=8192 AND b.total_bytes<=1048576 THEN mm.source_revision END AS revision
+        FROM budget b JOIN memory_members mm ON mm.revision_id=$revision AND mm.ordinal=b.ordinal
+      ), native_source AS (
+        SELECT current_snapshot_sha256,updated_at,seen_at FROM opencode_sessions
+        WHERE source_system_id=$source AND project_id=$project AND session_id=$session
+      ), comparisons AS (
+        SELECT CASE
+          WHEN NOT EXISTS(SELECT 1 FROM native_source) THEN 2
+          WHEN $snapshot IS NOT NULL THEN CASE
+            WHEN (SELECT current_snapshot_sha256 FROM native_source) IS NULL THEN 2
+            WHEN (SELECT current_snapshot_sha256 FROM native_source)<>$snapshot THEN 1 ELSE 0 END
+          WHEN $captured IS NULL THEN 2
+          WHEN $updated IS NOT NULL AND (SELECT updated_at FROM native_source)>$updated THEN 1
+          WHEN EXISTS(SELECT 1 FROM members mm JOIN opencode_messages wm
+            ON mm.ref=$source||'/'||$project||'/'||$session||'/'||wm.message_id||'@'||mm.revision
+            WHERE mm.member_kind='message' AND wm.source_system_id=$source AND wm.project_id=$project AND wm.session_id=$session
+              AND wm.current_revision_sha256<>mm.revision) THEN 1
+          WHEN EXISTS(SELECT 1 FROM opencode_messages wm WHERE wm.source_system_id=$source AND wm.project_id=$project AND wm.session_id=$session
+            AND wm.role IN ('user','assistant') AND wm.seen_at>$captured AND NOT EXISTS(SELECT 1 FROM members mm
+              WHERE mm.member_kind='message' AND mm.ref=$source||'/'||$project||'/'||$session||'/'||wm.message_id||'@'||mm.revision)) THEN 1
+          WHEN NOT EXISTS(SELECT 1 FROM members WHERE member_kind='message') THEN 2
+          WHEN EXISTS(SELECT 1 FROM members mm WHERE mm.member_kind='message' AND NOT EXISTS(
+            SELECT 1 FROM opencode_messages wm WHERE wm.source_system_id=$source AND wm.project_id=$project AND wm.session_id=$session
+              AND mm.ref=$source||'/'||$project||'/'||$session||'/'||wm.message_id||'@'||wm.current_revision_sha256)) THEN 2
+          ELSE 0 END AS outcome WHERE $native=1
+        UNION ALL
+        SELECT CASE WHEN mm.ref IS NULL OR mm.revision IS NULL OR cs.revision_identity IS NULL OR cs.revision_identity='' THEN 2
+          WHEN cs.revision_identity<>mm.revision THEN 1 ELSE 0 END
+        FROM members mm LEFT JOIN content_sources cs ON cs.source_identity=mm.ref
+        WHERE mm.member_kind IN ('content-unit','file','source')
+      ) SELECT COALESCE(sum(outcome<>2),0) AS comparedSources,COALESCE(sum(outcome=1),0) AS changedSources,
+        COALESCE(sum(outcome=2),0) AS unknownSources,
+        (SELECT count(*) FROM memory_members WHERE revision_id=$revision)-min(5000,(SELECT count(*) FROM memory_members WHERE revision_id=$revision)) AS omittedMembers,
+        (SELECT count(*) FROM budget WHERE bytes>8192 OR total_bytes>1048576) AS omittedIdentifiers FROM comparisons`,
+        {$revision:memory.revision.revision_id,$source:source,$project:project,$session:session,$native:native?1:0,
+          $snapshot:sha(provenance.sourceSnapshotRevisionSha256),
+          $captured:Number.isSafeInteger(boundary.capturedAt)?boundary.capturedAt:null,
+          $updated:Number.isSafeInteger(boundary.sourceUpdatedAt)?boundary.sourceUpdatedAt:null},
+        {maxRows:1,maxBytes:4000,timeoutMs:1000});
+      const row=query.rows[0];
+      if (!row||query.truncated) return {...result,unknownSources:1,reason:'local-comparison-unavailable'};
+      result.comparedSources=row.comparedSources;result.changedSources=row.changedSources;
+      result.unknownSources=row.unknownSources+row.omittedMembers+row.omittedIdentifiers;
+      result.truncated=row.omittedMembers>0||row.omittedIdentifiers>0;
+      result.state=result.changedSources>0?'newer-retained':result.unknownSources>0?'unknown':result.comparedSources>0?'unchanged-retained':'not-applicable';
+      return result;
+    } catch { return {...result,unknownSources:1,reason:'local-comparison-unavailable'}; }
+  }
   // Resume only previously queued source captures after the app constructor returns.
   captures.start();
   async function own(project, id, { signal } = {}) {
@@ -1027,12 +1102,13 @@ export function createHistoryService({
       if (!memory) return null;
       const settings=await app.store.read('settings'),project=settings.projects.find(row=>row.id===memory.source_project_id);
       const boundary=memory.revision.captureBoundary;
+      const sourceUpdates=await retainedSourceUpdates(memory);
       return {id:memory.memory_id,kind:memory.kind,title:memory.title,body:memory.revision.body,
         project:memory.source_project_id,projectName:project?.name ?? 'Shared memory',session:memory.source_session_id,
         status:memory.status,coverage:boundary.status ?? 'authored',boundary,
         revision:memory.revision.revision,pinnedAt:memory.pinnedAt ?? null,pinRevision:memory.pinRevision ?? 0,archiveRevision:memory.archiveRevision ?? 0,
         originalPinnedAt:memory.originalPinnedAt ?? null,capturedAt:boundary.capturedAt ?? null,
-        snapshotHash:memory.revision.provenance.snapshotHash ?? '',revisions:memory.revisions,members:memory.members,
+        snapshotHash:memory.revision.provenance.snapshotHash ?? '',revisions:memory.revisions,members:memory.members,sourceUpdates,
         annotationRevision:memory.source_session_id ? data().annotation(memory.source_project_id,memory.source_session_id).revision : undefined,
         job:data().memoryCaptureJob(id),messages:memory.members.filter(member=>member.kind==='message').map(member=>member.locator),
         messageCount:boundary.messageCount ?? 0,excerpt:memory.revision.body.slice(0,240)};

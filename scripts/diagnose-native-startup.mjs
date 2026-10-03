@@ -9,7 +9,7 @@ import { startHost } from '../server/host.mjs';
 import { resolveRuntimeConfig, runtimeEnv } from '../server/runtime-config.mjs';
 import { createLocalDataStore } from '../server/data/store.mjs';
 import { withUnifiedDatabase } from '../backend/tools/runtime/unified-database.mjs';
-import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { nativeSmokeConfigPaths, seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
 
 export function parseDiagnosticOptions(args) {
   const options = { seedDependencies: false, nativeOnly: false, emptyPlugin: false, requestTimeoutMs: 45_000 };
@@ -36,7 +36,7 @@ export function parseDiagnosticOptions(args) {
 export function diagnosticFixture({ root, baseConfig, parentEnv, options, marker }) {
   const backendRoot = path.join(root, 'backend');
   const directory = path.join(root, 'project');
-  const nativeConfig = path.join(root, 'native-config');
+  const { xdgConfigHome, nativeConfig } = nativeSmokeConfigPaths(root);
   const nativeHome = path.join(root, 'native-home');
   const nativeTemp = path.join(root, 'native-temp');
   const emptyPluginPath = path.join(root, 'empty-plugin.ts');
@@ -51,16 +51,16 @@ export function diagnosticFixture({ root, baseConfig, parentEnv, options, marker
     /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(name)));
   const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR: nativeConfig,
     OPENCODE_CONFIG_CONTENT: JSON.stringify(options.emptyPlugin ? { plugin: [pathToFileURL(emptyPluginPath).href] } : {}),
-    XDG_CONFIG_HOME: nativeConfig, XDG_DATA_HOME: path.join(root, 'native-data'),
+    XDG_CONFIG_HOME: xdgConfigHome, XDG_DATA_HOME: path.join(root, 'native-data'),
     XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'),
     OPENCODE_TEST_HOME: nativeHome, HOME: nativeHome, USERPROFILE: nativeHome,
     APPDATA: path.join(nativeHome, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(nativeHome, 'AppData', 'Local'),
     TEMP: nativeTemp, TMP: nativeTemp };
-  const folders = [...new Set([backendRoot, directory, config.dataRoot, nativeConfig, nativeHome, nativeTemp,
+  const folders = [...new Set([backendRoot, directory, config.dataRoot, xdgConfigHome, nativeConfig, nativeHome, nativeTemp,
     env.APPDATA, env.LOCALAPPDATA, env.XDG_DATA_HOME, env.XDG_CACHE_HOME, env.XDG_STATE_HOME])];
   // An import-free marker proves this particular control initialized, rather than just being configured.
   const emptyPluginSource = `export default async () => { console.log(${JSON.stringify(marker)}); return {}; };\n`;
-  return { config, backendRoot, directory, nativeConfig, emptyPluginPath, emptyPluginSource, env, folders };
+  return { config, backendRoot, directory, nativeConfig, xdgConfigHome, emptyPluginPath, emptyPluginSource, env, folders };
 }
 
 function observeClose(child) {
@@ -128,7 +128,7 @@ export async function runNativeStartupDiagnostic(options, {
   const logfile = path.join(temporaryRoot, `freelancer-native-diagnostic-${randomUUID()}.jsonl`);
   const marker = `FREELANCER_EMPTY_PLUGIN_INITIALIZED:${randomUUID()}`;
   const fixture = diagnosticFixture({ root, baseConfig, parentEnv, options, marker });
-  const { config, backendRoot, directory, nativeConfig, env } = fixture;
+  const { config, backendRoot, directory, nativeConfig, xdgConfigHome, env } = fixture;
   let host, closeObservation, failure = null, requestStage = 'initialization', agentRequestDurationMs = null;
   let emptyPluginInitialized = false, markerOutput = '';
   const events = [];
@@ -146,7 +146,8 @@ export async function runNativeStartupDiagnostic(options, {
   };
   let stop = { confirmed: true, forced: false, reason: 'not-started' }, cleanup = 'preserved';
   try {
-    report({ log: logfile, fixtureRoot: root, seedDependencies: options.seedDependencies,
+    report({ log: logfile, fixtureRoot: root, opencodeConfigDir: nativeConfig, xdgConfigHome,
+      seedDependencies: options.seedDependencies,
       nativeOnly: options.nativeOnly, emptyPlugin: options.emptyPlugin, requestTimeoutMs: options.requestTimeoutMs,
       toolsRequestTimeoutMs: 10_000, nativeWorkingDirectory: backendRoot, sourceBackendRoot: config.backendRoot });
     await Promise.all(fixture.folders.map(folder => mkdir(folder, { recursive: true })));
@@ -156,7 +157,9 @@ export async function runNativeStartupDiagnostic(options, {
       nativeConfig, projectDirectories: [backendRoot, directory] });
     await initializeRuntimeImpl(config);
     requestStage = 'launch';
-    host = await startHostImpl({ backendRoot, config, env, diagnostics,
+    // Observe plugin initialization through this diagnostic's separately
+    // bounded agent request. Product startup always waits for native tools.
+    host = await startHostImpl({ backendRoot, config, env, diagnostics, waitForReady: false,
       ...(parentEnv.FREELANCER_SMOKE_OPENCODE ? { executable: parentEnv.FREELANCER_SMOKE_OPENCODE } : {}) });
     closeObservation = observeClose(host.process);
     requestStage = 'agent';
@@ -180,7 +183,7 @@ export async function runNativeStartupDiagnostic(options, {
     if (host) stop = await stopOwnedHost(host, closeObservation, { graceMs: stopGraceMs, forceMs: stopForceMs });
     else if (events.some(event => event.stage === 'spawned' && Number.isInteger(event.pid) && event.pid > 0))
       stop = { confirmed: false, forced: false, reason: 'start-failed-without-child-handle' };
-    const dependencies = await Promise.all([nativeConfig, path.join(nativeConfig, 'opencode'),
+    const dependencies = await Promise.all([nativeConfig,
       path.join(backendRoot, '.opencode'), path.join(directory, '.opencode')].map(async destination => {
       const pkg = await readFile(path.join(destination, 'package.json'), 'utf8').then(JSON.parse).catch(() => null);
       const lock = await readFile(path.join(destination, 'package-lock.json'), 'utf8').then(JSON.parse).catch(() => null);

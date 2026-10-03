@@ -490,7 +490,8 @@ export function createApplication({
         }),
       };
     },
-    async addProject(directory) {
+    async addProject(directory, { signal } = {}) {
+      signal?.throwIfAborted();
       if (typeof directory !== "string" || !path.isAbsolute(directory))
         throw Error("Choose an existing project folder");
       try {
@@ -513,7 +514,6 @@ export function createApplication({
       } catch (e) {
         if (e.code !== "ENOENT") throw e;
       }
-      await mkdir(config, { recursive: true });
       const marker = path.join(config, "freelancer.json");
       try {
         const previous = JSON.parse(await readFile(marker, "utf8"));
@@ -522,6 +522,11 @@ export function createApplication({
       } catch (e) {
         if (e.code !== "ENOENT") throw e;
       }
+      // Native configuration directories initialize independently. Observe
+      // this project's plugin registry before authoring setup or acknowledging
+      // success; global HTTP health does not establish project readiness.
+      await host.ensureReady?.({ directory, signal, timeoutMs: 55_000 });
+      signal?.throwIfAborted();
       const id = createHash("sha256")
         .update(
           process.platform === "win32" ? directory.toLowerCase() : directory,
@@ -540,6 +545,10 @@ export function createApplication({
         snapshot = await backend.snapshot();
       if (!snapshot.preferences)
         throw Error("Project setup could not load. Please try again.");
+      // Cancellation while reading/warming must not later create a registered
+      // project. Once authored writes begin, complete the idempotent setup.
+      signal?.throwIfAborted();
+      await mkdir(config, { recursive: true });
       if (snapshot.preferences.scope === "default")
         await backend.save({
           scope: "project",

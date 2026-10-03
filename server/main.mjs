@@ -1,9 +1,11 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import { stat } from "node:fs/promises";
 import { readRuntimeText, removeState,writeState } from '../backend/tools/runtime/state-database.mjs';
 import { createActivityReader } from "./activity.mjs";
 import { createApplication } from "./application.mjs";
 import { startHost } from "./host.mjs";
+import { retainOwnershipUntilClosed } from './native-lifecycle.mjs';
 import { startServer } from "./http.mjs";
 import { acquireLock } from "./lock.mjs";
 import { createObserver } from "./observer.mjs";
@@ -22,7 +24,7 @@ const { backendRoot } = config;
 // Private process capability, never included in bootstrap or model prompts.
 process.env.FREELANCER_GIT_BRIDGE = randomBytes(32).toString("hex");
 const releaseLock = await acquireLock(path.join(backendRoot, ".state/webpage"));
-let host, webPort, remoteAccess, recovery;
+let host, app, webPort, remoteAccess, recovery;
 const webPortFile = path.join(backendRoot, '.state/webpage/port.json');
 try {
   assertFreshRuntimeRoot(config.dataRoot, config.runtimeID);
@@ -38,14 +40,40 @@ try {
   webPort = await savedWebPort(webPortFile, process.env.FREELANCER_WEB_PORT);
   remoteAccess = await createRemoteAccess({ file: path.join(backendRoot, '.state/remote-access.json') });
   host = await startHost({ backendRoot, config });
+  app = createApplication({ backendRoot, host, dataRoot: config.dataRoot,
+    automaticWorkAllowed: !recovery.automaticWorkBlocked });
+  const settings = await app.store.read('settings');
+  const selectedProject = settings.projects.find(row => row.id === settings.lastProjectID) ?? settings.projects[0];
+  if (selectedProject) {
+    // The saved project is the first bootstrap scope on restart. Use the
+    // original native startup budget rather than adding another full window.
+    let present = false;
+    try { present = (await stat(selectedProject.directory)).isDirectory(); }
+    catch (error) { if (!['ENOENT', 'ENOTDIR'].includes(error.code)) throw error; }
+    // A missing saved folder can still be managed through the existing UI.
+    if (present) {
+      const remaining = host.remainingStartupMs();
+      if (remaining <= 0) throw Error('OpenCode project initialization exceeded the startup deadline.');
+      await host.ensureReady({ directory: selectedProject.directory, timeoutMs: remaining });
+    }
+  }
+  host.remainingStartupMs();
 } catch (e) {
-  try { await remoteAccess?.close(); } catch {}
-  try { host?.stop(); } catch {}
+  const cleanup = [
+    () => app?.history?.close(), () => app?.indexJobs?.close(),
+    () => app?.gitProjects?.close(), () => app?.store?.flush(),
+    () => app?.modelRatings?.close(), () => app?.localData?.close(),
+    () => remoteAccess?.close(),
+  ];
+  await Promise.allSettled(cleanup.map(close => Promise.resolve().then(close)));
+  let closeError;
+  try { await host?.close(); } catch (error) { closeError = error; }
+  const uncertain = closeError ?? (e.code === 'OPENCODE_SHUTDOWN_UNCONFIRMED' ? e : undefined);
+  if (uncertain) await retainOwnershipUntilClosed(uncertain, host?.whenClosed ?? uncertain.whenClosed);
   await releaseLock();
+  if (closeError) throw new AggregateError([e, closeError], 'Freelancer startup failed; native shutdown exceeded its confirmation deadline.');
   throw e;
 }
-const app = createApplication({ backendRoot, host, dataRoot: config.dataRoot,
-  automaticWorkAllowed: !recovery.automaticWorkBlocked });
 const observer = createObserver({ host, store: app.store });
 const warehouseEvents = createOpenCodeEventCoordinator({ host, store: app.store, history: app.history });
 observer.start();
@@ -64,7 +92,8 @@ const shutdown = () => shutdownPromise ??= (async () => {
   clearInterval(usageTimer);
   try { await warehouseEvents.stop(); } catch (error) { console.error("OpenCode warehouse event shutdown failed", error); }
   try { await runtime?.close(); } catch (error) { console.error("Freelancer server cleanup failed", error); }
-  try { host.stop(); } catch (error) { console.error("OpenCode shutdown failed", error); }
+  try { await host.close(); }
+  catch (error) { await retainOwnershipUntilClosed(error, host.whenClosed ?? error.whenClosed); }
   try { await observer.stop(); } catch (error) { console.error("Activity observer shutdown failed", error); }
   try { await app.store.flush(); } catch (error) { console.error("Settings flush failed", error); }
   removeState(launchFile);
@@ -85,12 +114,15 @@ try {
   });
 } catch (e) {
   clearInterval(usageTimer);
-  await warehouseEvents.stop();
-  await Promise.allSettled([app.history?.close(), app.indexJobs?.close(), app.gitProjects?.close(), app.store.flush()]);
-  app.modelRatings?.close();
-  app.localData?.close();
-  host.stop();
-  await observer.stop();
+  const cleanup = [
+    () => warehouseEvents.stop(), () => app.history?.close(),
+    () => app.indexJobs?.close(), () => app.gitProjects?.close(),
+    () => app.store.flush(), () => app.modelRatings?.close(),
+    () => app.localData?.close(), () => observer.stop(),
+  ];
+  await Promise.allSettled(cleanup.map(close => Promise.resolve().then(close)));
+  try { await host.close(); }
+  catch (error) { await retainOwnershipUntilClosed(error, host.whenClosed ?? error.whenClosed); }
   await releaseLock();
   throw e;
 }

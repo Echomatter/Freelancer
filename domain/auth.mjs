@@ -14,13 +14,11 @@ export function initialInputs(method) {
 export function connectionMethods(methods) {
   // Go uses a native API-key credential despite being a subscription. Unlike
   // OAuth plugins it need not register a /provider/auth method.
-  return {
-    openai: methods.openai ?? [],
-    "github-copilot": methods["github-copilot"] ?? [],
-    "opencode-go": methods["opencode-go"]?.length
-      ? methods["opencode-go"]
-      : [{ type: "api", label: "OpenCode Go key" }],
-  };
+  const result = Object.fromEntries(Object.entries(methods ?? {})
+    .filter(([id, rows]) => /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) && Array.isArray(rows)));
+  if (!result["opencode-go"]?.length)
+    result["opencode-go"] = [{ type: "api", label: "OpenCode Go key" }];
+  return result;
 }
 export function authInputs(method, values = {}) {
   const inputs = {};

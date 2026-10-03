@@ -1,7 +1,8 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { Database, FileSearch, FolderOpen, MessageSquare, Pin } from "lucide-react";
+import { Database, FileSearch, FolderOpen, MessageSquare, Pin, BookOpen } from "lucide-react";
 import { api } from "./api";
 import { Button, Field, PageCloseButton, PageHeading, Panel } from "./echoflex/Controls";
+import { Dialog } from "./echoflex/Dialog";
 import "./indexed-search.css";
 
 type FileHit = {
@@ -31,6 +32,8 @@ type ConversationHit = {
     projectArchived?: boolean;
   };
 };
+type MemoryHit = { id: string; project: string; projectName: string; title: string; coverage: string; revision: number; pinnedAt: number; messageCount: number; excerpt: string };
+type MemoryItem = MemoryHit & { snapshotHash: string; capturedAt: number; messages: { ordinal: number; role: string; createdAt: number | null; text: string; providerID?: string | null; modelID?: string | null }[] };
 
 type SearchState<T> = {
   results: T[];
@@ -53,26 +56,35 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
   management: ReactNode;
 }) {
   const [query, setQuery] = useState("");
+  const [source, setSource] = useState("");
+  const [role, setRole] = useState("");
+  const [status, setStatus] = useState("");
+  const [phrase, setPhrase] = useState(false);
   const [files, setFiles] = useState<SearchState<FileHit>>(empty);
   const [conversations, setConversations] = useState<SearchState<ConversationHit>>(empty);
+  const [memories, setMemories] = useState<SearchState<MemoryHit>>(empty);
+  const [selectedMemory, setSelectedMemory] = useState<MemoryItem | null>(null);
   const [opening, setOpening] = useState("");
   const [openError, setOpenError] = useState("");
   const [pinning, setPinning] = useState("");
   const [revision, setRevision] = useState(0);
   const trimmed = query.trim();
   const scoped = !!project?.id;
-  const params = () => new URLSearchParams({ q: trimmed, ...(project?.id ? { project: project.id } : {}) });
+  const params = () => new URLSearchParams({ q: trimmed, ...(project?.id ? { project: project.id } : {}),
+    ...(source ? { source } : {}), ...(role ? { role } : {}), ...(status ? { status } : {}), ...(phrase ? { phrase: "true" } : {}) });
 
   useEffect(() => {
     setOpenError("");
     if (!trimmed) {
       setFiles(empty());
       setConversations(empty());
+      setMemories(empty());
       return;
     }
     const controller = new AbortController();
     setFiles({ results: [], error: "", loading: true, complete: false });
     setConversations({ results: [], error: "", loading: true, complete: false });
+    setMemories({ results: [], error: "", loading: true, complete: false });
     const timer = setTimeout(() => {
       void api(`index/search?${params()}`, undefined, undefined, controller.signal)
         .then((value) => { if (!controller.signal.aborted) setFiles({ results: value.results, error: "", loading: false, complete: true }); })
@@ -92,12 +104,15 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
         .catch((failure) => {
           if (!controller.signal.aborted) setConversations({ results: [], error: (failure as Error).message, loading: false, complete: true });
         });
+      void api(`memory/search?${params()}`, undefined, undefined, controller.signal)
+        .then((value) => { if (!controller.signal.aborted) setMemories({ results: value.results, error: "", loading: false, complete: true }); })
+        .catch((failure) => { if (!controller.signal.aborted) setMemories({ results: [], error: (failure as Error).message, loading: false, complete: true }); });
     }, 180);
     return () => {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [trimmed, project?.id, revision, managing]);
+  }, [trimmed, project?.id, source, role, status, phrase, revision, managing]);
 
   async function open(key: string, action: () => Promise<void>) {
     setOpening(key);
@@ -116,14 +131,26 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
       saved = true;
       setConversations(current => ({ ...current, results: current.results.map(row =>
         row.project === hit.project && row.session === hit.session ? { ...row, organization: { ...row.organization, ...organization } } : row) }));
+      setRevision(value => value + 1);
       await onChange();
     } catch (failure) { setOpenError(saved ? "Pin saved, but the workspace could not refresh. Reopen Search content to refresh." : (failure as Error).message); }
     finally { setPinning(""); }
   }
 
-  const loading = files.loading || conversations.loading;
-  const complete = files.complete && conversations.complete;
-  const total = files.results.length + conversations.results.length;
+  async function openMemory(hit: MemoryHit) {
+    setOpening(`memory:${hit.id}`); setOpenError("");
+    try {
+      const params = new URLSearchParams({ id: hit.id, revision: String(hit.revision) });
+      const value = await api(`memory/item?${params}`);
+      if (!value) throw Error("This memory snapshot is no longer available.");
+      setSelectedMemory(value);
+    } catch (failure) { setOpenError((failure as Error).message); }
+    finally { setOpening(""); }
+  }
+
+  const loading = files.loading || conversations.loading || memories.loading;
+  const complete = files.complete && conversations.complete && memories.complete;
+  const total = files.results.length + conversations.results.length + memories.results.length;
   const searchLabel = scoped ? "Search project content" : "Search all content";
 
   if (managing) return <>{management}</>;
@@ -135,6 +162,18 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
           placeholder={scoped ? `Search files and conversations in ${project.name}…` : "Search files and conversations across every project…"}
           onChange={(event) => setQuery(event.target.value)} />
       </Field></div>
+      <Field label="Source path"><input type="search" maxLength={500} value={source} placeholder="Any indexed path"
+        onChange={event => setSource(event.target.value)} /></Field>
+      <Field label="Source role"><select value={role} onChange={event => setRole(event.target.value)}>
+        <option value="">All roles</option><option value="current_project_source">Current project</option>
+        <option value="reference_source">Reference</option><option value="project_source">Project source</option>
+        <option value="project_archive">Archive</option>
+      </select></Field>
+      <Field label="Source status"><select value={status} onChange={event => setStatus(event.target.value)}>
+        <option value="">All statuses</option><option value="current">Current</option>
+        <option value="reference">Reference</option><option value="source">Source</option><option value="archive">Archive</option>
+      </select></Field>
+      <label className="content-search-phrase"><input type="checkbox" checked={phrase} onChange={event => setPhrase(event.target.checked)} /> Exact phrase</label>
       <div className="content-search-scope"><span>Scope</span><strong>{scoped ? project.name : "All registered projects"}</strong></div>
     </section>
 
@@ -144,7 +183,7 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
 
     <div className="indexed-search-status" aria-live="polite">
       {loading ? <span role="status">Searching indexed content…</span>
-        : complete ? <span>{total ? `${total} matching ${total === 1 ? "result" : "results"} · ${conversations.results.length} conversations · ${files.results.length} files` : "No indexed content matched."}</span>
+        : complete ? <span>{total ? `${total} matching ${total === 1 ? "result" : "results"} · ${conversations.results.length} conversations · ${files.results.length} files · ${memories.results.length} pinned memories` : "No indexed content matched."}</span>
           : null}
     </div>
 
@@ -164,6 +203,24 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
       })}</div>
     </section>}
 
+    {!!memories.results.length && <section className="content-search-group" aria-label="Pinned memory results">
+      <h2><BookOpen size={17} />Pinned memory <span>{memories.results.length}</span></h2>
+      <div className="indexed-search-results">{memories.results.map(hit => <button type="button" className="indexed-search-result" key={hit.id}
+        aria-label={`Read pinned memory ${hit.title}`} disabled={!!opening} onClick={() => void openMemory(hit)}>
+        <span className="indexed-result-heading"><strong>{hit.title}</strong><small>{opening === `memory:${hit.id}` ? "Opening snapshot…" : `Snapshot · revision ${hit.revision}`}</small></span>
+        <span className="indexed-result-path"><span>{hit.projectName}</span><span>{hit.messageCount} captured messages · {hit.coverage.replaceAll("_", " ")}</span></span>
+        <span className="indexed-result-excerpt">{hit.excerpt || "Pinned conversation snapshot"}</span>
+        <span className="indexed-result-open"><BookOpen size={15} />Read snapshot</span>
+      </button>)}</div>
+    </section>}
+
+    {memories.error && <div className="notice error content-search-error" role="alert"><span>Pinned memory: {memories.error}</span><Button onClick={() => setRevision(value => value + 1)}>Retry search</Button></div>}
+    {selectedMemory && <Dialog title={selectedMemory.title} description={`${selectedMemory.projectName} · revision ${selectedMemory.revision} · ${selectedMemory.coverage.replaceAll("_", " ")}`} size="wide" className="memory-reader" bodyClassName="memory-reader-body" onClose={() => setSelectedMemory(null)}>
+        <div className="memory-reader-messages">{selectedMemory.messages.map(message => <article key={`${message.ordinal}:${message.role}`} className={`memory-reader-message ${message.role}`}>
+          <strong>{message.role === "user" ? "You" : "Assistant"}</strong><p>{message.text}</p>
+        </article>)}</div>
+    </Dialog>}
+
     {!!files.results.length && <section className="content-search-group" aria-label="File results">
       <h2><FolderOpen size={17} />Files <span>{files.results.length}</span></h2>
       <div className="indexed-search-results">{files.results.map((hit) => {
@@ -179,7 +236,7 @@ export function ContentSearch({ project, onOpenFile, onOpenConversation, onIndex
       })}</div>
     </section>}
 
-    {complete && !total && !files.error && !conversations.error && <Panel className="indexed-search-empty">
+    {complete && !total && !files.error && !conversations.error && !memories.error && <Panel className="indexed-search-empty">
       <FileSearch size={22} aria-hidden="true" />
       <strong>No indexed content found</strong>
       <p>Try different words, or refresh file and conversation indexes.</p>

@@ -1,5 +1,24 @@
 # Project goals
 
+## Active goal: Unified data, memory, and evidence warehouse
+
+Build Freelancer's operational, content, memory, pin, and evidence warehouse
+in one fresh per-user SQLite database, with Freelancer-only application
+preferences kept separately. Preserve OpenCode as the execution engine and
+native owner of general options, provider inventory/authentication, and MCP
+configuration. New installs start with empty Freelancer-owned data and use the
+user's existing OpenCode setup; this goal does not import the user's previous
+Freelancer databases, JSON state, settings, or Memory files. Keep schema
+upgrades and separately user-selected import features distinct from that
+previous-install migration. Do not add another MCP server or copy credentials.
+This remains an active implementation objective; fresh-runtime startup now
+activates the unified store, while full warehouse coverage and retrieval checks
+remain unfinished.
+
+Use the [unified data, memory, and evidence warehouse plan](Freelancer_Unified_Data_Memory_Warehouse_Plan.md)
+and its companion [code-port and migration map](Freelancer_Code_Port_and_Migration_Map.md)
+as the design references and acceptance checklist.
+
 Open **Project settings → Goals** to save an objective. Saving creates one linked
 chat and does not start a model. Optional execution and delegation choices begin
 with project defaults and are saved for this goal. Add an optional short title

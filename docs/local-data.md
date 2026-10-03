@@ -30,6 +30,12 @@ project** to bring it back. Its folder and Git agreement remain untouched.
 
 The backup checklist distinguishes a local copy of project folders and data locations from conversation export. Stop the server and OpenCode before copying live databases, and include SQLite sidecar files. Exports cover selected conversations only; Freelancer export bundles have no restore/import action. Both search indexes are derived data: **Application settings → Content & Storage** refreshes files throughout every registered project root or native OpenCode messages across all registered projects. File indexing includes source code, configuration, documents, and other readable text throughout each root; generated folders, private state, and binary formats without an extractor are skipped. The conversation index includes titles and user/assistant text, including archived chats and workers, with model IDs; it does not copy tool output, reasoning, attachments, or drafts. OpenCode remains the conversation authority. The same page can optimize the full-text indexes, run SQLite quick check, and compact free pages; these jobs do not operate on OpenCode's native database.
 
+File and conversation search share the same default query rule: up to twelve words are AND-matched. Exact phrase matching is an explicit option. File searches also accept optional source-path, source-role, and source-status filters; the app API, native content tool, and command-line indexer use the same fields and meaning. Path matching treats SQL wildcard characters as literal text.
+
+Native knowledge judgments can reuse a successful single-question receipt when the caller pins a model ID that exactly matches the provider-reported model. The state, definition version, candidates, evidence revisions, and requested/reported provider and model identities must match. Moving aliases such as jev-latest are evaluated live. Batch requests reuse results only when every question has a complete matching successful receipt; a partial match reruns the whole batch. Cache hits return the original typed answer and receipt ID without counting historical token usage again.
+
+Judgment evidence is checked against the local source store before a provider call. File citations use `kind: "content-unit"` with candidate/source identity, revision identity, locator and unit SHA-256; the corresponding `state.evidence` item repeats those identifiers and includes text found in that indexed unit. OpenCode citations use `kind: "opencode-text-part"` with source, project, session, message and captured revision IDs, text-part ID and part SHA-256. Their candidate ID is `opencode-session:` followed by base64url of the JSON tuple `[sourceSystemID, projectID, sessionID]`. Stale or unresolved citations are rejected. Current and prior project-file revisions and extracted units are retained through reindexing and resolve by stable reference.
+
 Unsent drafts save after a short typing pause. **Draft saved on this computer**
 means the server acknowledged that exact revision. A save error leaves the text
 in the box. Retry saves it; **Load saved draft** explicitly replaces local text
@@ -82,16 +88,16 @@ remain accessible. Usage/accounting still includes archived work.
 | Project source and Git history                                                       | Filesystem / Git                       | User-selected folders                                                   | Never moved or deleted here                                          |
 | Native sessions, messages, parts, tools, permissions, todos                          | OpenCode                               | Native engine database, located through the same executable's `db path` | Use native API/CLI; never write its database                         |
 | Provider authentication                                                              | Existing native authentication systems | Existing credential locations                                           | Never copied into this store or exports as a credential collection   |
-| Registered projects, plans, appearance, agent overrides, remembered choices | Existing Freelancer store              | `backend/.state/webpage/records.sqlite`                                  | Transactional one-time import; database authority                             |
-| Request receipts and observed usage                                                  | Existing Freelancer store              | `records.sqlite` in that directory; original JSON retained as migration backups                         | Not removed or reset by archive                                      |
-| Waiting/uncertain delivery                                                           | Freelancer sender                      | Sender document in `records.sqlite`                                                    | A delivery commitment, not a draft; archive cannot cancel it         |
-| Runtime preferences, delegation receipts, outcomes and quota state                   | Existing runtime writers               | Documents in `records.sqlite`                         | Shared Node/Bun/PowerShell database access                                               |
+| Registered projects, project agreements and domain settings                         | Freelancer                              | `operational_records` in the fresh per-user `freelancer.sqlite`                               | Created empty on clean setup; no prior-install import                  |
+| Request receipts and observed usage                                                  | Freelancer                              | `operational_records` in the fresh per-user `freelancer.sqlite`                               | New receipts preserve uncertainty; no prior-install import            |
+| Waiting/uncertain delivery                                                           | Freelancer sender                       | `operational_records` in the fresh per-user `freelancer.sqlite`                               | A delivery commitment, not a draft; archive cannot cancel it         |
+| Runtime preferences, delegation receipts, outcomes and quota state                   | Freelancer runtime adapters             | Unified tables in the fresh per-user `freelancer.sqlite`                                      | Node/Bun/PowerShell resolve the same registered runtime                |
 | Project files and conversation search indexes                                        | Freelancer content indexer             | Project-scoped tables inside the same per-user `freelancer.sqlite`                  | Rebuildable derived indexes; project files and native chats remain authoritative |
 | Pins, local hiding, project archives, unsent drafts                                  | Freelancer local data service      | `freelancer.sqlite` in the resolved user data directory                    | New feature authority                                                |
 | Previously seen session headers                                                      | OpenCode; SQLite copy is a cache       | `session_headers`                                                       | Titles/IDs/ancestry/timestamps only, checked natively before actions |
 | Agent/skill defaults                                                                 | Application source                     | Existing domain/backend files                                           | Definitions are not running jobs                                     |
 
-Freelancer mutable runtime state now lives in SQLite. The shared document store imports legacy JSON once, keeps the original bytes as backups, and never reads them again after migration. Native plugins and PowerShell scripts use the same database. Git agreements remain one authority in the settings document. See [storage performance](storage-performance.md) for migration and rollback boundaries.
+Source startup now creates or validates an empty `workspace-v1` runtime before launching OpenCode, then activates the unified database for the app and its child processes. A non-empty, unregistered database is rejected; no previous Freelancer database, JSON state, settings profile, pins, Memory files, or browser-local navigation preferences are opened or imported. Native OpenCode owns general options, provider inventory and authentication, and MCP configuration. Freelancer-only appearance and billing preferences remain in a separate application-settings surface. Process locks and launch rendezvous remain filesystem coordination. The source-level [storage consumer inventory](storage-consumer-inventory.md) maps current consumers and remaining verification. Quiescence-gated import commands are maintenance utilities and are not part of first-run setup. See [storage performance](storage-performance.md) for current validation and boundaries.
 
 ## The parts and their relationships
 
@@ -112,10 +118,10 @@ The Freelancer SQLite store links by project/native session ID but has **no fore
 key into OpenCode's database**. Native IDs must be ownership-checked through the
 API before mutations or exports. Missing native sessions are not recreated.
 
-## SQLite schema 6
+## SQLite schema 17
 
 The executable schema is `server/data/schema.sql`. Application history/draft access goes through
-`server/data/store.mjs` and `server/history.mjs`; the local content-index tool uses the same database through its Python indexer. React does not open SQLite directly.
+`server/data/store.mjs` and `server/history.mjs`; the local content-index tool uses the same database through its Python indexer. React does not open SQLite directly. A schema-6 fixture copied from main commit `dd60841` now exercises the full migration chain to schema 17, preserving a draft and indexed source evidence and checking SQLite integrity and foreign keys. It is a small fixture; migration cost and preservation across the active full-size profile database remain unverified.
 
 | Table                 | Key and contents                                          | Purpose                                 |
 | --------------------- | --------------------------------------------------------- | --------------------------------------- |
@@ -125,17 +131,31 @@ The executable schema is `server/data/schema.sql`. Application history/draft acc
 | `session_annotations` | Project + session ID; pin/hide timestamp; revision        | Local organization; FK to cached header |
 | `drafts`              | Project + session ID or `new`; text, revision, timestamp  | Recoverable unsent text                 |
 | `content_meta`        | Project key + build metadata                              | Per-project index manifest/status       |
-| `content_sources`     | Project-scoped source metadata                            | Indexed files and archive members       |
-| `content_units`       | Source retrieval units                                    | Searchable document sections            |
+| `content_sources`     | Project-scoped source metadata, deterministic source and content-revision identities | Indexed files and archive members; stable references survive staged publication |
+| `content_units`       | Source retrieval units                                    | Searchable document sections with stable source/revision references            |
 | `content_units_fts`   | FTS5 projection of retrieval units                        | Local full-text/BM25 search              |
 | `content_facts`       | Derived source-linked facts                               | Optional analysis aid                   |
 | `content_fact_stats`  | Project-scoped fact aggregates                            | Optional analysis summaries             |
 | `chat_search` / `chat_search_state` | Indexed native messages and refresh timestamps | Rebuildable conversation search |
+| opencode_sources, opencode_sessions, opencode_session_revisions, opencode_messages, opencode_message_revisions | Hashed native database locator, current session/message projections and immutable safe revisions | Native OpenCode source warehouse; stable revision references; reasoning parts excluded; file payload bytes are hashed, not copied |
+| opencode_ingest_runs, opencode_ingest_cursors, opencode_ingest_failures | Per-project backfill state, numeric API offset plus prior-session boundary cursor, discovered/captured counters, and failed-session receipts | Bounded resumable API ingestion; failed sessions resume from their earliest offset and detected ordering shifts restart from zero while coverage remains partial |
+| opencode_source_coverage | Per-source session, message and revision counts | Read-only capture coverage |
 | `model_catalog` | Public native model metadata and dated estimated ratings | Models-page catalog; not routing policy |
+| `entities`, `entity_aliases`, `claims`, `claim_evidence`, `entity_relations` | Provenance-aware shared knowledge graph | Claims retain origin, epistemic state, scope, time and evidence |
+| `memory_items`, `memory_item_revisions`, `memory_members`, `memory_pins`, `memory_changes` | Versioned durable notes and conversation-pin records | A pin records a metadata-only snapshot placeholder until transcript capture completes |
+| History pin compatibility | Canonical memory_pins for new pin/unpin writes; legacy session_annotations.pinned_at is read only as migration fallback | Pin state and annotation revision change in one transaction; unpin retains the conversation memory |
+| `runtime_instances`, `runtime_collection_markers` | Explicit runtime ID, source path/schema/hash, import time and legacy one-time markers | Identity mapping and fail-closed cutover eligibility; source path is provenance, not inferred identity |
+| `operational_records`, `application_documents`, `project_registrations`, `runtime_settings`, `settings_update_journal` | Runtime-scoped operational rows and documents, project agreements and domain settings, plus recovery for split settings writes | Staged migration target; global preferences are stored in per-user `application-settings.json` outside SQLite |
 | `model_rating_jobs` | Native configuration session, chosen model, state and summary | Background rating update recovery |
+| `knowledge_pinned_memories`, `knowledge_current_claims`, `knowledge_claim_evidence`, `knowledge_memory_evidence`, `knowledge_source_coverage` | Read-only warehouse views | Bounded native knowledge queries over pins, evidence and indexed-source coverage |
 | `chatgpt_chats` / `chatgpt_messages` | Project-scoped imported headers, provenance and normalized messages | One-time source snapshots, separate from OpenCode |
 | `chatgpt_continuations` | Imported ID to native session link and creation state | Supported-API continuation; guards uncertain creation |
 | `project_onboarding` | Completed setup timestamp and import count | Prevents repeated imports or live sync |
+| `judgment_definitions`, `judgment_runs`, `judgment_results` | Immutable primitive/question/criteria versions, hashed bounded evidence packets, requested and reported provider/model metadata, typed answers, probabilities, confidence and optional usage | Preserves model judgments separately from underlying facts; provider failures and missing measurements remain explicit |
+
+The native knowledge tool can ask for permission and send a bounded caller-supplied state packet to the shared TypeSafe SDK adapter. Single and batched evaluation calls accept up to twenty immutable question definitions in one System One request. Before provider use, each candidate and evidence citation must resolve to a retained indexed content revision/unit or a captured OpenCode text part, and the packet text must occur in the resolved source. It stores typed answers and provenance hashes, not the state content or API key. Batch receipts share one ID and record token usage once to avoid double-counting. `judgment-provider-status` reports credential configuration without claiming live connectivity, and evaluation failure does not block ordinary search or memory operations. Exact pinned model IDs can reuse complete successful cache matches; moving model aliases and partial batch matches run live. A cached result does not count historical token usage again. The same native `knowledge` tool supports exact entity lookup, duplicate-safe entity and relation creation, bounded relation listing, and audited relation/entity deletion. Entity deletion removes its aliases and graph edges only when no claim references it; otherwise it reports the retained claim count and makes no change. Relation and entity deletion results are explicit and repeatable.
+
+`node scripts/evaluate-knowledge-retrieval.mjs` runs eight synthetic candidate pairs that cover exact IDs, Unicode, paraphrases, contradictory current/history evidence, historical questions, pinned conversation snapshots, missing-source placeholders and project identity. The live JEV 1.13.0 run scored top-1 accuracy 1.0 and mean reciprocal rank 1.0 across these eight labeled pairs (5,041 input tokens, 301 output tokens, 367 ms). This measures the judgment layer against fabricated fixtures; it does not establish retrieval quality on real projects or the full search pipeline.
 
 Uses STRICT tables, prepared statements, foreign keys, short BEGIN IMMEDIATE
 transactions, a busy timeout, WAL journaling and FULL synchronization. The file
@@ -161,11 +181,11 @@ chat creation, later typing follows the newly bound conversation.
 
 Production resolves new data separately from the installation:
 
-- Windows: `%LOCALAPPDATA%\Freelancer\freelancer.sqlite` (profile fallback when
+- Windows: `%LOCALAPPDATA%\Freelancer\workspace-v1\freelancer.sqlite` (profile fallback when
   LOCALAPPDATA is unavailable).
-- macOS: `~/Library/Application Support/Freelancer/freelancer.sqlite`.
-- Linux: `$XDG_DATA_HOME/freelancer/freelancer.sqlite` or
-  `~/.local/share/freelancer/freelancer.sqlite`.
+- macOS: `~/Library/Application Support/Freelancer/workspace-v1/freelancer.sqlite`.
+- Linux: `$XDG_DATA_HOME/freelancer/workspace-v1/freelancer.sqlite` or
+  `~/.local/share/freelancer/workspace-v1/freelancer.sqlite`.
 
 An absolute `FREELANCER_DATA_HOME` explicitly chooses another directory. It is
 not a data migration; pointing it elsewhere opens that directory's independent
@@ -220,6 +240,35 @@ a tested rollback route. Reject unknown future schemas. Do not point native
 OpenCode at this database, copy its credential store, or give editable agent
 prompts direct SQL access.
 
+Schema 17 includes the provenance-aware memory service, versioned immutable JEV
+question definitions, retained indexed source/unit revisions, and shared `knowledge` OpenCode tool. Pinning creates a canonical memory item and preserves the original
+pin time, but the current capture boundary is explicitly `metadata_only`; no
+historical transcript is fabricated. Memory search uses a rebuildable FTS
+projection. The maintenance importer copies the v1 runtime records database and
+registered standalone state JSON after explicit quiescence. Migration and
+backup CLIs acquire the runtime's normal application lock so they reject an
+active Freelancer server and prevent a new server from starting during the
+operation; `FREELANCER_MIGRATION_QUIESCED=1` remains an operator assertion for
+independent OpenCode plugins and runtime helpers. The stopped-runtime backup
+packages Freelancer's SQLite database, sidecars, settings snapshot and
+per-runtime settings profiles with a hash manifest. Run
+`node scripts/local-data-backup.mjs migration-sources --runtime-root <absolute-runtime-root> --output <absolute-new-bundle-directory>`
+to make a second verified bundle of the legacy `records.sqlite` database (and
+sidecars) plus every valid standalone `.state` JSON migration input. The source
+bundle excludes the unified-storage pointer, live launch rendezvous and
+dispatch-lock owner files; it never copies OpenCode's database, credentials,
+lock files, or non-JSON runtime artifacts. It records hashes and byte lengths
+without putting JSON contents in the manifest, validates legacy database
+identity/schema/integrity, and rejects symlinks and invalid JSON. Restore
+validates the target bundle before writing to a new directory. Rehearse recovery
+of the legacy inputs into an empty runtime root with
+`node scripts/local-data-backup.mjs restore-sources --bundle <absolute-bundle-directory> --to <absolute-new-runtime-root>`.
+That copies only the archived migration inputs; it does not restore the live
+launch rendezvous or storage pointer. Neither command
+creates a runtime pointer or makes copied operational rows authoritative;
+settings-profile reconciliation and production cutover remain explicit
+migration work.
+
 ## Verification and remaining live checks
 
 Run `npm test`, `npm run build`, then (with the Chromium test browser installed) `npm run test:browser -- local-data`. The new CI matrix exercises
@@ -227,10 +276,11 @@ Ubuntu and Windows with normal navigation and uploads browser screenshots.
 The Windows panel workflow exercises the same browser application.
 
 Tests exercise real application/HTTP/SQLite/sender integration; only the native
-OpenCode/provider interface is stubbed. Pure draft-controller tests cover save
+OpenCode and TypeSafe provider interfaces are stubbed. Pure draft-controller tests cover save
 races, exact-generation acceptance, multi-window conflicts, reload, lost
-acknowledgements and rebinding. No paid model/provider calls or real user account
-changes are used. Normal browser verification uses loopback HTTP/CSP. PANEL_OFFLINE=1 is an optional restricted-environment bridge and is not normal-navigation evidence.
+acknowledgements and rebinding. The focused judgment-provider tests use a mock;
+a separate synthetic call verified the live TypeSafe API response without project
+data. No paid OpenCode model calls or real user account changes are used. Normal browser verification uses loopback HTTP/CSP. PANEL_OFFLINE=1 is an optional restricted-environment bridge and is not normal-navigation evidence.
 
 Before relying on a real installation: restart the Windows app; save/reopen a
 draft; archive/Undo an idle test conversation; inspect the displayed paths; download

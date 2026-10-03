@@ -162,11 +162,11 @@ test("native usage fallback does not double count reasoning; native total takes 
   assert.equal(usageRecord({ info }).tokens, 80);
   assert.equal(usageRecord({ info: { ...info, role: "user" } }), null);
 });
-test("reject invalid money and unsupported providers", () => {
+test("reject invalid money and retain newly observed providers as unknown billing", () => {
   for (const monthlyPrice of [-1, NaN, Infinity, "20"])
     assert.throws(() =>
       normalizePlans({ providers: { openai: { monthlyPrice } } }),
     );
-  assert.throws(() => normalizePlans({ providers: { unknown: {} } }));
+  assert.equal(normalizePlans({ providers: { custom: {} } }).providers.custom.mode, 'unknown');
   assert.throws(() => normalizePlans({ currency: "money" }));
 });

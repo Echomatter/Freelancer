@@ -1,15 +1,27 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import path from "node:path";
 import { createHost, hostEnvironment } from "../server/host.mjs";
 import { buildRuntimeConfig } from "../server/runtime-config.mjs";
 
-test("native host forwards the content-index data root to chat tools", () => {
+test("native host overlays Freelancer plugins without replacing user OpenCode settings or MCP", () => {
   const config = buildRuntimeConfig("F:\\Freelancer");
-  const env = hostEnvironment(config, {});
+  const native = { model: "native/provider-model", mcp: { existing: { type: "remote", url: "https://example.invalid/mcp" } }, plugin: ["native-plugin"] };
+  const env = hostEnvironment(config, { OPENCODE_CONFIG_CONTENT: JSON.stringify(native), XDG_CONFIG_HOME: "F:\\NativeConfig", XDG_DATA_HOME: "F:\\NativeData" });
   assert.equal(env.FREELANCER_RUNTIME_ROOT, config.backendRoot);
   assert.equal(env.FREELANCER_DATA_HOME, config.dataRoot);
-  assert.equal(env.FREELANCER_MCP_MEMORY_FILE, path.join(config.dataRoot, 'mcp-memory.jsonl').replace(/\\/g, '/'));
+  assert.equal(env.FREELANCER_RUNTIME_DATA_MODE, 'unified');
+  assert.equal(env.FREELANCER_RUNTIME_ID, 'freelancer-workspace-v2');
+  assert.equal(env.XDG_CONFIG_HOME, "F:\\NativeConfig");
+  assert.equal(env.XDG_DATA_HOME, "F:\\NativeData");
+  assert.deepEqual(JSON.parse(env.OPENCODE_CONFIG_CONTENT).mcp, native.mcp);
+  assert.equal(JSON.parse(env.OPENCODE_CONFIG_CONTENT).model, native.model);
+  assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).plugin.includes("native-plugin"));
+  assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).plugin.some(value => value.endsWith("/delegation.ts")));
+  for (const name of ['content-index', 'knowledge'])
+    assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).plugin.some(value => value.endsWith(`/${name}.ts`)));
+  assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).instructions.some(value => value.endsWith("WORKSTYLE.md")));
+  assert.equal(Object.hasOwn(env, "OPENCODE_CONFIG_DIR"), false);
+  assert.equal(Object.hasOwn(env, "OPENCODE_CONFIG"), false);
 });
 
 test("native host preserves provider error details, status and stable code", async () => {

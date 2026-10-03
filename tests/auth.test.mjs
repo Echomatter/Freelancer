@@ -31,6 +31,7 @@ test("native auth methods retain conditional prompts and Go has a native key ent
   assert.deepEqual(Object.keys(methods), [
     "openai",
     "github-copilot",
+    "unrelated",
     "opencode-go",
   ]);
   assert.equal(methods["github-copilot"][0], method);

@@ -9,6 +9,7 @@ import { savedTheme, themeDocument } from "./theme.mjs";
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { isLocalDataUnavailable } from "./data/store.mjs";
+import { createHash, randomUUID } from 'node:crypto';
 import { privateIPv4 } from "./lan.mjs";
 import { createRemoteAccess } from "./remote-access.mjs";
 
@@ -42,6 +43,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
   let origin;
   const remote = remoteAccess ?? await createRemoteAccess();
   const handleRequest = async (req, res, publicWeb = false) => {
+    const requestAbort = new AbortController();
+    req.on("aborted", () => requestAbort.abort());
+    res.on("close", () => { if (!res.writableEnded) requestAbort.abort(); });
     const send = (status, value, type = "application/json", cache = "no-store") => {
       const headers = {
         "Content-Type": type,
@@ -91,7 +95,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         const lanApi = publicWeb || requestOrigin !== origin || !loopback;
         const pairingRequest = lanApi && route === '/api/access/pair' && req.method === 'POST';
         const lanTokenOk = !lanApi || pairingRequest || remote.authenticate(req, res, publicWeb ? 'web' : 'lan');
-        const agentBridge = loopback && !lanApi && ["/api/git/agent", "/api/goals/checkpoint", "/api/delegates/handoff"].includes(route) && !!expected && safeEqual(supplied, expected);
+        const agentBridge = loopback && !lanApi && ["/api/git/agent", "/api/goals/checkpoint", "/api/delegates/handoff", "/api/knowledge/agent"].includes(route) && !!expected && safeEqual(supplied, expected);
         if (
           (!agentBridge && req.headers["x-freelancer-client"] !== "webpage") ||
           (req.headers.origin && req.headers.origin !== requestOrigin) ||
@@ -119,16 +123,17 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(404, { error: 'Action not found' });
         }
         if (route === '/api/view-state' && ['GET', 'PUT'].includes(req.method)) {
-          if (req.method === 'GET') return send(200, (await app.store.read('settings')).viewState ?? {});
+          if (req.method === 'GET') return send(200, { navigationCollapsed: false, lastChats: {}, ...(await app.store.read('settings')).viewState });
+          if (body.migrate === true)
+            return send(410, { error: 'Importing browser preferences from an earlier Freelancer install is disabled.' });
           const data = await app.store.update('settings', settings => {
             const previous = settings.viewState ?? {};
-            if (body.migrate && previous.migrated) return settings;
             const lastChats = { ...previous.lastChats };
             for (const [project, session] of Object.entries(body.lastChats ?? {})) {
               if (typeof session !== 'string' || project.length > 200 || session.length > 200) throw Error('Invalid chat preference');
               lastChats[project] = session;
             }
-            return { ...settings, viewState: { ...previous, migrated: true, lastChats,
+            return { ...settings, viewState: { ...previous, lastChats,
               ...(typeof body.navigationCollapsed === 'boolean' ? { navigationCollapsed: body.navigationCollapsed } : {}) } };
           });
           return send(200, data.viewState);
@@ -167,6 +172,162 @@ export async function startServer({ application: app, assets, port = 0, readActi
         if (route === "/api/git/agent") {
           if (!agentBridge || req.method !== "POST") return send(403, { error: "Native Git tool only" });
           return send(200, await app.gitAgentAction(body));
+        }
+        if (route === '/api/knowledge/agent') {
+          if (!agentBridge || req.method !== 'POST') return send(403, { error: 'Native knowledge tool only' });
+          const data = app.localData.get();
+          const parseObject = (value, label, limit = 20_000) => {
+            if (value === undefined) return {};
+            if (typeof value !== 'string' || value.length > limit) throw Error(`${label} must be bounded JSON text.`);
+            const parsed = JSON.parse(value);
+            if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) throw Error(`${label} must be a JSON object.`);
+            return parsed;
+          };
+          const parseJSON = (value, label, limit = 20_000) => {
+            if (typeof value !== 'string' || value.length > limit) throw Error(`${label} must be bounded JSON text.`);
+            return JSON.parse(value);
+          };
+          const stableJSON = value => JSON.stringify(value, (_key,item) => {
+            if (!item || Array.isArray(item) || typeof item !== 'object') return item;
+            return Object.fromEntries(Object.keys(item).sort().map(key => [key,item[key]]));
+          });
+          const validateJudgmentEvidence=(candidateIDs,evidenceRefs)=>{
+            if(!Array.isArray(candidateIDs)||candidateIDs.length<1||candidateIDs.length>500||candidateIDs.some(id=>typeof id!=='string'||!id.trim()||id.length>2000)||new Set(candidateIDs).size!==candidateIDs.length)
+              throw Error('A TypeSafe judgment requires unique stable candidate IDs.');
+            if(!Array.isArray(evidenceRefs)||evidenceRefs.length<1||evidenceRefs.length>1000||evidenceRefs.some(ref=>
+              typeof ref==='string'?!ref.trim()||ref.length>2000:!ref||typeof ref!=='object'||Array.isArray(ref)||
+                ![ref.id,ref.ref,ref.revisionID,ref.sourceID,ref.candidateID,ref.sourceIdentity,ref.sessionID].some(value=>typeof value==='string'&&value.trim()&&value.length<=2000)))
+              throw Error('A TypeSafe judgment requires bounded stable evidence references.');
+          };
+          switch (body.operation) {
+            case 'search': return send(200, data.searchMemory(body.query, { kind: body.kind, limit: body.limit }));
+            case 'read': return send(200, data.getMemory(body.id) ?? { status: 'missing', id: body.id });
+            case 'status': return send(200, data.memoryStatus());
+            case 'entity-search': return send(200, { status:'ok', entities:data.findEntity(body.query) });
+            case 'entity': {
+              const projectSettings = await app.store.read('settings');
+              const projectRow = projectSettings.projects.find(row => path.resolve(row.directory) === path.resolve(body.directory));
+              return send(200, data.createEntity({ type: body.type, name: body.name, aliases: [...(body.aliases ?? []), ...(body.alias ? [body.alias] : [])], sourceRef: body.sourceRef || projectRow?.id || '' }));
+            }
+            case 'claim': {
+              const evidence = parseObject(body.evidenceJson, 'Claim evidence', 100_000).items;
+              if (!Array.isArray(evidence)) throw Error('Claim evidence must contain an items array.');
+              return send(200, data.addClaim({ ...body, value: body.valueJson === undefined ? undefined : parseJSON(body.valueJson, 'Claim value'), scope: parseObject(body.scopeJson, 'Claim scope'), evidence, actor: body.sessionID, method: 'native-tool' }));
+            }
+            case 'correct-claim': {
+              const evidence = parseObject(body.evidenceJson, 'Claim evidence', 100_000).items;
+              if (!Array.isArray(evidence)) throw Error('Claim evidence must contain an items array.');
+              return send(200, data.correctClaim({ ...body, id: body.id, value: body.valueJson === undefined ? undefined : parseJSON(body.valueJson, 'Claim value'), scope: body.scopeJson === undefined ? undefined : parseObject(body.scopeJson, 'Claim scope'), evidence, actor: body.sessionID, method: body.method ?? 'native-tool' }));
+            }
+            case 'relate': return send(200, data.addRelation({ from: body.from, to: body.to, type: body.type, provenance: { sessionID: body.sessionID, messageID: body.messageID } }));
+            case 'relations': return send(200, { status:'ok', relations:data.listRelations({ entityID:body.id, limit:body.limit }) });
+            case 'delete-relation': return send(200, data.deleteRelation({ id:body.relationID, actor:body.sessionID, reason:body.reason }));
+            case 'delete-entity': return send(200, data.deleteEntity({ id:body.id, actor:body.sessionID, reason:body.reason }));
+            case 'remember': return send(200, data.createMemory({ kind: body.type ?? 'note', title: body.title, body: body.body, provenance: { sessionID: body.sessionID, messageID: body.messageID }, source: { projectID: body.projectID }, actor: body.sessionID }));
+            case 'revise': return send(200, data.reviseMemory({ id: body.id, expectedRevision: body.expectedRevision, body: body.body, provenance: { sessionID: body.sessionID, messageID: body.messageID }, actor: body.sessionID }));
+            case 'forget': return send(200, data.forgetMemory({ id: body.id, actor: body.sessionID, reason: body.reason }));
+            case 'analyze': return send(200, data.analyze(body.sql, parseObject(body.paramsJson, 'SQL parameters'), { maxRows: 200, maxBytes: 400_000, timeoutMs: 1500, signal: requestAbort.signal }));
+            case 'judgment-definition': return send(200, data.createJudgmentDefinition({ id:body.definitionID, version:body.definitionVersion, questionID:body.questionID, primitive:body.primitive, question:parseJSON(body.questionJson,'Judgment question'), criteria:parseObject(body.criteriaJson,'Judgment criteria',20_000) }));
+            case 'judgment-provider-status': return send(200, app.judgmentProvider.status());
+            case 'judgment-evaluate': {
+              const definition=data.getJudgmentDefinition({id:body.definitionID,version:body.definitionVersion});
+              if(!definition) throw Error('Judgment definition version does not exist.');
+              const state=parseJSON(body.stateJson,'Judgment state',250_000);
+              if(state===null) throw Error('TypeSafe judgment state must contain the cited evidence packet.');
+              const stateText=stableJSON(state);
+              if(Buffer.byteLength(stateText,'utf8')>120_000) throw Error('Judgment state exceeds 120 KB.');
+              const candidateIDs=parseJSON(body.candidateIDsJson??'[]','Candidate IDs',100_000);
+              const evidenceRefs=parseJSON(body.evidenceRefsJson??'[]','Evidence references',200_000);
+              validateJudgmentEvidence(candidateIDs,evidenceRefs);
+              data.assertJudgmentEvidence({state,candidateIDs,evidenceRefs});
+              const stateHash=createHash('sha256').update(stateText).digest('hex');
+              const requestedModel=typeof body.requestedModel==='string'?body.requestedModel.trim():'';
+              if(requestedModel && requestedModel.length<=300) {
+                const cached=data.readCachedJudgment({definitionID:definition.id,definitionVersion:definition.version,stateHash,candidateIDs,evidenceRefs,
+                  requestedProvider:'typesafe',requestedModel,reportedProvider:'typesafe',reportedModel:requestedModel});
+                if(cached.status==='hit'&&cached.results.length) return send(200,{status:'ok',requestedProvider:'typesafe',requestedModel,
+                  reportedProvider:'typesafe',reportedModel:requestedModel,latencyMs:0,results:cached.results,runID:cached.runID,
+                  stateHash,cached:true,usage:{cached:true,sourceRunID:cached.runID}});
+              }
+              const result=await app.judgmentProvider.evaluate({definition,state,signal:requestAbort.signal,model:body.requestedModel});
+              const recorded=data.recordJudgmentRun({definitionID:definition.id,definitionVersion:definition.version,stateHash,candidateIDs,evidenceRefs,
+                requestedProvider:result.requestedProvider,requestedModel:result.requestedModel,reportedProvider:result.reportedProvider,
+                reportedModel:result.reportedModel,status:result.status,latencyMs:result.latencyMs,usage:result.usage,
+                results:result.results??[{questionID:definition.questionID,answer:{error:result.failure??result.status}}]});
+              return send(200,{...result,runID:recorded.runID,stateHash,candidateSetHash:recorded.candidateSetHash,evidenceHash:recorded.evidenceHash});
+            }
+            case 'judgment-evaluate-batch': {
+              const requested=parseJSON(body.definitionsJson,'Judgment definitions',100_000);
+              if(!Array.isArray(requested)||!requested.length||requested.length>20) throw Error('A judgment batch must contain between one and twenty definitions.');
+              const definitions=requested.map(item=>{
+                if(!item||typeof item.id!=='string'||!Number.isSafeInteger(item.version)||item.version<1) throw Error('Every batch definition needs an ID and version.');
+                const definition=data.getJudgmentDefinition({id:item.id,version:item.version});
+                if(!definition) throw Error(`Judgment definition ${item.id} version ${item.version} does not exist.`);
+                return definition;
+              });
+              if(new Set(definitions.map(item=>item.questionID)).size!==definitions.length) throw Error('Batch question IDs must be unique.');
+              const state=parseJSON(body.stateJson,'Judgment state',250_000),stateText=stableJSON(state);
+              if(state===null) throw Error('TypeSafe judgment state must contain the cited evidence packet.');
+              if(Buffer.byteLength(stateText,'utf8')>120_000) throw Error('Judgment state exceeds 120 KB.');
+              const candidateIDs=parseJSON(body.candidateIDsJson??'[]','Candidate IDs',100_000),evidenceRefs=parseJSON(body.evidenceRefsJson??'[]','Evidence references',200_000);
+              validateJudgmentEvidence(candidateIDs,evidenceRefs);
+              data.assertJudgmentEvidence({state,candidateIDs,evidenceRefs});
+              const stateHash=createHash('sha256').update(stateText).digest('hex');
+              const requestedModel=typeof body.requestedModel==='string'?body.requestedModel.trim():'';
+              if(requestedModel && requestedModel.length<=300) {
+                const cachedRuns=definitions.map(definition=>({definition,...data.readCachedJudgment({definitionID:definition.id,
+                  definitionVersion:definition.version,stateHash,candidateIDs,evidenceRefs,requestedProvider:'typesafe',requestedModel,
+                  reportedProvider:'typesafe',reportedModel:requestedModel})}));
+                if(cachedRuns.every(item=>item.status==='hit'&&item.results.length)) {
+                  const batchID=randomUUID();
+                  return send(200,{status:'ok',batchID,requestedProvider:'typesafe',requestedModel,reportedProvider:'typesafe',reportedModel:requestedModel,
+                    latencyMs:0,usage:{cached:true},sharedStateHash:stateHash,cached:true,
+                    runs:cachedRuns.map(item=>({status:'ok',runID:item.runID,candidateSetHash:item.candidateSetHash,evidenceHash:item.evidenceHash,
+                      definitionID:item.definition.id,definitionVersion:item.definition.version,questionID:item.definition.questionID,results:item.results,
+                      cached:true,usage:{cached:true,sourceRunID:item.runID}}))});
+                }
+              }
+              const result=await app.judgmentProvider.evaluateMany({definitions,state,signal:requestAbort.signal,model:body.requestedModel});
+              const batchID=randomUUID(),runIDs=definitions.map(()=>randomUUID());
+              const inputs=definitions.map((definition,index)=>{
+                const answer=result.results?.find(item=>item.questionID===definition.questionID);
+                return {runID:runIDs[index],definitionID:definition.id,definitionVersion:definition.version,stateHash,candidateIDs,evidenceRefs,
+                  requestedProvider:result.requestedProvider,requestedModel:result.requestedModel,reportedProvider:result.reportedProvider,reportedModel:result.reportedModel,
+                  status:result.status,latencyMs:result.latencyMs,
+                  usage:index===0?(result.usage===undefined?{sharedBatchID:batchID,sharedQuestionCount:definitions.length,measured:false}:
+                    {...result.usage,sharedBatchID:batchID,sharedQuestionCount:definitions.length}):
+                    {sharedBatchID:batchID,sharedUsageRecordedRunID:runIDs[0]},
+                  results:[answer??{questionID:definition.questionID,answer:{error:result.failure??result.status}}]};
+              });
+              const receipts=data.recordJudgmentBatch({runs:inputs});
+              const runs=receipts.map((receipt,index)=>({...receipt,definitionID:definitions[index].id,definitionVersion:definitions[index].version,questionID:definitions[index].questionID}));
+              return send(200,{status:result.status,batchID,requestedProvider:result.requestedProvider,requestedModel:result.requestedModel,
+                reportedProvider:result.reportedProvider,reportedModel:result.reportedModel,latencyMs:result.latencyMs,usage:result.usage,
+                sharedStateHash:stateHash,runs});
+            }
+            case 'judgment-record': return send(200, data.recordJudgmentRun(parseObject(body.runJson,'Judgment run',400_000)));
+            case 'judgment-history': return send(200, data.judgmentHistory({ definitionID:body.definitionID, limit:body.limit }));
+            case 'judgment-cache': return send(200, data.findCachedJudgment({ definitionID:body.definitionID, definitionVersion:body.definitionVersion,
+              stateHash:body.stateHash,candidateIDs:parseJSON(body.candidateIDsJson,'Candidate IDs',100_000),
+              evidenceRefs:parseJSON(body.evidenceRefsJson,'Evidence references',200_000),requestedProvider:body.requestedProvider,
+              requestedModel:body.requestedModel,reportedProvider:body.reportedProvider,reportedModel:body.reportedModel }));
+            case 'opencode-read': {
+              const settings=await app.store.read('settings');
+              if(!settings.projects.some(item=>item.id===body.projectID)) throw Error('Choose a registered project.');
+              return send(200,data.readOpenCodeSession({projectID:body.projectID,sessionID:body.sessionID,sourceSystemID:body.sourceSystemID,limit:body.limit}));
+            }
+            case 'warehouse-status': {
+              const ingestRuns=data.openCodeIngestStatus({sourceSystemID:body.sourceSystemID,projectID:body.projectID});
+              return send(200,{sources:data.openCodeCoverage(body.sourceSystemID),ingestRuns,
+                failures:data.openCodeIngestFailures({runID:body.runID??ingestRuns[0]?.runID,limit:body.limit})});
+            }
+            case 'warehouse-backfill': {
+              const settings=await app.store.read('settings');
+              if(body.projectID&&!settings.projects.some(item=>item.id===body.projectID)) throw Error('Choose a registered project.');
+              return send(200,await app.history.backfillOpenCode({projectID:body.projectID,resume:body.resume!==false,pageSize:body.pageSize,signal:requestAbort.signal}));
+            }
+            default: throw Error('Unknown knowledge operation.');
+          }
         }
         if (route === "/api/git" && req.method === "GET") return send(200, await app.gitProjects.inspect(project));
         if (route === "/api/git/defaults" && req.method === "PUT") return send(200, await app.gitProjects.updateDefaults(body));
@@ -295,12 +456,15 @@ export async function startServer({ application: app, assets, port = 0, readActi
           if (route === "/api/index/search" && req.method === "GET")
             return send(200, await history.searchFiles(url.searchParams.get("q") ?? "", {
               project: url.searchParams.get("project") ?? "",
+              source: url.searchParams.get("source") ?? "", role: url.searchParams.get("role") ?? "",
+              status: url.searchParams.get("status") ?? "", phrase: url.searchParams.get("phrase") === "true",
             }));
           if (route === "/api/index/maintenance" && req.method === "POST")
             return send(200, await history.maintainIndex(body.operation));
           if (route === "/api/history/search" && req.method === "GET")
             return send(200, await history.searchChats(url.searchParams.get("q") ?? "", {
               project: url.searchParams.get("project") ?? "", model: url.searchParams.get("model") ?? "",
+              phrase: url.searchParams.get("phrase") === "true",
             }));
           if (route === "/api/history/index" && req.method === "POST")
             return send(200, await history.rebuildChatSearch());

@@ -1,4 +1,6 @@
-export function createContextSettings({ store, host, project, canRefresh, setRefreshing }) {
+import { updateOpenCodeProjectSettings } from './opencode-project-config.mjs';
+
+export function createContextSettings({ host, project, canRefresh, setRefreshing }) {
   async function effective(p) {
     // Agent initialization runs the native plugin config hook before /config.
     await host.request('/agent', { directory: p.directory });
@@ -29,22 +31,15 @@ export function createContextSettings({ store, host, project, canRefresh, setRef
         if (!status || typeof status !== 'object' || Array.isArray(status) || !Array.isArray(questions) || !Array.isArray(permissions) ||
             Object.values(status).some(s => s?.type !== 'idle') || questions.length || permissions.length)
           throw Error('Let this project’s running chats and pending decisions finish before saving context settings.');
-        const previous = (await store.read('settings')).contextSettings?.[id];
         const autoCompact = payload.autoCompact;
-        await store.update('settings', s => ({ ...s, revision: s.revision + 1,
-          contextSettings: { ...s.contextSettings, [id]: { ...s.contextSettings?.[id], autoCompact } } }));
+        const saved = await updateOpenCodeProjectSettings(p.directory, { compaction: { auto: autoCompact } });
         try {
           if (await refresh(p) !== autoCompact) throw Error('OpenCode did not confirm the automatic compaction setting.');
         } catch (error) {
-          // A failed refresh is not a successful save. Restore the authored
-          // preference, including absence, and reload it before unlocking sends.
-          await store.update('settings', s => {
-            const contextSettings = { ...s.contextSettings };
-            if (previous === undefined) delete contextSettings[id]; else contextSettings[id] = previous;
-            return { ...s, revision: s.revision + 1, contextSettings };
-          });
+          // A failed confirmation must not leave an unverified native default.
+          await saved.rollback();
           await refresh(p).catch(() => {});
-          throw Error(`${error.message} The previous preference was restored; retry when OpenCode is available.`);
+          throw Error(`${error.message} The previous OpenCode project config was restored; retry when OpenCode is available.`);
         }
         return { saved: true, autoCompact };
       } finally { setRefreshing(false); }

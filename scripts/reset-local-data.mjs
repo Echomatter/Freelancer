@@ -1,21 +1,25 @@
-import { readStateText, readState } from '../backend/tools/runtime/state-database.mjs';
-// Reset only Freelancer's local SQLite data. Native OpenCode conversations and
-// the runtime settings database live elsewhere and are never opened here.
+import { readState, writeState } from '../backend/tools/runtime/state-database.mjs';
+// Reset the Freelancer warehouse while preserving its current settings and
+// keeping OpenCode's native conversations and credentials untouched.
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, lstat, readFile, readdir, rename, rmdir, unlink } from "node:fs/promises";
 import path from "node:path";
-import { resolveRuntimeConfig } from "../server/runtime-config.mjs";
+import { resolveRuntimeConfig, runtimeEnv } from "../server/runtime-config.mjs";
 import { acquireLock } from "../server/lock.mjs";
-import { createLocalDataStore } from "../server/data/store.mjs";
+import { assertFreshRuntimeRoot, createLocalDataStore } from "../server/data/store.mjs";
+import { createStore } from '../server/store.mjs';
+import { isDeepStrictEqual } from 'node:util';
 
 if (process.argv.slice(2).join(" ") !== "--confirm")
   throw Error("Pass --confirm to reset Freelancer's local database.");
 
 const config = resolveRuntimeConfig();
+Object.assign(process.env,runtimeEnv(config));
 const dataRoot = path.resolve(config.dataRoot);
 const stateRoot = path.join(config.backendRoot, ".state", "webpage");
 const settingsFile = path.join(stateRoot, "settings.json");
+const applicationSettingsFile = path.join(dataRoot,"application-settings.json");
 const fileName = "freelancer.sqlite";
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
@@ -23,23 +27,36 @@ await mkdir(dataRoot, { recursive: true });
 if (!(await lstat(dataRoot)).isDirectory() || (await lstat(dataRoot)).isSymbolicLink())
   throw Error("The local data root must be a real directory.");
 
-const originalSettings = await readStateText(settingsFile);
-const settings = JSON.parse(originalSettings.toString("utf8"));
-if (!Array.isArray(settings.projects)) throw Error("Application settings are unreadable; local data was not changed.");
-
 const releaseLock = await acquireLock(stateRoot);
 const working = path.join(dataRoot, `.freelancer-reset-${randomUUID()}`);
 const old = path.join(working, "old");
 const clean = path.join(working, "clean");
+const discarded = path.join(working,"discarded-replacement");
 const moved = [];
 let installed = false;
 let validated = false;
+let settings;
+let originalSettings;
+let originalApplicationSettings;
 try {
+  assertFreshRuntimeRoot(dataRoot,config.runtimeID);
+  const initial = createLocalDataStore(dataRoot);
+  try { initial.initializeFreshRuntime(config.runtimeID); }
+  finally { initial.close(); }
+  const domainStore = createStore(config.backendRoot);
+  try { settings = await domainStore.read('settings'); await domainStore.flush(); }
+  finally { await domainStore.flush(); }
+  if (!Array.isArray(settings?.projects)) throw Error("Application settings are unreadable; local data was not changed.");
+  originalSettings = JSON.stringify(settings);
+  originalApplicationSettings = existsSync(applicationSettingsFile)
+    ? digest(await readFile(applicationSettingsFile))
+    : undefined;
   if (readState(path.join(stateRoot, "launch.json")))
     throw Error("Freelancer still has a launch record. Stop its server cleanly before resetting local data.");
   await mkdir(working);
   await mkdir(old);
   await mkdir(clean);
+  await mkdir(discarded);
 
   const fresh = createLocalDataStore(clean);
   try {
@@ -75,13 +92,17 @@ try {
   installed = true;
   const replacement = createLocalDataStore(dataRoot);
   try {
+    replacement.initializeFreshRuntime(config.runtimeID);
+    writeState(settingsFile,settings);
     const check = replacement.maintainIndex("check");
     if (!check.healthy) throw Error(`Replacement database failed integrity check: ${check.findings.join("; ")}`);
   } finally {
     replacement.close();
   }
-  if (digest(await readStateText(settingsFile)) !== digest(originalSettings))
+  if (!isDeepStrictEqual(readState(settingsFile),settings))
     throw Error("Application settings changed during the reset. Old local data remains available for recovery.");
+  if (originalApplicationSettings !== undefined && digest(await readFile(applicationSettingsFile)) !== originalApplicationSettings)
+    throw Error("Freelancer-only application preferences changed during the reset. Old local data remains available for recovery.");
   validated = true;
 
   const cleanupErrors = [];
@@ -92,6 +113,7 @@ try {
   if (!cleanupErrors.length) {
     await rmdir(old);
     await rmdir(clean);
+    await rmdir(discarded);
     await rmdir(working);
   }
   console.log(JSON.stringify({ reset: true, dataRoot, removedArtifacts: names.length,
@@ -106,6 +128,14 @@ try {
     catch { /* keep the replacement visible if rollback cannot move it */ }
   }
   if (!validated) {
+    if (installed) {
+      for (const name of await readdir(dataRoot)) {
+        if (name !== fileName && !name.startsWith(`${fileName}.`) && !name.startsWith(`${fileName}-`)) continue;
+        const source = path.join(dataRoot,name), item = await lstat(source);
+        if (!item.isFile() || item.isSymbolicLink()) continue;
+        try { await rename(source,path.join(discarded,name)); } catch {}
+      }
+    }
     for (const name of [...moved].reverse()) {
       try { await rename(path.join(old, name), path.join(dataRoot, name)); }
       catch { /* report the original error; retain unmoved files in the reset folder */ }

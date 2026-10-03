@@ -4,21 +4,62 @@ import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
 import { once } from 'node:events';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import os from 'node:os';
 import { startHost } from '../server/host.mjs';
-import { runtimeEnv } from '../server/runtime-config.mjs';
+import { FRESH_RUNTIME_ID, runtimeEnv } from '../server/runtime-config.mjs';
+import { assertFreshRuntimeRoot, createLocalDataStore } from '../server/data/store.mjs';
 import { createMcpConnections } from '../server/mcp.mjs';
+import { updateOpenCodeProjectModel } from '../server/opencode-project-config.mjs';
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-mcp-smoke-'));
 const backendRoot = path.join(root, 'backend');
-const config = { backendRoot, opencodeConfigDir: path.join(backendRoot, 'opencode'),
-  xdgConfigHome: path.join(root, 'config'), xdgDataHome: path.join(root, 'native-data'), dataRoot: path.join(root, 'app-data') };
+const nativeConfig = path.join(root, 'native-config');
+const config = { backendRoot, opencodePlugins: [], instructions: [], dataRoot: path.join(root, 'app-data'), runtimeID:FRESH_RUNTIME_ID };
+const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
+  /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
+const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR: nativeConfig,
+  XDG_CONFIG_HOME: nativeConfig, XDG_DATA_HOME: path.join(root, 'native-data'),
+  XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state') };
+delete env.OPENCODE_CONFIG;
+delete env.OPENCODE_CONFIG_CONTENT;
 let host;
 try {
-  await mkdir(config.opencodeConfigDir, { recursive: true });
-  await writeFile(path.join(config.opencodeConfigDir, 'opencode.jsonc'), '{}');
-  Object.assign(process.env, runtimeEnv(config), { XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state') });
-  host = await startHost({ backendRoot, config, ...(process.env.FREELANCER_SMOKE_OPENCODE ? { executable: process.env.FREELANCER_SMOKE_OPENCODE } : {}) });
+  await mkdir(backendRoot, { recursive: true });
+  await mkdir(nativeConfig, { recursive: true });
+  assertFreshRuntimeRoot(config.dataRoot,config.runtimeID);
+  const initialData = createLocalDataStore(config.dataRoot);
+  try { initialData.initializeFreshRuntime(config.runtimeID); }
+  finally { initialData.close(); }
+  await writeFile(path.join(nativeConfig, 'opencode.jsonc'), '{}');
+  host = await startHost({ backendRoot, config, env, ...(process.env.FREELANCER_SMOKE_OPENCODE ? { executable: process.env.FREELANCER_SMOKE_OPENCODE } : {}) });
+  const [providers, authMethods] = await Promise.all([
+    host.request('/provider'),
+    host.request('/provider/auth'),
+  ]);
+  assert.ok(Array.isArray(providers.all), 'native provider catalog must be readable');
+  assert.ok(Array.isArray(providers.connected), 'native connected-provider state must be readable');
+  assert.ok(authMethods && typeof authMethods === 'object' && !Array.isArray(authMethods), 'native provider auth methods must be readable');
+  const project = path.join(root, 'native-project'); await mkdir(project);
+  execFileSync('git', ['init', '--quiet', project], { stdio: 'ignore' });
+  const nativeModelCatalog = await host.request('/config/providers', { directory: project });
+  const modelChoice = (nativeModelCatalog.providers ?? []).flatMap(provider =>
+    Object.keys(provider.models ?? {}).map(model => `${provider.id}/${model}`))[0];
+  if (modelChoice) {
+    const projectConfig = await updateOpenCodeProjectModel(project, modelChoice);
+    await host.request('/instance/dispose', { method: 'POST', directory: project });
+    const confirmed = await host.request('/config', { directory: project });
+    assert.equal(confirmed.model, modelChoice, 'OpenCode must read its project model default from the native project config file');
+    await projectConfig.rollback();
+    const nested = path.join(root, 'nested-native-project'); await mkdir(nested);
+    execFileSync('git', ['init', '--quiet', nested], { stdio: 'ignore' });
+    await mkdir(path.join(nested, '.opencode'));
+    const nestedConfig = await updateOpenCodeProjectModel(nested, modelChoice);
+    await host.request('/instance/dispose', { method: 'POST', directory: nested });
+    assert.equal((await host.request('/config', { directory: nested })).model, modelChoice,
+      'OpenCode must read its project model default from the .opencode config directory');
+    await nestedConfig.rollback();
+  }
   const connections = createMcpConnections({ host, backendRoot, changeConnections: async change => {
     await change(); await host.request('/global/dispose', { method: 'POST' });
   } });
@@ -40,12 +81,14 @@ try {
     const result = await connections.act({ action, name: 'smoke', expectedRevision: (await connections.read()).revision });
     assert.equal(result.saved, true); assert.equal(result.services[0].status, status);
   }
-  console.log('Native MCP global save/readback, two-project inheritance, local stdio connection, disable and re-enable passed. No OAuth credentials, external services or model inference used.');
+  console.log(`Native provider inventory/auth, ${modelChoice ? 'project model readback from root and .opencode config files, ' : ''}MCP global save/readback, two-project inheritance, local stdio connection, disable and re-enable passed. No OAuth credentials, external services or model inference used.`);
 } finally {
-  if (host) {
-    await host.request('/global/dispose', { method: 'POST' }).catch(() => {});
+  if (host?.process && host.process.exitCode === null && host.process.signalCode === null) {
+    await host.request('/global/dispose', { method: 'POST', signal:AbortSignal.timeout(5000) }).catch(() => {});
     const exited = once(host.process, 'exit'); host.stop();
-    await Promise.race([exited, new Promise(resolve => { const timer = setTimeout(resolve, 3000); timer.unref(); })]);
+    await exited;
   }
-  await rm(root, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
+  const resolved = path.resolve(root), parent = path.resolve(os.tmpdir()) + path.sep;
+  if (!resolved.startsWith(parent) || !path.basename(resolved).startsWith('freelancer-mcp-smoke-')) throw Error('Unsafe temporary cleanup path');
+  await rm(resolved, { recursive: true, force: true, maxRetries: 8, retryDelay: 150 });
 }

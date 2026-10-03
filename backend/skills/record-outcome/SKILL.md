@@ -43,6 +43,11 @@ from subscription availability. Without a comparable parent-only baseline, do
 not claim measured savings. Investigation is not implementation; retries and
 paid escalation remain distinct observations.
 
+Shared `knowledge` may help locate related prior outcomes or evidence, but it is
+not the operational outcome ledger. Verify each linked task against its native
+receipt and actual validation. Preserve failed, skipped, cancelled, unavailable
+and unknown results instead of promoting a memory or judgment to a pass.
+
 Binding, provider, quota and deployment failures are operational observations, not poor coding performance by the intended model. No fabricated model self-identification, measured zero balances, or subscription-dollar savings. Explicitly inspection-only assignments return findings for authorized recording; a review-flavored assignment alone is not a write restriction.
 
 Actual observations are stored locally in `.state/task-history.json`, never in the public seed. Failed execution is recorded automatically as operational evidence with its actual usage when available; do not mark it successful or treat it as a capability verdict. Correctness still requires explicit validation.

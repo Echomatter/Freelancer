@@ -7,27 +7,7 @@ export function useWorkspaceViewState() {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      let saved = await api("view-state");
-      if (!saved.migrated) {
-        const lastChats: Record<string, string> = {};
-        let navigationCollapsed = false;
-        try {
-          navigationCollapsed =
-            localStorage.getItem("freelancer:navigation-collapsed") === "true";
-          for (let i = 0; i < localStorage.length; i++) {
-            const key = localStorage.key(i)!;
-            if (key.startsWith("freelancer:last-chat:"))
-              lastChats[key.slice(21)] = localStorage.getItem(key)!;
-          }
-        } catch {
-          /* Restricted browsers have no legacy preferences to import. */
-        }
-        saved = await api(
-          "view-state",
-          { migrate: true, navigationCollapsed, lastChats },
-          "PUT",
-        );
-      }
+      const saved = await api("view-state");
       if (!cancelled) setState(saved);
     })().catch((e) => {
       if (!cancelled) setError(e.message);

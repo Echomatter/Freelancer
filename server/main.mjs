@@ -10,27 +10,34 @@ import { createObserver } from "./observer.mjs";
 import { createRemoteAccess } from "./remote-access.mjs";
 import { resolveRuntimeConfig,runtimeEnv } from "./runtime-config.mjs";
 import { rememberWebPort,savedWebPort } from "./web-port.mjs";
+import { assertFreshRuntimeRoot, createLocalDataStore } from './data/store.mjs';
 
-// ── Startup migration ──────────────────────────────────────────────────
+// ── Fresh runtime bootstrap ────────────────────────────────────────────
 // All paths resolve from the source tree. No runtime.json, no
 // freelancer-root.txt locator, no global toolkit plugin leakage.
 const config = resolveRuntimeConfig();
 const { backendRoot } = config;
-
-// Expose runtime root to local plugins and tools loaded later in this
-// process (delegation, content_index, etc.).
-Object.assign(process.env, runtimeEnv(config));
 // Private process capability, never included in bootstrap or model prompts.
 process.env.FREELANCER_GIT_BRIDGE = randomBytes(32).toString("hex");
-const webPortFile = path.join(backendRoot, '.state/webpage/port.json');
-const webPort = await savedWebPort(webPortFile, process.env.FREELANCER_WEB_PORT);
-const remoteAccess = await createRemoteAccess({ file: path.join(backendRoot, '.state/remote-access.json') });
-
 const releaseLock = await acquireLock(path.join(backendRoot, ".state/webpage"));
-let host;
+let host, webPort, remoteAccess;
 try {
+  assertFreshRuntimeRoot(config.dataRoot, config.runtimeID);
+  const initialData = createLocalDataStore(config.dataRoot);
+  try { initialData.initializeFreshRuntime(config.runtimeID); }
+  finally { initialData.close(); }
+
+  // Activate the registered empty per-user database before any app or native
+  // OpenCode plugin can read state. Native OpenCode config and data paths stay
+  // inherited and unchanged.
+  Object.assign(process.env, runtimeEnv(config));
+  const webPortFile = path.join(backendRoot, '.state/webpage/port.json');
+  webPort = await savedWebPort(webPortFile, process.env.FREELANCER_WEB_PORT);
+  remoteAccess = await createRemoteAccess({ file: path.join(backendRoot, '.state/remote-access.json') });
   host = await startHost({ backendRoot, config });
 } catch (e) {
+  try { await remoteAccess?.close(); } catch {}
+  try { host?.stop(); } catch {}
   await releaseLock();
   throw e;
 }

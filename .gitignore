@@ -6,6 +6,8 @@ release/
 *.log
 .state/
 .opencode/
+!backend/.opencode/
+!backend/.opencode/**
 runtime.json
 /model-assessments*.json
 /model_assessments*.json

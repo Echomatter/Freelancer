@@ -9,7 +9,7 @@
 .indexed-search-page .page-title { margin-bottom: 2px; }
 .indexed-search-controls {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(190px, 270px);
+  grid-template-columns: minmax(220px, 2fr) repeat(3, minmax(140px, 1fr)) auto minmax(180px, 1fr);
   align-items: end;
   gap: 14px;
   padding: 16px;
@@ -20,6 +20,9 @@
 .indexed-search-query { display: grid; gap: 8px; min-width: 0; }
 .indexed-search-query input { width: 100%; min-width: 0; font-size: 14px; }
 .indexed-search-controls .field { margin: 0; }
+.indexed-search-controls input:not([type="checkbox"], [type="search"]), .indexed-search-controls select { width: 100%; min-width: 0; }
+.content-search-phrase { display: flex; align-items: center; gap: 7px; min-height: 38px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+.content-search-phrase input { accent-color: var(--accent); }
 .content-search-scope { display: grid; gap: 6px; min-width: 0; padding: 9px 11px; border-left: 2px solid var(--accent); }
 .content-search-scope span { color: var(--muted); font-size: 11px; }
 .content-search-scope strong { overflow-wrap: anywhere; font-size: 13px; }
@@ -67,6 +70,18 @@
   .indexed-result-heading { align-items: flex-start; }
   .indexed-result-heading small { max-width: 36%; text-align: right; }
 }
-
 .content-search-conversation { display: flex; align-items: start; gap: .5rem; min-width: 0; }
 .content-search-conversation > .indexed-search-result { flex: 1; min-width: 0; }
+@media (min-width: 681px) and (max-width: 1120px) {
+  .indexed-search-controls { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .indexed-search-query { grid-column: span 2; }
+  .content-search-scope { grid-column: span 2; }
+}
+.memory-reader-body { min-height: 0; }
+.ef-dialog-body.memory-reader-body { max-height: min(68vh, 760px); }
+.memory-reader-messages { display: grid; align-content: start; gap: 10px; overflow: auto; padding: 4px; }
+.memory-reader-message { max-width: min(760px, 92%); padding: 12px 14px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface, var(--paper)); }
+.memory-reader-message.user { justify-self: end; background: var(--hover); }
+.memory-reader-message strong { color: var(--accent); font-size: 11px; }
+.memory-reader-message p { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; line-height: 1.6; }
+@media (max-width: 680px) { .ef-dialog-body.memory-reader-body { max-height: 76vh; } .memory-reader-message { max-width: 100%; } }

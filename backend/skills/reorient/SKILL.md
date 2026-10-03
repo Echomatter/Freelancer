@@ -31,3 +31,10 @@ scope and the relevant findings. Bare Reorient does not invent an implementation
 task. Explicit inspection-only assignments cannot authorize source writes. Content
 index maintenance remains subject to native permissions and never grants
 source-write authority. Nested delegation is optional and shares depth and concurrency ceilings. No helper is required.
+
+When earlier cross-project decisions or evidence would change the work, use the
+shared `knowledge` tool's search/read operations. Inspect each item's origin,
+source references, capture boundary and epistemic state. For current behavior,
+read the live project source or native receipt; memory is context, not authority.
+For a handoff or goal checkpoint, carry stable evidence references and say when
+a source is missing or the retrieved coverage is partial.

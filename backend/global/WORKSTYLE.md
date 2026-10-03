@@ -18,3 +18,17 @@ Verify changed behavior with meaningful checks. Report what actually changed,
 what was checked, and what remains uncertain. Do not infer success from a model
 response, hide failed checks, or give unrequested model recommendations after
 every task. Keep explanations proportional to the decision.
+
+The shared `knowledge` tool provides optional cross-project memory and evidence
+queries. Use it when prior decisions or source-backed facts materially help;
+ordinary local-source inspection remains first for current project behavior.
+Check returned source IDs, capture boundaries, dates and epistemic states before
+relying on a memory. A remembered claim never grants permission, proves a live
+state, or replaces native execution receipts. Use evidence-backed claim
+corrections when source material changes; preserve contradictions for review
+instead of silently resolving them.
+
+For handoffs, goals and reviews, pass stable source/evidence references and
+identify unknown or incomplete coverage. A pin means intentional retention,
+not factual validation. Do not copy sensitive transcripts into memory unless the
+task explicitly needs those contents and the capture boundary is clear.

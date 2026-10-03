@@ -1,45 +1,105 @@
 # Storage performance
 
-Request receipts and observed usage now use row storage in
-`backend/.state/webpage/records.sqlite`. This database belongs to the runtime
-checkout: captured agent definitions and permission evidence must not be mixed
-with another checkout or deleted during search-index maintenance. Organization,
-drafts, imports and search continue to use the per-user `freelancer.sqlite`.
+> **Fresh-install boundary:** this page documents the current storage design and
+> preserves details of explicit maintenance utilities. A normal install creates
+> an empty Freelancer database and never imports an earlier Freelancer
+> database, JSON store, settings profile, pin set or Memory file. Do not run the
+> maintenance import examples below against prior user data as part of this
+> goal. OpenCode configuration, credentials, conversations and MCP services
+> remain native to OpenCode.
+
+## Unified storage and fresh bootstrap
+
+SQLite schema 17 adds `runtime_instances`, retained indexed source/unit revisions, runtime-scoped
+`operational_records`, `application_documents`, `project_registrations` and
+`runtime_settings`, `settings_update_journal`, plus stable content source/revision identities and `data_migration_runs` with a `data_table_lifecycle` registry in the per-user
+`freelancer.sqlite`. The registry classifies every owned schema table as
+durable or derived and identifies its owner. Content sources have deterministic identities derived from project key and virtual path; revision identities include source SHA-256, extractor version and extraction method. Schema 17 retains immutable source and unit revisions through reindexing and index repair. Search results, units, facts and source listings return these durable references, so they remain usable when publication replaces internal integer row IDs. Search-index repair derives its
+preservation list from that registry and refuses to rebuild if it finds an
+unregistered table or view; SQLite FTS5 shadow tables are recognized as
+internal derived structures. Typed judgment definitions, run receipts and
+results are durable registered tables. They retain immutable question and
+criteria versions, SHA-256 identities for bounded state/candidate/evidence
+packets, requested and provider-reported identities, nullable measured usage,
+latency, typed answers, probability distributions and supplied confidence.
+Native OpenCode history refresh also captures session headers and normalized message revisions in durable warehouse tables, keyed by a hashed source-database locator and registered project/session IDs. Revisions hash canonical safe message metadata and parts. Text, tool, patch, file metadata and step summaries are bounded; reasoning parts are omitted, sensitive object keys and bearer strings are redacted, and file payloads are represented only by hash and byte count. Search repair leaves these durable snapshots intact. The native knowledge bridge exposes bounded registered-project reads, capture coverage and an explicit resumable backfill action. Backfill uses the session-list API's numeric start offset, checkpoints each session with the prior session identity, retains failed session IDs and messages, and resumes from the earliest failed offset. It rechecks the two-session overlap at page boundaries; detected ordering changes leave coverage partial and restart from offset zero. This is a drift guard, not a proof of a stable or authoritative complete inventory. Coverage describes the API responses actually read, not a direct native-database reconciliation.
+
+Successful-result cache lookup includes the definition version, state digest,
+ordered candidate IDs, evidence references/revisions, and both requested and
+reported provider/model identities; failures are never cache hits.
+Failed, unavailable, cancelled and invalid-response attempts remain
+distinguishable from successful empty answers. Persisted judgments are advisory
+and do not become fact, permission or verification authority.
+
+Engine verification on the October 2, 2026 development host reported Node.js
+v24.16.0 with embedded SQLite 3.53.0. Bun was not available on that host, so
+the SQLite engine used by OpenCode's Bun plugin runtime still needs a separate
+runtime check before production use.
+
+The repository retains explicit maintenance utilities for an operator who
+separately selects a source runtime, verifies a backup, and requests a controlled
+restore/import. They are not called by setup, startup, or the migration in this
+goal. `scripts/migrate-runtime-records.mjs` supports marked runtime records,
+selected runtime-state files and legacy pin reconciliation; it requires an
+explicit source/root/runtime identity and quiescence. `scripts/local-data-backup.mjs`
+supports validated unified-store backups and separate source archives. Normal
+source startup does not invoke these commands, inspect their source locations,
+or fall back to legacy JSON. Use the command help and inspect its preflight
+requirements only if a separate user request explicitly authorizes a selected
+maintenance operation. The source-level consumer inventory is in
+[storage-consumer-inventory.md](storage-consumer-inventory.md).
+
+The store also has an internal bounded analytical SQL primitive. It accepts
+one parameterized SELECT/CTE, opens a read-only SQLite connection, enables
+`query_only` and `trusted_schema=OFF`, and enforces an engine authorizer
+allowlist, statement timeout, row/byte caps, and cancellation. Results include
+column names and explicit truncation/partial indicators. The shared native
+`knowledge` tool exposes it to named agents. Documented read-only views include
+`knowledge_pinned_memories`, `knowledge_current_claims`,
+`knowledge_claim_evidence`, `knowledge_memory_evidence`, and
+`knowledge_source_coverage`; these expose current memory membership, provenance,
+claim evidence and extraction coverage without creating another authority.
+
+Evidence-backed claims can accumulate evidence from multiple sources and be
+corrected transactionally through the `knowledge` tool. Duplicate claim
+additions merge distinct evidence references without duplicating them. A
+correction requires new evidence and an explicit epistemic state; it
+marks the prior claim superseded and records the prior/replacement IDs, actor,
+source references, and reason. The prior claim and its evidence remain
+available for audit. This operation does not adjudicate conflicting facts.
+
+New source startup uses `operational_records` in the fresh per-user
+`freelancer.sqlite` for request receipts and observed usage, scoped by stable
+runtime identity. The old `backend/.state/webpage/records.sqlite` is retained
+for explicit maintenance import workflows, and clean setup never reads it.
 OpenCode remains the owner of its conversations and credentials.
 
-## Candidate assessment
+## Historical storage migration disposition
+
+The table below records why the unified schema has these domains. It does not
+describe first-run behavior or authorize an import. Clean setup initializes
+empty Freelancer-owned data; selected restoration or import is a separate
+operator action and is outside the active fresh-install goal.
 
 | Data | Decision | Reason |
 | --- | --- | --- |
-| Request receipts | Migrated to SQLite | Large immutable captures; frequent updates and single-request authorization reads |
-| Observed usage | Migrated to SQLite | Growing ledger; rescans usually change only a few records |
-| Goals and sender outbox | Migrated to SQLite documents | Server and native readers share authority; pending and uncertain delivery states survive migration without replay |
-| Git operations | Migrated to SQLite documents | Preserve preview fingerprints and uncertain-operation recovery |
-| Settings, schedules, runtime preferences, quota and outcome history | Migrated to SQLite documents | Transactional updates shared by Node, native Bun plugins and PowerShell helpers |
-| Delegation receipts, worker claims and input observations | Migrated to SQLite documents | Preserve native identity and dispatch evidence across restarts |
-| Navigation and remembered chats | Migrated to database settings | One-time browser preference import; future writes go through the server |
+| Request receipts | Stored in SQLite | Large immutable captures; frequent updates and single-request authorization reads |
+| Observed usage | Stored in SQLite | Growing ledger; rescans usually change only a few records |
+| Goals and sender outbox | Stored as SQLite documents | Server and native readers share authority; pending and uncertain delivery states survive restarts without replay |
+| Git operations | Stored as SQLite documents | Preserve preview fingerprints and uncertain-operation recovery |
+| Settings, schedules, runtime preferences, quota and outcome history | Split by authority | Transactional domain state in SQLite; Freelancer-only app-wide settings in a separate file; OpenCode options remain native |
+| Delegation receipts, worker claims and input observations | Stored in SQLite | Preserve native identity and dispatch evidence across restarts |
+| Navigation and remembered chats | Stored in application settings | Fresh installs use defaults; no prior browser preference import |
 
-## Migration and compatibility
+## Current runtime and compatibility boundary
 
-On first access, each legacy ledger is validated and imported in one SQLite
-transaction. Its completion marker commits with the rows. A failed import leaves
-no partial rows or marker and preserves the original JSON bytes. Requests and
-usage migrate independently. Missing files become empty collections; malformed
-or unsupported files stop the operation instead of being overwritten.
-
-Legacy `requests.json` and `usage.json` remain untouched recovery backups.
-After migration, SQLite is authoritative: edits made to those backups are not
-reimported. Native execution-context readers use indexed receipt lookups and
-perform the same transactional import when first encountered. There is no JSON
-fallback after migration or after database errors. Restart the server and its native runtime together
-when adopting this change; running an older writer concurrently is unsupported.
-
-Before a rollback, stop both runtime processes and back up the entire private
-state directory. Restoring only the original JSON would lose receipts and usage
-recorded since migration. Export both collections with the current store's
-`read('requests')` and `read('usage')` while stopped, and retain the SQLite file
-and any sidecars before returning to an older version. Do not discard current
-request evidence or substitute the stale pre-migration backups.
+Normal source startup initializes or validates the registered per-user
+`workspace-v1` database before launching OpenCode. New request receipts, usage,
+goals, sender state, project registrations, search indexes and warehouse data
+use that runtime. App-wide Freelancer preferences use the separate,
+revisioned `application-settings.json`. Legacy paths are adapters for
+explicitly selected maintenance operations; clean startup does not probe them,
+fall back to them, or import from them.
 
 Normal receipt writes and observations touch only their own rows. An indexed
 summary column excludes captured catalogs before sending chat receipt summaries
@@ -49,18 +109,19 @@ Unchanged observations make no row writes. The server serializes mutations;
 native tools share the document API for their own state. Short-lived SQLite connections use a busy timeout, WAL
 and full synchronous durability and do not keep Windows test directories open.
 
-Settings, Git operations and Goals use `server/document-store.mjs`; retired settings
-migration is isolated in `server/settings-migration.mjs`. Request/usage SQL is
+Settings, Git operations and Goals use `server/document-store.mjs`; retired settings migration is isolated in `server/settings-migration.mjs`. The unified settings adapter stores Freelancer-only global preferences in a separate per-user settings document, keeps project agreements and domain settings in SQLite, and journals cross-store writes for recovery. Source startup activates this runtime after fresh bootstrap. The Windows tray launch preference uses the shared versioned settings document through `application-settings-cli.mjs`, rather than an incidental `launcher.json` file.
+Request/usage SQL is
 in `backend/tools/runtime/record-store.mjs`, with runtime receipt access in
 `backend/tools/runtime/record-database.mjs`. The per-user store delegates imported
 chats, model ratings and chat indexing to focused modules under `server/data/`.
 
-`state-database.mjs` maps legacy filenames to stable database document keys.
-Directory scans import once and then enumerate database records. Deletion retains
-the migration marker, so an old backup cannot resurrect deleted state. OS process
-locks remain filesystem coordination primitives. Authored routing catalogs,
-OpenCode configuration/authentication, project registration markers, exported
-files and test reports are not mutable database fallbacks.
+`state-database.mjs` maps legacy filenames to stable database document keys
+when a maintenance/runtime adapter is explicitly activated. It does not use
+legacy JSON as a fallback after activation. Directory scans enumerate registered
+database records, and retained markers prevent stale source files from
+resurrecting deleted state. OS process locks remain filesystem coordination
+primitives. Authored routing catalogs, OpenCode configuration/authentication,
+project source files, exports and test reports remain outside the data database.
 
 ## JSON request errors
 

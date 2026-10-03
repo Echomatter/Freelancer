@@ -1,17 +1,10 @@
+/** Resolve Freelancer paths while leaving OpenCode's native config and data paths alone. */
 import os from "node:os";
-/**
- * Startup migration: resolves all runtime paths from source location.
- * No packaged layout, no freelancer-root.txt locator, no global toolkit leakage.
- *
- * OPENCODE_CONFIG_DIR points to the local backend/opencode directory.
- * XDG_CONFIG_HOME is set under backend/.state so retired global toolkit plugins
- * don't load. XDG_DATA_HOME is preserved for native auth/session storage.
- * FREELANCER_RUNTIME_ROOT is exposed to local plugins and tools.
- */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
+export const FRESH_RUNTIME_ID = "freelancer-workspace-v2";
 
 /**
  * Resolve the application root. Priority:
@@ -33,24 +26,12 @@ export function resolveAppRoot() {
 export function buildRuntimeConfig(appRoot) {
   const backendRoot = path.join(appRoot, "backend");
   const opencodeConfigDir = path.join(backendRoot, "opencode");
-  // Put app-scoped config under backend/.state so global toolkit plugins
-  // (which live under the user's global XDG_CONFIG_HOME) are never loaded.
-  const xdgConfigHome = path.join(backendRoot, ".state");
-  // Preserve native OpenCode auth/session storage in the user's real data dir.
-  const defaultDataHome = path.join(
-    process.env.USERPROFILE || process.env.HOME || "",
-    ".local",
-    "share",
-  );
-  const xdgDataHome = process.env.XDG_DATA_HOME || defaultDataHome;
-
   return {
     appRoot,
     dataRoot: resolveDataRoot(),
+    runtimeID: FRESH_RUNTIME_ID,
     backendRoot,
     opencodeConfigDir,
-    xdgConfigHome,
-    xdgDataHome,
   };
 }
 
@@ -62,9 +43,8 @@ export function resolveRuntimeConfig() {
 }
 
 /**
- * Return the env-var overrides that must be passed to any child process
- * (OpenCode server, PowerShell scripts, etc.) so they use this app's
- * isolated config and see the correct runtime root.
+ * Return only Freelancer-owned runtime variables. OpenCode resolves its own
+ * global config, custom config paths, credentials and native data locations.
  */
 export function runtimeEnv(config) {
   const c = config || resolveRuntimeConfig();
@@ -72,21 +52,18 @@ export function runtimeEnv(config) {
     FREELANCER_RUNTIME_ROOT: c.backendRoot,
     FREELANCER_NODE: process.execPath,
     FREELANCER_DATA_HOME: c.dataRoot,
-    FREELANCER_MCP_MEMORY_FILE: path.join(c.dataRoot, "mcp-memory.jsonl").replace(/\\/g, "/"),
-    OPENCODE_CONFIG_DIR: c.opencodeConfigDir,
-    OPENCODE_CONFIG: path.join(c.opencodeConfigDir, 'opencode.jsonc'),
-    XDG_CONFIG_HOME: c.xdgConfigHome,
-    XDG_DATA_HOME: c.xdgDataHome,
+    FREELANCER_RUNTIME_DATA_MODE: "unified",
+    FREELANCER_RUNTIME_ID: c.runtimeID ?? FRESH_RUNTIME_ID,
   };
 }
 
-/** New QOL data only. Existing runtime JSON and native data stay in place. */
+/** Resolve a fresh per-user Freelancer namespace; an explicit override is honored as-is. */
 export function resolveDataRoot(env = process.env, platform = process.platform, home = os.homedir()) {
   if (env.FREELANCER_DATA_HOME) {
     if (!path.isAbsolute(env.FREELANCER_DATA_HOME)) throw Error("FREELANCER_DATA_HOME must be an absolute path.");
     return path.resolve(env.FREELANCER_DATA_HOME);
   }
-  if (platform === "win32") return path.join(env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "Freelancer");
-  if (platform === "darwin") return path.join(home, "Library", "Application Support", "Freelancer");
-  return path.join(env.XDG_DATA_HOME || path.join(home, ".local", "share"), "freelancer");
+  if (platform === "win32") return path.join(env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "Freelancer", "workspace-v2");
+  if (platform === "darwin") return path.join(home, "Library", "Application Support", "Freelancer", "workspace-v2");
+  return path.join(env.XDG_DATA_HOME || path.join(home, ".local", "share"), "freelancer", "workspace-v2");
 }

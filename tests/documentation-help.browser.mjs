@@ -14,9 +14,11 @@ test('documentation help stays contextual, accessible and sourced from the READM
   const f = await own(localDataFixture());
   await mkdir(path.join(f.root, 'tools'));
   const indexer = await readFile('backend/tools/project-content-indexer.mjs', 'utf8');
-  await writeFile(path.join(f.root, 'tools', 'project-content-indexer.mjs'), indexer.replace('../../server/data/schema.sql', '../server/data/schema.sql'));
+  await writeFile(path.join(f.root, 'tools', 'project-content-indexer.mjs'), indexer.replace('../../server/data/schema.sql', '../server/data/schema.sql').replace('../../domain/content-query.mjs','../domain/content-query.mjs'));
   await mkdir(path.join(f.root, 'server', 'data'), { recursive: true });
   await copyFile('server/data/schema.sql', path.join(f.root, 'server', 'data', 'schema.sql'));
+  await mkdir(path.join(f.root,'domain'),{recursive:true});
+  await copyFile('domain/content-query.mjs',path.join(f.root,'domain','content-query.mjs'));
   await f.store.update('settings', s => ({ ...s, appearance: { ...s.appearance, theme: 'light' } }));
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true });
   await page.emulateMedia({ reducedMotion: 'reduce' });

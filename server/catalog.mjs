@@ -1,21 +1,22 @@
 import { providerCatalog } from "../domain/costs.mjs";
 
-const supported = new Set(providerCatalog.map((provider) => provider.id));
+const known = new Map(providerCatalog.map((provider) => [provider.id, provider]));
+const providerID = value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(value);
 const number = (value) =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 const string = (value) => (typeof value === "string" ? value : undefined);
 
-// OpenCode's internal provider response can include credential material. Only
-// these presentation fields may cross the application boundary, including for
-// nested models. Never spread an upstream provider or model into a response.
+// OpenCode owns the provider inventory. Copy only public presentation fields;
+// never spread an upstream provider/model object or expose credential fields.
 export function publicCatalog(value) {
   const all = (value.all ?? [])
-    .filter((provider) => supported.has(provider.id))
+    .filter((provider) => providerID(provider.id))
     .map((provider) => ({
       id: provider.id,
-      name: providerCatalog.find((p) => p.id === provider.id).name,
+      name: string(provider.name) ?? known.get(provider.id)?.name ?? provider.id,
       models: Object.fromEntries(
         Object.entries(provider.models ?? {})
+          .filter(([id]) => /^[A-Za-z0-9][A-Za-z0-9._:-]{0,199}$/.test(id))
           .filter(
             ([, model]) =>
               provider.id !== "opencode" ||
@@ -51,6 +52,6 @@ export function publicCatalog(value) {
     }));
   return {
     all,
-    connected: (value.connected ?? []).filter((id) => supported.has(id)),
+    connected: (value.connected ?? []).filter(providerID),
   };
 }

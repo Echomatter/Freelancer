@@ -24,6 +24,12 @@ Checkpoint when the conversation grows long and before ending a turn. Independen
 side workers may keep running: choose continue for useful independent parent work,
 or waiting when the next step depends on their result.
 
+Use shared knowledge only when prior evidence changes the goal's interpretation
+or implementation. Preserve source IDs, revisions and uncertainty in checkpoints
+and worker handoffs. A metadata-only pinned chat does not supply transcript
+content, and remembered status does not replace current native todos, receipts
+or source inspection.
+
 The server owns continuation, recovery and free-model replacement. Never schedule
 your own retry loop or change the executor. Ask native questions for missing user
 input. Report repeated failures or blocked capacity with the partial work intact.

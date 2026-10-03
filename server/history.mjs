@@ -4,6 +4,8 @@ import { createLocalDataService, isLocalDataUnavailable } from "./data/store.mjs
 import { maintainLocalData } from './data/maintenance.mjs';
 import { openDataFolder } from "./native-data.mjs";
 import { importedChatID } from './chatgpt-import.mjs';
+import { openCodeSourceIdentity } from './data/opencode-warehouse.mjs';
+import { contentMatch, contentFilters } from '../domain/content-query.mjs';
 import {
   idPattern,
   sessionKey,
@@ -35,6 +37,7 @@ export function createHistoryService({
 }) {
   let capabilities, databaseLocation;
   const indexing = new Map();
+  let openCodeSource;
   let projectArchiveIndexer;
   const data = () => localData.get();
   const projectsToIndex = (projects, projectID, includeArchivedProject = false) => {
@@ -48,6 +51,19 @@ export function createHistoryService({
   };
   const request = (project, route, options = {}) =>
     host.request(route, { ...options, directory: project.directory });
+  async function sourceIdentity() {
+    if (!openCodeSource) {
+      openCodeSource = (async () => {
+        const locator = host.databasePath ? await host.databasePath() : undefined;
+        return openCodeSourceIdentity(locator);
+      })();
+    }
+    return openCodeSource;
+  }
+  async function captureOpenCode(projectID, session, messages) {
+    const source = await sourceIdentity();
+    return data().recordOpenCodeSnapshot({ ...source, projectID, session, messages });
+  }
   async function own(project, id) {
     if (!idPattern.test(id || "")) throw Error("Choose a chat.");
     if (importedChatID(id)) {
@@ -209,8 +225,73 @@ export function createHistoryService({
       const project = await app.project(projectID);
       const session = await own(project, id);
       if (data().projects()[projectID]?.archivedAt || app.indexJobs?.isArchiving(projectID)) return false;
-      if (Array.isArray(messages)) data().indexChat(projectID, session, messages);
+      if (Array.isArray(messages)) {
+        data().indexChat(projectID, session, messages);
+        await captureOpenCode(projectID, session, messages);
+      }
       return true;
+    },
+    async backfillOpenCode({projectID,resume=true,pageSize=100,onProgress=()=>{},signal}={}) {
+      const page=Math.max(1,Math.min(500,Number(pageSize)||100));
+      const registered=(await app.store.read('settings')).projects;
+      const projects=projectID?registered.filter(row=>row.id===projectID):registered;
+      if(projectID&&!projects.length) throw Error('Choose a registered project.');
+      const results=[];
+      for(const project of projects) {
+        signal?.throwIfAborted();
+        const source=await sourceIdentity(),started=data().beginOpenCodeIngest({...source,projectID:project.id,mode:'backfill',resume});
+        let cursor=started.cursor,requestStart=Number(cursor?.start)||0,previousID=typeof cursor?.previousID==='string'?cursor.previousID:null,pendingFailureOffset=null,pendingFailurePreviousID=null,discovered=0,captured=0,messagesCaptured=0,failed=0,complete=false;
+        onProgress(`Backfilling OpenCode history · ${project.name}`);
+        try {
+          while(true) {
+            signal?.throwIfAborted();
+            const pageStart=requestStart;
+            const params=new URLSearchParams({directory:project.directory,limit:String(page),start:String(pageStart)});
+            const batch=await host.request(`/session?${params.toString()}`,{directory:project.directory});
+            if(!Array.isArray(batch)) throw Error('OpenCode did not return a session page.');
+            if(pageStart>0&&batch.length) {
+              const boundaryParams=new URLSearchParams({directory:project.directory,limit:'2',start:String(pageStart-1)});
+              const boundary=await host.request(`/session?${boundaryParams.toString()}`,{directory:project.directory});
+              if(!Array.isArray(boundary)||boundary.length<2||
+                (previousID&&boundary[0]?.id!==previousID)||boundary[1]?.id!==batch[0]?.id) {
+                cursor={start:0};
+                throw Error('OpenCode session ordering changed across the backfill page boundary. Resume from the beginning to reconcile the observed session set.');
+              }
+            }
+            const valid=batch.filter(session=>idPattern.test(session.id||'')&&sameDirectory(session.directory,project.directory));
+            discovered+=valid.length;
+            for(let position=0;position<valid.length;position++) {
+              const session=valid[position];
+              const sessionOffset=pageStart+batch.indexOf(session);
+              const priorID=sessionOffset>0?(batch[batch.indexOf(session)-1]?.id??previousID):null;
+              signal?.throwIfAborted();
+              try {
+                const nativeMessages=await request(project,`/session/${encodeURIComponent(session.id)}/message`);
+                if(!Array.isArray(nativeMessages)) throw Error('OpenCode did not return a message array.');
+                await captureOpenCode(project.id,session,nativeMessages);
+                captured++;messagesCaptured+=nativeMessages.length;
+              } catch(error) {
+                failed++;if(pendingFailureOffset===null){pendingFailureOffset=sessionOffset;pendingFailurePreviousID=priorID;}
+                data().recordOpenCodeIngestFailure({runID:started.runID,sessionID:session.id,error:error.message});
+              }
+              requestStart=sessionOffset+1;
+              previousID=session.id;
+              cursor={start:pendingFailureOffset??requestStart,previousID:pendingFailureOffset===null?previousID:pendingFailurePreviousID};
+              data().checkpointOpenCodeIngest({runID:started.runID,cursor,discoveredSessions:discovered,capturedSessions:captured,capturedMessages:messagesCaptured,failedSessions:failed});
+            }
+            requestStart=pageStart+batch.length;
+            previousID=batch.at(-1)?.id??previousID;
+            if(batch.length<page) { complete=failed===0;cursor=complete?null:{start:pendingFailureOffset??requestStart,previousID:pendingFailureOffset===null?previousID:pendingFailurePreviousID};break; }
+            if(!valid.length) { throw Error('OpenCode returned a full page with no valid sessions; cursor is unchanged.'); }
+          }
+          results.push(data().checkpointOpenCodeIngest({runID:started.runID,cursor,discoveredSessions:discovered,capturedSessions:captured,capturedMessages:messagesCaptured,failedSessions:failed,complete,status:complete?'complete':'partial'}));
+        } catch(error) {
+          const savedCursor=cursor??started.cursor??null;
+          data().checkpointOpenCodeIngest({runID:started.runID,cursor:savedCursor,discoveredSessions:discovered,capturedSessions:captured,capturedMessages:messagesCaptured,failedSessions:failed,status:'partial'});
+          results.push({runID:started.runID,status:'partial',cursor:savedCursor,error:error.message,discoveredSessions:discovered,capturedSessions:captured,capturedMessages:messagesCaptured,failedSessions:failed});
+        }
+      }
+      return {projects:results.length,results,coverage:data().openCodeCoverage()};
     },
     async rebuildChatSearch({ projectID, includeArchivedProject = false, onProgress = () => {}, signal } = {}) {
       if (app.indexJobs?.isArchiving() && !includeArchivedProject)
@@ -222,7 +303,7 @@ export function createHistoryService({
         const projects = projectsToIndex(registered, projectID, includeArchivedProject);
         if (app.indexJobs?.isArchiving() && !includeArchivedProject)
           throw Object.assign(Error('A project is being put away. General index refresh is paused.'), { status: 409 });
-        const summary = { projects: 0, conversations: 0, messages: 0, failures: [] };
+        const summary = { projects: 0, conversations: 0, messages: 0, warehouseSessions: 0, warehouseMessages: 0, warehouseRevisions: 0, failures: [] };
         for (const project of projects) {
           signal?.throwIfAborted();
           onProgress(`Reading conversations · ${project.name}`);
@@ -245,8 +326,12 @@ export function createHistoryService({
               if (!includeArchivedProject && (app.indexJobs?.isArchiving(project.id) || data().projects()[project.id]?.archivedAt))
                 throw Error("The project was put away during indexing; its archived search copy was left unchanged.");
               data().indexChat(project.id, session, messages);
+                const warehouse = await captureOpenCode(project.id,session,messages);
                 summary.conversations++;
                 summary.messages += messages.length;
+                summary.warehouseSessions++;
+                summary.warehouseMessages += warehouse.messages;
+                summary.warehouseRevisions += warehouse.messageRevisionsAdded;
               } catch (error) {
                 summary.failures.push({ project: project.name, conversation: session.title || session.id, error: error.message });
               }
@@ -306,9 +391,10 @@ export function createHistoryService({
       if (typeof query !== "string" || !query.trim())
         return { results: [], coverage: "Search indexed files across registered projects." };
       if (query.length > 200) throw Error("Search is limited to 200 characters.");
-      const terms = query.match(/[\p{L}\p{N}_]+/gu) ?? [];
-      if (!terms.length)
+      const match=contentMatch(query,{phrase:options.phrase===true});
+      if (!match)
         return { results: [], coverage: "Enter words to search indexed file content." };
+      const filters=contentFilters(options);
       const settingsProjects = (await app.store.read("settings")).projects;
       if (options.project && !settingsProjects.some((item) => item.id === options.project))
         throw Error("Choose a registered project.");
@@ -324,8 +410,7 @@ export function createHistoryService({
           archived: !!organizations[item.id]?.archivedAt,
         }));
       const byKey = new Map(projects.map((item) => [item.key, item]));
-      const match = terms.map((term) => `"${term}"`).join(" AND ");
-      const hits = data().searchFiles(match, [...byKey.keys()], options.limit);
+      const hits = data().searchFiles(match, [...byKey.keys()], filters, options.limit);
       return {
         results: hits.flatMap(({ projectKey, ...hit }) => {
           const project = byKey.get(projectKey);
@@ -449,12 +534,8 @@ export function createHistoryService({
       if (typeof body.pinned !== "boolean" || !Number.isInteger(body.revision))
         throw Error("Choose Pin or Unpin.");
       data().remember(projectID, [session]);
-      return data().annotate(
-        projectID,
-        id,
-        { pinnedAt: body.pinned ? Date.now() : null },
-        body.revision,
-      );
+      return data().setConversationPin({ projectID,sessionID:id,title:session.title,
+        parentID:session.parentID,pinned:body.pinned,revision:body.revision });
     },
     async archive(projectID, id, body, fence) {
       if (

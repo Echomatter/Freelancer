@@ -6,6 +6,7 @@ import path from "node:path";
 import os from "node:os";
 import { createApplication } from "../server/application.mjs";
 import { createStore } from "../server/store.mjs";
+import { parse } from 'jsonc-parser';
 import { defaults } from "../shared/strategy.mjs";
 import { startServer } from "../server/http.mjs";
 
@@ -48,7 +49,19 @@ async function fixture(t, realPreferences = false) {
         ...checkedCatalog(await store.read("settings")).agents.filter(a=>!nativeAgents.some(n=>n.name===a.id)).map(a=>({name:a.id,mode:'all',permission:[]})),
         ...nativeAgents.map(a=>({mode:"all",permission:[],...a})),
       ];
-      if (route === "/config") return nativeDefaults;
+      if (route === '/instance/dispose') return true;
+      if (route === "/config") {
+        let projectConfig = {};
+        for (const file of ['.opencode/opencode.jsonc', '.opencode/opencode.json', 'opencode.jsonc', 'opencode.json']) {
+          try {
+            const errors = [];
+            projectConfig = parse(await readFile(path.join(options?.directory ?? directory, file), 'utf8'), errors, { allowTrailingComma: true });
+            if (errors.length) throw Error('Invalid native fixture JSONC.');
+            break;
+          } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        }
+        return { ...nativeDefaults, ...projectConfig };
+      }
       if (route === "/config/providers") return nativeProviders;
       if (route === "/session/status") return status;
       if (route === "/session" && options?.method === "POST")
@@ -65,6 +78,8 @@ async function fixture(t, realPreferences = false) {
                 ...extraModels,
               },
             },
+            { id: "opencode-go", models: {} },
+            { id: "github-copilot", models: {} },
           ],
         };
       if (route === "/session?limit=1000") return rows;
@@ -118,6 +133,7 @@ async function fixture(t, realPreferences = false) {
     root,
     directory,
     app,
+    host,
     calls,
     store,
     set failSend(value) {
@@ -190,7 +206,7 @@ test('chat display reuses model metadata while bootstrap, send and connection ch
   assert.equal(reads(), initial + 2, 'dispatch checks current native models');
   await f.app.auth('opencode-go', 'key', { key: 'fake-test-key' });
   await f.app.chat(p.id, 'ses_owned');
-  assert.equal(reads(), initial + 3, 'credential lifecycle invalidates displayed metadata');
+  assert.equal(reads(), initial + 3, 'native auth methods validate the provider and credential lifecycle refreshes displayed metadata');
 });
 
 test("opening a folder installs project defaults and preserves project source", async (t) => {
@@ -266,6 +282,35 @@ test("model validation rejects unconnected or metered free-provider models", asy
   const call = f.calls.find((c) => c.route.endsWith("prompt_async"));
   assert.equal(call.options.body.model.modelID, "free");
   assert.match(call.options.body.messageID, /^msg_[0-9a-f]{32}$/);
+});
+test("native provider inventory does not require a Freelancer billing catalog entry", async (t) => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  f.nativeProviders = { providers: [{ id:'custom-provider', models:{ model:{} } }] };
+  const plans = (await import('../domain/costs.mjs')).normalizePlans({ providers:{ 'custom-provider':{} } });
+  assert.equal(plans.providers['custom-provider'].mode, 'unknown');
+});
+
+test('native provider models and API-key methods work without a Freelancer catalog entry', async t => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  const native = f.host.request.bind(f.host);
+  f.host.request = async (route, options = {}) => route === '/provider'
+    ? { connected: ['custom-provider'], all: [{ id: 'custom-provider', name: 'Custom provider', models: {
+      model: { cost: { input: 1, output: 2 } },
+    } }] }
+    : native(route, options);
+  f.authMethods = { 'custom-provider': [{ type: 'api', label: 'Provider API key' }] };
+  const boot = await f.app.bootstrap(p.id);
+  assert.equal(boot.providers.all[0].id, 'custom-provider');
+  assert.equal(boot.models.find(model => model.id === 'custom-provider/model').costClass, 'unknown');
+  await f.app.auth('custom-provider', 'key', { key: 'fixture-only-key' });
+  assert(f.calls.some(call => call.route === '/auth/custom-provider' && call.options.body.type === 'api'));
+  await f.app.saveSessionDefaults(p.id, {
+    revision: 0, agentID: 'engineer', parentModel: 'custom-provider/model', reasoningVariant: '',
+  });
+  assert.equal(parse(await readFile(path.join(f.directory, 'opencode.jsonc'), 'utf8')).model, 'custom-provider/model');
+  f.authMethods = { 'oauth-only': [{ type: 'oauth', label: 'Browser sign-in' }] };
+  await assert.rejects(f.app.auth('oauth-only', 'key', { key: 'fixture-only-key' }), /does not offer API-key/);
+  await assert.rejects(f.app.auth('missing-provider', 'key', { key: 'fixture-only-key' }), /Unsupported provider/);
 });
 test("file previews cannot escape a registered project", async (t) => {
   const f = await fixture(t),
@@ -851,6 +896,10 @@ test("new-chat defaults are project scoped and leave existing chats and legacy p
     "reasoningVariant",
     "revision",
   ]);
+  assert.equal(f.calls.some(call => call.route === "/instance/dispose" && call.options?.method === "POST"), true);
+  assert.equal(parse(await readFile(path.join(f.directory, 'opencode.jsonc'), 'utf8')).model, 'opencode/reasoning');
+  assert.equal((await f.store.read("settings")).sessionDefaults[p.id].parentModel, undefined,
+    "OpenCode owns the project model default while Freelancer retains agent and presentation defaults");
   assert.deepEqual(
     await loadPreferences(f.root, f.directory, "ses_owned"),
     before,
@@ -889,6 +938,93 @@ test("new-chat defaults are project scoped and leave existing chats and legacy p
     f.app.saveSessionDefaults(p.id, { ...saved, revision: 0 }),
     /changed elsewhere/,
   );
+});
+
+test('project defaults follow native configuration instead of a stale app model preference', async t => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  f.nativeDefaults = { model: 'opencode/free' };
+  await f.store.update('settings', settings => ({ ...settings, sessionDefaults: {
+    ...settings.sessionDefaults, [p.id]: { agentID: 'engineer', parentModel: 'opencode/stale', reasoningVariant: '', revision: 4 },
+  } }));
+  assert.equal((await f.app.bootstrap(p.id)).sessionDefaults.parentModel, 'opencode/free');
+  await f.app.createChat(p.id);
+  assert.equal((await f.store.read('settings')).chatChoices.ses_new.model, 'opencode/free');
+});
+
+test('native project model saves preserve JSONC and serialize competing revisions', async t => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  f.extraModels = { alternative: { cost: { input: 0, output: 0 } } };
+  const file = path.join(f.directory, 'opencode.jsonc');
+  await writeFile(file, '{\n  // Native preferences stay intact.\n  "model": "opencode/alternative",\n  "compaction": { "auto": false, "prune": true, "reserved": 8192 },\n  "permission": { "bash": "ask" },\n}\n');
+  const input = { revision: 0, agentID: 'engineer', parentModel: 'opencode/free', reasoningVariant: '' };
+  const outcomes = await Promise.allSettled([
+    f.app.saveSessionDefaults(p.id, input),
+    f.app.saveSessionDefaults(p.id, { ...input, parentModel: 'opencode/alternative' }),
+  ]);
+  assert.equal(outcomes[0].status, 'fulfilled');
+  assert.equal(outcomes[1].status, 'rejected');
+  assert.match(outcomes[1].reason.message, /changed elsewhere/);
+  const text = await readFile(file, 'utf8'), config = parse(text);
+  assert.match(text, /Native preferences stay intact/);
+  assert.equal(config.model, 'opencode/free');
+  assert.deepEqual(config.compaction, { auto: false, prune: true, reserved: 8192 });
+  assert.deepEqual(config.permission, { bash: 'ask' });
+  assert.equal((await f.store.read('settings')).sessionDefaults[p.id].revision, 1);
+});
+
+test('native model changes reject active work and pending native decisions before writing', async t => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  const input = { revision: 0, agentID: 'engineer', parentModel: 'opencode/free', reasoningVariant: '' };
+  f.status = { ses_owned: { type: 'busy' } };
+  await assert.rejects(f.app.saveSessionDefaults(p.id, input), /running chats/);
+  f.status = {};
+  f.permissions = [{ id: 'permission_pending' }];
+  await assert.rejects(f.app.saveSessionDefaults(p.id, input), /pending native decisions/);
+  await assert.rejects(readFile(path.join(f.directory, 'opencode.jsonc')), { code: 'ENOENT' });
+  assert.equal((await f.store.read('settings')).sessionDefaults?.[p.id], undefined);
+});
+
+test('an unconfirmed OpenCode project model save rolls back its new config file', async t => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  const native = f.host.request.bind(f.host);
+  f.host.request = async (route, options = {}) => {
+    const result = await native(route, options);
+    if (route === '/config' && !options.method && options.directory === f.directory)
+      return { ...result, model: 'opencode/unconfirmed' };
+    return result;
+  };
+  await assert.rejects(f.app.saveSessionDefaults(p.id, {
+    revision: 0, agentID: 'engineer', parentModel: 'opencode/free', reasoningVariant: '',
+  }), /did not confirm/);
+  await assert.rejects(readFile(path.join(f.directory, 'opencode.jsonc')), { code: 'ENOENT' });
+  assert.equal((await f.store.read('settings')).sessionDefaults?.[p.id], undefined);
+});
+
+test('failure to refresh native instances or save app defaults restores prior JSONC', async t => {
+  for (const failure of ['native refresh', 'app settings commit']) await t.test(failure, async child => {
+    const f = await fixture(child), p = await f.app.addProject(f.directory);
+    const file = path.join(f.directory, 'opencode.jsonc');
+    const prior = '{\n  // Preserved after failure.\n  "model": "opencode/previous",\n  "permission": { "bash": "ask" }\n}\n';
+    await writeFile(file, prior);
+    if (failure === 'native refresh') {
+      const native = f.host.request.bind(f.host);
+      f.host.request = async (route, options = {}) => {
+        if (route === '/global/dispose') throw Error('Native refresh failed');
+        return native(route, options);
+      };
+    } else {
+      const update = f.store.update.bind(f.store);
+      f.store.update = async (name, mutation) => {
+        if (name === 'settings') throw Error('App settings commit failed');
+        return update(name, mutation);
+      };
+    }
+    await assert.rejects(f.app.saveSessionDefaults(p.id, {
+      revision: 0, agentID: 'engineer', parentModel: 'opencode/free', reasoningVariant: '',
+    }), /failed/i);
+    assert.equal(await readFile(file, 'utf8'), prior);
+    assert.equal((await f.store.read('settings')).sessionDefaults?.[p.id], undefined);
+  });
 });
 
 test("defaults validate real models and native intelligence through the HTTP endpoint", async (t) => {
@@ -932,6 +1068,7 @@ test("defaults validate real models and native intelligence through the HTTP end
 test("new chats follow the starting agent and recover when a custom default is deleted", async (t) => {
   const f = await fixture(t),
     p = await f.app.addProject(f.directory);
+  f.nativeDefaults = { model: "opencode/free" };
   const agent = await f.app.saveAgent({
     name: "Default parent",
     model: "opencode/free",

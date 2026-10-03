@@ -35,6 +35,7 @@ import {
 } from "../domain/costs.mjs";
 import { createStore } from "./store.mjs";
 import { createLocalDataService, isLocalDataUnavailable } from "./data/store.mjs";
+import { createTypeSafeJudgmentProvider } from './data/judgment-provider.mjs';
 import { normalizeAttachments } from "../domain/attachments.mjs";
 import { publicCatalog } from "./catalog.mjs";
 import { sessionSummary } from "../shared/view.mjs";
@@ -54,6 +55,7 @@ import { executionPrompt, policyVersion } from "./execution.mjs";
 import { createGitProjects } from "./git-project.mjs";
 import { createContextSettings } from './context-settings.mjs';
 import { createCapabilities } from './capabilities.mjs';
+import { updateOpenCodeProjectModel } from './opencode-project-config.mjs';
 import { gitExecutionContract } from "../domain/git-project.mjs";
 import { senderState } from "../domain/sender.mjs";
 
@@ -88,7 +90,6 @@ export function createApplication({
   gitOptions = {},
   importOptions = {},
 }) {
-  const supported = new Set(providerCatalog.map((p) => p.id));
   const localData = createLocalDataService(dataRoot ?? path.join(backendRoot, ".state", "local-data"));
   const gitProjects = createGitProjects({ store, project, host, backendRoot, ...gitOptions });
   let connecting = false;
@@ -98,6 +99,7 @@ export function createApplication({
   let refreshingUsage;
   let providerFlight;
   let providerSnapshot;
+  const sessionDefaultWrites = new Map();
   async function changeCredentials(change, checkDecisions = false) {
     if (connecting || sending || refreshingContext || refreshingAgents)
       throw Error("Wait for the current action to finish before connecting.");
@@ -175,6 +177,12 @@ export function createApplication({
       .finally(() => { providerFlight = undefined; });
     return providerFlight;
   }
+  function costClass(providerID, plans) {
+    const configured = plans.providers[providerID]?.mode;
+    const known = providerCatalog.find(provider => provider.id === providerID);
+    const mode = configured ?? known?.mode ?? 'unknown';
+    return mode === 'api' ? 'metered' : mode;
+  }
   async function nativeModels(p, session) {
     const [agents, config, history] = await Promise.all([
       request(p, "/agent"),
@@ -205,13 +213,11 @@ export function createApplication({
     native ??= await nativeModels(p, null).catch(() => ({}));
     const base = preferences.defaults ?? preferences.preferences;
     return sessionDefaults(
-      settings.sessionDefaults?.[p.id],
+      { ...settings.sessionDefaults?.[p.id], parentModel: undefined },
       workspaceCatalog(settings),
       {
-        parentModel:
-          base?.parentModel && base.parentModel !== "auto"
-            ? base.parentModel
-            : native.default,
+        parentModel: native.default ||
+          (base?.parentModel && base.parentModel !== "auto" ? base.parentModel : ""),
         reasoningVariant: base?.reasoningVariant ?? "",
       },
     );
@@ -258,6 +264,7 @@ export function createApplication({
     store,
     project,
     gitProjects,
+    judgmentProvider: createTypeSafeJudgmentProvider(),
     modelRatings,
     listProjectFolders,
     async rebuildContentIndex({ projectID, includeArchivedProject = false, onProgress = () => {}, signal } = {}) {
@@ -441,8 +448,7 @@ export function createApplication({
         quota: snapshot.usage?.providers?.find((p) => p.id === (row.surface ??
           providerCatalog.find((p) => p.id === row.provider)?.surface))?.availableRemaining ?? null,
         surface: row.surface ?? providerCatalog.find((p) => p.id === row.provider)?.surface,
-        costClass: settings.plans.providers[row.provider].mode === 'free' ? 'free'
-          : settings.plans.providers[row.provider].mode === 'api' ? 'metered' : 'subscription',
+        costClass: costClass(row.provider, settings.plans),
       }));
       let ratings = {}, localDataError;
       try { ratings = modelRatings.catalog(catalogRows); }
@@ -470,6 +476,7 @@ export function createApplication({
           records: Object.values(ledger.records),
           usage: snapshot.usage,
           connected: catalog.connected,
+          nativeProviders: catalog.all,
         }),
       };
     },
@@ -526,7 +533,9 @@ export function createApplication({
       if (snapshot.preferences.scope === "default")
         await backend.save({
           scope: "project",
-          preferences: snapshot.preferences.preferences,
+          // Persist Freelancer's execution policy without shadowing the native
+          // OpenCode model or reasoning defaults.
+          preferences: { ...snapshot.preferences.preferences, parentModel: "auto", reasoningVariant: "" },
           revision: snapshot.preferences.revision,
         });
       // The app-local OpenCode resources supply the plugin, five skills,
@@ -802,45 +811,75 @@ export function createApplication({
       };
     },
     async saveSessionDefaults(id, input) {
-      await project(id);
-      const catalog = await providers();
-      const result = await store.update("settings", (s) => {
-        const previous = s.sessionDefaults?.[id];
+      const p = await project(id);
+      const previousWrite = sessionDefaultWrites.get(id) ?? Promise.resolve();
+      let release;
+      const gate = new Promise(resolve => { release = resolve; });
+      const queuedWrite = previousWrite.catch(() => {}).then(() => gate);
+      sessionDefaultWrites.set(id, queuedWrite);
+      await previousWrite.catch(() => {});
+      let nativeSave;
+      try {
+        const catalog = await providers();
+        const settings = await store.read("settings");
+        const previous = settings.sessionDefaults?.[id];
         if (input.revision !== (previous?.revision ?? 0))
           throw Error("Defaults changed elsewhere. Reload before saving.");
-        const value = normalizeSessionDefaults(input, workspaceCatalog(s));
-        if (
-          value.parentModel &&
-          startingChoices(value, workspaceCatalog(s)).model !== "inherit"
-        ) {
+        const workspace = workspaceCatalog(settings);
+        const value = normalizeSessionDefaults(input, workspace);
+        const modelChoice = startingChoices(value, workspace).model;
+        let nativeParentModel;
+        if (value.parentModel && modelChoice !== "inherit") {
           const slash = value.parentModel.indexOf("/");
           const providerID = value.parentModel.slice(0, slash),
             modelID = value.parentModel.slice(slash + 1);
-          const model = catalog.all.find((p) => p.id === providerID)?.models[
-            modelID
-          ];
-          if (
-            !model ||
-            (providerID !== "opencode" &&
-              !catalog.connected.includes(providerID))
-          )
+          const model = catalog.all.find((provider) => provider.id === providerID)?.models[modelID];
+          if (!model || (providerID !== "opencode" && !catalog.connected.includes(providerID)))
             throw Error("Choose an available parent model");
-          if (
-            value.reasoningVariant &&
-            !model.variants.includes(value.reasoningVariant)
-          )
+          if (value.reasoningVariant && !model.variants.includes(value.reasoningVariant))
             throw Error("Choose an intelligence level reported by this model");
+          // Save supported native config files; some OpenCode builds write an
+          // unread config.json when PATCH /config is used.
+          await changeCredentials(async () => {
+            nativeSave = await updateOpenCodeProjectModel(p.directory, value.parentModel);
+            await request(p, '/instance/dispose', { method: 'POST' });
+            const confirmed = await request(p, '/config');
+            if (confirmed?.model !== value.parentModel)
+              throw Error('OpenCode did not confirm the project model default.');
+            nativeParentModel = confirmed.model;
+          }, true);
+        } else {
+          nativeParentModel = (await request(p, '/config')).model || '';
         }
-        return {
-          ...s,
-          revision: s.revision + 1,
-          sessionDefaults: {
-            ...s.sessionDefaults,
-            [id]: { ...value, revision: (previous?.revision ?? 0) + 1 },
-          },
-        };
-      });
-      return result.sessionDefaults[id];
+        const result = await store.update("settings", current => {
+          const currentRevision = current.sessionDefaults?.[id]?.revision ?? 0;
+          if (currentRevision !== input.revision)
+            throw Error("Defaults changed elsewhere. Reload before saving.");
+          return {
+            ...current,
+            revision: current.revision + 1,
+            sessionDefaults: {
+              ...current.sessionDefaults,
+              [id]: { agentID: value.agentID, reasoningVariant: value.reasoningVariant,
+                revision: currentRevision + 1 },
+            },
+          };
+        });
+        return { ...result.sessionDefaults[id], parentModel: nativeParentModel };
+      } catch (error) {
+        if (nativeSave) {
+          try {
+            await nativeSave.rollback();
+            await request(p, '/instance/dispose', { method: 'POST' });
+          } catch (rollbackError) {
+            throw Error(`The model setting could not be saved, and its OpenCode project config could not be restored: ${rollbackError.message}`);
+          }
+        }
+        throw error;
+      } finally {
+        release();
+        if (sessionDefaultWrites.get(id) === queuedWrite) sessionDefaultWrites.delete(id);
+      }
     },
     async createChat(id, title) {
       const p = await project(id),
@@ -941,12 +980,7 @@ export function createApplication({
             id: `${p.id}/${m}`,
             provider: p.id,
             variants: p.models[m].variants ?? [],
-            costClass:
-              settings.plans.providers[p.id].mode === "free"
-                ? "free"
-                : settings.plans.providers[p.id].mode === "api"
-                  ? "metered"
-                  : "subscription",
+            costClass: costClass(p.id, settings.plans),
           })),
         );
         const allowedModels = delegationPool(defaults, candidates, catalog.connected, childVariant)
@@ -990,7 +1024,6 @@ export function createApplication({
         }
         if (model) {
           if (
-            !supported.has(model.providerID) ||
             !catalog.all.find((p) => p.id === model.providerID)?.models[
               model.modelID
             ] ||
@@ -1192,7 +1225,7 @@ export function createApplication({
           : action === "revert"
             ? { messageID: body.messageID }
             : {};
-      if (action === "summarize" && !supported.has(payload.providerID))
+      if (action === "summarize" && !(await providers()).all.some((provider) => provider.id === payload.providerID))
         throw Error("Choose a connected model");
       if (action === "revert" && !/^msg_[\w-]+$/.test(payload.messageID ?? ""))
         throw Error("Choose a message");
@@ -1339,11 +1372,19 @@ export function createApplication({
     },
     async auth(id, action, body) {
       if (
-        !supported.has(id) ||
+        typeof id !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(id) ||
         !["authorize", "callback", "key", "disconnect"].includes(action)
       )
         throw Error("Unsupported provider");
+      const nativeMethods = connectionMethods(await host.request("/provider/auth"));
+      const methods = nativeMethods[id] ?? [];
+      const inCatalog = action === "disconnect"
+        ? (await providers()).all.some((provider) => provider.id === id)
+        : false;
+      if (!inCatalog && !methods.length) throw Error("Unsupported provider");
       if (action === "key") {
+        if (!methods.some(method => method.type === "api"))
+          throw Error("OpenCode does not offer API-key authentication for this provider.");
         if (typeof body.key !== "string" || !body.key.trim())
           throw Error("Enter an API key");
         return changeCredentials(() =>
@@ -1359,8 +1400,7 @@ export function createApplication({
         );
       if (!Number.isInteger(body.method) || body.method < 0)
         throw Error("Choose a connection method");
-      const methods = await host.request("/provider/auth");
-      const method = methods[id]?.[body.method];
+      const method = methods[body.method];
       if (method?.type !== "oauth")
         throw Error("Choose a valid connection method");
       const call = () =>

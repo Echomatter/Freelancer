@@ -8,6 +8,8 @@ test('chat-dock', { tag: ['@presentation', '@chat'] }, async ({ appBrowser: brow
   const vite = await own(createServer({ root: fileURLToPath(new URL('../', import.meta.url)), optimizeDeps: { entries: ['tests/fixtures/chat-ui.html'] }, server: { host: '127.0.0.1', port: 0 } }));
   await vite.listen();
   const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
+  page.on('pageerror', error => console.log('DEBUG pageerror', error.message));
+  page.on('console', message => { if (message.type() !== 'warning') console.log('DEBUG console', message.text()); });
   await page.goto(new URL('/tests/fixtures/chat-ui.html', vite.resolvedUrls.local[0]).href);
   const scroll = page.locator('.chat-scroll'), dock = page.locator('.chat-tool-overlay');
   await test.step('Current-turn tools stay docked while the transcript scrolls', async () => {
@@ -54,6 +56,8 @@ test('chat-dock', { tag: ['@presentation', '@chat'] }, async ({ appBrowser: brow
     await page.getByRole('button', { name: 'Append tool', exact: true }).click();
     await expect(dock.locator('.tool-card summary').filter({ hasText: 'Read live-update.ts' })).toBeVisible();
     await page.getByRole('button', { name: 'Append delegation handoff' }).click();
+    await page.waitForTimeout(100);
+    console.log('DEBUG handoff DOM', await page.locator('.chat-transcript').evaluate(el => ({ groups:el.querySelectorAll('.request-group').length, cards:el.querySelectorAll('.handoff-card').length, text:el.innerText.slice(-300) })));
     await page.getByRole('button', { name: 'Open agents for turn 12', exact: true }).click();
     await expect(page.locator('.handoff-card')).toBeVisible();
     await expect(page.locator('.chat-view')).toHaveCount(1);

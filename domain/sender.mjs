@@ -55,36 +55,3 @@ export const isInternalMessage = message => message?.info?.role === 'user' && me
 
 export function userInitiatedRequest(text) {
   const match = typeof text === 'string' && text.match(/^\[Freelancer (Delegate|Queue|Steer) handoff [\w-]+\]\n/);
-  if (!match) return null;
-  const marker = match[1] === 'Delegate' ? 'User concern:\n'
-    : match[1] === 'Queue' ? 'User request:\n' : 'User correction:\n';
-  const markerAt = text.lastIndexOf(marker);
-  return { kind: match[1].toLowerCase(), text: markerAt >= 0 ? text.slice(markerAt + marker.length).trim() : text.slice(match[0].length).trim() };
-}
-
-export function queuePrompt(text, id) {
-  return `[Freelancer Queue handoff ${id}]\nQueued user request. Continue it after the current response finishes, preserving the conversation's context and constraints.\n\nUser request:\n${text}`;
-}
-
-export function steerPrompt(text, id) {
-  return `[Freelancer Steer handoff ${id}]\nAdjust the ongoing work at the next supported boundary. Incorporate this correction yourself; delegation is not required. Preserve the original objective except where this update changes it, native todos, outstanding workers, captured constraints, permissions, parent agent/model and goal identity. Do not cancel queued input or restart the assignment. Tools already executing may finish before this update takes effect.\n\nUser correction:\n${text}`;
-}
-
-export function clarifyPrompt(text, model, id, original = '') {
-  return `[Freelancer Delegate handoff ${id}]\n` +
-    `The user submitted a bounded concern while the original task continues. This is not a request to stop or replace that task.\n` +
-    (model === 'auto'
-      ? `At your next safe tool boundary, use delegate with an appropriate named agent and bounded task from the supplied catalog for the concern below, using its saved model default or normal eligible selection when unpinned. Do not change the parent model.\n`
-      : `At your next safe tool boundary, use delegate with an appropriate named agent and bounded task using model=${JSON.stringify(model)} for the concern below. The user explicitly selected this worker model. Do not change the parent model.\n`) +
-    `Keep the assignment narrow, include handoff ID ${id} in the worker task for correlation, pass the relevant original-task context, preserve its exclusions and permissions, and give concurrent writers disjoint files. Do not infer source-write permission from the Delegate action itself. Continue independent original-task work and integrate the worker's result.\n` +
-    `Use the normal delegation eligibility, quota and native permission checks; do not bypass them. Report a blocked/failed handoff honestly instead of claiming a worker started.\n\n` +
-    (original ? `Original parent request (context and constraints, not the worker assignment):\n${original}\n\n` : '') +
-    `User concern:\n${text}`;
-}
-
-export function senderAction({ busy, draft, loading, available, hasAttachments = false }) {
-  if (loading) return 'loading';
-  if (busy && !draft.trim()) return 'stop';
-  if (busy && draft.trim()) return 'handoff';
-  return available && (draft.trim() || hasAttachments) ? 'send' : 'disabled';
-}

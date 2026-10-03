@@ -46,9 +46,9 @@ The server prints a JSON line containing its loopback `url`. Open that URL. The 
 ## First use
 
 1. **Choose the project folder.** Use the project picker to add/open the directory you intend the model to inspect. Enter the absolute folder path; no native folder chooser is required. When enabling managed Git history, use the repository root rather than a nested directory. Opening a folder does not upload it to GitHub.
-2. **Connect providers.** Expand **Application settings → Providers** in the bottom sidebar. The application exposes OpenAI, GitHub Copilot, OpenCode Go, and OpenCode Free. Native OpenCode supplies the authentication methods and model inventory. OpenCode Go can use its native key method; do not paste credentials into a chat. Provider/model availability depends on the actual connection, not a README model list.
+2. **Connect providers.** Expand **Application settings → Providers** in the bottom sidebar. Its provider and model list comes from your OpenCode installation; connection methods and credentials are handled by OpenCode's native auth flow. Do not paste credentials into a chat. Provider/model availability depends on the actual connection, not a README model list. General OpenCode options and MCP servers stay in your native OpenCode configuration and are shared with Freelancer.
 3. **Choose the parent and job.** Select an available model and its reported intelligence level and a named agent. Describe planning, exploration or review intent in the request itself. The same Agents catalog is used for delegated work; custom agents need no extra backend definition. Only native permissions, user constraints and project agreements set authority.
-4. **Set useful defaults.** **Project settings → Session defaults** stores the starting persona, parent model, and intelligence choice for the selected project. Set worker concurrency, depth, free preference and paid behavior under **Project settings → Delegation**.
+4. **Set useful defaults.** **Project settings → Session defaults** stores the starting named agent and intelligence choice; the default model is saved in the project’s native OpenCode configuration. Set worker concurrency, depth, free preference and paid behavior under **Project settings → Delegation**.
 5. **Send a bounded request.** Watch native questions/permissions and the Details panel. Waiting for permission is not the same as active execution. Open a child card to inspect its own conversation. Use a disposable project and free model for an initial inference test where appropriate.
 
 The **Available Usage** meter is an estimate from provider observations. A missing percentage is not proof of exhaustion. Its sidebar disclosure keeps you in the current chat. [Interpret the meter →](available-usage.md)
@@ -82,7 +82,7 @@ remembered devices with a one-time QR code. See [remote access](network-access.m
 
 The tray **Restart server** command sends the server's authenticated shutdown request, waits for its process and application lock to close, then starts it again. It never force-kills a live server. The equivalent command is `scripts/restart-web.ps1`. Use **Exit Freelancer** to stop both tray and server.
 
-If local search data is irreparably corrupt and you accept losing its derived indexes and imported local history, stop the server with **Exit Freelancer**, then run `node scripts/reset-local-data.mjs --confirm`. The reset acquires the application lock, validates a fresh database, replaces only the Freelancer SQLite file family, and verifies the settings JSON is unchanged. Native OpenCode chats and project files remain elsewhere. Relaunch Freelancer and use **Application settings → Content & Storage → Refresh File Index** and **Refresh Conversation Index** to rebuild retrieval data.
+If the Freelancer database cannot be recovered and you choose to reset all local Freelancer data, stop the server with **Exit Freelancer**, inspect any pending or uncertain deliveries, then run `node scripts/reset-local-data.mjs --confirm`. The reset acquires the application lock, validates a fresh registered database, replaces the Freelancer SQLite file family, restores project/domain settings, and preserves the separate application-settings document. It deletes local drafts, receipts, goals, schedules, usage observations, memories, pins, indexed evidence, and imported local history. Native OpenCode conversations and credentials, project source files, and Git history remain under their existing owners. Relaunch Freelancer and use **Application settings → Content & Storage → Refresh File Index** and **Refresh Conversation Index** to rebuild retrieval data.
 
 ## Updating and recovery
 
@@ -107,7 +107,7 @@ Use the new printed URL. A browser reload alone leaves old server code running. 
 | Archive is blocked | Resolve active work, pending questions/permissions, or unresolved sender delivery. Archive does not implicitly stop or cancel them. |
 | Git action is blocked | Reinspect the agreement, preview, repository state, and credential-store guidance. Do not force-push or use raw shell commands to bypass the managed action. |
 
-**Application settings → Content & Storage** shows resolved locations. `FREELANCER_DATA_HOME` must be absolute and affects the new organization/draft store only; it does not migrate old JSON settings or OpenCode data. Archive is not a backup. [Data and recovery limits →](local-data.md)
+**Application settings → Content & Storage** shows resolved locations. `FREELANCER_DATA_HOME` must be absolute and selects the unified per-user Freelancer database and its separate Freelancer-only settings document. A fresh install does not import earlier Freelancer files or databases; OpenCode configuration, credentials and conversations remain under OpenCode's native ownership. Archive is not a backup. [Data and recovery limits →](local-data.md)
 
 ## Development and checks
 

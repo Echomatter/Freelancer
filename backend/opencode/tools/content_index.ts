@@ -120,6 +120,7 @@ export default tool({
       case "chats":
         if (!args.query) throw new Error("operation=chats requires query")
         cli.push("chats", args.query)
+        if (args.phrase) cli.push("--phrase")
         if (args.model) cli.push("--model", args.model)
         cli.push("--limit", String(args.limit || 20))
         break

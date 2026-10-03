@@ -52,7 +52,6 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
   // reason to silently restore the retired todo restrictions.
   const { readAgentCatalog, configureAgentProfiles } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/agent-catalog.mjs')).href)
   const { enableSessionTodos } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/todo-policy.mjs')).href)
-  const { configureContextSettings } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/context-settings.mjs')).href)
   const { recordModelInput } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/input-observations.mjs')).href)
   const { createCapabilityInventory } = await import(pathToFileURL(path.join(toolkitRoot, 'tools/runtime/capability-inventory.mjs')).href)
   let sharedSkills: string[] = []
@@ -62,7 +61,6 @@ const DelegationPlugin: Plugin = async ({ client, directory }) => {
     config: async config => {
       configureAgentProfiles(config, await readAgentCatalog(toolkitRoot))
       enableSessionTodos(config)
-      await configureContextSettings(config, toolkitRoot, directory)
       // The pinned plugin SDK's v1 Config omits the native skills extension.
       const skillsConfig = config as typeof config & { skills?: { paths?: string[]; urls?: string[] } }
       skillsConfig.skills = { ...skillsConfig.skills, paths: [...new Set([...(skillsConfig.skills?.paths || []), path.join(toolkitRoot, 'skills')])] }

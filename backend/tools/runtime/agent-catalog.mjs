@@ -95,6 +95,10 @@ export function configureAgentProfiles(config, catalog) {
   }
   for (const name of retiredAgents)
     config.agent[name] = { ...config.agent[name], disable: true };
-  config.default_agent = "engineer";
+  // Preserve a usable default chosen in native OpenCode settings. Freelancer's
+  // retired built-ins stay disabled, so only a missing or retired default
+  // falls back to the authored catalog's primary agent.
+  if (typeof config.default_agent !== "string" || !config.default_agent || retiredAgents.includes(config.default_agent))
+    config.default_agent = "engineer";
   return config;
 }

@@ -1,7 +1,7 @@
 import { checkedCatalog } from '../../backend/tools/runtime/agent-catalog.mjs';
-import { applyContextSettings } from '../../backend/tools/runtime/context-settings.mjs';
 import { loadPreferences, savePreferences } from '../../backend/tools/runtime/preferences.mjs';
-import { mkdtemp, mkdir, writeFile, rm, realpath } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, writeFile, rm, realpath } from "node:fs/promises";
+import { parse } from 'jsonc-parser';
 import { setTimeout as delay } from "node:timers/promises";
 import path from "node:path";
 import os from "node:os";
@@ -21,6 +21,7 @@ export async function localDataFixture({ gitOptions = {}, timers = true, persist
     path.join(directory, "source.txt"),
     "DO NOT MODIFY PROJECT FILES",
   );
+  await writeFile(path.join(directory, 'opencode.jsonc'), '{\n  "$schema": "https://opencode.ai/config.json",\n  "model": "opencode/free",\n  "compaction": { "auto": true, "prune": true, "reserved": 8192 }\n}\n');
   const nativeFile = path.join(root, "native-opencode.db");
   await writeFile(nativeFile, "Native ownership sentinel");
   const project = { id: "history_project", name: "History project", directory };
@@ -65,7 +66,6 @@ export async function localDataFixture({ gitOptions = {}, timers = true, persist
   const calls = [],
     exports = [];
   const row = (id) => state.sessions.find((s) => s.id === id);
-  const contextConfigs = new Map();
   const host = {
     async request(route, options = {}) {
       calls.push({ route, options });
@@ -88,13 +88,23 @@ export async function localDataFixture({ gitOptions = {}, timers = true, persist
             },
           ],
         };
-      if (route === '/instance/dispose') { contextConfigs.delete(options.directory); return true; }
+      if (route === '/instance/dispose') return true;
       if (route === "/agent") {
         const settings = await store.read('settings');
-        if (!contextConfigs.has(options.directory)) contextConfigs.set(options.directory, applyContextSettings({ model: 'opencode/free', compaction: { auto: true, prune: true, reserved: 8192 } }, settings, options.directory ?? directory));
         return checkedCatalog(settings).agents.map(a=>({name:a.id,mode:"all",permission:[]}));
       }
-      if (route === "/config") return contextConfigs.get(options.directory) ?? { model: 'opencode/free', compaction: { auto: true } };
+      if (route === "/config") {
+        let projectConfig = {};
+        for (const file of ['.opencode/opencode.jsonc', '.opencode/opencode.json', 'opencode.jsonc', 'opencode.json']) {
+          try {
+            const errors = [];
+            projectConfig = parse(await readFile(path.join(options.directory ?? directory, file), 'utf8'), errors, { allowTrailingComma: true });
+            if (errors.length) throw Error('Invalid native fixture JSONC.');
+            break;
+          } catch (error) { if (error.code !== 'ENOENT') throw error; }
+        }
+        return { model: 'opencode/free', compaction: { auto: true, prune: true, reserved: 8192 }, ...projectConfig };
+      }
       if (route === "/config/providers")
         return { providers: [{ id: "opencode", models: { free: {} } }] };
       if (route === "/session/status") return state.status;

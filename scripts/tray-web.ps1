@@ -7,16 +7,21 @@ $state = Join-Path $appRoot 'backend\.state\webpage'
 $iconPath = Join-Path $appRoot 'backend\.state\launcher\freelancer.ico'
 $mutex = New-Object Threading.Mutex($false, 'Local\FreelancerTrayController')
 $ownsTray = $false
-$preferenceFile = Join-Path $env:LOCALAPPDATA 'Freelancer\launcher.json'
 $startMode = 'chrome'
 try {
-    $saved = Read-FreelancerState $preferenceFile
-    if ($saved.startIn -in @('chrome', 'browser')) { $startMode = $saved.startIn }
+    $nodeScript = Join-Path $PSScriptRoot '..\backend\tools\runtime\application-settings-cli.mjs'
+    $settingsJson = & node --disable-warning=ExperimentalWarning $nodeScript read
+    if ($LASTEXITCODE -ne 0) { throw 'Application settings read failed.' }
+    $saved = $settingsJson | ConvertFrom-Json
+    if ($saved.values.launcher.startIn -in @('chrome', 'browser')) { $startMode = $saved.values.launcher.startIn }
 } catch { }
 
 function Set-StartMode([string]$mode) {
-    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $preferenceFile) | Out-Null
-    Write-FreelancerState $preferenceFile (@{ startIn = $mode } | ConvertTo-Json)
+    $payload = @{ launcher = @{ startIn = $mode } } | ConvertTo-Json -Compress
+    $bytes = [Text.Encoding]::UTF8.GetBytes($payload)
+    $encoded = [Convert]::ToBase64String($bytes)
+    $encoded | & node --disable-warning=ExperimentalWarning $nodeScript update-launcher
+    if ($LASTEXITCODE -ne 0) { throw 'Application settings write failed.' }
     $script:startMode = $mode
     $chromeItem.Checked = $mode -eq 'chrome'
     $browserItem.Checked = $mode -eq 'browser'

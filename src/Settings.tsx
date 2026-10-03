@@ -13,8 +13,8 @@ import { SessionDefaults } from "./SessionDefaults";
 import { ScheduledPrompts } from "./ScheduledPrompts";
 import { RemoteAccess } from "./RemoteAccess";
 import { Capabilities } from './Capabilities';
+import { providerDefaults } from '../domain/provider-colors.mjs';
 import type { SettingsScope } from "./SettingsNavigation";
-const providers = [["openai", "OpenAI"], ["github-copilot", "GitHub Copilot"], ["opencode-go", "OpenCode Go"], ["opencode", "OpenCode Free"]];
 
 export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSetting, onColorsSaved, onHistory, onOpenChat, onClose }: {
   data: any; sessionID?: string; onHistory?: () => void;
@@ -71,7 +71,10 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
         }} /></>}
     {tab === "providers" && <>
       <PageHeading title="Providers" icon={Wallet} help="providers" actions={closeAction} />
-      <div className="provider-list">{providers.map(([id, name]) => <Panel key={id} className="provider-card" aria-label={`${name} settings`} {...providerAttributes(id, data.settings.appearance ?? {})}>
+      <p className="settings-page-description">Provider inventory and sign-in methods come from OpenCode. Credentials and shared MCP connections stay in OpenCode’s native configuration.</p>
+      <div className="provider-list">{(data.providers.all ?? []).map(({ id, name }: { id: string; name: string }) => {
+        const plan = plans.providers[id] ?? { mode: "unknown", monthlyPrice: null, enabled: true };
+        return <Panel key={id} className="provider-card" aria-label={`${name} settings`} {...providerAttributes(id, data.settings.appearance ?? {})}>
         <div className="provider-top">
           <span className="provider-icon provider-fill" aria-hidden="true">{name.slice(0, 1)}</span>
           <div><h2 className="panel-heading"><ProviderText provider={id}>{name}</ProviderText></h2>
@@ -85,17 +88,22 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
         </div>
         {id !== "opencode" && <fieldset disabled={billingSaving}>
           <legend>Billing reference</legend><div className="field-grid">
-            <Field label="Billing"><select value={plans.providers[id].mode} onChange={e => changePlan(id, "mode", e.target.value)}>
+            <Field label="Billing"><select value={plan.mode} onChange={e => changePlan(id, "mode", e.target.value)}>
+              {!Object.hasOwn(providerDefaults, id) && <>
+                <option value="unknown">Unknown</option>
+                <option value="free">Free</option>
+              </>}
               <option value="subscription">Monthly subscription</option><option value="api">Pay as you go</option>
             </select></Field>
-            {plans.providers[id].mode === "subscription" && <Field label={`Monthly cost (${plans.currency})`}>
-              <input type="number" min="0" step="0.01" placeholder="Add price" value={plans.providers[id].monthlyPrice ?? ""}
+            {plan.mode === "subscription" && <Field label={`Monthly cost (${plans.currency})`}>
+              <input type="number" min="0" step="0.01" placeholder="Add price" value={plan.monthlyPrice ?? ""}
                 onChange={e => changePlan(id, "monthlyPrice", e.target.value === "" ? null : Number(e.target.value))} />
             </Field>}
           </div>
         </fieldset>}
-        <ProviderColorPicker provider={id} name={name} onSaved={onColorsSaved} />
-      </Panel>)}</div>
+        {Object.hasOwn(providerDefaults, id) && <ProviderColorPicker provider={id} name={name} onSaved={onColorsSaved} />}
+      </Panel>;
+      })}</div>
       <Panel title="Billing preferences">
         <p className="settings-page-description">This saves the billing fields above and the currency below. Provider colors and connections are saved separately.</p>
         <div className="save-row settings-billing-actions">
@@ -114,7 +122,7 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
     {tab === "appearance" && <><PageHeading title="Appearance" icon={Palette} actions={closeAction} />
       <Panel><ThemePicker theme={data.settings.appearance?.theme} customThemes={data.settings.appearance?.customThemes} refresh={refresh} onSaved={onColorsSaved} /></Panel></>}
   </div>
-  {auth && <ProviderConnection key={auth.provider} provider={auth.provider} name={providers.find(p => p[0] === auth.provider)?.[1] ?? auth.provider}
+  {auth && <ProviderConnection key={auth.provider} provider={auth.provider} name={data.providers.all.find((provider: any) => provider.id === auth.provider)?.name ?? auth.provider}
     methods={methods[auth.provider] ?? []} onClose={() => setAuth(null)} onConnected={async () => {
       await api('usage/refresh', {}).catch(() => {}); await refresh();
     }} />}

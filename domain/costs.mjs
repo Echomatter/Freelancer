@@ -34,20 +34,16 @@ export function normalizePlans(input = {}) {
   if (!/^[A-Z]{3}$/.test(currency))
     throw Error("Choose a three-letter currency");
   const rows = input.providers ?? {};
-  for (const id of Object.keys(rows))
-    if (!providerCatalog.some((p) => p.id === id))
-      throw Error("Unsupported provider");
   return {
     currency,
     providers: Object.fromEntries(
-      providerCatalog.map((p) => {
+      [...providerCatalog, ...Object.keys(rows).filter(id => !providerCatalog.some(provider => provider.id === id)).map(id => ({ id, mode:'unknown' }))].map((p) => {
         const value = rows[p.id] ?? {},
           mode = value.mode ?? p.mode,
           monthlyPrice = value.monthlyPrice ?? null;
-        if (
-          !["subscription", "api", "free"].includes(mode) ||
-          (p.mode === "free" && mode !== "free")
-        )
+        if (!["subscription", "api", "free", "unknown"].includes(mode) ||
+          (p.mode === "free" && mode !== "free") ||
+          (p.mode === "unknown" && mode !== "unknown"))
           throw Error("Invalid billing type");
         if (
           monthlyPrice !== null &&
@@ -72,7 +68,8 @@ export function usageRecord(message, directory = "", parentSessionID) {
     info?.role !== "assistant" ||
     !info.id ||
     !info.sessionID ||
-    !providerCatalog.some((p) => p.id === info.providerID)
+    typeof info.providerID !== "string" ||
+    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/.test(info.providerID)
   )
     return null;
   const t = info.tokens ?? {};
@@ -108,6 +105,7 @@ export function summarizeCosts({
   plans: input = {},
   records = [],
   usage = { providers: [] },
+  nativeProviders = [],
   month = new Date().toISOString().slice(0, 7),
   connected = [],
 } = {}) {
@@ -118,7 +116,14 @@ export function summarizeCosts({
       plans.providers[p.id].enabled &&
       (connected.includes(p.id) || p.id === "opencode"),
   );
+  const activeIDs = new Set(active.map((p) => p.id));
+  for (const provider of nativeProviders) {
+    if (!provider?.id || activeIDs.has(provider.id) || !connected.includes(provider.id)) continue;
+    active.push({ id: provider.id, name: provider.name ?? provider.id, surface: null, mode: "unknown" });
+    activeIDs.add(provider.id);
+  }
   const ids = new Set(active.map((p) => p.id));
+  const modeFor = id => plans.providers[id]?.mode ?? "unknown";
   // A repeated reconnect cannot count the same native response twice.
   const unique = [
     ...new Map(
@@ -128,9 +133,7 @@ export function summarizeCosts({
   const rows = unique.filter((r) =>
     new Date(r.createdAt).toISOString().startsWith(month),
   );
-  const subscriptions = active.filter(
-    (p) => plans.providers[p.id].mode === "subscription",
-  );
+  const subscriptions = active.filter((p) => modeFor(p.id) === "subscription");
   const missingPrices = subscriptions
     .filter((p) => plans.providers[p.id].monthlyPrice === null)
     .map((p) => p.id);
@@ -138,19 +141,21 @@ export function summarizeCosts({
     ? null
     : subscriptions.reduce((s, p) => s + plans.providers[p.id].monthlyPrice, 0);
   const subTokens = rows
-    .filter((r) => plans.providers[r.providerID].mode === "subscription")
+    .filter((r) => modeFor(r.providerID) === "subscription")
     .reduce((s, r) => s + r.tokens, 0);
   const rate =
     monthlyPrice !== null && subTokens > 0 ? monthlyPrice / subTokens : null;
   const providers = active.map((p) => {
-    const plan = plans.providers[p.id],
-      quota = usage.providers?.find((q) => q.id === p.surface);
+    const plan = plans.providers[p.id] ?? { mode: "unknown", monthlyPrice: null, enabled: true },
+      quota = p.surface ? usage.providers?.find((q) => q.id === p.surface) : null;
     const remaining =
       quota?.fresh === true && finite(quota.availableRemaining)
         ? Math.min(100, quota.availableRemaining)
         : null;
     return {
-      ...p,
+      id: p.id,
+      name: p.name,
+      surface: p.surface,
       ...plan,
       remainingPercent: remaining,
       remainingValue:
@@ -181,18 +186,20 @@ export function summarizeCosts({
   let apiCost = 0,
     apiUnknown = false;
   for (const r of rows) {
-    const mode = plans.providers[r.providerID].mode;
+    const mode = modeFor(r.providerID);
     const estimate =
       mode === "free"
         ? 0
         : mode === "api"
           ? r.reportedCost
+          : mode === "unknown"
+            ? r.reportedCost
           : r.tokens === 0
             ? 0
             : rate === null
               ? null
               : r.tokens * rate;
-    if (mode === "api") {
+    if (mode === "api" || mode === "unknown") {
       if (r.reportedCost === null) apiUnknown = true;
       else apiCost += r.reportedCost;
     }

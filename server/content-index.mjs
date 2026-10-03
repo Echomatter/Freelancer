@@ -2,6 +2,7 @@ import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import { access } from "node:fs/promises";
 import path from "node:path";
+import { resolveDataRoot } from './runtime-config.mjs';
 
 const execute = promisify(execFile);
 const active = new Set();
@@ -13,7 +14,7 @@ export async function rebuildContentIndex({ project, backendRoot, dataRoot, run 
   active.add(key);
   try {
     const script = path.join(backendRoot, "tools", "project-content-indexer.mjs");
-    const database = path.join(dataRoot ?? path.join(backendRoot, '.state', 'local-data'), "freelancer.sqlite");
+    const database = path.join(dataRoot ?? resolveDataRoot(), "freelancer.sqlite");
     await access(script);
     const args = [script, "--db", database, "--project-key", key, "rebuild", "--root", directory, "--facts", "none"];
     {

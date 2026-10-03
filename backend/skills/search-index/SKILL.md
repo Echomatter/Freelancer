@@ -36,8 +36,10 @@ An explicit index rebuild may trigger a lightweight model-inventory/quota freshn
 
 INDEX != SOURCE. Rank != authority. Fact row != verified fact.
 
-Keep the evidence order: local index/search → authoritative local source →
-external technical documentation/web evidence when needed. Consider Context7 for
-current library/API contracts and Fetch for original primary sources, missing
-Context7 coverage or other web content. Neither is necessary for facts already
-established locally; an unavailable service leaves native search/read usable.
+
+The `knowledge` tool searches shared memories, claims and relations across
+projects when prior decisions or source provenance help. Keep that search
+separate from this project's file/chat index; combine results only by retaining
+their source IDs and revision/boundary details. Check decisive claims against
+the current original source. A missing source, disputed claim or metadata-only
+pin is an explicit coverage gap, not a reason to infer missing content.

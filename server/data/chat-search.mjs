@@ -1,3 +1,4 @@
+import { contentMatch } from '../../domain/content-query.mjs';
 const plain = row => row && { ...row };
 
 export function createChatSearch(db, tx) {
@@ -71,10 +72,9 @@ export function createChatSearch(db, tx) {
         for (const id of ids) { erase.run(project, id); state.run(project, id); }
       });
     },
-    searchChats(query, { project = "", model = "", limit = 50 } = {}) {
-      const terms = String(query).match(/[\p{L}\p{N}_]+/gu)?.slice(0, 12) ?? [];
-      if (!terms.length || String(query).length > 200) return [];
-      const match = terms.map((term) => `"${term}"`).join(" AND ");
+    searchChats(query, { project = "", model = "", phrase = false, limit = 50 } = {}) {
+      const match = contentMatch(String(query),{phrase});
+      if (!match) return [];
       return db.prepare(`SELECT chat_search.project_id AS project,chat_search.session_id AS session,message_id AS message,
         role,model_id AS model,chat_search.updated_at AS updatedAt,COALESCE(h.title,chat_search.title) AS title,
         snippet(chat_search,7,'','',' … ',24) AS excerpt,

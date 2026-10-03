@@ -29,14 +29,16 @@ test("provider and nested model credentials never reach the browser", () => {
           },
         },
       },
-      { id: "external", name: secret, models: { secret } },
+      { id: "external", name: "External provider", models: { externalModel: { name: "External model", options: { apiKey: secret } } } },
     ],
   });
   assert.equal(JSON.stringify(result).includes(secret), false);
-  assert.deepEqual(result.connected, ["opencode-go"]);
+  assert.deepEqual(result.connected, ["opencode-go", "external"]);
   assert.deepEqual(Object.keys(result.all[0]), ["id", "name", "models"]);
   assert.equal(result.all[0].models.test.limit.context, 128000);
   assert.deepEqual(result.all[0].models.test.variants, ["high"]);
+  assert.equal(result.all[1].name, "External provider");
+  assert.deepEqual(Object.keys(result.all[1].models.externalModel), ["id", "name", "status", "variants", "limit", "cost", "capabilities"]);
 });
 
 test("OpenCode Free cannot expose metered or unpriced routes", () => {

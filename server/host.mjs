@@ -3,25 +3,45 @@ import { spawn, execFile } from "node:child_process";
 import { access } from "node:fs/promises";
 import { promisify } from "node:util";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { randomBytes } from "node:crypto";
 const exec = promisify(execFile);
 
 export function hostEnvironment(config, env = process.env) {
   const childEnv = { ...env };
   if (!config) return childEnv;
-  childEnv.OPENCODE_CONFIG_DIR = config.opencodeConfigDir;
-  childEnv.XDG_CONFIG_HOME = config.xdgConfigHome;
   childEnv.FREELANCER_RUNTIME_ROOT = config.backendRoot;
-  // The content_index plugin uses this app-owned database path. Without
-  // forwarding it, chat tool calls fail even though the web process itself
-  // has the setting from runtimeEnv().
   childEnv.FREELANCER_DATA_HOME = config.dataRoot;
-  // Forward-slashed JSONC interpolation keeps Windows paths valid in the
-  // native config parser when the Memory MCP receives its isolated file path.
-  childEnv.FREELANCER_MCP_MEMORY_FILE = path.join(config.dataRoot, 'mcp-memory.jsonl').replace(/\\/g, '/');
-  // Preserve native auth/session storage (XDG_DATA_HOME) – do not override
-  // if the user has already set it; runtime-config provides the default.
-  if (config.xdgDataHome) childEnv.XDG_DATA_HOME = config.xdgDataHome;
+  childEnv.FREELANCER_RUNTIME_DATA_MODE = "unified";
+  childEnv.FREELANCER_RUNTIME_ID = config.runtimeID ?? "freelancer-workspace-v2";
+  let nativeContent = {};
+  if (env.OPENCODE_CONFIG_CONTENT) {
+    try { nativeContent = JSON.parse(env.OPENCODE_CONFIG_CONTENT); }
+    catch (error) { throw Error('OpenCode OPENCODE_CONFIG_CONTENT must be valid JSON before Freelancer can add its plugin layer.', { cause:error }); }
+    if (!nativeContent || typeof nativeContent !== 'object' || Array.isArray(nativeContent))
+      throw Error('OpenCode OPENCODE_CONFIG_CONTENT must contain a JSON object.');
+  }
+  const pluginNames = config.opencodePlugins ?? ['delegation', 'git-project', 'goals', 'content-index', 'knowledge'];
+  const plugins = pluginNames.map(name => pathToFileURL(path.join(config.backendRoot, 'opencode', 'plugins', `${name}.ts`)).href);
+  const instructions = config.instructions ?? [
+    path.join(config.backendRoot, 'global', 'WORKSTYLE.md'),
+    path.join(config.backendRoot, 'opencode', 'global-instructions.md'),
+  ];
+  const append = (current, additions) => {
+    const rows = current === undefined ? [] : Array.isArray(current) ? current : [current];
+    const seen = new Set(rows.map(value => JSON.stringify(value)));
+    return [...rows, ...additions.filter(value => {
+      const key = JSON.stringify(value);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })];
+  };
+  childEnv.OPENCODE_CONFIG_CONTENT = JSON.stringify({
+    ...nativeContent,
+    plugin: append(nativeContent.plugin, plugins),
+    instructions: append(nativeContent.instructions, instructions),
+  });
   return childEnv;
 }
 
@@ -97,14 +117,12 @@ export function createHost({ url, password = "", fetchImpl = fetch }) {
  * @param {object} opts
  * @param {string} opts.backendRoot  - Resolved backend directory (FREELANCER_RUNTIME_ROOT).
  * @param {object} [opts.config]     - Runtime config from runtime-config.mjs. When
- *                                     supplied, isolated env vars are passed to the
- *                                     child OpenCode process so it uses the local
- *                                     backend/opencode config and never loads global
- *                                     toolkit plugins.
+ *                                     supplied, Freelancer plugin and instruction
+ *                                     paths are layered over the user's native config.
  * @param {string} [opts.executable] - Explicit OpenCode binary path. When omitted
  *                                     the system-installed native OpenCode is located.
  */
-export async function startHost({ backendRoot, config, executable }) {
+export async function startHost({ backendRoot, config, executable, env = process.env }) {
   if (!executable) {
     // Prefer the native npm executable, avoiding cmd.exe interpolation entirely.
     const native = path.join(
@@ -132,11 +150,9 @@ export async function startHost({ backendRoot, config, executable }) {
   }
   const password = randomBytes(32).toString("hex");
 
-  // Build the child environment. When config is provided, override
-  // OPENCODE_CONFIG_DIR, XDG_CONFIG_HOME and FREELANCER_RUNTIME_ROOT so
-  // the OpenCode process uses the local backend and never loads the
-  // retired global toolkit plugins.
-  const childEnv = hostEnvironment(config);
+  // Keep OpenCode's native config and credentials, adding only Freelancer's
+  // plugin and instruction layer.
+  const childEnv = hostEnvironment(config, env);
 
   const child = spawn(
     executable,

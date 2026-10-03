@@ -21,9 +21,23 @@ test('sidebar-layout', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
     page.setDefaultTimeout(12000);
     const errors = [];
     page.on("pageerror", (error) => errors.push(error.message));
+    await page.addInitScript((projectID) => {
+      localStorage.setItem('freelancer:navigation-collapsed', 'true');
+      localStorage.setItem(`freelancer:last-chat:${projectID}`, 'ses_legacy_localstorage');
+    }, f.project.id);
 
     await page.goto(f.url);
     await page.getByRole('button', { name: 'History project', exact: true }).waitFor();
+    await expect(page.locator('.workspace')).not.toHaveClass(/navigation-collapsed/);
+    assert.equal((await f.app.store.read('settings')).viewState, undefined,
+      'fresh app state ignores prior Freelancer browser preferences');
+    const legacyWrite = await page.evaluate(async () => {
+      const response = await fetch('/api/view-state', { method: 'PUT', headers: { 'Content-Type': 'application/json', 'X-Freelancer-Client': 'webpage' },
+        body: JSON.stringify({ migrate: true, navigationCollapsed: true, lastChats: { legacy: 'ses_old' } }) });
+      return response.status;
+    });
+    assert.equal(legacyWrite, 410, 'server rejects stale browser clients attempting a legacy preference import');
+    assert.equal((await f.app.store.read('settings')).viewState, undefined);
     const cards = page.locator('.nav-card-trigger');
     await expect(cards).toHaveCount(4);
     const cardGeometry = await cards.evaluateAll(elements => elements.map(el => {

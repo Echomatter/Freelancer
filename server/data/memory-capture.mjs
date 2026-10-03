@@ -51,8 +51,11 @@ export function createMemoryCaptureService(db, tx) {
           throw Error('Memory changed during capture. Refresh to capture its current source.');
         const revisionID = randomUUID(), revision = current.revision + 1, now = Date.now();
         const snapshotHash = createHash('sha256').update(JSON.stringify({messages,members,boundary})).digest('hex');
+        const attemptedAt=Number.isSafeInteger(boundary.attemptedAt)?boundary.attemptedAt:now;
+        const sourceCapturedAt=Object.hasOwn(boundary,'capturedAt')?boundary.capturedAt:now;
         db.prepare('INSERT INTO memory_item_revisions VALUES(?,?,?,?,?,?,?)')
-          .run(revisionID,job.memoryID,revision,body,JSON.stringify({...provenance,snapshotHash}),JSON.stringify({...boundary,capturedAt:now}),now);
+          .run(revisionID,job.memoryID,revision,body,JSON.stringify({...provenance,snapshotHash}),
+            JSON.stringify({...boundary,capturedAt:sourceCapturedAt,attemptedAt,snapshotCreatedAt:now}),now);
         const insert = db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)');
         members.forEach((member,ordinal) => insert.run(revisionID,ordinal,member.kind,member.ref,member.revision ?? null,
           JSON.stringify(member.locator ?? {}),member.hash ?? null,member.availability ?? 'available'));

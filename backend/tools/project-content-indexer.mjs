@@ -155,8 +155,23 @@ function previousManifest(db,key) {
 function argsParse(argv) {
   if (argv.includes('--help') || argv.includes('-h')) return { command:'help' };
   const out={ db:undefined, dbExplicit:false, command:'', projectKey:'', root:process.cwd(), facts:'none', query:'', limit:20, specialFacts:[], ocr:false, phrase:false };
-  for(let i=0;i<argv.length;i++) { const a=argv[i]; if(a==='--db'){out.db=argv[++i];out.dbExplicit=true;} else if(a==='--project-key')out.projectKey=argv[++i]; else if(a==='--root')out.root=argv[++i]; else if(a==='--facts')out.facts=argv[++i]; else if(a==='--special-fact')out.specialFacts.push(argv[++i]); else if(a==='--ocr')out.ocr=true; else if(a==='--phrase')out.phrase=true; else if(a==='--source')out.source=argv[++i]; else if(a==='--role')out.role=argv[++i]; else if(a==='--status')out.status=argv[++i]; else if(a==='--model')out.model=argv[++i]; else if(a==='--family')out.family=argv[++i]; else if(a==='--kind')out.kind=argv[++i]; else if(a==='--label')out.label=argv[++i]; else if(a==='--stats')out.stats=true; else if(a==='--unit')out.unit=Number(argv[++i]); else if(a==='--limit')out.limit=Number(argv[++i]); else if(a.startsWith('--')) throw Error(`unknown option: ${a}`); else if(!out.command)out.command=a==='build'?'rebuild':a; else if(out.command==='search'||out.command==='chats')out.query=a; }
-  if(!out.projectKey)throw Error('--project-key is required');
+  const names={'--db':'db','--project-key':'projectKey','--project-id':'projectID','--runtime-id':'runtimeID','--root':'root',
+    '--facts':'facts','--source':'source','--role':'role','--status':'status','--model':'model','--family':'family','--kind':'kind','--label':'label','--unit':'unit','--limit':'limit'};
+  const booleans={'--ocr':'ocr','--phrase':'phrase','--stats':'stats','--global':'global'};
+  for(let i=0;i<argv.length;i++) {
+    const a=argv[i];
+    if(booleans[a]) out[booleans[a]]=true;
+    else if(names[a]||a==='--special-fact') {
+      const value=argv[++i];
+      if(!value||value.startsWith('--')) throw Error(`A value is required for ${a}.`);
+      if(a==='--special-fact')out.specialFacts.push(value);
+      else out[names[a]]=['--unit','--limit'].includes(a)?Number(value):value;
+      if(a==='--db')out.dbExplicit=true;
+    } else if(a.startsWith('--')) throw Error(`unknown option: ${a}`);
+    else if(!out.command)out.command=a==='build'?'rebuild':a;
+    else if(out.command==='search'||out.command==='chats')out.query=a;
+  }
+  if(!out.projectKey&&!out.projectID&&!out.global)throw Error('--project-key or --project-id is required');
   return out;
 }
 function openDb(file, readOnly=false) { return new DatabaseSync(file,{readOnly}); }
@@ -263,20 +278,44 @@ async function rebuild(a, dbFile, root, key) {
   } catch(e) { try{stage.exec('ROLLBACK')}catch{} try{stage.close()}catch{} await rm(stageFile,{force:true}); throw e; }
 }
 function query(a, dbFile, key) {
+  const filters=contentFilters(a);
   const db=openDb(dbFile,true); ensureSchema(db); let results=[];
   if(a.command==='meta') results=db.prepare('SELECT key,value FROM content_meta WHERE project_key=? ORDER BY key').all(key);
-  else if(a.command==='sources') { const where=['project_key=?'],p=[key]; for(const [k,c] of [['source','virtual_path'],['role','source_role'],['status','status']])if(a[k]){where.push(`${c} LIKE ?`);p.push(k==='source'?`%${a[k]}%`:a[k]);} results=db.prepare(`SELECT source_identity,revision_identity,virtual_path,extension,source_role,status,routing_rank,unit_count,word_count,extraction_method,extraction_status,sha256,notes FROM content_sources WHERE ${where.join(' AND ')} ORDER BY routing_rank DESC,virtual_path`).all(...p); }
-  else if(a.command==='search') { if(!a.query)throw Error('operation=search requires query'); const match=contentMatch(a.query,{phrase:a.phrase===true}),filters=contentFilters(a); const where=['content_units_fts MATCH ?','content_units_fts.project_key=?'],p=[match,key]; if(filters.source){where.push(`s.virtual_path LIKE ? ESCAPE '\\'`);p.push(contentSubstring(filters.source));}if(filters.role){where.push('s.source_role=?');p.push(filters.role);}if(filters.status){where.push('s.status=?');p.push(filters.status);} results=db.prepare(`SELECT s.source_identity,s.revision_identity,s.virtual_path,s.sha256 source_sha256,s.source_role,s.status,u.unit_no,u.locator,u.sha256 unit_sha256,u.heading,bm25(content_units_fts) score,snippet(content_units_fts,7,'[',']',' … ',28) snippet FROM content_units_fts JOIN content_units u ON u.unit_id=content_units_fts.rowid JOIN content_sources s ON s.source_id=u.source_id WHERE ${where.join(' AND ')} ORDER BY bm25(content_units_fts),s.routing_rank DESC LIMIT ?`).all(...p,Math.max(1,Math.min(200,a.limit))); }
-  else if(a.command==='chats') { const match=contentMatch(a.query||'',{phrase:a.phrase===true});if(!match)throw Error('Chat search requires 1 to 200 characters');results=db.prepare(`SELECT chat_search.session_id session,message_id message,role,model_id model,chat_search.updated_at updatedAt,COALESCE(h.title,chat_search.title) title,snippet(chat_search,7,'','', ' … ',24) excerpt FROM chat_search LEFT JOIN session_headers h ON h.project_id=chat_search.project_id AND h.session_id=chat_search.session_id WHERE chat_search MATCH ? AND chat_search.project_id=? AND (?='' OR model_id=?) ORDER BY bm25(chat_search) LIMIT ?`).all(match,key,a.model||'',a.model||'',Math.max(1,Math.min(100,a.limit))); print({results,coverage:'Derived from OpenCode messages. Refresh conversation index in Content & Storage for older chats; current chats refresh when opened.'});db.close();return; }
-  else if(a.command==='unit') { if(!a.source||!a.unit)throw Error('operation=unit requires source and unit');results=db.prepare('SELECT s.source_identity,s.revision_identity,s.virtual_path,s.sha256 source_sha256,u.unit_no,u.locator,u.sha256 unit_sha256,u.heading,u.text FROM content_units u JOIN content_sources s ON s.source_id=u.source_id WHERE s.project_key=? AND s.virtual_path LIKE ? AND u.unit_no=? ORDER BY s.virtual_path').all(key,`%${a.source}%`,a.unit); }
+  else if(a.command==='sources') { const where=['project_key=?'],p=[key]; for(const [k,c] of [['source','virtual_path'],['role','source_role'],['status','status']])if(filters[k]){where.push(k==='source'?`${c} LIKE ? ESCAPE '\\'`:`${c}=?`);p.push(k==='source'?contentSubstring(filters[k]):filters[k]);} results=db.prepare(`SELECT source_identity,revision_identity,virtual_path,extension,source_role,status,routing_rank,unit_count,word_count,extraction_method,extraction_status,sha256,notes FROM content_sources WHERE ${where.join(' AND ')} ORDER BY routing_rank DESC,virtual_path`).all(...p); }
+  else if(a.command==='unit') { if(!filters.source||!Number.isSafeInteger(a.unit)||a.unit<0)throw Error('operation=unit requires source and a nonnegative unit number');results=db.prepare("SELECT s.source_identity,s.revision_identity,s.virtual_path,s.sha256 source_sha256,u.unit_no,u.locator,u.sha256 unit_sha256,u.heading,u.text FROM content_units u JOIN content_sources s ON s.source_id=u.source_id WHERE s.project_key=? AND s.virtual_path LIKE ? ESCAPE '\\' AND u.unit_no=? ORDER BY s.virtual_path").all(key,contentSubstring(filters.source),a.unit); }
   else if(a.command==='facts') { const where=['s.project_key=?'],p=[key]; for(const [k,c] of [['family','f.family'],['source','s.virtual_path'],['kind','f.fact_kind'],['label','f.label_norm']])if(a[k]){where.push(`${c} LIKE ?`);p.push(k==='source'?`%${a[k]}%`:k==='label'?`%${a[k].toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')}%`:a[k]);} if(a.stats){const sw=['project_key=?'],sp=[key];if(a.family){sw.push('family=?');sp.push(a.family);}results=db.prepare(`SELECT family,label_norm,label,value_unit,fact_count,distinct_value_count,source_count,numeric_count,min_numeric,max_numeric,avg_numeric FROM content_fact_stats WHERE ${sw.join(' AND ')} ORDER BY fact_count DESC,family,label_norm LIMIT ?`).all(...sp,Math.max(1,Math.min(200,a.limit)));}else results=db.prepare(`SELECT s.source_identity,s.revision_identity,s.virtual_path,s.sha256 source_sha256,s.source_role,s.status,f.unit_no,f.locator,f.fact_kind kind,f.family,f.label,f.value_text,f.value_num,f.value_unit,f.field_path path,f.confidence,f.evidence FROM content_facts f JOIN content_sources s ON s.source_id=f.source_id WHERE ${where.join(' AND ')} ORDER BY s.virtual_path,f.unit_no,f.family,f.label LIMIT ?`).all(...p,Math.max(1,Math.min(200,a.limit))); }
   else throw Error(`unknown operation: ${a.command}`);
   db.close(); print(results);
+}
+async function sharedQuery(a,dbFile,root) {
+  const [{resolveRuntimeConfig},{createLocalDataStore},{createKnowledgeQuery},{withUnifiedDatabase}]=await Promise.all([
+    import('../../server/runtime-config.mjs'),import('../../server/data/store.mjs'),import('../../server/data/knowledge-query.mjs'),import('./runtime/unified-database.mjs')]);
+  const config=resolveRuntimeConfig(),runtimeID=a.runtimeID??config.runtimeID;
+  if(path.basename(dbFile)!=='freelancer.sqlite')throw Error('Shared queries require the registered freelancer.sqlite database.');
+  const projects=withUnifiedDatabase({dataHome:path.dirname(dbFile),runtimeID},false,(db,id)=>
+    db.prepare('SELECT data FROM project_registrations WHERE runtime_id=? ORDER BY project_id').all(id).map(row=>JSON.parse(row.data)));
+  const registeredID=a.projectID??projects.find(project=>project.id===a.projectKey)?.id;
+  const scope=a.global?{global:true}:registeredID?{projectID:registeredID}:{projectDirectory:path.isAbsolute(a.projectKey||'')?a.projectKey:root,global:false};
+  if(a.global&&a.projectID)throw Error('Global search cannot also select a project.');
+  const store=createLocalDataStore(path.dirname(dbFile),{readOnly:true});
+  try {
+    const result=await createKnowledgeQuery({data:store,getProjects:()=>projects}).query({domain:a.command==='search'?'files':'conversations',
+      query:a.query,phrase:a.phrase,model:a.model,source:a.source,role:a.role,status:a.status,limit:a.limit,...scope});
+    if(a.command==='chats')return print(result);
+    print(result.results.map(row=>({projectID:row.projectID,source_identity:row.sourceIdentity,revision_identity:row.revisionIdentity,
+      virtual_path:row.path,source_sha256:row.sourceSha256,source_role:row.role,status:row.status,unit_no:row.unit,locator:row.locator,
+      unit_sha256:row.unitSha256,heading:row.heading,score:row.score,snippet:row.excerpt})));
+  } finally {store.close();}
 }
 export async function main(argv=process.argv.slice(2)) {
   const a=argsParse(argv);
   if(a.command==='help') { process.stdout.write('Usage: node project-content-indexer.mjs [--db DATABASE] --project-key KEY OPERATION [options]\nOmitting --db uses the resolved Freelancer data root.\nOperations: rebuild, status, search, chats, sources, unit, facts, meta\n'); return; }
   const root=safeProjectPath(a.root), key=process.platform==='win32'?root.toLowerCase():root;
+  if(['search','chats'].includes(a.command)) {
+    const {resolveRuntimeConfig}=await import('../../server/runtime-config.mjs');
+    const dbFile=a.dbExplicit?path.resolve(a.db):path.join(resolveRuntimeConfig().dataRoot,'freelancer.sqlite');
+    return sharedQuery(a,dbFile,root);
+  }
   let dbFile;
   if (!a.dbExplicit) {
     const [{ resolveRuntimeConfig, runtimeEnv }, { assertFreshRuntimeRoot, createLocalDataStore }] = await Promise.all([

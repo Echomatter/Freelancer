@@ -1,6 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import path from 'node:path';
 import { createLocalDataService } from './data/store.mjs';
+import { createIndexJobState } from './data/index-job-state.mjs';
+
+const runID = randomUUID();
 
 const labels = { files: 'Refreshing file indexes', chats: 'Refreshing conversation indexes',
   prepare: 'Preparing project indexes', archive: 'Indexing project before putting it away',
@@ -11,31 +14,60 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
   const dataService = localData ?? (backendRoot || dataRoot
     ? createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data'))
     : null);
-  let job = null, controller, work;
+  let job = null, controller, work, state, loaded = false;
   const withData = fn => {
     if (!dataService) throw Error('Local index state requires a data directory.');
     return fn(dataService.get());
   };
+  const publish = next => {
+    const value = next ? { ...next, updatedAt:Date.now() } : null;
+    const saved = state ? state.save(value,job) : value;
+    job = saved;
+    return job;
+  };
+  function load() {
+    if (loaded) return;
+    if (dataService) {
+      const filename = withData(db=>db.filename);
+      const configured = process.env.FREELANCER_DATA_HOME && path.resolve(path.dirname(filename)) === path.resolve(process.env.FREELANCER_DATA_HOME);
+      const runtimeID = configured && process.env.FREELANCER_RUNTIME_ID || 'standalone-index-jobs';
+      state = createIndexJobState(filename,runtimeID);
+      job = state.read();
+      if (job?.status === 'running' && job.ownerRunID !== runID) {
+        publish({ ...job, status:'partial', interrupted:true, stoppable:false, finishedAt:Date.now(),
+          label:`${labels[job.kind] ?? 'Index job'} was interrupted by a server restart. Completed indexes were kept. Retry explicitly to continue.` });
+      }
+    }
+    loaded = true;
+  }
   async function execute(current) {
     const signal = controller.signal;
-    const onProgress = label => { if (!signal.aborted) job = { ...job, label }; };
+    const onProgress = label => { if (!signal.aborted) publish({ ...job, label:String(label).slice(0,2000) }); };
     try {
-      let results = [];
+      const checkpoints = [...(current.checkpoints ?? [])];
+      const results = checkpoints.filter(item=>item.complete).map(item=>item.result);
+      const completed = step=>checkpoints.some(item=>item.step===step && item.complete);
+      const recordStep = (step,result) => {
+        const retained = {sources:result.sources ?? 0,conversations:result.conversations ?? 0,failures:result.failures ?? []};
+        checkpoints.push({step,complete:!retained.failures.some(failure=>!failure.source),completedAt:Date.now(),result:retained});
+        results.push(retained);
+        publish({...job,checkpoints:[...checkpoints]});
+      };
       const options = { projectID: current.project || undefined, includeArchivedProject: current.kind === 'archive', signal, onProgress };
-      if (current.kind === 'files' || current.kind === 'prepare' || current.kind === 'archive') {
-        job = { ...job, step: 'files' };
-        results.push(await app.rebuildContentIndex(options));
+      if (['files','prepare','archive'].includes(current.kind) && !completed('files')) {
+        publish({ ...job, step:'files' });
+        recordStep('files',await app.rebuildContentIndex(options));
       }
       signal.throwIfAborted();
-      if (current.kind === 'chats' || current.kind === 'prepare' || current.kind === 'archive') {
-        job = { ...job, step: 'chats' };
-        results.push(await app.history.rebuildChatSearch(options));
+      if (['chats','prepare','archive'].includes(current.kind) && !completed('chats')) {
+        publish({ ...job, step:'chats' });
+        recordStep('chats',await app.history.rebuildChatSearch(options));
       }
       signal.throwIfAborted();
       if (['optimize', 'check', 'compact', 'reset'].includes(current.kind)) {
         const result = await app.history.maintainIndex(current.kind);
         if (result.healthy === false) throw Error(`SQLite reported: ${result.findings.join('; ')}`);
-        job = { ...job, status: 'completed', label: result.message ?? 'SQLite quick check passed.' };
+        publish({ ...job, status:'completed', finishedAt:Date.now(), label:result.message ?? 'SQLite quick check passed.' });
         return;
       }
       const failures = results.flatMap(result => result.failures ?? []);
@@ -50,19 +82,23 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       const conversations = results.reduce((sum, result) => sum + (result.conversations ?? 0), 0);
       const counts = current.kind === 'files' ? `${sources} files indexed` : current.kind === 'chats'
         ? `${conversations} conversations indexed` : `${sources} files and ${conversations} conversations indexed`;
-      job = { ...job, status: operational.length ? 'partial' : 'completed', failures,
+      publish({ ...job, status: operational.length ? 'partial' : 'completed', failures, finishedAt:Date.now(),
         skipped: skipped.length,
-        label: `${counts}${operational.length ? ` · ${operational.length} operation ${operational.length === 1 ? 'failed' : 'failures'}` : skipped.length ? ` · ${skipped.length} file${skipped.length === 1 ? '' : 's'} skipped` : ' · Done'}` };
+        label: `${counts}${operational.length ? ` · ${operational.length} operation ${operational.length === 1 ? 'failed' : 'failures'}` : skipped.length ? ` · ${skipped.length} file${skipped.length === 1 ? '' : 's'} skipped` : ' · Done'}` });
     } catch (error) {
-      job = { ...job, status: signal.aborted ? 'stopped' : 'failed',
-        label: signal.aborted ? `${labels[current.kind]} stopped. Completed indexes were kept.` : error.message };
+      const failed = { ...job, status:signal.aborted ? 'stopped' : 'failed', finishedAt:Date.now(),
+        failure:{message:String(error.message),step:job?.step},
+        label:signal.aborted ? `${labels[current.kind]} stopped. Completed indexes were kept.` : error.message };
+      try { publish(failed); }
+      catch (stateError) { job = {...failed,status:'failed',label:'Index job state could not be saved. Completed indexes were kept.',persistenceError:stateError.message}; }
     }
   }
   const archiveLocks = new Set();
   return {
-    status: () => job,
+    status: () => {load();return job;},
     isArchiving: projectID => projectID ? archiveLocks.has(projectID) : archiveLocks.size > 0,
     async start(kind, projectID = '', retryID = '', internal = false) {
+      load();
       if (!Object.hasOwn(labels, kind)) throw Error('Choose an index or SQLite operation.');
       if (kind === 'archive' && !internal) throw Error('Project indexing before archive is part of the Put project away action.');
       if (archiveLocks.size && !(kind === 'archive' && internal && archiveLocks.has(projectID)))
@@ -80,8 +116,11 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
         throw Error('This job changed. Refresh before retrying.');
       if (!retryID && kind === 'prepare' && withData(db => db.projectIndexesReady(projectID))) return null;
       controller = new AbortController();
-      job = { id: randomUUID(), kind, project: projectID, status: 'running', label: labels[kind] + '…',
-        step: kind === 'prepare' || kind === 'archive' ? 'files' : kind, stoppable: ['files', 'chats', 'prepare', 'archive'].includes(kind), createdAt: Date.now() };
+      const resume = retryID && ['partial','stopped','failed'].includes(job?.status);
+      publish({ id:randomUUID(), kind, project:projectID, status:'running', label:labels[kind]+'…',
+        step:kind === 'prepare' || kind === 'archive' ? 'files' : kind, stoppable:['files','chats','prepare','archive'].includes(kind),
+        checkpoints:resume ? (job.checkpoints ?? []).filter(item=>item.complete) : [], retryOf:retryID || null,
+        createdAt:Date.now(), ownerRunID:runID });
       const current = job;
       // Send the initial status before potentially synchronous SQLite work.
       work = new Promise(resolve => setImmediate(resolve)).then(() => execute(current));
@@ -106,15 +145,17 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       } finally { archiveLocks.delete(projectID); }
     },
     stop(id) {
-      if (job?.id !== id || job.status !== 'running' || !job.stoppable) throw Error('This job cannot be stopped.');
+      load();
+      if (job?.id !== id || job.status !== 'running' || !job.stoppable || !controller) throw Error('This job cannot be stopped.');
       controller.abort();
-      job = { ...job, label: 'Stopping after the current operation…', stoppable: false };
+      publish({ ...job, label:'Stopping after the current operation…', stoppable:false });
       return job;
     },
     dismiss(id) {
+      load();
       if (job?.id !== id) return job;
       if (job.status === 'running') throw Error('The job is still running.');
-      job = null;
+      publish(null);
       return null;
     },
     async close() {

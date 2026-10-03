@@ -1,3 +1,4 @@
+import { LOCAL_DATA_SCHEMA_VERSION } from '../../shared/data-contract.mjs';
 import { createChatSearch } from './chat-search.mjs';
 import { createModelRatings } from './model-ratings.mjs';
 import { createImportedChats } from './imported-chats.mjs';
@@ -5,6 +6,7 @@ import { createMemoryService } from './memory.mjs';
 import { createMemoryCaptureService } from './memory-capture.mjs';
 import { createOpenCodeWarehouse } from './opencode-warehouse.mjs';
 import { createJudgmentEvidenceResolver } from './judgment-evidence.mjs';
+import { createAnalyticsService } from './analytics.mjs';
 import { contentSubstring } from '../../domain/content-query.mjs';
 import { readApplicationSettings, readSettingsProfile, splitSettingsByAuthority, writeApplicationSettings, writeSettingsProfile } from '../application-settings.mjs';
 import { normalizePlans } from '../../domain/costs.mjs';
@@ -17,7 +19,6 @@ import {
   existsSync,
   lstatSync,
   chmodSync,
-  renameSync,
   statSync,
 } from "node:fs";
 import path from "node:path";
@@ -25,8 +26,7 @@ import { randomUUID } from "node:crypto";
 import { createHash } from "node:crypto";
 
 const APP_ID = 1414482766;
-const SCHEMA = 18;
-const { constants: SQLITE } = require("node:sqlite");
+const SCHEMA = LOCAL_DATA_SCHEMA_VERSION;
 const plain = (row) => row && { ...row };
 const stableJSON = value => JSON.stringify(value, (_key, item) => {
   if (!item || Array.isArray(item) || typeof item !== 'object') return item;
@@ -60,7 +60,7 @@ export function assertFreshRuntimeRoot(directory, runtimeID) {
   if (!root.isDirectory() || root.isSymbolicLink()) throw Error('Fresh Freelancer data root must be a regular directory.');
   const filename = path.join(directory, 'freelancer.sqlite');
   const allowed = new Set(['freelancer.sqlite', 'freelancer.sqlite-wal', 'freelancer.sqlite-shm', 'application-settings.json']);
-  const extras = readdirSync(directory).filter(name => !allowed.has(name));
+  const extras = readdirSync(directory).filter(name => !allowed.has(name) && !/^application-settings-[a-f0-9]{24}\.json$/.test(name));
   if (extras.length) throw Error('Fresh Freelancer data root contains unregistered files; refusing to open or import prior data.');
   if (!existsSync(filename)) {
     if (readdirSync(directory).length) throw Error('Fresh Freelancer data root is not empty; refusing to import prior data.');
@@ -70,7 +70,7 @@ export function assertFreshRuntimeRoot(directory, runtimeID) {
   if (!stat.isFile() || stat.isSymbolicLink()) throw Error('Choose a regular local data file, not a link.');
   let DatabaseSync;
   try { ({ DatabaseSync } = require('node:sqlite')); }
-  catch { throw Error('Local data requires Node.js 22.13 or newer.'); }
+  catch { throw Error('Local data requires Node.js 24.10 or newer.'); }
   const db = new DatabaseSync(filename, { readOnly: true });
   try {
     const appID = db.prepare('PRAGMA application_id').get().application_id;
@@ -87,7 +87,7 @@ export function assertFreshRuntimeRoot(directory, runtimeID) {
       const ownedTables = db.prepare(`SELECT name FROM sqlite_master WHERE type='table'
         AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations','data_table_lifecycle')
         AND name NOT GLOB 'content_units_fts_*' AND name NOT GLOB 'chat_search_*'
-        AND name NOT GLOB 'memory_search_fts_*'`).all();
+        AND name NOT GLOB 'memory_search_fts_*' AND name NOT GLOB 'claims_search_fts_*'`).all();
       if ((appID === 0 && tables.size === 0) || (appID === APP_ID && version > 0 && version <= SCHEMA)) {
         for (const { name } of ownedTables) {
           if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || db.prepare(`SELECT 1 FROM "${name}" LIMIT 1`).get())
@@ -140,11 +140,12 @@ export function createLocalDataService(directory) {
     },
   };
 }
-export function createLocalDataStore(directory) {
+export function createLocalDataStore(directory, { readOnly = false } = {}) {
   if (!path.isAbsolute(directory))
     throw Error("The local data folder must be an absolute path.");
-  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  if (!readOnly) mkdirSync(directory, { recursive: true, mode: 0o700 });
   const filename = path.join(directory, "freelancer.sqlite");
+  if (readOnly && !existsSync(filename)) throw Error('A registered Freelancer database is required; no database was created.');
   if (
     existsSync(filename) &&
     (!lstatSync(filename).isFile() || lstatSync(filename).isSymbolicLink())
@@ -155,14 +156,15 @@ export function createLocalDataStore(directory) {
     ({ DatabaseSync } = require("node:sqlite"));
   } catch {
     throw Error(
-      "Local data requires Node.js 22.13 or newer. Update Node and restart Freelancer. Existing files were not changed.",
+      "Local data requires Node.js 24.10 or newer. Update Node and restart Freelancer. Existing files were not changed.",
     );
   }
-  const db = new DatabaseSync(filename);
+  const db = new DatabaseSync(filename, {readOnly});
   let closed = false;
   try {
     const version = db.prepare("PRAGMA user_version").get().user_version;
     const appID = db.prepare("PRAGMA application_id").get().application_id;
+    if (readOnly && (version !== SCHEMA || appID !== APP_ID)) throw Error('Read-only queries require the current registered Freelancer schema. Start Freelancer to upgrade it explicitly.');
     const tables = db
       .prepare("SELECT name FROM sqlite_master WHERE type='table'")
       .all();
@@ -200,20 +202,20 @@ export function createLocalDataStore(directory) {
         }
       }
     }
-    db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
+    if (!readOnly) db.exec("PRAGMA journal_mode = WAL; PRAGMA synchronous = FULL;");
     // Match the native OpenCode store's startup maintenance: fold any frames
     // left by an unclean previous exit without waiting for active readers.
     // Closing the connection below remains responsible for the normal
     // connection lifecycle; startup never truncates a potentially busy WAL.
     try {
-      db.prepare("PRAGMA wal_checkpoint(PASSIVE)").get();
+      if (!readOnly) db.prepare("PRAGMA wal_checkpoint(PASSIVE)").get();
     } catch (error) {
       // A passive checkpoint is opportunistic. Legacy FTS schemas can leave a
       // virtual-table schema lock after an otherwise committed migration; WAL
       // remains valid and must not make the upgraded database unavailable.
       if (![5, 6].includes(error.errcode)) throw error;
     }
-    if (process.platform !== "win32") chmodSync(filename, 0o600);
+    if (!readOnly && process.platform !== "win32") chmodSync(filename, 0o600);
   } catch (e) {
     db.close();
     throw e;
@@ -236,13 +238,14 @@ export function createLocalDataStore(directory) {
     } finally { transactionDepth--; }
   };
   const assertJudgmentEvidence = createJudgmentEvidenceResolver(db);
+  const analytics = createAnalyticsService(filename);
+  const warehouse = createOpenCodeWarehouse(db, tx);
+  const chatSearch = createChatSearch(db, tx);
+  if (!readOnly) {
+    try { warehouse.initializeWarehouseDerivations(); }
+    catch(error) { analytics.close();db.close();throw error; }
+  }
   const resetDerivedIndexes = () => {
-    // A damaged FTS table cannot reliably be deleted in place. Build a clean
-    // application database, copy only durable user-owned rows, then swap it
-    // in after closing this worker's handle. Search copies are intentionally
-    // omitted and rebuilt from the original project/native sources.
-    const replacement = `${filename}.rebuilding-${randomUUID()}`;
-    const backup = `${filename}.corrupt-${Date.now()}`;
     const lifecycle = db.prepare("SELECT table_name AS tableName,lifecycle FROM data_table_lifecycle ORDER BY table_name").all();
     const actualTables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type IN ('table','view') AND name NOT LIKE 'sqlite_%'").all().map(row => row.name));
     const registeredTables = new Set(lifecycle.map(row => row.tableName));
@@ -252,64 +255,71 @@ export function createLocalDataStore(directory) {
     const unregistered = [...actualTables].filter(name => !registeredTables.has(name) &&
       name !== "schema_migrations" && name !== "data_table_lifecycle" && !ftsShadow(name));
     if (unregistered.length) throw Error(`Index repair stopped because durable-table ownership is unknown: ${unregistered.join(", ")}.`);
-    const durableTables = lifecycle.filter(row => row.lifecycle === "durable").map(row => row.tableName);
-    let clean;
-    let moved = false;
-    const movedSidecars = [];
-    try {
-      clean = new DatabaseSync(replacement);
-      clean.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
-      if (!clean.prepare("SELECT 1 FROM schema_migrations WHERE version=?").get(SCHEMA))
-        clean.exec(readFileSync(new URL(`./migration-${SCHEMA}.sql`, import.meta.url), "utf8"));
-      clean.exec("PRAGMA foreign_keys=OFF");
-      const recovered = {};
-      for (const table of durableTables) {
-        try {
-          // Read rows through the application connection first. A damaged page
-          // may stop a cross-database INSERT even when readable durable rows
-          // can still be returned. Keep the original file as a backup.
-          const rows = db.prepare(`SELECT * FROM ${table} NOT INDEXED`).all();
-          const columns = clean.prepare(`PRAGMA table_info(${table})`).all().map(row => row.name);
-          const insert = clean.prepare(`INSERT INTO ${table} (${columns.join(',')}) VALUES (${columns.map(() => '?').join(',')})`);
-          for (const row of rows) insert.run(...columns.map(column => row[column]));
-          recovered[table] = rows.length;
-        }
-        catch (error) { throw Error(`Could not preserve ${table} during search-index reset: ${error.message}`, { cause: error }); }
-      }
-      clean.exec(`INSERT INTO memory_search_fts(memory_id,revision_id,title,body)
+    const expectedDerived = new Set([
+      "content_meta", "content_sources", "content_units", "content_units_fts",
+      "content_facts", "content_fact_stats", "chat_search", "chat_search_state",
+      "project_index_state", "memory_search_fts", "claims_search_fts",
+      "knowledge_claim_evidence", "knowledge_current_claims", "knowledge_memory_evidence",
+      "knowledge_pinned_memories", "knowledge_source_coverage", "opencode_source_coverage",
+      "knowledge_task_outcomes", "knowledge_outcome_summary",
+    ]);
+    const derivedViews = new Set([
+      "knowledge_claim_evidence", "knowledge_current_claims", "knowledge_memory_evidence",
+      "knowledge_pinned_memories", "knowledge_source_coverage", "opencode_source_coverage",
+      "knowledge_task_outcomes", "knowledge_outcome_summary",
+    ]);
+    const registeredDerived = new Set(lifecycle.filter(row => row.lifecycle === "derived").map(row => row.tableName));
+    const unsupported = [...registeredDerived].filter(name => !expectedDerived.has(name));
+    if (unsupported.length) throw Error(`Index repair stopped because derived-table repair is not defined for: ${unsupported.join(", ")}.`);
+    for (const name of expectedDerived) {
+      if (!registeredDerived.has(name)) throw Error(`Index repair stopped because expected derived table ${name} is not registered.`);
+      if (derivedViews.has(name) && !db.prepare("SELECT 1 FROM sqlite_master WHERE type='view' AND name=?").get(name))
+        throw Error(`Index repair stopped because expected derived view ${name} is missing.`);
+      if (!derivedViews.has(name) && !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name))
+        throw Error(`Index repair stopped because expected derived table ${name} is missing.`);
+    }
+    // A normal reset is deliberately in-place: operational evidence and
+    // uncertainty, durable memory/pins, the SQLite handle and file identity
+    // remain intact. Corrupt-database recovery is a separate operation.
+    return tx(() => {
+      db.exec(`DELETE FROM content_facts;
+        DELETE FROM content_fact_stats;
+        DELETE FROM content_units;
+        DELETE FROM content_sources;
+        DELETE FROM content_meta;
+        DELETE FROM chat_search_state;
+        DELETE FROM project_index_state;
+        DROP TABLE chat_search;
+        CREATE VIRTUAL TABLE chat_search USING fts5(
+          project_id UNINDEXED, session_id UNINDEXED, message_id UNINDEXED,
+          role UNINDEXED, model_id UNINDEXED, updated_at UNINDEXED,
+          title, body, tokenize='unicode61 remove_diacritics 2'
+        );
+        DROP TABLE content_units_fts;
+        CREATE VIRTUAL TABLE content_units_fts USING fts5(
+          project_key UNINDEXED, filename, virtual_path, source_role, status,
+          heading, locator, text, tokenize='unicode61 remove_diacritics 2'
+        );
+        DROP TABLE memory_search_fts;
+        CREATE VIRTUAL TABLE memory_search_fts USING fts5(
+          memory_id UNINDEXED, revision_id UNINDEXED, title, body,
+          tokenize='unicode61 remove_diacritics 2'
+        );`);
+      db.exec(`INSERT INTO memory_search_fts(memory_id,revision_id,title,body)
         SELECT m.memory_id,r.revision_id,m.title,r.body FROM memory_items m
         JOIN memory_item_revisions r ON r.memory_id=m.memory_id`);
-      clean.exec("PRAGMA foreign_keys=ON");
-      const fk = clean.prepare("PRAGMA foreign_key_check").all();
-      const integrity = clean.prepare("PRAGMA integrity_check").get().integrity_check;
-      if (fk.length || integrity !== "ok") throw Error("Clean index recovery validation failed.");
-      clean.close();
-      clean = undefined;
-      db.close();
-      closed = true;
-      renameSync(filename, backup);
-      moved = true;
-      // SQLite may leave WAL/SHM files after the last handle closes. They
-      // belong to the original database and must not be opened with the
-      // replacement file, which has different page and schema content.
-      for (const suffix of ["-wal", "-shm"]) {
-        if (existsSync(`${filename}${suffix}`)) {
-          renameSync(`${filename}${suffix}`, `${backup}${suffix}`);
-          movedSidecars.push(suffix);
-        }
-      }
-      renameSync(replacement, filename);
-      return { backup, recovered };
-    } catch (error) {
-      try { clean?.close(); } catch { /* best-effort cleanup */ }
-      if (moved && !existsSync(filename) && existsSync(backup)) {
-        for (const suffix of movedSidecars.reverse()) {
-          try { renameSync(`${backup}${suffix}`, `${filename}${suffix}`); } catch { /* preserve original failure */ }
-        }
-        try { renameSync(backup, filename); } catch { /* preserve the original failure */ }
-      }
-      throw error;
-    }
+      // The migration owns the shared FTS column and backfill contract. Repair
+      // recreates only this derived index, retaining claims and their evidence.
+      const claimsSchema = readFileSync(new URL('./migration-19.sql', import.meta.url), 'utf8');
+      const claimsStart = claimsSchema.indexOf('CREATE VIRTUAL TABLE claims_search_fts');
+      const claimsEnd = claimsSchema.indexOf('CREATE TRIGGER claims_search_insert');
+      db.exec('DROP TABLE claims_search_fts');
+      db.exec(claimsSchema.slice(claimsStart, claimsEnd));
+      // The source manifests and failures remain durable. A repaired FTS needs
+      // a fresh publication receipt even when its source hash is unchanged.
+      warehouse.requeueWarehouseDerivations();
+      return { reset: [...expectedDerived] };
+    });
   };
   const draft = (project, key) =>
     plain(
@@ -380,7 +390,7 @@ export function createLocalDataStore(directory) {
         const ownedTables = db.prepare(`SELECT name AS table_name FROM sqlite_master
           WHERE type='table' AND name NOT LIKE 'sqlite_%' AND name NOT IN ('schema_migrations','data_table_lifecycle')
             AND name NOT GLOB 'content_units_fts_*' AND name NOT GLOB 'chat_search_*'
-            AND name NOT GLOB 'memory_search_fts_*' ORDER BY name`).all();
+            AND name NOT GLOB 'memory_search_fts_*' AND name NOT GLOB 'claims_search_fts_*' ORDER BY name`).all();
         for (const { table_name: table } of ownedTables) {
           if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(table)) throw Error('Invalid owned-table metadata in Freelancer database.');
           if (db.prepare(`SELECT 1 FROM "${table}" LIMIT 1`).get())
@@ -678,46 +688,7 @@ export function createLocalDataStore(directory) {
         databaseBytes: pageSize * pageCount, reclaimableBytes: pageSize * freePages,
         walBytes };
     },
-    analyze(sql, params = {}, { signal, timeoutMs = 2000, maxRows = 500, maxBytes = 1_000_000 } = {}) {
-      if (typeof sql !== "string" || !sql.trim() || sql.length > 20_000)
-        throw Error("Provide one bounded read-only SQL query.");
-      if (!params || typeof params !== "object" || Array.isArray(params))
-        throw Error("SQL parameters must be a named parameter object.");
-      if (signal?.aborted) throw Object.assign(Error("Query cancelled."), { name: "AbortError" });
-      const statement = sql.trim();
-      if (!/^(?:SELECT|WITH)\b/i.test(statement) || /;|--|\/\*/.test(statement) ||
-          /\b(?:ATTACH|DETACH|PRAGMA|VACUUM|REINDEX|ANALYZE|CREATE|DROP|ALTER|INSERT|UPDATE|DELETE|REPLACE|BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE|LOAD_EXTENSION)\b/i.test(statement))
-        throw Error("Only a single read-only SELECT or CTE query is supported.");
-      const started = Date.now(), deadline = started + Math.max(1, Math.min(10_000, Number(timeoutMs) || 2000));
-      const rowLimit = Math.max(1, Math.min(5000, Number(maxRows) || 500));
-      const byteLimit = Math.max(1024, Math.min(5_000_000, Number(maxBytes) || 1_000_000));
-      const reader = new DatabaseSync(filename, { readOnly: true });
-      try {
-        reader.exec("PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; PRAGMA busy_timeout=10000;");
-        const allowed = new Set([SQLITE.SQLITE_SELECT, SQLITE.SQLITE_READ, SQLITE.SQLITE_RECURSIVE, SQLITE.SQLITE_FUNCTION]);
-        const allowedFunctions = new Set(["abs", "avg", "coalesce", "count", "date", "datetime", "hex", "ifnull", "instr", "json", "json_array", "json_extract", "json_type", "json_valid", "length", "like", "lower", "max", "min", "nullif", "printf", "round", "substr", "sum", "time", "total", "trim", "typeof", "unicode", "upper"]);
-        reader.setAuthorizer((action, arg1, arg2) => {
-          if (!allowed.has(action)) return SQLITE.SQLITE_DENY;
-          if (action === SQLITE.SQLITE_FUNCTION) {
-            const name = String(arg2 ?? arg1 ?? "").toLowerCase();
-            if (!allowedFunctions.has(name)) return SQLITE.SQLITE_DENY;
-          }
-          return SQLITE.SQLITE_OK;
-        });
-        const query = reader.prepare(statement);
-        if (query.columns().length === 0) throw Error("Query did not return a result set.");
-        const rows = [], columns = query.columns().map(column => column.name);
-        let bytes = 0, truncated = false, partial = false;
-        for (const row of query.iterate(params)) {
-          if (signal?.aborted) throw Object.assign(Error("Query cancelled."), { name: "AbortError" });
-          if (Date.now() > deadline) { partial = true; truncated = true; break; }
-          const value = plain(row), rowBytes = Buffer.byteLength(JSON.stringify(value));
-          if (rows.length >= rowLimit || bytes + rowBytes > byteLimit) { truncated = true; break; }
-          rows.push(value); bytes += rowBytes;
-        }
-        return { columns, rows, partial, truncated, bytes, elapsedMs: Date.now() - started };
-      } finally { reader.close(); }
-    },
+    analyze(sql, params = {}, options = {}) { return analytics.analyze(sql, params, options); },
     searchFiles(match, projectKeys, filters = {}, limit = 50) {
       if (!Array.isArray(projectKeys) || !projectKeys.length) return [];
       const keys = [...new Set(projectKeys.filter((key) => typeof key === "string" && key))];
@@ -744,8 +715,8 @@ export function createLocalDataStore(directory) {
         JOIN content_units u ON u.unit_id=content_units_fts.rowid
         JOIN content_sources s ON s.source_id=u.source_id
         WHERE ${where.join(' AND ')}
-        ORDER BY bm25(content_units_fts), s.routing_rank DESC, s.virtual_path
-        LIMIT ?`).all(...params, Math.max(1, Math.min(100, limit))).map(plain);
+        ORDER BY bm25(content_units_fts), s.routing_rank DESC, s.project_key,s.virtual_path,u.unit_no,u.locator
+        LIMIT ?`).all(...params, Math.max(1, Math.min(201, Number(limit)||50))).map(plain);
     },
     projectIndexesReady(id) {
       return !!db.prepare('SELECT ready_at FROM project_index_state WHERE project_id=?').get(id);
@@ -762,6 +733,7 @@ export function createLocalDataStore(directory) {
         db.exec("INSERT INTO chat_search(chat_search) VALUES('optimize')");
         db.exec("INSERT INTO content_units_fts(content_units_fts) VALUES('optimize')");
         db.exec("INSERT INTO memory_search_fts(memory_search_fts) VALUES('optimize')");
+        db.exec("INSERT INTO claims_search_fts(claims_search_fts) VALUES('optimize')");
         return { operation, message: "SQLite query plans and conversation search were optimized." };
       }
       if (operation === "check") {
@@ -769,7 +741,7 @@ export function createLocalDataStore(directory) {
         db.exec("BEGIN");
         try {
           findings.push(...db.prepare("PRAGMA quick_check").all().map((row) => String(Object.values(row)[0])));
-          for (const table of ["chat_search", "content_units_fts", "memory_search_fts"]) {
+          for (const table of ["chat_search", "content_units_fts", "memory_search_fts", "claims_search_fts"]) {
             try { db.exec(`INSERT INTO ${table}(${table}) VALUES('integrity-check')`); }
             catch (error) { findings.push(`${table}: ${error.message}`); }
           }
@@ -790,15 +762,34 @@ export function createLocalDataStore(directory) {
       throw Error("Choose an index maintenance action.");
     },
     close() {
+      analytics.close();
       if (!closed) {
         closed = true;
         db.close();
       }
     },
-    ...createChatSearch(db, tx),
+    ...chatSearch,
     ...createMemoryService(db, tx),
     ...createMemoryCaptureService(db, tx),
-    ...createOpenCodeWarehouse(db, tx),
+    ...warehouse,
+    publishWarehouseDerivationJob({id,revisionToken}={}) {
+      return tx(()=>{
+        const snapshot=warehouse.readWarehouseDerivationSnapshot({id,revisionToken});
+        if(snapshot.status==='missing'||snapshot.status==='stale') return {published:false,status:'stale'};
+        if(snapshot.job.status!=='pending') return {published:false,status:snapshot.job.status,reason:snapshot.job.blockedReason};
+        if(!snapshot.isCurrent) {
+          warehouse.completeWarehouseDerivationJob({id,revisionToken,status:'superseded'});
+          return {published:false,status:'superseded'};
+        }
+        if(snapshot.status!=='ok'||!snapshot.projectionSafe) return {published:false,status:'blocked',reason:snapshot.reason||'unsafe-message-window'};
+        // BEGIN IMMEDIATE holds the current-manifest check, FTS publication and
+        // receipt together. No native read, extraction or model call runs here.
+        chatSearch.indexChat(snapshot.job.projectID,snapshot.session,snapshot.messages);
+        const outcome=warehouse.completeWarehouseDerivationJob({id,revisionToken,status:'complete'});
+        if(!outcome.completed||outcome.status!=='complete') throw Error('Warehouse source changed before publication.');
+        return {published:true,status:'complete',id,revisionToken,snapshotRevisionSha256:snapshot.snapshotRevisionSha256};
+      });
+    },
     createJudgmentDefinition({ id, version = 1, questionID, primitive, question, criteria = {} }) {
       if (typeof id !== 'string' || !id.trim() || id.length > 200) throw Error('Judgment definition ID is required.');
       if (!Number.isSafeInteger(version) || version < 1) throw Error('Judgment definition version must be positive.');
@@ -841,7 +832,7 @@ export function createLocalDataStore(directory) {
       const evidenceHash=createHash('sha256').update(evidenceRefsJson).digest('hex');
       const results=Array.isArray(input.results)?input.results:[];
       if (results.length > 100) throw Error('A judgment run can contain at most 100 typed results.');
-      if (!['ok','provider-failed','unavailable','cancelled','invalid-response'].includes(input.status)) throw Error('Judgment run status is invalid.');
+      if (!['ok','provider-failed','unavailable','cancelled','invalid-response','evidence-changed'].includes(input.status)) throw Error('Judgment run status is invalid.');
       return tx(() => {
         const definition=db.prepare('SELECT question_id,primitive FROM judgment_definitions WHERE definition_id=? AND version=?').get(input.definitionID,input.definitionVersion);
         if (!definition) throw Error('Judgment definition version does not exist.');
@@ -888,6 +879,11 @@ export function createLocalDataStore(directory) {
         throw Error('Cache candidate IDs must be unique bounded stable strings.');
       const candidateJSON=stableJSON(candidateIDs), evidenceJSON=stableJSON(evidenceRefs);
       if(candidateJSON.length>200_000||evidenceJSON.length>200_000) throw Error('Judgment cache references exceed their storage limit.');
+      if (evidenceRefs.some(ref => ref && typeof ref==='object' &&
+          ['content-unit','opencode-text-part','memory-revision','claim-record'].includes(ref.kind))) {
+        try { assertJudgmentEvidence.assertReferences({candidateIDs,evidenceRefs}); }
+        catch { return {status:'miss',runID:null}; }
+      }
       const candidateSetHash=createHash('sha256').update(candidateJSON).digest('hex');
       const evidenceHash=createHash('sha256').update(evidenceJSON).digest('hex');
       const row=db.prepare(`SELECT run_id FROM judgment_runs WHERE definition_id=? AND definition_version=? AND state_hash=?
@@ -911,6 +907,8 @@ export function createLocalDataStore(directory) {
       })) };
     },
     assertJudgmentEvidence(input) { return assertJudgmentEvidence(input); },
+    queryJudgmentEvidence(input) { return assertJudgmentEvidence.packet(input); },
+    assertJudgmentReferences(input) { return assertJudgmentEvidence.assertReferences(input); },
     annotations(project) {
       return Object.fromEntries(
         db

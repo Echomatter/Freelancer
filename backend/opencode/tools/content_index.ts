@@ -1,6 +1,7 @@
 import { tool } from "@opencode-ai/plugin"
 import path from "path"
 import fs from "fs"
+import { pathToFileURL } from "node:url"
 import { runProcess } from "../../tools/runtime/bridge.mjs"
 
 type Ctx = { directory: string; worktree?: string; abort?: AbortSignal }
@@ -50,11 +51,13 @@ export default tool({
       .describe("Index operation"),
     query: tool.schema.string().optional().describe("Search text for operation=search"),
     model: tool.schema.string().optional().describe("Exact provider/model filter for operation=chats"),
+    projectID: tool.schema.string().optional().describe("Registered project ID for search/chats; defaults to the current project"),
+    global: tool.schema.boolean().optional().describe("Search all registered projects instead of the current project"),
     phrase: tool.schema.boolean().optional().describe("Treat search query as an exact phrase"),
     source: tool.schema.string().optional().describe("Substring source-path filter"),
     role: tool.schema.string().optional().describe("Exact inferred source role filter"),
     status: tool.schema.string().optional().describe("Exact inferred source status filter"),
-    unit: tool.schema.number().int().positive().optional().describe("Unit number for operation=unit"),
+    unit: tool.schema.number().int().min(0).optional().describe("Unit number for operation=unit, including zero"),
     family: tool.schema.string().optional().describe("Fact family filter"),
     kind: tool.schema
       .enum(["structured", "label_value", "markdown_table", "special_field", "special_label_value", "special_match"])
@@ -93,6 +96,26 @@ export default tool({
       )
     }
 
+    if (args.operation === "search" || args.operation === "chats") {
+      if (!args.query) throw new Error(`operation=${args.operation} requires query`)
+      const runtime = await import(pathToFileURL(path.join(toolkitRoot, "tools/runtime/state-database.mjs")).href)
+      const launch = runtime.readState(path.join(toolkitRoot, ".state/webpage/launch.json"))
+      const url = new URL(launch.url)
+      if (url.protocol !== "http:" || url.hostname !== "127.0.0.1") throw new Error("Local knowledge service required.")
+      const scope = args.global === true ? { global: true } : args.projectID ? { projectID: args.projectID, global: false }
+        : { projectDirectory: root, global: false }
+      if (args.global && args.projectID) throw new Error("Global search cannot also select a project.")
+      const response = await fetch(new URL("/api/knowledge/agent", url), {
+        method: "POST", headers: { "Content-Type": "application/json", "X-Freelancer-Git-Bridge": process.env.FREELANCER_GIT_BRIDGE || "" },
+        body: JSON.stringify({ operation: "query", domain: args.operation === "search" ? "files" : "conversations",
+          query: args.query, phrase: args.phrase, source: args.source, role: args.role, status: args.status, model: args.model,
+          limit: args.limit ?? 20, ...scope }), signal: context.abort,
+      })
+      const result = await response.json()
+      if (!response.ok) throw new Error(result.error || "Content search failed.")
+      return JSON.stringify(result, null, 2)
+    }
+
     const script = path.join(toolkitRoot, "tools", "project-content-indexer.mjs")
     if (!fs.existsSync(script)) throw new Error(`Project content indexer missing: ${script}`)
     const db = freelancerDatabasePath()
@@ -108,22 +131,6 @@ export default tool({
         for (const spec of args.specialFacts || []) cli.push("--special-fact", spec)
         if (args.ocr) cli.push("--ocr")
         break
-      case "search":
-        if (!args.query) throw new Error("operation=search requires query")
-        cli.push("search", args.query)
-        if (args.phrase) cli.push("--phrase")
-        if (args.source) cli.push("--source", args.source)
-        if (args.role) cli.push("--role", args.role)
-        if (args.status) cli.push("--status", args.status)
-        cli.push("--limit", String(args.limit || 20))
-        break
-      case "chats":
-        if (!args.query) throw new Error("operation=chats requires query")
-        cli.push("chats", args.query)
-        if (args.phrase) cli.push("--phrase")
-        if (args.model) cli.push("--model", args.model)
-        cli.push("--limit", String(args.limit || 20))
-        break
       case "sources":
         cli.push("sources")
         if (args.source) cli.push("--source", args.source)
@@ -131,7 +138,7 @@ export default tool({
         if (args.status) cli.push("--status", args.status)
         break
       case "unit":
-        if (!args.source || !args.unit) throw new Error("operation=unit requires source and unit")
+        if (!args.source || args.unit === undefined) throw new Error("operation=unit requires source and unit")
         cli.push("unit", "--source", args.source, "--unit", String(args.unit))
         break
       case "facts":

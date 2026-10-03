@@ -45,17 +45,21 @@ export function hostEnvironment(config, env = process.env) {
   return childEnv;
 }
 
-export function createHost({ url, password = "", fetchImpl = fetch }) {
+export function createHost({ url, password = "", fetchImpl = fetch, diagnostics }) {
   const origin = new URL(url);
   if (!["127.0.0.1", "localhost", "[::1]"].includes(origin.hostname))
     throw Error("OpenCode must run locally");
   return {
-    async request(route, { method = "GET", directory, body, signal } = {}) {
+    async request(route, { method = "GET", directory, body, signal, responseMetadata = false } = {}) {
       if (!route.startsWith("/") || route.startsWith("//"))
         throw Error("Invalid host route");
       const target = new URL(route, origin);
       if (directory) target.searchParams.set("directory", directory);
-      const response = await fetchImpl(target, {
+      const requestedAt = Date.now();
+      const report = event => { try { diagnostics?.(event); } catch {} };
+      report({ stage: 'request-started', route, method });
+      let response;
+      try { response = await fetchImpl(target, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -69,7 +73,11 @@ export function createHost({ url, password = "", fetchImpl = fetch }) {
         },
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: signal ?? AbortSignal.timeout(90000),
-      });
+      }); } catch (error) {
+        report({ stage: 'request-failed', route, method, durationMs: Date.now() - requestedAt, error: error.name });
+        throw error;
+      }
+      report({ stage: 'request-responded', route, method, durationMs: Date.now() - requestedAt, status: response.status });
       if (!response.ok) {
         const payload = await response.json().catch(() => null);
         const detail =
@@ -88,8 +96,8 @@ export function createHost({ url, password = "", fetchImpl = fetch }) {
         error.code = `OPENCODE_HTTP_${response.status}`;
         throw error;
       }
-      if (response.status === 204) return null;
-      return response.json();
+      const payload = response.status === 204 ? null : await response.json();
+      return responseMetadata ? { body: payload, metadata: { 'x-next-cursor': response.headers.get('x-next-cursor') } } : payload;
     },
     async events(directory, signal) {
       const target = new URL("/event", origin);
@@ -122,7 +130,12 @@ export function createHost({ url, password = "", fetchImpl = fetch }) {
  * @param {string} [opts.executable] - Explicit OpenCode binary path. When omitted
  *                                     the system-installed native OpenCode is located.
  */
-export async function startHost({ backendRoot, config, executable, env = process.env }) {
+export async function startHost({ backendRoot, config, executable, env = process.env, diagnostics }) {
+  const started = Date.now();
+  const report = event => {
+    if (typeof diagnostics !== 'function') return;
+    try { diagnostics({ ...event, elapsedMs: Date.now() - started }); } catch {}
+  };
   if (!executable) {
     // Prefer the native npm executable, avoiding cmd.exe interpolation entirely.
     const native = path.join(
@@ -156,7 +169,7 @@ export async function startHost({ backendRoot, config, executable, env = process
 
   const child = spawn(
     executable,
-    ["serve", "--hostname", "127.0.0.1", "--port", "0"],
+    [...(diagnostics ? ['--print-logs', '--log-level', 'DEBUG'] : []), "serve", "--hostname", "127.0.0.1", "--port", "0"],
     {
       cwd: backendRoot,
       windowsHide: true,
@@ -164,10 +177,19 @@ export async function startHost({ backendRoot, config, executable, env = process
       env: { ...childEnv, OPENCODE_SERVER_PASSWORD: password },
     },
   );
+  report({ stage: 'spawned', pid: child.pid });
+  child.once('exit', (code, signal) => report({ stage: 'exited', code, signal }));
+  child.once('error', error => report({ stage: 'process-error', message: error.message }));
+  if (typeof diagnostics === 'function') for (const [stream, pipe] of [['stdout', child.stdout], ['stderr', child.stderr]])
+    pipe.on('data', chunk => report({ stage: 'output', stream, text: chunk.toString().slice(-8192)
+      .replace(/(Bearer|Basic)\s+[^\s,;]+/gi, '$1 [redacted]')
+      .replace(/(["']?(?:api[ _-]?key|token|secret|password)["']?\s*[=:]\s*["']?)[^"'\s,;}]+/gi, '$1[redacted]') }));
   const url = await new Promise((resolve, reject) => {
     let output = "";
+    let listening = false;
     const timeout = setTimeout(() => {
       child.kill();
+      report({ stage: 'listen-timeout' });
       reject(Error("OpenCode took too long to start."));
     }, 30000);
     const fail = () => {
@@ -179,17 +201,27 @@ export async function startHost({ backendRoot, config, executable, env = process
     const collect = (chunk) => {
       output = (output + chunk.toString()).slice(-8192);
       const match = output.match(/http:\/\/127\.0\.0\.1:\d+/);
-      if (match) {
+      if (match && !listening) {
+        listening = true;
         clearTimeout(timeout);
         child.off("exit", fail);
+        report({ stage: 'listening' });
         resolve(match[0]);
       }
     };
     child.stdout.on("data", collect);
     child.stderr.on("data", collect);
   });
+  const client = createHost({ url, password, diagnostics: report });
+  let nativeVersion = null;
+  try {
+    const health = await client.request('/global/health', { signal: AbortSignal.timeout(3000) });
+    if (typeof health?.version === 'string' && /^[0-9]+\.[0-9]+\.[0-9]+(?:[.+-][A-Za-z0-9.-]+)?$/.test(health.version))
+      nativeVersion = health.version;
+  } catch { /* Version remains unknown; listening does not prove plugin readiness. */ }
   return {
-    ...createHost({ url, password }),
+    ...client,
+    nativeVersion,
     ...nativeDataTools({ executable, env: childEnv }),
     stop: () => child.kill(),
     process: child,

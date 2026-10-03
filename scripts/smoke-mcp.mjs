@@ -9,29 +9,36 @@ import os from 'node:os';
 import { startHost } from '../server/host.mjs';
 import { FRESH_RUNTIME_ID, runtimeEnv } from '../server/runtime-config.mjs';
 import { assertFreshRuntimeRoot, createLocalDataStore } from '../server/data/store.mjs';
+import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { fileURLToPath } from 'node:url';
 import { createMcpConnections } from '../server/mcp.mjs';
 import { updateOpenCodeProjectModel } from '../server/opencode-project-config.mjs';
 
 const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-mcp-smoke-'));
 const backendRoot = path.join(root, 'backend');
 const nativeConfig = path.join(root, 'native-config');
+const nativeHome = path.join(root, 'native-home'), nativeTemp = path.join(root, 'native-temp');
 const config = { backendRoot, opencodePlugins: [], instructions: [], dataRoot: path.join(root, 'app-data'), runtimeID:FRESH_RUNTIME_ID };
 const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
 const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR: nativeConfig,
   XDG_CONFIG_HOME: nativeConfig, XDG_DATA_HOME: path.join(root, 'native-data'),
-  XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state') };
+  XDG_CACHE_HOME: path.join(root, 'cache'), XDG_STATE_HOME: path.join(root, 'state'),
+  OPENCODE_TEST_HOME: nativeHome, HOME: nativeHome, USERPROFILE: nativeHome,
+  APPDATA: path.join(nativeHome, 'AppData', 'Roaming'), LOCALAPPDATA: path.join(nativeHome, 'AppData', 'Local'),
+  TEMP: nativeTemp, TMP: nativeTemp };
 delete env.OPENCODE_CONFIG;
 delete env.OPENCODE_CONFIG_CONTENT;
 let host;
 try {
-  await mkdir(backendRoot, { recursive: true });
-  await mkdir(nativeConfig, { recursive: true });
+  await Promise.all([backendRoot,nativeConfig,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
+    .map(folder=>mkdir(folder,{recursive:true})));
   assertFreshRuntimeRoot(config.dataRoot,config.runtimeID);
   const initialData = createLocalDataStore(config.dataRoot);
   try { initialData.initializeFreshRuntime(config.runtimeID); }
   finally { initialData.close(); }
   await writeFile(path.join(nativeConfig, 'opencode.jsonc'), '{}');
+  await seedNativeSmokeDependencies({fixtureRoot:root,appRoot:fileURLToPath(new URL('..',import.meta.url)),nativeConfig,projectDirectories:[backendRoot]});
   host = await startHost({ backendRoot, config, env, ...(process.env.FREELANCER_SMOKE_OPENCODE ? { executable: process.env.FREELANCER_SMOKE_OPENCODE } : {}) });
   const [providers, authMethods] = await Promise.all([
     host.request('/provider'),
@@ -41,6 +48,7 @@ try {
   assert.ok(Array.isArray(providers.connected), 'native connected-provider state must be readable');
   assert.ok(authMethods && typeof authMethods === 'object' && !Array.isArray(authMethods), 'native provider auth methods must be readable');
   const project = path.join(root, 'native-project'); await mkdir(project);
+  await seedNativeSmokeDependencies({fixtureRoot:root,appRoot:fileURLToPath(new URL('..',import.meta.url)),nativeConfig,projectDirectories:[project]});
   execFileSync('git', ['init', '--quiet', project], { stdio: 'ignore' });
   const nativeModelCatalog = await host.request('/config/providers', { directory: project });
   const modelChoice = (nativeModelCatalog.providers ?? []).flatMap(provider =>
@@ -52,8 +60,8 @@ try {
     assert.equal(confirmed.model, modelChoice, 'OpenCode must read its project model default from the native project config file');
     await projectConfig.rollback();
     const nested = path.join(root, 'nested-native-project'); await mkdir(nested);
+    await seedNativeSmokeDependencies({fixtureRoot:root,appRoot:fileURLToPath(new URL('..',import.meta.url)),nativeConfig,projectDirectories:[nested]});
     execFileSync('git', ['init', '--quiet', nested], { stdio: 'ignore' });
-    await mkdir(path.join(nested, '.opencode'));
     const nestedConfig = await updateOpenCodeProjectModel(nested, modelChoice);
     await host.request('/instance/dispose', { method: 'POST', directory: nested });
     assert.equal((await host.request('/config', { directory: nested })).model, modelChoice,
@@ -73,6 +81,7 @@ try {
   assert.equal(saved.services[0].status, 'connected');
   for (const name of ['project-one', 'project-two']) {
     const directory = path.join(root, name); await mkdir(directory);
+    await seedNativeSmokeDependencies({fixtureRoot:root,appRoot:fileURLToPath(new URL('..',import.meta.url)),nativeConfig,projectDirectories:[directory]});
     const native = await host.request('/config', { directory });
     assert.deepEqual(native.mcp.smoke.command, command);
     assert.equal((await host.request('/mcp', { directory })).smoke.status, 'connected');

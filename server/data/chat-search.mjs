@@ -72,9 +72,24 @@ export function createChatSearch(db, tx) {
         for (const id of ids) { erase.run(project, id); state.run(project, id); }
       });
     },
-    searchChats(query, { project = "", model = "", phrase = false, limit = 50 } = {}) {
+    searchChats(query, { project = "",projectIDs, model = "", phrase = false, limit = 50 } = {}) {
       const match = contentMatch(String(query),{phrase});
       if (!match) return [];
+      if (projectIDs && (!Array.isArray(projectIDs)||!projectIDs.length)) return [];
+      const scoped=projectIDs ? `AND chat_search.project_id IN (${projectIDs.map(()=>'?').join(',')})` : '';
+      const bounds=[project,project,model,model,...(projectIDs??[])];
+      const scope=`AND NOT EXISTS (SELECT 1 FROM model_rating_jobs j WHERE j.project_id=chat_search.project_id AND j.session_id=chat_search.session_id)
+        AND (? = '' OR chat_search.project_id = ?) AND (? = '' OR model_id = ?) ${scoped}`;
+      const identity=String(query).trim();
+      const exact=db.prepare(`SELECT 1 FROM chat_search WHERE (session_id=? OR message_id=?) ${scope} LIMIT 1`)
+        .get(identity,identity,...bounds);
+      if(exact) return db.prepare(`SELECT chat_search.project_id AS project,chat_search.session_id AS session,message_id AS message,
+        role,model_id AS model,chat_search.updated_at AS updatedAt,COALESCE(h.title,chat_search.title) AS title,
+        substr(body,1,240) AS excerpt,0 AS rank FROM chat_search
+        LEFT JOIN session_headers h ON h.project_id=chat_search.project_id AND h.session_id=chat_search.session_id
+        WHERE (chat_search.session_id=? OR message_id=?) ${scope}
+        ORDER BY chat_search.project_id,chat_search.session_id,message_id LIMIT ?`)
+        .all(identity,identity,...bounds,Math.min(201,Math.max(1,Number(limit)||50))).map(plain);
       return db.prepare(`SELECT chat_search.project_id AS project,chat_search.session_id AS session,message_id AS message,
         role,model_id AS model,chat_search.updated_at AS updatedAt,COALESCE(h.title,chat_search.title) AS title,
         snippet(chat_search,7,'','',' … ',24) AS excerpt,
@@ -83,7 +98,8 @@ export function createChatSearch(db, tx) {
         WHERE chat_search MATCH ?
         AND NOT EXISTS (SELECT 1 FROM model_rating_jobs j WHERE j.project_id=chat_search.project_id AND j.session_id=chat_search.session_id)
         AND (? = '' OR chat_search.project_id = ?) AND (? = '' OR model_id = ?)
-        ORDER BY rank LIMIT ?`).all(match, project, project, model, model, Math.min(100, Math.max(1, Number(limit) || 50))).map(plain);
+        ${scoped} ORDER BY rank,chat_search.project_id,chat_search.session_id,message_id
+        LIMIT ?`).all(match, project, project, model, model,...(projectIDs??[]), Math.min(201, Math.max(1, Number(limit) || 50))).map(plain);
     },
   };
 }

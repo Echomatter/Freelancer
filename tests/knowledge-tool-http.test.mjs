@@ -5,6 +5,7 @@ import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import { gitProjectFixture } from './fixtures/git-project-app.mjs';
+import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { openCodeEvidenceCandidateID } from '../server/data/judgment-evidence.mjs';
 
 async function indexedEvidence(f, { filename, text, query }) {
@@ -42,7 +43,7 @@ test('knowledge bridge is private, shared, and delegates typed operations to loc
   assert.equal(correction.status, 200);
   const result = await correction.json();
   assert.equal(result.corrected, true);
-  assert.equal(f.app.localData.get().analyze('SELECT epistemic_state FROM claims WHERE claim_id=$id', { $id: claim.id }).rows[0].epistemic_state, 'superseded');
+  assert.equal((await f.app.localData.get().analyze('SELECT epistemic_state FROM claims WHERE claim_id=$id', { $id: claim.id })).rows[0].epistemic_state, 'superseded');
 });
 
 test('knowledge graph supports bounded relation reads and audited deletes without deleting claim-referenced entities', async t => {
@@ -59,7 +60,7 @@ test('knowledge graph supports bounded relation reads and audited deletes withou
   response=await send({operation:'delete-relation',relationID:relation.id,reason:'fixture'});assert.equal(response.status,200);assert.deepEqual(await response.json(),{id:relation.id,deleted:true});
   response=await send({operation:'delete-relation',relationID:relation.id});assert.equal(response.status,200);assert.deepEqual(await response.json(),{id:relation.id,deleted:false});
   response=await send({operation:'delete-entity',id:a.id,reason:'must retain claim'});assert.equal(response.status,200);assert.deepEqual(await response.json(),{id:a.id,deleted:false,reason:'claims_reference_entity',claimsRetained:1});
-  assert.equal(f.app.localData.get().analyze('SELECT count(*) AS n FROM claims WHERE claim_id=$id',{$id:claim.id}).rows[0].n,1);
+  assert.equal((await f.app.localData.get().analyze('SELECT count(*) AS n FROM claims WHERE claim_id=$id',{$id:claim.id})).rows[0].n,1);
   const c=await (await send({operation:'entity',type:'fixture',name:'Graph node C',directory:f.project.directory})).json();
   const d=await (await send({operation:'entity',type:'fixture',name:'Graph node D',directory:f.project.directory})).json();
   const remaining=await (await send({operation:'relate',from:c.id,to:d.id,type:'second-edge'})).json();
@@ -203,7 +204,19 @@ test('knowledge bridge batches independent TypeSafe questions once and records s
 });
 
 test('knowledge bridge reads bounded OpenCode warehouse snapshots and coverage', async t => {
-  const f=await gitProjectFixture();t.after(()=>f.close());
+  const f=await localDataFixture({timers:false});t.after(()=>f.close());
+  const nativeRequest=f.host.request.bind(f.host);
+  const inventoryRequests=[];
+  f.host.request=async(route,options={})=>{
+    if(route.startsWith('/experimental/session?')) {
+      const params=new URL(route,'http://fixture').searchParams;
+      assert.equal(params.get('archived'),'true');assert.equal(params.get('directory'),f.directory);
+      assert.equal(options.responseMetadata,true);
+      inventoryRequests.push({start:params.get('start'),cursor:params.get('cursor'),limit:params.get('limit')});
+      return {body:[],metadata:{'x-next-cursor':null}};
+    }
+    return nativeRequest(route,options);
+  };
   const prior=process.env.FREELANCER_GIT_BRIDGE;process.env.FREELANCER_GIT_BRIDGE='warehouse-test-secret';
   t.after(()=>{if(prior===undefined)delete process.env.FREELANCER_GIT_BRIDGE;else process.env.FREELANCER_GIT_BRIDGE=prior;});
   const data=f.app.localData.get(),source=(await import('../server/data/opencode-warehouse.mjs')).openCodeSourceIdentity('synthetic-opencode-db');
@@ -213,7 +226,10 @@ test('knowledge bridge reads bounded OpenCode warehouse snapshots and coverage',
   let value=await response.json();assert.equal(value.messages.length,1);assert.match(JSON.stringify(value),/synthetic persisted text/);assert.doesNotMatch(JSON.stringify(value),/never expose this/);
   const capturedMessage=value.messages.find(row=>row.messageID==='msg_snapshot');
   response=await send({operation:'warehouse-status'});assert.equal(response.status,200);assert.equal((await response.json()).sources.reduce((n,row)=>n+row.messages,0),1);
-  response=await send({operation:'warehouse-backfill',projectID:f.project.id,pageSize:10});assert.equal(response.status,200,await response.text());
+  response=await send({operation:'warehouse-backfill',projectID:f.project.id,pageSize:10});assert.equal(response.status,200,await response.clone().text());
+  assert.equal((await response.json()).results[0].status,'complete');
+  assert.deepEqual(inventoryRequests,[{start:null,cursor:null,limit:'10'},{start:null,cursor:null,limit:'10'}],
+    'native empty inventory and final head confirmation use the timestamp page/header envelope, not a fabricated offset response');
   response=await send({operation:'warehouse-status'});assert.equal(response.status,200);const status=await response.json();assert.equal(status.sources.reduce((n,row)=>n+row.messages,0),1);assert.equal(status.ingestRuns[0].status,'complete');assert.deepEqual(status.failures,[]);
   response=await send({operation:'opencode-read',projectID:'unregistered',sessionID:'ses_snapshot'});assert.equal(response.status,400);
   data.createJudgmentDefinition({id:'warehouse-text-support',version:1,questionID:'supports_text',primitive:'check',question:'Does the cited text support the query?',criteria:{yes:'Supported',no:'Unsupported'}});

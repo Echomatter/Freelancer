@@ -1,3 +1,4 @@
+import { LOCAL_DATA_SCHEMA_VERSION } from '../../../shared/data-contract.mjs';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -48,7 +49,7 @@ export function withUnifiedDatabase(config, write, action) {
     db.exec('PRAGMA busy_timeout=10000');
     const version = db.prepare('PRAGMA user_version').get().user_version;
     const appID = db.prepare('PRAGMA application_id').get().application_id;
-    if (appID !== APP_ID || version !== 17) throw Error('Unified runtime database has an unsupported schema; existing data was preserved.');
+    if (appID !== APP_ID || version !== LOCAL_DATA_SCHEMA_VERSION) throw Error('Unified runtime database has an unsupported schema; existing data was preserved.');
     const registered = db.prepare('SELECT 1 FROM runtime_instances WHERE runtime_id=?').get(config.runtimeID);
     const ready = db.prepare(`SELECT 1 FROM data_migration_runs WHERE
       (migration_id=? AND status='validated-copy') OR (migration_id=? AND status='fresh-bootstrap')`)

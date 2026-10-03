@@ -53,3 +53,30 @@ test("native host falls back to a bounded status message for malformed errors", 
     return true;
   });
 });
+
+test('optional host diagnostics report request stages without request bodies or credentials', async () => {
+  const events=[];
+  const host=createHost({url:'http://127.0.0.1:4096',password:'private-password',diagnostics:event=>events.push(event),
+    fetchImpl:async()=>new Response('{}',{status:200,headers:{'Content-Type':'application/json'}})});
+  await host.request('/config',{method:'PATCH',body:{apiKey:'private-key'}});
+  assert.deepEqual(events.map(event=>event.stage),['request-started','request-responded']);
+  assert.equal(events[1].status,200);
+  assert.ok(events[1].durationMs>=0);
+  assert.doesNotMatch(JSON.stringify(events),/private-password|private-key|Authorization|body/);
+  const failed=createHost({url:'http://127.0.0.1:4096',diagnostics:event=>events.push(event),fetchImpl:async()=>{throw new DOMException('Cancelled','AbortError');}});
+  await assert.rejects(failed.request('/agent'),{name:'AbortError'});
+  assert.equal(events.at(-1).stage,'request-failed');
+  assert.equal(events.at(-1).error,'AbortError');
+});
+
+test('native host optionally exposes only x-next-cursor metadata and preserves ordinary JSON callers', async () => {
+  const rows=[{id:'ses_fixture',time:{updated:800}}];
+  const host=createHost({url:'http://127.0.0.1:4096',fetchImpl:async()=>new Response(JSON.stringify(rows),{
+    headers:{'Content-Type':'application/json','x-next-cursor':'800','set-cookie':'private-cookie','authorization':'private-value'},
+  })});
+  assert.deepEqual(await host.request('/experimental/session'),rows);
+  assert.deepEqual(await host.request('/experimental/session',{responseMetadata:true}),{body:rows,metadata:{'x-next-cursor':'800'}});
+  const empty=createHost({url:'http://127.0.0.1:4096',fetchImpl:async()=>new Response(null,{status:204})});
+  assert.equal(await empty.request('/session/fixture'),null);
+  assert.deepEqual(await empty.request('/session/fixture',{responseMetadata:true}),{body:null,metadata:{'x-next-cursor':null}});
+});

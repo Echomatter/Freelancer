@@ -44,6 +44,23 @@ test('TypeSafe adapter requires the runtime credential and never returns it', as
   assert.equal((await provider.evaluate({definition:{},state:{}})).status,'unavailable');
 });
 
+test('TypeSafe Score accepts ten levels and rejects eleven before contacting the provider', async () => {
+  let calls=0;
+  const provider=createTypeSafeJudgmentProvider({env:{TYPESAFE_API_KEY:'test-key'},client:{async systemOne(input) {
+    calls++;
+    assert.equal(input.questions.relevance.criteria.length,10);
+    return {model:'jev-test',answers:{relevance:{type:'score',score:4.5,confidence:0.5,
+      probabilities:Object.fromEntries(Array.from({length:10},(_,index)=>[index,0.1]))}}};
+  }}});
+  const definition={questionID:'relevance',primitive:'score',question:'Score the evidence.',criteria:{levels:Array.from({length:10},(_,index)=>`Level ${index}`)}};
+  assert.equal((await provider.evaluate({definition,state:{}})).status,'ok');
+  assert.equal(calls,1);
+  const invalid=await provider.evaluate({definition:{...definition,criteria:{levels:[...definition.criteria.levels,'Eleventh']}},state:{}});
+  assert.equal(invalid.status,'invalid-response');
+  assert.match(invalid.failure,/two and ten/);
+  assert.equal(calls,1,'invalid criteria must never reach the external provider');
+});
+
 test('TypeSafe adapter rejects out of rubric answers and keeps provider errors bounded and redacted', async () => {
   const invalid=createTypeSafeJudgmentProvider({env:{TYPESAFE_API_KEY:'test-key'},client:{
     async systemOne() { return {model:'jev-test',answers:{relevance:{type:'score',score:9,confidence:0.9,probabilities:{0:0,1:0,2:1}}}}; },

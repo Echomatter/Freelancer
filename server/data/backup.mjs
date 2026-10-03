@@ -1,3 +1,4 @@
+import { LOCAL_DATA_SCHEMA_VERSION } from '../../shared/data-contract.mjs';
 import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
@@ -5,9 +6,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { settingsProfilePath } from '../application-settings.mjs';
+import { FRESH_RUNTIME_ID } from '../runtime-config.mjs';
 
 const APP_ID = 1414482766;
-const SCHEMA = 17;
+const SCHEMA = LOCAL_DATA_SCHEMA_VERSION;
 const MANIFEST = 'manifest.json';
 const DATA_FILES = new Set(['freelancer.sqlite','freelancer.sqlite-wal','freelancer.sqlite-shm','application-settings.json']);
 const PROFILE = /^application-settings-([a-f0-9]{24})\.json$/;
@@ -79,8 +81,14 @@ function validateDatabase(filename) {
     if (tableNames.has('settings_update_journal') && db.prepare('SELECT count(*) AS n FROM settings_update_journal').get().n)
       throw Error('Application settings have an unfinished cross-store update. Recover it before backup or restore.');
     const counts = {};
-    for (const table of ['runtime_instances','runtime_collection_markers','operational_records','application_documents',
-      'project_registrations','memory_items','memory_pins','claims','claim_evidence','opencode_sessions','opencode_messages']) {
+    const inventoriedTables = new Set(['runtime_instances','runtime_collection_markers','operational_records','application_documents',
+      'project_registrations','memory_items','memory_pins','claims','claim_evidence','opencode_sessions','opencode_messages']);
+    if (tableNames.has('data_table_lifecycle')) for (const {table_name:table} of
+        db.prepare("SELECT table_name FROM data_table_lifecycle WHERE lifecycle='durable' ORDER BY table_name").all()) {
+      if (!/^[a-z][a-z0-9_]*$/.test(table) || !tableNames.has(table)) throw Error('Backup durable table inventory is invalid.');
+      inventoriedTables.add(table);
+    }
+    for (const table of [...inventoriedTables].sort()) {
       if (tableNames.has(table)) counts[table] = db.prepare(`SELECT count(*) AS n FROM ${table}`).get().n;
     }
     const operational = {};
@@ -96,6 +104,63 @@ function validateDatabase(filename) {
       }
     }
     return { applicationID,schemaVersion,counts,operational };
+  } finally { db.close(); }
+}
+
+// Keep this formula in sync with store.mjs. A restored database is still the
+// same fresh runtime, but its registered root must match its new data home.
+const freshRuntimeHash = (runtimeID, sourcePath) =>
+  createHash('sha256').update(JSON.stringify(['fresh-empty-runtime', runtimeID, sourcePath, APP_ID])).digest('hex');
+
+function rebindRestoredFreshRuntime(filename, outputDataHome, manifest, manifestSha256) {
+  const db = new DatabaseSync(filename);
+  try {
+    db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; BEGIN IMMEDIATE');
+    const runtime = db.prepare('SELECT * FROM runtime_instances WHERE runtime_id=?').get(FRESH_RUNTIME_ID);
+    const migrationID = `fresh-runtime:${FRESH_RUNTIME_ID}`;
+    const bootstrap = db.prepare('SELECT * FROM data_migration_runs WHERE migration_id=?').get(migrationID);
+    if (!runtime && !bootstrap) { db.exec('COMMIT'); return null; }
+    if (!runtime || !bootstrap || bootstrap.status !== 'fresh-bootstrap' ||
+        runtime.source_path !== bootstrap.source_path || runtime.source_sha256 !== bootstrap.source_sha256)
+      throw Error('Backup has an incomplete fresh-runtime registration; restore stopped without changing its identity.');
+
+    const original = {
+      sourcePath:runtime.source_path,
+      sourceSha256:runtime.source_sha256,
+      sourceSchemaVersion:runtime.source_schema_version,
+      sourceAppId:runtime.source_app_id,
+    };
+    const restoredPath = path.resolve(outputDataHome);
+    const restoredHash = freshRuntimeHash(FRESH_RUNTIME_ID, restoredPath);
+    const now = Date.now();
+    const restoreID = `explicit-restore:${createHash('sha256').update(`${manifestSha256}\0${restoredPath}\0${now}`).digest('hex').slice(0,32)}`;
+    const restoredManifest = JSON.stringify({
+      mode:'explicit-restore',
+      sourceManifestSha256:manifestSha256,
+      sourceDatabaseSha256:manifest.files['freelancer.sqlite'].sha256,
+      sourceRuntime:original,
+      sourceBootstrapManifest:JSON.parse(bootstrap.manifest_json),
+      restoredRuntime:{ runtimeID:FRESH_RUNTIME_ID,sourcePath:restoredPath,sourceSha256:restoredHash },
+      uncertainOperationsPreserved:true,
+      automaticReplay:false,
+    });
+    db.prepare('UPDATE runtime_instances SET source_path=?,source_sha256=? WHERE runtime_id=?')
+      .run(restoredPath,restoredHash,FRESH_RUNTIME_ID);
+    db.prepare('UPDATE data_migration_runs SET source_path=?,source_sha256=?,manifest_json=? WHERE migration_id=?')
+      .run(restoredPath,restoredHash,JSON.stringify({
+        ...JSON.parse(bootstrap.manifest_json),
+        restoredFrom:{sourcePath:original.sourcePath,sourceSha256:original.sourceSha256,restoreID},
+      }),migrationID);
+    db.prepare(`INSERT INTO data_migration_runs
+      (migration_id,source_path,source_app_id,source_schema_version,source_sha256,status,manifest_json,started_at,completed_at)
+      VALUES(?,?,?,?,?,?,?,?,?)`)
+      .run(restoreID,original.sourcePath,original.sourceAppId,original.sourceSchemaVersion,
+        manifestSha256,'explicit-restore',restoredManifest,now,now);
+    db.exec('COMMIT');
+    return { id:restoreID,status:'explicit-restore',sourceManifestSha256:manifestSha256 };
+  } catch (error) {
+    try { db.exec('ROLLBACK'); } catch {}
+    throw error;
   } finally { db.close(); }
 }
 
@@ -222,9 +287,18 @@ export async function restoreLocalData(bundleDirectory, outputDataHome, { quiesc
     const { database,settings } = validateCopiedSet(outputDataHome,Object.keys(manifest.files));
     if (JSON.stringify(database) !== JSON.stringify(manifest.database)) throw Error('Restored database validation differs from the backup manifest.');
     if (JSON.stringify(settings) !== JSON.stringify(manifest.settings)) throw Error('Restored settings differ from the backup manifest.');
-    return { status:'verified',directory:outputDataHome,manifestSha256:createHash('sha256').update(readFileSync(path.join(bundleDirectory,MANIFEST))).digest('hex'),database,settings };
+    const manifestSha256 = createHash('sha256').update(readFileSync(path.join(bundleDirectory,MANIFEST))).digest('hex');
+    const restore = rebindRestoredFreshRuntime(path.join(outputDataHome,'freelancer.sqlite'),outputDataHome,manifest,manifestSha256);
+    syncFile(path.join(outputDataHome,'freelancer.sqlite'));
+    const finalDatabase = validateDatabase(path.join(outputDataHome,'freelancer.sqlite'));
+    const expectedCounts={...database.counts};
+    if (restore) expectedCounts.data_migration_runs++;
+    if (JSON.stringify(finalDatabase.counts) !== JSON.stringify(expectedCounts) ||
+        JSON.stringify(finalDatabase.operational) !== JSON.stringify(database.operational))
+      throw Error('Restored database operational state changed during identity rebinding.');
+    return { status:'verified',directory:outputDataHome,manifestSha256,database:finalDatabase,settings,restore };
   } catch (error) {
-    if (created) { try { cleanupDirectory(outputDataHome,written); } catch {} }
+    if (created) { try { cleanupDirectory(outputDataHome,[...written,'freelancer.sqlite-wal','freelancer.sqlite-shm']); } catch {} }
     throw error;
   }
 }

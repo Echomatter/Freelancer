@@ -1,3 +1,4 @@
+import { LOCAL_DATA_SCHEMA_VERSION } from '../shared/data-contract.mjs';
 import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdtemp, mkdir, rm, readFile, writeFile } from "node:fs/promises";
@@ -34,7 +35,7 @@ async function localStore(t) {
   });
   return { root, store };
 }
-test('schema 6 baseline upgrades to schema 17 while preserving content, drafts, and indexed evidence', async t => {
+test('schema 6 baseline upgrades to current schema while preserving content, drafts, and indexed evidence', async t => {
   const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-schema6-'));
   t.after(async()=>{await rm(root,{recursive:true,force:true});});
   const filename=path.join(root,'freelancer.sqlite'),db=new DatabaseSync(filename);
@@ -50,7 +51,7 @@ test('schema 6 baseline upgrades to schema 17 while preserving content, drafts, 
 
   const migrated=createLocalDataStore(root);
   try {
-    assert.equal(migrated.info().schemaVersion,17);
+    assert.equal(migrated.info().schemaVersion,LOCAL_DATA_SCHEMA_VERSION);
     const reader=new DatabaseSync(filename,{readOnly:true});
     assert.equal(reader.prepare('SELECT text FROM drafts WHERE project_id=?').get('project-six').text,'schema six draft');
     assert.equal(reader.prepare('SELECT count(*) n FROM content_sources').get().n,1);
@@ -79,12 +80,12 @@ test("new data store is real SQLite with a versioned application-owned schema", 
     (await readFile(store.filename)).subarray(0, 15).toString(),
     "SQLite format 3",
   );
-  assert.equal(store.info().schemaVersion, 17);
+  assert.equal(store.info().schemaVersion, LOCAL_DATA_SCHEMA_VERSION);
   const reader = new DatabaseSync(store.filename, { readOnly: true });
   assert.equal(reader.prepare("PRAGMA foreign_keys").get().foreign_keys, 1);
   assert.equal(
     reader.prepare("SELECT count(*) n FROM schema_migrations").get().n,
-    17,
+    LOCAL_DATA_SCHEMA_VERSION,
   );
   reader.close();
 });
@@ -95,10 +96,15 @@ test('schema 17 archives the current indexed source and unit when upgrading sche
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run('C:/fixture','notes.md','notes.md','notes.md','','.md','project_source','source',35,18,'2026-10-02T00:00:00Z','a'.repeat(64),1,'logical_unit','text-logical','ok',18,3,'','content-source:fixture','content-revision:fixture');
   db.prepare('INSERT INTO content_units(source_id,unit_no,locator,heading,text,word_count,char_count,sha256) VALUES(?,?,?,?,?,?,?,?)')
     .run(source.lastInsertRowid,1,'md:1','Fixture','Historic source sentence.',3,25,'b'.repeat(64));
-  db.exec(`DROP INDEX content_unit_revisions_ref; DROP INDEX content_source_revisions_project;
+  db.exec(`DROP TRIGGER opencode_derivation_inputs_immutable;
+    DROP TABLE opencode_derivation_jobs; DROP TABLE opencode_refresh_needed;
+    DELETE FROM data_table_lifecycle WHERE table_name IN ('opencode_derivation_jobs','opencode_refresh_needed');
+    ALTER TABLE opencode_sessions DROP COLUMN current_snapshot_sha256;
+    ALTER TABLE opencode_sessions DROP COLUMN publication_revision;
+    DROP INDEX content_unit_revisions_ref; DROP INDEX content_source_revisions_project;
     DROP TABLE content_unit_revisions; DROP TABLE content_source_revisions;
     DELETE FROM data_table_lifecycle WHERE table_name IN ('content_unit_revisions','content_source_revisions');
-    DELETE FROM schema_migrations WHERE version=17; PRAGMA user_version=16;`);
+    DELETE FROM schema_migrations WHERE version>=17; DROP VIEW IF EXISTS knowledge_outcome_summary; DROP VIEW IF EXISTS knowledge_task_outcomes; DELETE FROM data_table_lifecycle WHERE table_name IN ('knowledge_outcome_summary','knowledge_task_outcomes'); DROP TRIGGER claims_search_insert; DROP TRIGGER claims_search_update; DROP TRIGGER claims_search_delete; DROP TRIGGER claims_search_evidence_insert; DROP TRIGGER claims_search_evidence_delete; DROP TRIGGER claims_search_evidence_update; DROP TRIGGER claims_search_entity_update; DROP TRIGGER claims_search_alias_insert; DROP TRIGGER claims_search_alias_delete; DROP TRIGGER claims_search_alias_update; DROP TABLE claims_search_fts; DROP TABLE entity_relation_revisions; DELETE FROM data_table_lifecycle WHERE table_name IN ('claims_search_fts','entity_relation_revisions'); DROP TABLE memory_capture_jobs; DELETE FROM data_table_lifecycle WHERE table_name='memory_capture_jobs'; PRAGMA user_version=16;`);
   db.close();store.close();
   const upgraded=createLocalDataStore(root);
   try {
@@ -248,7 +254,7 @@ test("runtime records migrate transactionally with documents, receipts and an au
   assert.equal(reader.prepare('PRAGMA integrity_check').get().integrity_check, 'ok');
   reader.close();
   assert.throws(() => store.migrateRuntimeRecords(legacyPath, { quiesced: true, runtimeID: 'install-a' }), /already been recorded/);
-  assert.equal(store.info().schemaVersion, 17);
+  assert.equal(store.info().schemaVersion, LOCAL_DATA_SCHEMA_VERSION);
 });
 test('runtime migration keeps overlapping native IDs isolated by explicit runtime identity', async t => {
   const { root, store } = await localStore(t);
@@ -401,7 +407,10 @@ test('schema 9 upgrade assigns legacy runtime identity without losing copied sta
   const filename = store.filename;
   store.close();
   const db = new DatabaseSync(filename);
-  db.exec(`DROP VIEW knowledge_pinned_memories; DROP VIEW knowledge_current_claims; DROP VIEW knowledge_claim_evidence; DROP VIEW knowledge_memory_evidence; DROP VIEW knowledge_source_coverage;
+  db.exec(`DROP TRIGGER opencode_derivation_inputs_immutable;
+    DROP TABLE opencode_derivation_jobs; DROP TABLE opencode_refresh_needed;
+    DELETE FROM data_table_lifecycle WHERE table_name IN ('opencode_derivation_jobs','opencode_refresh_needed');
+    DROP VIEW IF EXISTS knowledge_outcome_summary; DROP VIEW IF EXISTS knowledge_task_outcomes; DELETE FROM data_table_lifecycle WHERE table_name IN ('knowledge_outcome_summary','knowledge_task_outcomes'); DROP VIEW knowledge_pinned_memories; DROP VIEW knowledge_current_claims; DROP VIEW knowledge_claim_evidence; DROP VIEW knowledge_memory_evidence; DROP VIEW knowledge_source_coverage;
     DELETE FROM data_table_lifecycle WHERE table_name IN ('runtime_instances','knowledge_pinned_memories','knowledge_current_claims','knowledge_claim_evidence','knowledge_memory_evidence','knowledge_source_coverage');
     DROP TABLE runtime_instances;
     CREATE TABLE operational_records_v9(collection TEXT NOT NULL,id TEXT NOT NULL,project_id TEXT,session_id TEXT,data TEXT NOT NULL,summary TEXT NOT NULL,PRIMARY KEY(collection,id)) STRICT;
@@ -425,11 +434,11 @@ test('schema 9 upgrade assigns legacy runtime identity without losing copied sta
     INSERT INTO application_settings VALUES('appearance','{"theme":"dark"}');
     INSERT INTO data_migration_runs VALUES('runtime-records-v1','C:/old-runtime/records.sqlite',1179796804,1,'source-hash','validated-copy','{}',100,200);
     DROP INDEX judgment_runs_cache; DROP TABLE judgment_results; DROP TABLE judgment_runs; DROP TABLE judgment_definitions;
-    DELETE FROM schema_migrations WHERE version>=10; DELETE FROM data_table_lifecycle WHERE table_name IN ('runtime_instances','knowledge_pinned_memories','knowledge_current_claims','knowledge_claim_evidence','knowledge_memory_evidence','knowledge_source_coverage','runtime_collection_markers','judgment_definitions','judgment_runs','judgment_results','opencode_sources','opencode_ingest_runs','opencode_ingest_cursors','opencode_ingest_failures','opencode_sessions','opencode_session_revisions','opencode_messages','opencode_message_revisions','opencode_source_coverage'); DROP VIEW opencode_source_coverage; DROP TABLE opencode_ingest_failures; DROP TABLE opencode_ingest_cursors; DROP TABLE opencode_ingest_runs; DROP TABLE opencode_message_revisions; DROP TABLE opencode_messages; DROP TABLE opencode_session_revisions; DROP TABLE opencode_sessions; DROP TABLE opencode_sources; DROP TABLE runtime_collection_markers; DROP INDEX content_unit_revisions_ref; DROP INDEX content_source_revisions_project; DROP TABLE content_unit_revisions; DROP TABLE content_source_revisions; DELETE FROM data_table_lifecycle WHERE table_name IN ('content_unit_revisions','content_source_revisions'); DROP INDEX content_sources_identity; ALTER TABLE content_sources DROP COLUMN revision_identity; ALTER TABLE content_sources DROP COLUMN source_identity; PRAGMA user_version=9;`);
+    DELETE FROM schema_migrations WHERE version>=10; DROP VIEW IF EXISTS knowledge_outcome_summary; DROP VIEW IF EXISTS knowledge_task_outcomes; DELETE FROM data_table_lifecycle WHERE table_name IN ('knowledge_outcome_summary','knowledge_task_outcomes'); DROP TRIGGER claims_search_insert; DROP TRIGGER claims_search_update; DROP TRIGGER claims_search_delete; DROP TRIGGER claims_search_evidence_insert; DROP TRIGGER claims_search_evidence_delete; DROP TRIGGER claims_search_evidence_update; DROP TRIGGER claims_search_entity_update; DROP TRIGGER claims_search_alias_insert; DROP TRIGGER claims_search_alias_delete; DROP TRIGGER claims_search_alias_update; DROP TABLE claims_search_fts; DROP TABLE entity_relation_revisions; DELETE FROM data_table_lifecycle WHERE table_name IN ('claims_search_fts','entity_relation_revisions'); DROP TABLE memory_capture_jobs; DELETE FROM data_table_lifecycle WHERE table_name='memory_capture_jobs'; DELETE FROM data_table_lifecycle WHERE table_name IN ('runtime_instances','knowledge_pinned_memories','knowledge_current_claims','knowledge_claim_evidence','knowledge_memory_evidence','knowledge_source_coverage','runtime_collection_markers','judgment_definitions','judgment_runs','judgment_results','opencode_sources','opencode_ingest_runs','opencode_ingest_cursors','opencode_ingest_failures','opencode_sessions','opencode_session_revisions','opencode_messages','opencode_message_revisions','opencode_source_coverage'); DROP VIEW opencode_source_coverage; DROP TABLE opencode_ingest_failures; DROP TABLE opencode_ingest_cursors; DROP TABLE opencode_ingest_runs; DROP TABLE opencode_message_revisions; DROP TABLE opencode_messages; DROP TABLE opencode_session_revisions; DROP TABLE opencode_sessions; DROP TABLE opencode_sources; DROP TABLE runtime_collection_markers; DROP INDEX content_unit_revisions_ref; DROP INDEX content_source_revisions_project; DROP TABLE content_unit_revisions; DROP TABLE content_source_revisions; DELETE FROM data_table_lifecycle WHERE table_name IN ('content_unit_revisions','content_source_revisions'); DROP INDEX content_sources_identity; ALTER TABLE content_sources DROP COLUMN revision_identity; ALTER TABLE content_sources DROP COLUMN source_identity; PRAGMA user_version=9;`);
   db.close();
   const upgraded = createLocalDataStore(root);
   const result = new DatabaseSync(upgraded.filename,{readOnly:true});
-  assert.equal(upgraded.info().schemaVersion,17);
+  assert.equal(upgraded.info().schemaVersion,LOCAL_DATA_SCHEMA_VERSION);
   assert.equal(result.prepare('SELECT data FROM operational_records WHERE runtime_id=? AND id=?').get('legacy-runtime-v1','old-id').data,'{"status":"uncertain"}');
   assert.equal(result.prepare('SELECT data FROM application_documents WHERE runtime_id=? AND document_key=?').get('legacy-runtime-v1','goals.json').data,'{"version":1,"records":{"g":{"status":"paused"}}}');
   assert.equal(result.prepare('SELECT data FROM project_registrations WHERE runtime_id=? AND project_id=?').get('legacy-runtime-v1','p').data,'{"id":"p"}');
@@ -460,7 +469,7 @@ test("bounded analytical SQL is read-only, parameterized, columnar and reports t
   const { store } = await localStore(t);
   store.saveDraft('p', 'new', 'alpha', 0);
   store.saveDraft('p', 'other', 'beta', 0);
-  const result = store.analyze('WITH selected AS (SELECT conversation_key, text FROM drafts WHERE project_id = $project) SELECT conversation_key AS key, text FROM selected ORDER BY key', { $project: 'p' }, { maxRows: 1 });
+  const result = await store.analyze('WITH selected AS (SELECT conversation_key, text FROM drafts WHERE project_id = $project) SELECT conversation_key AS key, text FROM selected ORDER BY key', { $project: 'p' }, { maxRows: 1 });
   assert.deepEqual(result.columns, ['key', 'text']);
   assert.deepEqual(result.rows, [{ key: 'new', text: 'alpha' }]);
   assert.equal(result.truncated, true);
@@ -479,7 +488,7 @@ test('documented source coverage view keeps source and segment counts independen
     VALUES(1,'p','notes.md','notes.md','notes.md','.md','project','active',1,120,'2026-10-01T12:00:00Z','hash',2,'line','test','ok',80,12)`).run();
   db.prepare("INSERT INTO content_units(unit_id,source_id,unit_no,locator,heading,text,word_count,char_count,sha256) VALUES(1,1,0,'L1','One','alpha',6,40,'u1'),(2,1,1,'L2','Two','beta',6,40,'u2')").run();
   db.close();
-  assert.deepEqual(store.analyze('SELECT source_count,extracted_source_count,declared_unit_count,stored_unit_count,extracted_word_count FROM knowledge_source_coverage WHERE project_key=$project', { $project: 'p' }).rows[0],
+  assert.deepEqual((await store.analyze('SELECT source_count,extracted_source_count,declared_unit_count,stored_unit_count,extracted_word_count FROM knowledge_source_coverage WHERE project_key=$project', { $project: 'p' })).rows[0],
     { source_count: 1, extracted_source_count: 1, declared_unit_count: 2, stored_unit_count: 2, extracted_word_count: 12 });
 });
 test("analytical SQL cancellation is checked before opening a query", async (t) => {
@@ -511,7 +520,7 @@ test('index repair rebuilds memory search from durable revisions', async t => {
   store.maintainIndex('reset');
   const reopened = createLocalDataStore(root);
   assert.equal(reopened.searchMemory('aurora').items[0].id, saved.id);
-  assert.equal(reopened.analyze('SELECT count(*) AS views FROM sqlite_master WHERE type=$type AND name LIKE $prefix', { $type: 'view', $prefix: 'knowledge_%' }).rows[0].views, 5);
+  assert.equal((await reopened.analyze('SELECT count(*) AS views FROM sqlite_master WHERE type=$type AND name LIKE $prefix', { $type: 'view', $prefix: 'knowledge_%' })).rows[0].views, 7);
   assert.equal(reopened.maintainIndex('check').healthy, true);
   reopened.close();
 });
@@ -548,50 +557,180 @@ test('OpenCode warehouse snapshots are durable, deduplicated by content revision
   db.close();
 });
 
-test('OpenCode warehouse backfill records a failed cursor and resumes without losing later sessions', async t => {
-  const {store}=await localStore(t),directory=path.join(os.tmpdir(),'warehouse-project');
+function nativeBackfillPage(route,options,sessions,directory,requests) {
+  assert.ok(route.startsWith('/experimental/session?'));
+  assert.equal(options.responseMetadata,true);
+  const url=new URL(route,'http://localhost'),params=url.searchParams;
+  assert.equal(params.get('directory'),directory);assert.equal(params.get('archived'),'true');
+  const start=params.has('start')?Number(params.get('start')):null,cursor=params.has('cursor')?Number(params.get('cursor')):null,limit=Number(params.get('limit'));
+  requests?.push({start,cursor,limit});
+  const ordered=sessions.filter(row=>(start===null||row.time.updated>=start)&&(cursor===null||row.time.updated<cursor))
+    .sort((a,b)=>b.time.updated-a.time.updated||(a.id<b.id?1:a.id>b.id?-1:0));
+  const body=ordered.slice(0,limit);
+  return {body,metadata:{'x-next-cursor':ordered.length>limit?String(body.at(-1).time.updated):null}};
+}
+
+test('OpenCode warehouse backfill records a failed timestamp cursor and resumes without losing later sessions', async t => {
+  const {root,store}=await localStore(t),directory=path.join(os.tmpdir(),'warehouse-project');
   const project={id:'warehouse-backfill-project',directory,name:'Synthetic backfill'};
-  const sessions=['ses_a','ses_b','ses_c'].map((id,index)=>({id,directory,title:id,time:{created:100+index,updated:100+index}}));
-  let failB=true;const offsets=[];
+  const sessions=['ses_a','ses_b','ses_c'].map((id,index)=>({id,directory,title:id,time:{created:100+index,updated:900-index*100}}));
+  let failB=true,failDerivedB=true,activeStore=store,history,clock=Date.now();const pages=[];
+  t.mock.method(Date,'now',()=>clock);
+  const publish=store.publishWarehouseDerivationJob.bind(store);
+  store.publishWarehouseDerivationJob=input=>{
+    const snapshot=store.readWarehouseDerivationSnapshot(input);
+    if(snapshot.job?.sessionID==='ses_b'&&failDerivedB){failDerivedB=false;throw Error('synthetic derived index failure');}
+    return publish(input);
+  };
   const app={store:{async read(){return {projects:[project]};}},async project(id){assert.equal(id,project.id);return project;},indexJobs:null};
-  const host={async databasePath(){return 'C:\\Synthetic\\opencode.db';},async request(route){
-    if(route.startsWith('/session?')) {const url=new URL(route,'http://localhost');const start=Number(url.searchParams.get('start')||0),limit=Number(url.searchParams.get('limit'));offsets.push(start);return sessions.slice(start,start+limit);}
+  const host={async databasePath(){return 'C:\\Synthetic\\opencode.db';},async request(route,options){
+    if(route.startsWith('/experimental/session?')) return nativeBackfillPage(route,options,sessions,directory,pages);
     const id=decodeURIComponent(route.split('/')[2]);if(id==='ses_b'&&failB){failB=false;throw Error('synthetic temporary failure');}
     return [{info:{id:`msg_${id}`,role:'user'},parts:[{id:`part_${id}`,type:'text',text:`captured ${id}`}]}];
   }};
-  const history=createHistoryService({app,host,backendRoot:directory,dataRoot:directory,localData:{get:()=>store}});
+  const createHistory=()=>createHistoryService({app,host,backendRoot:directory,dataRoot:directory,localData:{get:()=>activeStore}});
+  history=createHistory();
+  try {
   const first=await history.backfillOpenCode({projectID:project.id,pageSize:2});
-  assert.equal(first.results[0].status,'partial');assert.deepEqual(first.results[0].cursor,{start:1,previousID:'ses_a'});assert.equal(first.results[0].failedSessions,1);
+  assert.equal(first.results[0].status,'partial');assert.equal(first.results[0].cursor.contract,'opencode-updated-v1');
+  assert.equal(first.results[0].cursor.before,null);assert.deepEqual(first.results[0].cursor.retryIDs,['ses_b']);assert.equal(first.results[0].failedSessions,1);
+  assert.equal(store.readOpenCodeSession({projectID:project.id,sessionID:'ses_c'}).status,'ok');
   assert.equal(store.openCodeIngestFailures({runID:first.results[0].runID})[0].sessionID,'ses_b');
   const beforeResume=store.openCodeIngestStatus({projectID:project.id});assert.equal(beforeResume[0].coverageState,'incomplete');
+  clock++;
   const second=await history.backfillOpenCode({projectID:project.id,pageSize:2,resume:true});
-  assert.equal(second.results[0].status,'complete');assert.equal(second.results[0].capturedSessions,2);
-  assert.equal(second.results[0].capturedMessages,2);assert.deepEqual(offsets,[0,2,1,1,0,3]);
-  assert.equal(store.openCodeIngestStatus({projectID:project.id})[0].coverageState,'complete');
-  assert.equal(store.openCodeCoverage()[0].sessions,3);
+  assert.equal(second.results[0].status,'complete');assert.equal(second.results[0].cursor,null);
+  assert.equal(second.results[0].failedSessions,0,'Publication failure is separate from authoritative source capture.');
+  assert.equal(store.readOpenCodeSession({projectID:project.id,sessionID:'ses_b'}).status,'ok','Immutable source capture precedes derived indexing.');
+  assert.equal(store.searchChats('ses_b',{project:project.id}).length,0);
+  assert.equal(store.openCodeIngestFailures({runID:second.results[0].runID}).length,0,'A search publication error is not reported as a native source failure.');
+  const pending=store.listWarehouseDerivationJobs({projectID:project.id,includeDeferred:true});
+  assert.equal(pending.length,1);assert.equal(pending[0].sessionID,'ses_b');assert.equal(pending[0].status,'pending');
+  assert.equal(pending[0].attempts,1);assert.ok(pending[0].nextAttemptAt>clock);
+  assert.doesNotMatch(pending[0].error,/synthetic derived index failure/,'Failure receipts retain safe metadata.');
+  assert.equal((await history.processWarehouseDerivationJobs({projectID:project.id})).processed,0,'Retry waits for its recorded deadline.');
+  await history.close();activeStore.close();activeStore=createLocalDataStore(root);history=createHistory();
+  const recovered=activeStore.listWarehouseDerivationJobs({projectID:project.id,includeDeferred:true});
+  assert.deepEqual(recovered.map(job=>[job.id,job.revisionToken,job.attempts,job.nextAttemptAt]),
+    pending.map(job=>[job.id,job.revisionToken,job.attempts,job.nextAttemptAt]),'Pending publication and retry state survive SQLite reopen.');
+  clock=pending[0].nextAttemptAt;
+  const third=await history.backfillOpenCode({projectID:project.id,pageSize:2,resume:true});
+  assert.equal(third.results[0].status,'complete');assert.equal(third.results[0].capturedSessions,3);
+  assert.equal(third.results[0].capturedMessages,3);assert.equal(third.results[0].cursor,null);
+  assert.ok(activeStore.searchChats('ses_b',{project:project.id}).some(hit=>hit.session==='ses_b'));
+  assert.equal(activeStore.listWarehouseDerivationJobs({projectID:project.id,includeDeferred:true}).length,0);
+  const capturedDB=new DatabaseSync(activeStore.filename,{readOnly:true});
+  assert.equal(capturedDB.prepare('SELECT count(*) n FROM opencode_message_revisions').get().n,3,'Retry keeps exact source revisions deduplicated.');
+  capturedDB.close();
+  assert.ok(pages.some(row=>row.cursor===800&&row.start===null));
+  assert.ok(pages.some(row=>row.cursor===801&&row.start===800));
+  assert.equal(activeStore.openCodeIngestStatus({projectID:project.id})[0].coverageState,'complete');
+  assert.equal(activeStore.openCodeCoverage()[0].sessions,3);
+  } finally {await history?.close();activeStore.close();}
 });
 
-test('OpenCode warehouse backfill stays partial when session insertion shifts an offset page and resumes from zero', async t => {
+test('OpenCode warehouse backfill discards legacy offsets and reconciles head insertion before claiming complete coverage', async t => {
   const {store}=await localStore(t),directory=path.join(os.tmpdir(),'warehouse-project-shifting');
   const project={id:'warehouse-shifting-project',directory,name:'Synthetic shifting inventory'};
-  const sessions=['ses_a','ses_b','ses_c'].map((id,index)=>({id,directory,title:id,time:{created:100+index,updated:100+index}}));
+  const sessions=['ses_a','ses_b','ses_c'].map((id,index)=>({id,directory,title:id,time:{created:100+index,updated:900-index*100}}));
   let insertBeforeNextPage=true;const captured=[];
   const app={store:{async read(){return {projects:[project]};}},async project(id){assert.equal(id,project.id);return project;},indexJobs:null};
-  const host={async databasePath(){return 'C:\\Synthetic\\opencode-shifting.db';},async request(route){
-    if(route.startsWith('/session?')) {const url=new URL(route,'http://localhost');const start=Number(url.searchParams.get('start')||0),limit=Number(url.searchParams.get('limit'));return sessions.slice(start,start+limit);}
+  const source=openCodeSourceIdentity('C:\\Synthetic\\opencode-shifting.db');
+  const old=store.beginOpenCodeIngest({...source,projectID:project.id,mode:'backfill'});
+  store.checkpointOpenCodeIngest({runID:old.runID,cursor:{start:2,previousID:'ses_b'},discoveredSessions:2,capturedSessions:2,capturedMessages:2,failedSessions:0,status:'partial'});
+  const host={async databasePath(){return 'C:\\Synthetic\\opencode-shifting.db';},async request(route,options){
+    if(route.startsWith('/experimental/session?')) return nativeBackfillPage(route,options,sessions,directory);
     const id=decodeURIComponent(route.split('/')[2]);captured.push(id);
-    if(id==='ses_b'&&insertBeforeNextPage){insertBeforeNextPage=false;sessions.unshift({id:'ses_new',directory,title:'ses_new',time:{created:99,updated:300}});}
+    if(id==='ses_b'&&insertBeforeNextPage){insertBeforeNextPage=false;sessions.unshift({id:'ses_new',directory,title:'ses_new',time:{created:99,updated:1000}});}
     return [{info:{id:`msg_${id}`,role:'user'},parts:[{id:`part_${id}`,type:'text',text:`captured ${id}`}]}];
   }};
   const history=createHistoryService({app,host,backendRoot:directory,dataRoot:directory,localData:{get:()=>store}});
   const first=await history.backfillOpenCode({projectID:project.id,pageSize:2});
-  assert.equal(first.results[0].status,'partial');assert.deepEqual(first.results[0].cursor,{start:0});
-  assert.match(first.results[0].error,/ordering changed across the backfill page boundary/);
+  assert.equal(first.results[0].status,'partial');assert.equal(first.results[0].cursor.before,null);
+  assert.equal(first.results[0].cursor.contract,'opencode-updated-v1');assert.equal(Object.hasOwn(first.results[0].cursor,'start'),false);
+  assert.match(first.results[0].error,/inventory changed during backfill/);
   assert.equal(store.openCodeIngestStatus({projectID:project.id})[0].coverageState,'incomplete');
   const second=await history.backfillOpenCode({projectID:project.id,pageSize:2,resume:true});
   assert.equal(second.results[0].status,'complete');assert.equal(store.openCodeIngestStatus({projectID:project.id})[0].coverageState,'complete');
   assert.deepEqual([...new Set(captured)].sort(),['ses_a','ses_b','ses_c','ses_new']);
   assert.equal(store.openCodeCoverage()[0].sessions,4);
+});
+
+test('OpenCode warehouse backfill drains exact same-time siblings including archived and child sessions before advancing', async t => {
+  const {store}=await localStore(t),directory=path.join(os.tmpdir(),'warehouse-project-ties');
+  const project={id:'warehouse-tie-project',directory,name:'Synthetic timestamp ties'};
+  const sessions=['ses_a','ses_b','ses_c','ses_d','ses_e'].map((id,index)=>({id,directory,title:id,
+    ...(id==='ses_c'?{parentID:'ses_a'}:{}),time:{created:100+index,updated:index===0?900:index===4?700:800,...(id==='ses_b'?{archived:850}:{})}}));
+  const pages=[],captured=[];let insertSameTime=false,initialBackfill=true,checkpointProofs=0;
+  const app={store:{async read(){return {projects:[project]};}},async project(){return project;},indexJobs:null};
+  const host={async databasePath(){return 'C:\\Synthetic\\opencode-ties.db';},async request(route,options){
+    if(route.startsWith('/experimental/session?')) return nativeBackfillPage(route,options,sessions,directory,pages);
+    const id=decodeURIComponent(route.split('/')[2]);captured.push(id);
+    if(insertSameTime&&id==='ses_e') {insertSameTime=false;sessions.push({id:'ses_aa',directory,title:'Hidden same-time insertion',time:{created:150,updated:800}});}
+    return [{info:{id:`msg_${id}`,role:'user'},parts:[{id:`part_${id}`,type:'text',text:`captured ${id}`}]}];
+  }};
+  const original=store.checkpointOpenCodeIngest.bind(store);
+  store.checkpointOpenCodeIngest=options=>{
+    if(initialBackfill&&options.cursor?.before===800) for(const id of ['ses_a','ses_b','ses_c','ses_d']) {
+      assert.equal(store.readOpenCodeSession({projectID:project.id,sessionID:id}).status,'ok');
+      const job=store.listWarehouseDerivationJobs({projectID:project.id,includeDeferred:true}).find(row=>row.sessionID===id);
+      assert.ok(job,'The source snapshot commits its pending publication before cursor advance.');
+      const snapshot=store.readWarehouseDerivationSnapshot(job);
+      assert.equal(snapshot.isCurrent,true);assert.equal(snapshot.projectionSafe,true);
+      assert.equal(snapshot.messages[0].info.id,`msg_${id}`);
+      checkpointProofs++;
+    }
+    return original(options);
+  };
+  const history=createHistoryService({app,host,backendRoot:directory,dataRoot:directory,localData:{get:()=>store}});
+  t.after(()=>history.close());
+  const result=await history.backfillOpenCode({projectID:project.id,pageSize:2});
+  initialBackfill=false;
+  assert.equal(result.results[0].status,'complete');assert.equal(result.results[0].capturedSessions,5);
+  assert.ok(checkpointProofs>=4,'The timestamp checkpoint inspected every retained boundary source and queued publication.');
+  for(const session of sessions) assert.ok(store.searchChats(session.id,{project:project.id}).some(hit=>hit.session===session.id),
+    'The drained derivation worker publishes every captured session after the source checkpoints.');
+  assert.deepEqual(captured,['ses_a','ses_d','ses_c','ses_b','ses_e']);
+  assert.deepEqual(pages.filter(row=>row.start===800),[
+    {start:800,cursor:801,limit:5000},
+    {start:800,cursor:801,limit:5000},
+  ]);
+  assert.equal(store.openCodeCoverage()[0].sessions,5);
+  assert.equal(store.readOpenCodeSession({projectID:project.id,sessionID:'ses_c'}).session.parentID,'ses_a');
+  insertSameTime=true;
+  const changed=await history.backfillOpenCode({projectID:project.id,pageSize:2,resume:false});
+  assert.equal(changed.results[0].status,'partial');assert.equal(changed.results[0].cursor.before,null);
+  assert.match(changed.results[0].error,/inventory changed during backfill/);
+  assert.deepEqual(sessions.toSorted((a,b)=>b.time.updated-a.time.updated||(a.id<b.id?1:-1)).slice(0,2).map(row=>row.id),['ses_a','ses_d'],
+    'The newest-page prefix did not change; its expanded boundary bucket must detect the insertion.');
+  const reconciled=await history.backfillOpenCode({projectID:project.id,pageSize:2});
+  assert.equal(reconciled.results[0].status,'complete');assert.equal(store.openCodeCoverage()[0].sessions,6);
+  assert.equal(store.readOpenCodeSession({projectID:project.id,sessionID:'ses_aa'}).status,'ok');
+});
+
+test('OpenCode warehouse backfill bounds an oversized timestamp bucket without advancing or claiming complete coverage', async t => {
+  const directory=path.join(os.tmpdir(),'warehouse-capped-unit-fixture'),project={id:'capped-unit-project',name:'Bounded bucket fixture',directory};
+  const sessions=Array.from({length:5001},(_,index)=>({id:`ses_${String(index).padStart(5,'0')}`,directory,title:'Capped fixture',time:{created:100,updated:800}}));
+  const pages=[],capturedIDs=new Set();let lastCheckpoint;
+  // A lightweight capture sink isolates paging bounds; the preceding contracts
+  // and disposable native smoke cover actual SQLite commit/reopen behavior.
+  const data={resumeMemoryCaptures:()=>[],beginOpenCodeIngest:()=>({runID:'bounded-unit-run',cursor:null}),
+    checkpointOpenCodeIngest(value){assert.notEqual(value.cursor?.before,800);lastCheckpoint=structuredClone(value);return value;},
+    recordOpenCodeSnapshot({session,messages}){capturedIDs.add(session.id);return {messages:messages.length};},
+    indexChat(){},recordOpenCodeIngestFailure(){assert.fail('No capture failure expected.');},openCodeCoverage:()=>[]};
+  const app={store:{async read(){return {projects:[project]};}},async project(){return project;}};
+  const host={async databasePath(){return 'C:\\Synthetic\\bounded-unit.db';},async request(route,options){
+    if(route.startsWith('/experimental/session?'))return nativeBackfillPage(route,options,sessions,directory,pages);
+    return [];
+  }};
+  const history=createHistoryService({app,host,backendRoot:directory,dataRoot:directory,localData:{get:()=>data}});
+  t.after(()=>history.close());
+  const result=await history.backfillOpenCode({projectID:project.id,pageSize:2});
+  assert.equal(result.results[0].status,'partial');assert.match(result.results[0].error,/more than 5000 sessions/);
+  assert.deepEqual(lastCheckpoint.cursor.bucket,{updatedAt:800,limit:5000});assert.equal(lastCheckpoint.cursor.before,null);
+  assert.equal(lastCheckpoint.complete,undefined);assert.equal(capturedIDs.size,5000);
+  assert.ok(pages.every(row=>row.limit<=5000));assert.equal(pages.at(-1).limit,5000);
+  assert.equal(lastCheckpoint.cursor.head.length,64,'Every checkpoint retains a bounded head hash.');
 });
 
 test("memory entities, relations and evidence-backed claims are duplicate safe and transactional", async (t) => {
@@ -623,8 +762,8 @@ test("memory entities, relations and evidence-backed claims are duplicate safe a
   assert.equal(db.prepare('SELECT epistemic_state FROM claims WHERE claim_id=?').get(claim.id).epistemic_state, 'superseded');
   assert.equal(db.prepare('SELECT new_ref FROM memory_changes WHERE claim_id=? AND change_type=?').get(claim.id, 'claim_corrected').new_ref, corrected.id);
   assert.equal(db.prepare('SELECT evidence_id FROM claim_evidence WHERE claim_id=?').get(corrected.id).evidence_id, 'doc:2#L4');
-  assert.equal(store.analyze('SELECT epistemic_state,evidence_count FROM knowledge_current_claims WHERE claim_id=$id', { $id: corrected.id }).rows[0].evidence_count, 1);
-  assert.equal(store.analyze('SELECT count(*) AS n FROM knowledge_current_claims WHERE claim_id=$id', { $id: claim.id }).rows[0].n, 0);
+  assert.equal((await store.analyze('SELECT epistemic_state,evidence_count FROM knowledge_current_claims WHERE claim_id=$id', { $id: corrected.id })).rows[0].evidence_count, 1);
+  assert.equal((await store.analyze('SELECT count(*) AS n FROM knowledge_current_claims WHERE claim_id=$id', { $id: claim.id })).rows[0].n, 0);
   db.close();
   assert.deepEqual(store.deleteEntity({id:a.id,reason:'remove entity'}),{id:a.id,deleted:false,reason:'claims_reference_entity',claimsRetained:2});
   assert.deepEqual(store.deleteRelation({id:relation.id,reason:'remove graph edge'}),{id:relation.id,deleted:true});
@@ -668,7 +807,7 @@ test("legacy conversation pins become idempotent metadata-only memories with ori
   const memory = store.getMemory(first.id);
   assert.equal(memory.revision.captureBoundary.status, 'metadata_only');
   assert.equal(memory.revision.captureBoundary.originallyPinnedAt, originalPinnedAt);
-  assert.equal(store.analyze('SELECT original_pinned_at FROM knowledge_pinned_memories WHERE memory_id=$id', { $id: first.id }).rows[0].original_pinned_at, originalPinnedAt);
+  assert.equal((await store.analyze('SELECT original_pinned_at FROM knowledge_pinned_memories WHERE memory_id=$id', { $id: first.id })).rows[0].original_pinned_at, originalPinnedAt);
   const missing = store.pinConversationSnapshot({ projectID:'p',sessionID:'ses_missing',title:'Known title',originalPinnedAt,annotationRevision:1 });
   assert.equal(missing.sourceStatus, 'missing_source');
   assert.equal(store.getMemory(missing.id).revision.captureBoundary.status, 'metadata_only');
@@ -738,7 +877,7 @@ test("fresh data setup leaves prior library.sqlite untouched", async (t) => {
   const store = createLocalDataStore(root);
   try {
     assert.equal(path.basename(store.filename), "freelancer.sqlite");
-    assert.equal(store.info().schemaVersion, 17);
+    assert.equal(store.info().schemaVersion, LOCAL_DATA_SCHEMA_VERSION);
     assert.equal(await readFile(legacy, "utf8"), "do not import prior data");
   } finally { store.close(); }
 });
@@ -1295,11 +1434,11 @@ test("explicit per-user data location must be absolute", () => {
   );
   assert.equal(
     resolveDataRoot({}, "win32", "C:\\Users\\Example"),
-    path.join("C:\\Users\\Example", "AppData", "Local", "Freelancer", "workspace-v1"),
+    path.join("C:\\Users\\Example", "AppData", "Local", "Freelancer", "workspace-v2"),
   );
   assert.equal(
     resolveDataRoot({}, "darwin", "/Users/example"),
-    path.join("/Users/example", "Library", "Application Support", "Freelancer", "workspace-v1"),
+    path.join("/Users/example", "Library", "Application Support", "Freelancer", "workspace-v2"),
   );
 });
 

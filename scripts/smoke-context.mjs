@@ -9,22 +9,29 @@ import { startHost } from '../server/host.mjs';
 import { createContextSettings } from '../server/context-settings.mjs';
 import { FRESH_RUNTIME_ID, runtimeEnv } from '../server/runtime-config.mjs';
 import { assertFreshRuntimeRoot, createLocalDataStore } from '../server/data/store.mjs';
+import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
+import { fileURLToPath } from 'node:url';
 
 const tempRoot = await mkdtemp(path.join(os.tmpdir(),'freelancer-context-smoke-'));
 const root=path.join(tempRoot,'backend'), directory=path.join(tempRoot,'project');
 const nativeConfig=path.join(tempRoot,'native-config');
+const nativeHome=path.join(tempRoot,'native-home'),nativeTemp=path.join(tempRoot,'native-temp');
 const config={backendRoot:root,opencodePlugins:[],instructions:[],dataRoot:path.join(tempRoot,'user-data'),runtimeID:FRESH_RUNTIME_ID};
 const inherited=Object.fromEntries(Object.entries(process.env).filter(([key])=>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
 const env={...inherited,...runtimeEnv(config),OPENCODE_CONFIG_DIR:nativeConfig,XDG_CONFIG_HOME:nativeConfig,
-  XDG_DATA_HOME:path.join(tempRoot,'native-data'),XDG_CACHE_HOME:path.join(tempRoot,'cache'),XDG_STATE_HOME:path.join(tempRoot,'state')};
+  XDG_DATA_HOME:path.join(tempRoot,'native-data'),XDG_CACHE_HOME:path.join(tempRoot,'cache'),XDG_STATE_HOME:path.join(tempRoot,'state'),
+  OPENCODE_TEST_HOME:nativeHome,HOME:nativeHome,USERPROFILE:nativeHome,
+  APPDATA:path.join(nativeHome,'AppData','Roaming'),LOCALAPPDATA:path.join(nativeHome,'AppData','Local'),TEMP:nativeTemp,TMP:nativeTemp};
 let host;
 try {
-  await mkdir(root,{recursive:true}); await mkdir(nativeConfig,{recursive:true}); await mkdir(directory);
+  await Promise.all([root,nativeConfig,directory,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
+    .map(folder=>mkdir(folder,{recursive:true})));
   assertFreshRuntimeRoot(config.dataRoot,config.runtimeID);
   const initial=createLocalDataStore(config.dataRoot);
   try {initial.initializeFreshRuntime(config.runtimeID);} finally {initial.close();}
   await writeFile(path.join(nativeConfig,'opencode.json'),JSON.stringify({autoupdate:false,share:'disabled'}));
+  await seedNativeSmokeDependencies({fixtureRoot:tempRoot,appRoot:fileURLToPath(new URL('..',import.meta.url)),nativeConfig,projectDirectories:[root,directory]});
   // Put sibling options in the same native project file: global deep merge must
   // not mask accidental replacement of the whole project compaction object.
   const projectFile=path.join(directory,'opencode.jsonc');

@@ -21,8 +21,8 @@ function questionFor(definition) {
     return choice(question, options);
   }
   if (primitive === 'score') {
-    if (!Array.isArray(criteria.levels) || criteria.levels.length < 2 || criteria.levels.length > 20)
-      throw Error('Score judgments require between two and twenty ordered criteria levels.');
+    if (!Array.isArray(criteria.levels) || criteria.levels.length < 2 || criteria.levels.length > 10)
+      throw Error('Score judgments require between two and ten ordered criteria levels.');
     return score(question, criteria.levels);
   }
   throw Error('Unsupported TypeSafe judgment primitive.');

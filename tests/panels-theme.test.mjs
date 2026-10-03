@@ -50,9 +50,18 @@ test("width persistence requires an exact server acknowledgement", async () => {
 });
 async function fixture(t) {
   const root = await mkdtemp(path.join(tmpdir(), "freelancer-panels-theme-"));
-  t.after(() => rm(root, { recursive: true, force: true }));
   const store = createStore(root), app = createApplication({ backendRoot: root, store, host: {} });
-  return { root, store, app };
+  const cleanups = [];
+  t.after(async () => {
+    for (const cleanup of cleanups) await cleanup();
+    await app.indexJobs.close();
+    await app.history.close();
+    await app.modelRatings.close();
+    await app.gitProjects.close();
+    app.localData.close();
+    await rm(root, { recursive: true, force: true });
+  });
+  return { root, store, app, cleanups };
 }
 test("widths and theme persist through the real handler and a reopened store", async (t) => {
   const { root, app } = await fixture(t);
@@ -98,11 +107,11 @@ test("applying a theme updates critical background as well as CSS theme selector
   assert.equal(resolveTheme("broken"), "light");
 });
 test("fresh servers on different ports both serve the persisted dark initial page", async (t) => {
-  const { root, app } = await fixture(t);
+  const { root, app, cleanups } = await fixture(t);
   await app.saveAppearance({ theme: "dark" });
   const assets = new URL("../", import.meta.url).pathname;
   const servers = [];
-  t.after(() => { for (const { server } of servers) { server.closeAllConnections(); server.close(); } });
+  cleanups.push(async () => { for (const runtime of servers) await runtime.close(); });
   for (let i = 0; i < 2; i++) {
     const runtime = await startServer({ assets: process.cwd(), application:
       createApplication({ backendRoot: root, store: createStore(root), host: {} }) });
@@ -118,9 +127,10 @@ test("fresh servers on different ports both serve the persisted dark initial pag
   assert.notEqual(servers[0].url, servers[1].url);
 });
 test("appearance HTTP retains its local-only guards and echoes a saved theme", async (t) => {
-  const { app } = await fixture(t);
-  const { server, url } = await startServer({ application: app, assets: "." });
-  t.after(() => { server.closeAllConnections(); server.close(); });
+  const { app, cleanups } = await fixture(t);
+  const runtime = await startServer({ application: app, assets: "." });
+  const { url } = runtime;
+  cleanups.push(() => runtime.close());
   const body = JSON.stringify({ theme: "dark", panelWidths: { details: 420 } });
   assert.equal((await fetch(url + "/api/appearance", { method: "PUT", body })).status, 403);
   const result = await fetch(url + "/api/appearance", { method: "PUT", body,

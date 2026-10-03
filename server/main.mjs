@@ -7,10 +7,12 @@ import { startHost } from "./host.mjs";
 import { startServer } from "./http.mjs";
 import { acquireLock } from "./lock.mjs";
 import { createObserver } from "./observer.mjs";
+import { createOpenCodeEventCoordinator } from './opencode-event-coordinator.mjs';
 import { createRemoteAccess } from "./remote-access.mjs";
 import { resolveRuntimeConfig,runtimeEnv } from "./runtime-config.mjs";
 import { rememberWebPort,savedWebPort } from "./web-port.mjs";
 import { assertFreshRuntimeRoot, createLocalDataStore } from './data/store.mjs';
+import { readRestoreRecoveryState } from './data/recovery.mjs';
 
 // ── Fresh runtime bootstrap ────────────────────────────────────────────
 // All paths resolve from the source tree. No runtime.json, no
@@ -20,18 +22,19 @@ const { backendRoot } = config;
 // Private process capability, never included in bootstrap or model prompts.
 process.env.FREELANCER_GIT_BRIDGE = randomBytes(32).toString("hex");
 const releaseLock = await acquireLock(path.join(backendRoot, ".state/webpage"));
-let host, webPort, remoteAccess;
+let host, webPort, remoteAccess, recovery;
+const webPortFile = path.join(backendRoot, '.state/webpage/port.json');
 try {
   assertFreshRuntimeRoot(config.dataRoot, config.runtimeID);
   const initialData = createLocalDataStore(config.dataRoot);
   try { initialData.initializeFreshRuntime(config.runtimeID); }
   finally { initialData.close(); }
+  recovery = readRestoreRecoveryState(config.dataRoot);
 
   // Activate the registered empty per-user database before any app or native
   // OpenCode plugin can read state. Native OpenCode config and data paths stay
   // inherited and unchanged.
   Object.assign(process.env, runtimeEnv(config));
-  const webPortFile = path.join(backendRoot, '.state/webpage/port.json');
   webPort = await savedWebPort(webPortFile, process.env.FREELANCER_WEB_PORT);
   remoteAccess = await createRemoteAccess({ file: path.join(backendRoot, '.state/remote-access.json') });
   host = await startHost({ backendRoot, config });
@@ -41,9 +44,12 @@ try {
   await releaseLock();
   throw e;
 }
-const app = createApplication({ backendRoot, host, dataRoot: config.dataRoot });
+const app = createApplication({ backendRoot, host, dataRoot: config.dataRoot,
+  automaticWorkAllowed: !recovery.automaticWorkBlocked });
 const observer = createObserver({ host, store: app.store });
+const warehouseEvents = createOpenCodeEventCoordinator({ host, store: app.store, history: app.history });
 observer.start();
+warehouseEvents.start();
 // Reuse the backend collector. Manual refresh joins the same in-flight request.
 const refreshUsage = () => void app.refreshUsage().catch(() => {});
 refreshUsage();
@@ -56,6 +62,7 @@ let shutdownPromise;
 const shutdown = () => shutdownPromise ??= (async () => {
   closing = true;
   clearInterval(usageTimer);
+  try { await warehouseEvents.stop(); } catch (error) { console.error("OpenCode warehouse event shutdown failed", error); }
   try { await runtime?.close(); } catch (error) { console.error("Freelancer server cleanup failed", error); }
   try { host.stop(); } catch (error) { console.error("OpenCode shutdown failed", error); }
   try { await observer.stop(); } catch (error) { console.error("Activity observer shutdown failed", error); }
@@ -73,9 +80,13 @@ try {
     remoteAccess,
     shutdownToken,
     onShutdown: () => { void shutdown(); },
+    timers: !recovery.automaticWorkBlocked,
+    recoveryDataHome: config.dataRoot,
   });
 } catch (e) {
   clearInterval(usageTimer);
+  await warehouseEvents.stop();
+  await Promise.allSettled([app.history?.close(), app.indexJobs?.close(), app.gitProjects?.close(), app.store.flush()]);
   app.modelRatings?.close();
   app.localData?.close();
   host.stop();

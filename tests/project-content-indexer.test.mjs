@@ -8,6 +8,16 @@ import { spawnSync } from 'node:child_process';
 import { createLocalDataStore } from '../server/data/store.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { deflateRawSync } from 'node:zlib';
+import { FRESH_RUNTIME_ID } from '../server/runtime-config.mjs';
+
+function createRegisteredStore(dataHome,project) {
+  const store=createLocalDataStore(dataHome);
+  store.initializeFreshRuntime(FRESH_RUNTIME_ID);
+  const db=new DatabaseSync(store.filename);
+  try {db.prepare('INSERT INTO project_registrations(runtime_id,project_id,data) VALUES(?,?,?)').run(FRESH_RUNTIME_ID,'fixture-project',JSON.stringify({id:'fixture-project',directory:project}));}
+  finally {db.close();}
+  return store;
+}
 
 function zip(files) {
   const locals=[],centrals=[];let offset=0;
@@ -31,8 +41,34 @@ test('Node indexer without --db uses the registered Freelancer data root', async
   assert.equal(existsSync(path.join(data,'freelancer.sqlite')),true,'indexer writes to the configured Freelancer warehouse');
   const db=new DatabaseSync(path.join(data,'freelancer.sqlite'),{readOnly:true});
   try {
-    assert.equal(db.prepare('SELECT status FROM data_migration_runs WHERE migration_id=?').get('fresh-runtime:freelancer-workspace-v1').status,'fresh-bootstrap');
+    assert.equal(db.prepare('SELECT status FROM data_migration_runs WHERE migration_id=?').get('fresh-runtime:freelancer-workspace-v2').status,'fresh-bootstrap');
   } finally { db.close(); }
+});
+
+test('legacy file/chat queries require registration and resolve a directory to its canonical project ID', async t => {
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-index-query-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const project=path.join(root,'project'),data=path.join(root,'data');await mkdir(project);
+  const store=createRegisteredStore(data,project);
+  try {
+    store.indexChat('fixture-project',{id:'canonical-chat',title:'Target',time:{updated:1}},[
+      {info:{id:'message',role:'assistant',providerID:'fixture',modelID:'model'},parts:[{type:'text',text:'日本語 amber observatory'}]},
+    ]);
+    store.indexChat('other-runtime-project',{id:'unregistered-chat',title:'Other',time:{updated:1}},[
+      {info:{id:'message',role:'assistant',providerID:'fixture',modelID:'model'},parts:[{type:'text',text:'日本語 amber observatory'}]},
+    ]);
+  } finally {store.close();}
+  const indexer=path.resolve('backend/tools/project-content-indexer.mjs'),db=path.join(data,'freelancer.sqlite');
+  const invoke=(...args)=>spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,...args],{cwd:project,encoding:'utf8'});
+  const result=invoke('chats','日本語 amber','--phrase','--model','fixture/model','--limit','1');
+  assert.equal(result.status,0,result.stderr);
+  const hit=JSON.parse(result.stdout);assert.equal(hit.results[0].projectID,'fixture-project');
+  assert.equal(hit.results[0].session,'canonical-chat');assert.equal(hit.truncated,false);
+  assert.equal(JSON.parse(invoke('chats','日本語','--global').stdout).results.length,1);
+  assert.equal(JSON.parse(invoke('chats','日本語','--model','fixture/missing').stdout).results.length,0);
+  const missing=path.join(root,'missing-data');
+  const cold=spawnSync(process.execPath,[indexer,'--project-key',project,'search','observatory'],{cwd:project,encoding:'utf8',env:{...process.env,FREELANCER_DATA_HOME:missing}});
+  assert.equal(cold.status,1);assert.equal(existsSync(missing),false,'legacy read queries must not bootstrap an incidental database');
 });
 
 test('Node project content indexer rebuilds, searches, and reports freshness without Python', async t => {
@@ -46,7 +82,10 @@ test('Node project content indexer rebuilds, searches, and reports freshness wit
   await writeFile(path.join(project,'reference','guide.md'),'A violet telescope records a reference mission.');
   await mkdir(path.join(project,'.cache'));
   await writeFile(path.join(project,'.cache','generated.md'),'A cached zephyr should not enter project search.');
-  const store=createLocalDataStore(path.join(root,'data')); store.close();
+  const store=createRegisteredStore(path.join(root,'data'),project);
+  store.createMemory({id:'authored-before-extraction',kind:'note',title:'Authored memory',body:'Keep this authored interpretation.'});
+  store.pinConversationSnapshot({projectID:'fixture-project',sessionID:'ses_before_extraction',title:'Retained pin',originalPinnedAt:987});
+  store.close();
   const db=path.join(root,'data','freelancer.sqlite'), indexer=path.resolve('backend/tools/project-content-indexer.mjs');
   const invoke=(...args)=>spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,...args],{cwd:project,encoding:'utf8',env:{...process.env,PATH:''}});
   const rebuilt=invoke('rebuild','--root',project,'--facts','none');
@@ -92,6 +131,12 @@ test('Node project content indexer rebuilds, searches, and reports freshness wit
   assert.equal(revisedHit.source_identity,originalIdentity);
   assert.notEqual(revisedHit.revision_identity,originalRevision,
     'content changes keep the source identity and create a distinct revision identity');
+  const oldExtractor=new DatabaseSync(db);
+  try { oldExtractor.prepare("UPDATE content_meta SET value='0' WHERE key='schema_version'").run(); }
+  finally { oldExtractor.close(); }
+  const upgraded=invoke('rebuild','--root',project,'--facts','none');
+  assert.equal(upgraded.status,0,upgraded.stderr);
+  assert.ok(JSON.parse(upgraded.stdout).files_reindexed>0,'an older extractor version forces re-extraction');
   const historical=new DatabaseSync(db,{readOnly:true});
   try {
     const prior=historical.prepare(`SELECT u.text FROM content_unit_revisions u WHERE u.source_identity=? AND u.revision_identity=?
@@ -101,8 +146,10 @@ test('Node project content indexer rebuilds, searches, and reports freshness wit
   } finally { historical.close(); }
   const repairedStore=createLocalDataStore(path.join(root,'data'));
   try {
+    assert.equal(repairedStore.getMemory('authored-before-extraction').revision.body,'Keep this authored interpretation.');
+    assert.equal(repairedStore.getMemory('conversation:fixture-project:ses_before_extraction').originalPinnedAt,987);
     repairedStore.maintainIndex('reset');
-    const retained=repairedStore.analyze(`SELECT text FROM content_unit_revisions WHERE source_identity=$source AND revision_identity=$revision AND locator=$locator`,
+    const retained=await repairedStore.analyze(`SELECT text FROM content_unit_revisions WHERE source_identity=$source AND revision_identity=$revision AND locator=$locator`,
       {$source:originalIdentity,$revision:originalRevision,$locator:firstHit.locator});
     assert.match(retained.rows[0].text,/Jupiter and its rings/,'derived index repair preserves historical evidence revisions');
   } finally { repairedStore.close(); }
@@ -110,7 +157,7 @@ test('Node project content indexer rebuilds, searches, and reports freshness wit
 
 test('Node indexer skips an unreadable extraction and keeps searchable sources', async t => {
   const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-node-index-skip-'));t.after(()=>rm(root,{recursive:true,force:true}));
-  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createLocalDataStore(data);store.close();
+  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createRegisteredStore(data,project);store.close();
   await writeFile(path.join(project,'broken.pdf'),'not a PDF');
   await writeFile(path.join(project,'good.md'),'The carnelian beacon is ready.');
   const indexer=path.resolve('backend/tools/project-content-indexer.mjs'),db=path.join(data,'freelancer.sqlite');
@@ -122,7 +169,7 @@ test('Node indexer skips an unreadable extraction and keeps searchable sources',
 
 test('Node indexer extracts DOCX, XLSX, ZIP virtual sources and stores structured facts', async t => {
   const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-Node-Index-Formats-'));t.after(()=>rm(root,{recursive:true,force:true}));
-  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createLocalDataStore(data);store.close();
+  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createRegisteredStore(data,project);store.close();
   const docx=zip({'word/document.xml':'<w:document xmlns:w="w"><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Voyager dossier</w:t></w:r></w:p><w:p><w:r><w:t>Speed: 9 km per second</w:t></w:r></w:p><w:p><w:r><w:t>Mission: Jupiter exploration</w:t></w:r></w:p></w:body></w:document>'});
   const xlsx=zip({'xl/workbook.xml':'<workbook xmlns:r="r"><sheets><sheet name="Ships" r:id="rId1"/></sheets></workbook>','xl/_rels/workbook.xml.rels':'<Relationships><Relationship Id="rId1" Target="worksheets/sheet1.xml"/></Relationships>','xl/sharedStrings.xml':'<sst><si><t>Name</t></si><si><t>Speed</t></si><si><t>Enterprise</t></si><si><t>Warp 9</t></si></sst>','xl/worksheets/sheet1.xml':'<worksheet><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="s"><v>3</v></c></row></sheetData></worksheet>'});
   await writeFile(path.join(project,'voyager.docx'),docx);await writeFile(path.join(project,'ships.xlsx'),xlsx);await writeFile(path.join(project,'archive.zip'),zip({'manual.txt':'Archive contains a nebula chart.'}));
@@ -144,7 +191,7 @@ test('Node indexer extracts DOCX, XLSX, ZIP virtual sources and stores structure
 
 test('Node indexer honors special fact rules and exposes aggregate fact statistics', async t => {
   const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-node-index-facts-'));t.after(()=>rm(root,{recursive:true,force:true}));
-  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createLocalDataStore(data);store.close();
+  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createRegisteredStore(data,project);store.close();
   await writeFile(path.join(project,'catalog.json'),JSON.stringify({model:'Aurora',speed:'9 km/s',status:'active'}));
   const indexer=path.resolve('backend/tools/project-content-indexer.mjs'),db=path.join(data,'freelancer.sqlite'),invoke=(...args)=>spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,...args],{cwd:project,encoding:'utf8'});
   const build=invoke('rebuild','--root',project,'--facts','both','--special-fact','velocity=speed');assert.equal(build.status,0,build.stderr);assert.ok(JSON.parse(build.stdout).facts>0);
@@ -154,7 +201,7 @@ test('Node indexer honors special fact rules and exposes aggregate fact statisti
 
 test('Node indexer reads a text-layer PDF without an external Python runtime', async t => {
   const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-node-index-pdf-'));t.after(()=>rm(root,{recursive:true,force:true}));
-  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createLocalDataStore(data);store.close();
+  const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createRegisteredStore(data,project);store.close();
   const pdf='%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\n2 0 obj << /Length 61 >> stream\nBT /F1 12 Tf 72 720 Td (ORCHID REPORT) Tj 0 -20 Td (Jupiter mission) Tj ET\nendstream endobj\n%%EOF';
   await writeFile(path.join(project,'report.pdf'),pdf,'latin1');
   const indexer=path.resolve('backend/tools/project-content-indexer.mjs'),db=path.join(data,'freelancer.sqlite'),build=spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,'rebuild','--root',project],{cwd:project,encoding:'utf8'});

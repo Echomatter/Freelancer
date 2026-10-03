@@ -20,10 +20,14 @@ const keepsReadOnly = permission => Array.isArray(permission) &&
   readOnlyPermissions.slice(0, 3).every(rule => permission.some(row =>
     row.permission === rule.permission && row.pattern === rule.pattern && row.action === rule.action));
 export function createModelRatingService({ host, backendRoot, dataRoot, project, getCatalog, store,
-  localData }) {
+  localData, canRun = () => true }) {
   const ownsLocalData = !localData;
   const dataService = localData ?? createLocalDataService(dataRoot ?? path.join(backendRoot, '.state', 'local-data'));
-  let timer, checking = false, starting = false, stopping = false;
+  let timer, checking = false, starting = false, stopping = false, closed = false;
+  const allowed = () => !closed && canRun() === true;
+  const requireAllowed = () => {
+    if (!allowed()) throw Object.assign(Error('Review restored work before starting or continuing model ratings research.'), {status:409});
+  };
   let decisions = { permissions: [], questions: [] };
   const ensuredReadOnly = new Set();
   const data = () => dataService.get();
@@ -43,6 +47,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
   }
 
   async function submit(job, p) {
+    if (!allowed()) return job;
     const progress = job.progress;
     const { agent, workspace, models, connected } = progress;
     const queue = [...(progress.queue ?? progress.rows.slice(progress.offset ?? 0))];
@@ -69,6 +74,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         createdAt: Date.now(), status: 'prepared', policyVersion, agent, mode: 'build', catalog: workspace,
         catalogModels: models, catalogConnected: connected, directory: p.directory, readOnly: true,
         model: { providerID, modelID: rest.join('/') }, variant: progress.variant ?? '', delegationPool: [] });
+      if (!allowed()) return;
       ensuredReadOnly.add(worker.messageID);
       try {
         await request(p, `/session/${worker.session}/prompt_async`, { method: 'POST', body: {
@@ -85,12 +91,13 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
   }
 
   async function check() {
-    if (checking || starting || stopping) return;
+    if (!allowed() || checking || starting || stopping) return;
     let job = data().currentRatingJob();
     if (!active(job)) { clearInterval(timer); timer = null; release(); return; }
     checking = true;
     try {
       const p = await project(job.project);
+      if (!allowed()) return;
       if (!job.progress.workers) {
         const progress = job.progress;
         const pool = workers(job);
@@ -113,6 +120,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
           ? request(p, `/session/${worker.session}/message`).catch(() => null) : [])), request(p, '/session/status'),
         request(p, '/permission'), request(p, '/question'),
       ]);
+      if (!allowed()) return;
       if (!statuses || typeof statuses !== 'object' || Array.isArray(statuses) ||
         !Array.isArray(permissions) || !Array.isArray(questions)) throw Error('Native task status is unavailable.');
       const sessions = new Set(pool.map(worker => worker.session));
@@ -176,10 +184,11 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
     } catch {
       // A failed read is not execution completion. Keep observing, including
       // after restart, rather than allowing a duplicate paid request.
-      data().saveRatingJob({ ...job, summary: 'Reconnecting to the configuration task…' });
+      if (allowed()) data().saveRatingJob({ ...job, summary: 'Reconnecting to the configuration task…' });
     } finally { checking = false; release(); }
   }
   function watch() {
+    if (!allowed()) return;
     if (!timer) { timer = setInterval(() => void check(), 1800); timer.unref?.(); }
     void check();
   }
@@ -191,8 +200,12 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
     status() {
       const job = data().currentRatingJob();
       if (!checking && !starting) release();
-      if (active(job)) watch();
+      if (allowed() && active(job)) watch();
       return publicJob(job);
+    },
+    suspendAutomaticWork() { clearInterval(timer); timer = null; },
+    resumeAutomaticWork() {
+      if (allowed() && active(data().currentRatingJob())) watch();
     },
     dismiss(id) {
       try {
@@ -234,6 +247,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
       } finally { stopping = false; release(); }
     },
     async start(projectID, modelID, retryID, variant = '', free = false) {
+      requireAllowed();
       if (starting || checking || stopping || active(data().currentRatingJob())) throw Error('A model ratings update is already running.');
       starting = true;
       let job;
@@ -242,6 +256,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         if (!free && (typeof modelID !== 'string' || !/^[\w.-]+\/[^\s]+$/.test(modelID))) throw Error('Choose a model for the configuration task.');
         const p = await project(projectID);
         const { models, providers } = await getCatalog(projectID);
+        requireAllowed();
         if (!free && !models.some(m => m.id === modelID && providers.connected.includes(m.provider))) throw Error('Choose a connected model.');
         if (typeof variant !== 'string' || (!free && variant && !models.find(m => m.id === modelID)?.variants?.includes(variant))) throw Error('Choose an intelligence level supported by this model.');
         const saved = data().modelRatings();
@@ -259,8 +274,10 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         const workspace = store ? checkedCatalog(await store.read('settings')) : null;
         const agent = workspace?.agents.find(item => item.id === 'researcher');
         if (store && !agent) throw Error('The research configuration agent is unavailable.');
+        requireAllowed();
         const sessions = await Promise.all(researchModels.map(() => request(p, '/session', { method: 'POST',
           body: { title: 'Configuration · Update Model Ratings', permission: readOnlyPermissions } })));
+        requireAllowed();
         const ownDirectory = directory => process.platform === 'win32' ? path.resolve(directory).toLowerCase() : path.resolve(directory);
         // A host that echoes permissions must keep the inspection-only deny
         // rules; a host that omits them still leaves the recorded execution
@@ -278,7 +295,7 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
         await submit(job, p);
         return publicJob(data().ratingJob(job.id));
       } catch (error) {
-        if (job) data().saveRatingJob({ ...job, status: 'failed', summary: 'Could not start the configuration task.', error: error.message });
+        if (job && allowed()) data().saveRatingJob({ ...job, status: 'failed', summary: 'Could not start the configuration task.', error: error.message });
         throw error;
       } finally { starting = false; release(); watch(); }
     },
@@ -289,6 +306,6 @@ export function createModelRatingService({ host, backendRoot, dataRoot, project,
       timer = null;
       release();
     },
-    close() { clearInterval(timer); timer = null; if (ownsLocalData) dataService.close(); },
+    close() { closed = true; clearInterval(timer); timer = null; if (ownsLocalData) dataService.close(); },
   };
 }

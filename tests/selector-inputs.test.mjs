@@ -1,8 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
+import { mkdtemp, rm } from 'node:fs/promises';
+import os from 'node:os';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createBridge, selectorArguments } from '../backend/tools/runtime/bridge.mjs';
+import { createLocalDataStore } from '../server/data/store.mjs';
+import { buildRuntimeConfig, runtimeEnv } from '../server/runtime-config.mjs';
 
 test('legacy captured modes map to task evidence while selector execution remains Build', () => {
   for (const [mode, task] of [['plan', 'architecture'], ['explore', 'research'], ['review', 'code_review'], ['build', 'bounded_feature']]) {
@@ -30,6 +35,22 @@ test('captured native models reach the selector, including a paid route absent f
   const preferenceArgs = selectorArguments({ ...args, costPreference: 'any' }, 'select-model.ps1');
   assert.deepEqual(preferenceArgs.slice(preferenceArgs.indexOf('-CostPreference'), preferenceArgs.indexOf('-CostPreference') + 2), ['-CostPreference', 'any']);
   if (process.platform !== 'win32') return t.skip('Windows PowerShell selector smoke');
+  // This smoke reads quota/history through native helpers. Keep it independent
+  // from the real user's workspace and its fresh-install protection.
+  const dataRoot = await mkdtemp(path.join(os.tmpdir(), 'freelancer-selector-'));
+  const appRoot = fileURLToPath(new URL('../', import.meta.url));
+  const config = { ...buildRuntimeConfig(appRoot), dataRoot, runtimeID: 'selector-test' };
+  const env = { ...runtimeEnv(config), FREELANCER_APP_ROOT: appRoot };
+  const prior = Object.fromEntries(Object.keys(env).map(key => [key, process.env[key]]));
+  Object.assign(process.env, env);
+  t.after(async () => {
+    for (const [key, value] of Object.entries(prior)) {
+      if (value === undefined) delete process.env[key]; else process.env[key] = value;
+    }
+    await rm(dataRoot, { recursive: true, force: true });
+  });
+  const store = createLocalDataStore(dataRoot);
+  try { store.initializeFreshRuntime(config.runtimeID); } finally { store.close(); }
   const result = await createBridge(fileURLToPath(new URL('../backend/', import.meta.url))).select(args, {});
   assert.equal(result.selected_model, 'openai/gpt-6-luna');
   assert.equal(result.surface, 'openai-oauth');

@@ -6,13 +6,33 @@ const Knowledge: Plugin = async ({ directory }) => {
   const root = process.env.FREELANCER_RUNTIME_ROOT;
   if (!root) throw Error('Start this plugin through Freelancer.');
   const runtime = await import(pathToFileURL(path.join(root, 'tools/runtime/state-database.mjs')).href);
+  const diagnostics = await import(pathToFileURL(path.join(root, 'tools/runtime/storage-diagnostics.mjs')).href);
+  await diagnostics.observeStorageDriver(root);
   return { tool: {
     knowledge: tool({
-      description: 'Shared global memory and evidence retrieval for every named agent. Search source-backed memories, inspect provenance, and create evidence-linked claims or graph relations. Optional TypeSafe judgments require candidate IDs and evidence references that resolve to indexed content units or captured OpenCode text parts; packet text must match those sources. Evaluation asks native permission before sending bounded state. A stored claim is not authorization or proof beyond its evidence.',
+      description: 'Shared global knowledge retrieval for every named agent. Use query with domain files, conversations, memories or facts for the same filters as Freelancer and its read-only CLI. Without projectID or projectDirectory, query searches globally. Read immutable memory revisions and retained source evidence, pin or explicitly refresh snapshots, and create evidence-linked claims or graph relations. For a memory or fact, judgment-evidence takes its existing id, domain and optional memory revision and returns bounded state, candidateIDs and evidenceRefs for TypeSafe evaluation. Use those returned references exactly; changed or forgotten sources invalidate them. Evaluation asks permission before sending bounded state. A stored claim is not authorization or proof beyond its evidence.',
       args: {
-        operation: tool.schema.enum(['search','read','status','entity','entity-search','delete-entity','claim','correct-claim','relate','relations','delete-relation','remember','revise','forget','analyze','judgment-provider-status','judgment-definition','judgment-evaluate','judgment-evaluate-batch','judgment-record','judgment-history','judgment-cache','opencode-read','warehouse-status','warehouse-backfill']),
+        operation: tool.schema.enum(['query','search','read','status','claims','read-claim','pin','refresh','archive','restore','evidence','judgment-evidence','query-evidence','entity','entity-search','delete-entity','claim','correct-claim','relate','relations','revise-relation','relation-history','delete-relation','remember','revise','forget','analyze','judgment-provider-status','judgment-definition','judgment-evaluate','judgment-evaluate-batch','judgment-record','judgment-history','judgment-cache','opencode-read','warehouse-status','warehouse-backfill']),
+        domain: tool.schema.enum(['files','conversations','memories','facts']).optional(),
         query: tool.schema.string().optional(),
-        limit: tool.schema.number().int().min(1).max(100).optional(),
+        phrase: tool.schema.boolean().optional(),
+        model: tool.schema.string().optional(),
+        modelProvider: tool.schema.string().optional(),
+        source: tool.schema.string().optional(),
+        role: tool.schema.string().optional(),
+        status: tool.schema.string().optional(),
+        pinnedOnly: tool.schema.boolean().optional(),
+        includeArchived: tool.schema.boolean().optional(),
+        pinned: tool.schema.boolean().optional(),
+        includeHistorical: tool.schema.boolean().optional(),
+        global: tool.schema.boolean().optional(),
+        projectDirectory: tool.schema.string().optional(),
+        revision: tool.schema.number().int().positive().optional(),
+        sourceIdentity: tool.schema.string().optional(),
+        revisionIdentity: tool.schema.string().optional(),
+        locator: tool.schema.string().optional(),
+        unitHash: tool.schema.string().optional(),
+        limit: tool.schema.number().int().min(1).max(200).optional(),
         kind: tool.schema.string().optional(),
         id: tool.schema.string().optional(),
         relationID: tool.schema.string().optional(),
@@ -21,6 +41,7 @@ const Knowledge: Plugin = async ({ directory }) => {
         valueJson: tool.schema.string().optional(),
         validFrom: tool.schema.number().int().optional(),
         validTo: tool.schema.number().int().optional(),
+        asOf: tool.schema.number().int().optional(),
         type: tool.schema.string().optional(),
         name: tool.schema.string().optional(),
         alias: tool.schema.string().optional(),
@@ -29,10 +50,11 @@ const Knowledge: Plugin = async ({ directory }) => {
         title: tool.schema.string().optional(),
         body: tool.schema.string().optional(),
         reason: tool.schema.string().optional(),
-        expectedRevision: tool.schema.number().int().positive().optional(),
+        expectedRevision: tool.schema.number().int().min(0).optional(),
         expectedEpistemicState: tool.schema.enum(['unverified','supported','disputed']).optional(),
         method: tool.schema.string().optional(),
         scopeJson: tool.schema.string().optional(),
+        provenanceJson: tool.schema.string().optional(),
         from: tool.schema.string().optional(),
         to: tool.schema.string().optional(),
         predicate: tool.schema.string().optional(),
@@ -49,7 +71,6 @@ const Knowledge: Plugin = async ({ directory }) => {
         criteriaJson: tool.schema.string().optional(),
         stateJson: tool.schema.string().optional(),
         definitionsJson: tool.schema.string().optional(),
-        requestedModel: tool.schema.string().optional(),
         runJson: tool.schema.string().optional(),
         stateHash: tool.schema.string().optional(),
         candidateIDsJson: tool.schema.string().optional(),
@@ -69,7 +90,7 @@ const Knowledge: Plugin = async ({ directory }) => {
         if (['judgment-evaluate','judgment-evaluate-batch'].includes(args.operation)) {
           await context.ask({ permission: 'edit', patterns: ['shared knowledge'], always: [],
             metadata: { operation: args.operation, provider: 'TypeSafe', sends: 'bounded caller supplied evidence' } });
-        } else if (['entity','delete-entity','claim','correct-claim','relate','delete-relation','remember','revise','forget','judgment-definition','judgment-record','warehouse-backfill'].includes(args.operation)) {
+        } else if (['entity','delete-entity','claim','correct-claim','relate','revise-relation','delete-relation','remember','revise','forget','pin','refresh','archive','restore','judgment-definition','judgment-record','warehouse-backfill'].includes(args.operation)) {
           await context.ask({ permission: 'edit', patterns: ['shared knowledge'], always: [], metadata: { operation: args.operation } });
         }
         const launch = runtime.readState(path.join(root, '.state/webpage/launch.json'));

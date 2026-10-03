@@ -12,30 +12,44 @@ import { startServer } from '../server/http.mjs';
 import { readAgentCatalog, retiredAgents } from '../backend/tools/runtime/agent-catalog.mjs';
 import { createCapabilities } from '../server/capabilities.mjs';
 import { assertFreshRuntimeRoot, createLocalDataStore } from '../server/data/store.mjs';
+import { observeStorageDriver } from '../backend/tools/runtime/storage-diagnostics.mjs';
+import { withUnifiedDatabase } from '../backend/tools/runtime/unified-database.mjs';
+import { seedNativeSmokeDependencies } from './native-smoke-fixture.mjs';
 
 const baseConfig = resolveRuntimeConfig();
 const smokeRoot = await mkdtemp(path.join(os.tmpdir(), 'freelancer-native-smoke-'));
 const config = { ...baseConfig, dataRoot:path.join(smokeRoot, 'data') };
 const directory = path.join(smokeRoot, 'project');
 const nativeConfig = path.join(smokeRoot, 'native-config');
+const nativeHome = path.join(smokeRoot, 'native-home');
+const nativeTemp = path.join(smokeRoot, 'native-temp');
 // Keep OS launch variables, excluding provider credentials and caller config overrides.
 const inherited = Object.fromEntries(Object.entries(process.env).filter(([key]) =>
   /^(PATH|PATHEXT|SYSTEMROOT|SYSTEMDRIVE|WINDIR|TEMP|TMP|USERPROFILE|HOME|APPDATA|LOCALAPPDATA|PROGRAMFILES(?:\(X86\))?|COMSPEC|NUMBER_OF_PROCESSORS|PROCESSOR_ARCHITECTURE)$/i.test(key)));
 const env = { ...inherited, ...runtimeEnv(config), OPENCODE_CONFIG_DIR:nativeConfig,
   XDG_CONFIG_HOME:nativeConfig, XDG_DATA_HOME:path.join(smokeRoot,'native-data'),
-  XDG_CACHE_HOME:path.join(smokeRoot,'cache'), XDG_STATE_HOME:path.join(smokeRoot,'state') };
+  XDG_CACHE_HOME:path.join(smokeRoot,'cache'), XDG_STATE_HOME:path.join(smokeRoot,'state'),
+  OPENCODE_TEST_HOME:nativeHome, HOME:nativeHome, USERPROFILE:nativeHome,
+  APPDATA:path.join(nativeHome,'AppData','Roaming'), LOCALAPPDATA:path.join(nativeHome,'AppData','Local'),
+  TEMP:nativeTemp, TMP:nativeTemp };
 let host, web, app;
 try {
-  await mkdir(nativeConfig, {recursive:true}); await mkdir(directory);
+  await Promise.all([nativeConfig,directory,nativeHome,nativeTemp,env.APPDATA,env.LOCALAPPDATA]
+    .map(folder=>mkdir(folder,{recursive:true})));
   await writeFile(path.join(nativeConfig,'opencode.jsonc'), '{"autoupdate":false,"share":"disabled"}');
+  await seedNativeSmokeDependencies({fixtureRoot:smokeRoot,appRoot:config.appRoot,nativeConfig,projectDirectories:[directory]});
   assertFreshRuntimeRoot(config.dataRoot, config.runtimeID);
   const initialData = createLocalDataStore(config.dataRoot);
   try { initialData.initializeFreshRuntime(config.runtimeID); }
   finally { initialData.close(); }
   Object.assign(process.env, runtimeEnv(config));
+  const nodeDriver=observeStorageDriver(config.backendRoot);
   host = await startHost({backendRoot:config.backendRoot,config,env,
+    ...(process.env.FREELANCER_SMOKE_DIAGNOSTICS==='1' ? {diagnostics:event=>console.log(JSON.stringify(event))} : {}),
     ...(process.env.FREELANCER_SMOKE_OPENCODE ? {executable:process.env.FREELANCER_SMOKE_OPENCODE} : {})});
+  console.log('Native smoke: disposable OpenCode server started.');
   const agents = await host.request('/agent', {directory});
+  console.log('Native smoke: named agent catalog loaded.');
   const catalog = await readAgentCatalog(config.backendRoot);
   for (const {id:name} of catalog.agents) {
     const agent = agents.find(agent=>agent.name===name);
@@ -50,6 +64,10 @@ try {
   for (const name of ['reorient','search-index','model-routing','record-outcome','pursue-goal','debug','verify','browser-verify','playwright','web-research','remember','reason-through','docs-research','bounded-judgment','typesafe-ai','review','handoff'])
     assert.ok(skills.some(skill=>skill.name===name),`Missing app skill ${name}`);
   const tools = await host.request('/experimental/tool/ids',{directory});
+  const nativeDriver=withUnifiedDatabase({dataHome:config.dataRoot,runtimeID:config.runtimeID},false,db=>
+    db.prepare("SELECT data FROM operational_records WHERE collection='storage-drivers' AND id='bun:sqlite'").get());
+  assert.ok(nativeDriver,'Native plugin must record its actual embedded Bun SQLite facilities.');
+  console.log(JSON.stringify({storageDrivers:[nodeDriver,JSON.parse(nativeDriver.data)]}));
   for (const name of ['delegate','content_index','git_project','knowledge','todowrite','goal_checkpoint'])
     assert.ok(tools.includes(name),`Missing native tool ${name}`);
   const capabilities = await createCapabilities({host,backendRoot:config.backendRoot}).read({directory,projectID:'native-smoke',agent:'engineer'});
@@ -71,11 +89,15 @@ try {
   const bootstrap = await fetch(web.url+'/api/bootstrap',{headers:{'X-Freelancer-Client':'webpage'}});
   assert.equal(bootstrap.status,200);
   assert.ok((await bootstrap.json()).settings.agents.some(agent=>agent.id==='engineer'));
-  console.log('Disposable native startup, unified runtime registration, named agents, shared skills/tools, empty optional MCP inventory, built UI assets and bootstrap verified. No user credentials, provider sign-in or model inference used.');
+  console.log('Disposable native startup, unified runtime registration, named agents, shared skills/tools, empty optional MCP inventory, built UI assets and bootstrap verified using installed source dependencies. No user credentials, provider sign-in or model inference used.');
 } finally {
   if (web) {web.server.closeAllConnections(); await new Promise(resolve=>web.server.close(resolve));}
+  await app?.indexJobs?.close();
+  await app?.history?.close();
   try {await app?.store.flush();} catch {}
-  app?.modelRatings?.close(); app?.localData?.close();
+  await app?.modelRatings?.close();
+  await app?.gitProjects?.close();
+  app?.localData?.close();
   if (host?.process&&host.process.exitCode===null&&host.process.signalCode===null) {
     await host.request('/global/dispose',{method:'POST',signal:AbortSignal.timeout(5000)}).catch(()=>{});
     const stopped = once(host.process,'exit'); host.stop();

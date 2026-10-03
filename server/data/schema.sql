@@ -538,3 +538,279 @@ CREATE UNIQUE INDEX memory_capture_active ON memory_capture_jobs(memory_id)
 INSERT INTO data_table_lifecycle VALUES ('memory_capture_jobs','durable','memory-capture',18);
 INSERT INTO schema_migrations VALUES (18,'durable-memory-capture',unixepoch() * 1000);
 PRAGMA user_version = 18;
+CREATE TABLE entity_relation_revisions (
+  revision_id TEXT PRIMARY KEY,
+  relation_id TEXT NOT NULL,
+  revision INTEGER NOT NULL,
+  from_entity_id TEXT NOT NULL,
+  relation_type TEXT NOT NULL,
+  to_entity_id TEXT NOT NULL,
+  provenance_json TEXT NOT NULL,
+  valid_from INTEGER NOT NULL,
+  valid_to INTEGER,
+  operation TEXT NOT NULL CHECK(operation IN ('created','revised','retracted')),
+  actor TEXT NOT NULL,
+  reason TEXT NOT NULL,
+  recorded_at INTEGER NOT NULL,
+  UNIQUE(relation_id,revision)
+) STRICT;
+CREATE INDEX entity_relation_revision_history ON entity_relation_revisions(relation_id,revision);
+CREATE INDEX entity_relation_revision_validity ON entity_relation_revisions(valid_from,valid_to);
+INSERT INTO data_table_lifecycle VALUES ('entity_relation_revisions','durable','memory-relations',19);
+INSERT INTO entity_relation_revisions(revision_id,relation_id,revision,from_entity_id,relation_type,to_entity_id,
+  provenance_json,valid_from,valid_to,operation,actor,reason,recorded_at)
+SELECT lower(hex(randomblob(16))),relation_id,1,from_entity_id,relation_type,to_entity_id,provenance_json,created_at,NULL,
+  'created','migration','Migrated existing active relation into revision history.',created_at FROM entity_relations;
+
+CREATE VIRTUAL TABLE claims_search_fts USING fts5(
+  claim_id UNINDEXED, project_key UNINDEXED, predicate, subject, object,
+  value_text, origin, method, epistemic_state, scope_text, evidence_text,
+  model_provider, model_id, tokenize='unicode61 remove_diacritics 2'
+);
+INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+  COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+  COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+  COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+  COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+  COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id;
+
+CREATE TRIGGER claims_search_insert AFTER INSERT ON claims BEGIN
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.claim_id=NEW.claim_id;
+END;
+CREATE TRIGGER claims_search_update AFTER UPDATE ON claims BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id=OLD.claim_id;
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.claim_id=NEW.claim_id;
+END;
+CREATE TRIGGER claims_search_delete AFTER DELETE ON claims BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id=OLD.claim_id;
+END;
+
+CREATE TRIGGER claims_search_evidence_insert AFTER INSERT ON claim_evidence BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id=NEW.claim_id;
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.claim_id=NEW.claim_id;
+END;
+CREATE TRIGGER claims_search_evidence_delete AFTER DELETE ON claim_evidence BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id=OLD.claim_id;
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.claim_id=OLD.claim_id;
+END;
+CREATE TRIGGER claims_search_evidence_update AFTER UPDATE ON claim_evidence BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id IN (OLD.claim_id,NEW.claim_id);
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.claim_id IN (OLD.claim_id,NEW.claim_id);
+END;
+
+CREATE TRIGGER claims_search_entity_update AFTER UPDATE OF canonical_name ON entities BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id IN (SELECT claim_id FROM claims WHERE subject_entity_id=NEW.entity_id OR object_entity_id=NEW.entity_id);
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.subject_entity_id=NEW.entity_id OR c.object_entity_id=NEW.entity_id;
+END;
+CREATE TRIGGER claims_search_alias_insert AFTER INSERT ON entity_aliases BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id IN (SELECT claim_id FROM claims WHERE subject_entity_id=NEW.entity_id OR object_entity_id=NEW.entity_id);
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.subject_entity_id=NEW.entity_id OR c.object_entity_id=NEW.entity_id;
+END;
+CREATE TRIGGER claims_search_alias_delete AFTER DELETE ON entity_aliases BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id IN (SELECT claim_id FROM claims WHERE subject_entity_id=OLD.entity_id OR object_entity_id=OLD.entity_id);
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.subject_entity_id=OLD.entity_id OR c.object_entity_id=OLD.entity_id;
+END;
+CREATE TRIGGER claims_search_alias_update AFTER UPDATE ON entity_aliases BEGIN
+  DELETE FROM claims_search_fts WHERE claim_id IN (SELECT claim_id FROM claims WHERE subject_entity_id IN (OLD.entity_id,NEW.entity_id) OR object_entity_id IN (OLD.entity_id,NEW.entity_id));
+  INSERT INTO claims_search_fts(claim_id,project_key,predicate,subject,object,value_text,origin,method,epistemic_state,scope_text,evidence_text,model_provider,model_id)
+  SELECT c.claim_id,COALESCE(json_extract(c.scope_json,'$.projectID'),json_extract(c.scope_json,'$.project'),''),c.predicate,
+    COALESCE(s.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=s.entity_id),''),
+    COALESCE(o.canonical_name,'') || ' ' || COALESCE((SELECT group_concat(a.alias,' ') FROM entity_aliases a WHERE a.entity_id=o.entity_id),''),
+    COALESCE(c.value_json,''),c.origin,c.method,c.epistemic_state,c.scope_json,
+    COALESCE((SELECT group_concat(e.evidence_id || ' ' || e.relation || ' ' || e.evidence_json,' ') FROM claim_evidence e WHERE e.claim_id=c.claim_id),''),
+    COALESCE(c.model_provider,''),COALESCE(c.model_id,'')
+  FROM claims c LEFT JOIN entities s ON s.entity_id=c.subject_entity_id LEFT JOIN entities o ON o.entity_id=c.object_entity_id
+  WHERE c.subject_entity_id IN (OLD.entity_id,NEW.entity_id) OR c.object_entity_id IN (OLD.entity_id,NEW.entity_id);
+END;
+INSERT INTO data_table_lifecycle VALUES ('claims_search_fts','derived','claim-search',19);
+INSERT INTO schema_migrations VALUES (19,'temporal-memory-relations-and-claim-search',unixepoch() * 1000);
+PRAGMA user_version = 19;
+-- A safe, normalized projection of recorded task outcomes. Keep execution
+-- completion separate from verified task success and never expose full receipts.
+CREATE VIEW knowledge_task_outcomes AS
+WITH history_documents AS (
+  SELECT runtime_id,
+    CASE WHEN json_valid(data) THEN data ELSE '{"entries":[]}' END AS document
+  FROM application_documents WHERE document_key='task-history.json'
+), entries AS (
+  SELECT h.runtime_id,e.value AS entry
+  FROM history_documents h,json_each(
+    CASE WHEN json_type(h.document,'$.entries')='array' THEN h.document ELSE '{"entries":[]}' END,'$.entries'
+  ) e WHERE e.type='object'
+), normalized AS (
+  SELECT runtime_id,
+    json_extract(entry,'$.task_id') AS task_id,
+    COALESCE(json_extract(entry,'$.user_task_id'),json_extract(entry,'$.task_id')) AS user_task_id,
+    COALESCE(json_extract(entry,'$.timestamp'),json_extract(entry,'$.recorded_at')) AS recorded_at,
+    COALESCE(json_extract(entry,'$.repo'),'') AS repo,
+    COALESCE(json_extract(entry,'$.model'),json_extract(entry,'$.observed_model'),json_extract(entry,'$.selected_model'),'') AS model,
+    CASE WHEN json_type(entry,'$.success') IN ('true','false') THEN json_extract(entry,'$.success') ELSE NULL END AS execution_success,
+    lower(trim(COALESCE(json_extract(entry,'$.verification_status'),''))) AS verification_status,
+    entry
+  FROM entries
+), classified AS (
+  SELECT n.*,CASE verification_status
+      WHEN 'passed' THEN 'passed' WHEN 'failed' THEN 'failed' WHEN 'skipped' THEN 'skipped'
+      WHEN 'unavailable' THEN 'unavailable' WHEN 'not-run' THEN 'not-run' WHEN 'cancelled' THEN 'cancelled'
+      ELSE 'unknown' END AS outcome_status
+  FROM normalized n
+), typed AS (
+  SELECT DISTINCT n.*,COALESCE(NULLIF(trim(CAST(t.value AS TEXT)),''),'unknown') AS task_type
+  FROM classified n LEFT JOIN json_each(
+    CASE WHEN json_type(n.entry,'$.task_type')='array' THEN json_extract(n.entry,'$.task_type') ELSE '[]' END
+  ) t ON true
+)
+SELECT t.runtime_id,t.task_id,t.user_task_id,t.task_type,t.model,t.repo,t.recorded_at,
+  t.execution_success,
+  CASE WHEN t.outcome_status='unknown' AND (json_extract(r.data,'$.status')='cancelled' OR
+       json_extract(r.data,'$.attempts[#-1].status')='cancelled') THEN 'cancelled' ELSE t.outcome_status END AS outcome_status,
+  CASE WHEN length(t.task_id)=64 AND t.task_id NOT GLOB '*[^a-fA-F0-9]*' THEN json_extract(r.data,'$.status') ELSE NULL END AS native_worker_status,
+  CASE WHEN length(t.task_id)=64 AND t.task_id NOT GLOB '*[^a-fA-F0-9]*' THEN json_extract(r.data,'$.attempts[#-1].status') ELSE NULL END AS native_worker_attempt_status,
+  CASE WHEN length(t.task_id)=64 AND t.task_id NOT GLOB '*[^a-fA-F0-9]*' THEN json_extract(r.data,'$.attempts[#-1].observed_model') ELSE NULL END AS native_worker_observed_model
+FROM typed t LEFT JOIN (
+  SELECT runtime_id,document_key,
+    CASE WHEN json_valid(data) THEN data ELSE '{}' END AS data
+  FROM application_documents
+) r
+  ON r.runtime_id=t.runtime_id AND length(t.task_id)=64 AND t.task_id NOT GLOB '*[^a-fA-F0-9]*'
+  AND r.document_key='delegation/'||t.task_id||'.json';
+
+CREATE VIEW knowledge_outcome_summary AS
+SELECT runtime_id,task_type,model,COUNT(*) AS total,
+  SUM(outcome_status='passed') AS passed,
+  SUM(outcome_status='failed') AS failed,
+  SUM(outcome_status='skipped') AS skipped,
+  SUM(outcome_status='unavailable') AS unavailable,
+  SUM(outcome_status='not-run') AS not_run,
+  SUM(outcome_status='unknown') AS unknown,
+  SUM(outcome_status='cancelled') AS cancelled,
+  SUM(CASE WHEN outcome_status IN ('passed','failed') THEN 1 ELSE 0 END) AS verified_denominator,
+  SUM(CASE WHEN outcome_status='passed' THEN 1 ELSE 0 END) AS verified_passes,
+  SUM(CASE WHEN execution_success=1 THEN 1 ELSE 0 END) AS execution_successes,
+  SUM(CASE WHEN execution_success=0 THEN 1 ELSE 0 END) AS execution_failures,
+  SUM(CASE WHEN execution_success IS NULL THEN 1 ELSE 0 END) AS execution_unknown
+FROM knowledge_task_outcomes
+GROUP BY runtime_id,task_type,model;
+
+INSERT INTO data_table_lifecycle VALUES
+  ('knowledge_task_outcomes','derived','task-outcomes',20),
+  ('knowledge_outcome_summary','derived','task-outcomes',20);
+
+INSERT INTO schema_migrations VALUES (20,'task-outcome-evidence-views',unixepoch() * 1000);
+PRAGMA user_version = 20;
+
+-- Exact retained revision inputs and pending publication are committed with the
+-- source snapshot. Native notifications remain refresh hints, never a replay log.
+ALTER TABLE opencode_sessions ADD COLUMN current_snapshot_sha256 TEXT;
+ALTER TABLE opencode_sessions ADD COLUMN publication_revision INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE opencode_derivation_jobs (
+  job_id TEXT PRIMARY KEY,
+  source_system_id TEXT NOT NULL, project_id TEXT NOT NULL, session_id TEXT NOT NULL,
+  snapshot_revision_sha256 TEXT NOT NULL, derivation_version TEXT NOT NULL,
+  manifest_json TEXT NOT NULL CHECK(json_valid(manifest_json)),
+  publication_revision INTEGER NOT NULL CHECK(publication_revision>0),
+  revision_token INTEGER NOT NULL CHECK(revision_token>0),
+  status TEXT NOT NULL CHECK(status IN ('pending','blocked','complete','superseded')),
+  blocked_reason TEXT, attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0),
+  next_attempt_at INTEGER, error TEXT,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, completed_at INTEGER,
+  UNIQUE(source_system_id,project_id,session_id,snapshot_revision_sha256,derivation_version),
+  FOREIGN KEY(source_system_id,project_id,session_id)
+    REFERENCES opencode_sessions(source_system_id,project_id,session_id)
+) STRICT;
+CREATE INDEX opencode_derivation_pending ON opencode_derivation_jobs(status,next_attempt_at,created_at,job_id);
+CREATE INDEX opencode_derivation_session ON opencode_derivation_jobs(source_system_id,project_id,session_id,publication_revision);
+CREATE TRIGGER opencode_derivation_inputs_immutable BEFORE UPDATE OF
+  source_system_id,project_id,session_id,snapshot_revision_sha256,derivation_version,manifest_json
+  ON opencode_derivation_jobs
+WHEN NEW.source_system_id IS NOT OLD.source_system_id OR NEW.project_id IS NOT OLD.project_id
+  OR NEW.session_id IS NOT OLD.session_id OR NEW.snapshot_revision_sha256 IS NOT OLD.snapshot_revision_sha256
+  OR NEW.derivation_version IS NOT OLD.derivation_version OR NEW.manifest_json IS NOT OLD.manifest_json
+BEGIN SELECT RAISE(ABORT,'Warehouse derivation inputs are immutable.'); END;
+
+-- Cleared rows retain their token. Delete/reinsert would let an old worker clear
+-- a later hint whose revision had restarted at one.
+CREATE TABLE opencode_refresh_needed (
+  refresh_id TEXT PRIMARY KEY, source_system_id TEXT NOT NULL,
+  project_id TEXT, session_id TEXT, revision INTEGER NOT NULL CHECK(revision>0),
+  state TEXT NOT NULL CHECK(state IN ('pending','blocked','cleared')),
+  reason TEXT NOT NULL CHECK(reason IN ('event-hint','snapshot-failed','stream-failed','stream-ended','overflow','unaddressable-hint','reconnect','manual')),
+  attempts INTEGER NOT NULL DEFAULT 0 CHECK(attempts>=0), next_attempt_at INTEGER, error TEXT,
+  created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, cleared_at INTEGER,
+  CHECK(session_id IS NULL OR project_id IS NOT NULL)
+) STRICT;
+CREATE INDEX opencode_refresh_pending ON opencode_refresh_needed(state,next_attempt_at,updated_at,refresh_id);
+CREATE INDEX opencode_refresh_scope ON opencode_refresh_needed(source_system_id,project_id,session_id);
+
+INSERT INTO data_table_lifecycle VALUES
+  ('opencode_derivation_jobs','durable','opencode-derivation',21),
+  ('opencode_refresh_needed','durable','opencode-refresh',21);
+INSERT INTO schema_migrations VALUES (21,'durable-warehouse-publication-and-refresh',unixepoch() * 1000);
+PRAGMA user_version = 21;

@@ -9,6 +9,78 @@ import { parseModelRatings, ratingsPrompt } from '../domain/model-ratings.mjs';
 import { organizedSessions } from '../domain/history.mjs';
 
 const scores = { coding: 70, reasoning: 60, research: 55, tool_use: 80, instruction_following: 75 };
+test('restore guard keeps rating status read-only, blocks new research, and releases retained work without resending uncertain input', async t => {
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-rating-recovery-'));
+  let db,service;
+  t.after(async()=>{service?.close();db?.close();await rm(root,{recursive:true,force:true});});
+  const rows=[{id:'opencode/target',name:'Target',provider:'opencode'}],calls=[];
+  db=createLocalDataStore(root);db.modelCatalog(rows);
+  const job={id:'retained-rating-job',project:'p',session:'ses_retained',model:'opencode/fixture',targets:rows.map(row=>row.id),status:'running',summary:'Retained fixture research',createdAt:Date.now(),
+    progress:{rows,queue:rows,workers:[{session:'ses_retained',model:'opencode/fixture',status:'ready',batch:[]}],updated:[],missing:[]}};
+  db.saveRatingJob(job);const original=JSON.stringify(db.currentRatingJob());db.close();
+  let permitted=false;
+  const host={async request(route,options){calls.push({route,options});
+    if(route==='/session/status')return {ses_retained:{type:'busy'}};
+    if(route==='/permission'||route==='/question'||route.endsWith('/message'))return [];
+    if(route.endsWith('/prompt_async'))return {};
+    throw Error(route);
+  }};
+  const options={host,backendRoot:root,dataRoot:root,canRun:()=>permitted,project:async()=>({id:'p',directory:root}),getCatalog:async()=>({models:rows,providers:{connected:['opencode']}})};
+  service=createModelRatingService(options);
+  assert.equal(service.status().status,'running');service.resumeAutomaticWork();service.status();
+  await assert.rejects(service.start('p','opencode/fixture'),error=>error.status===409&&/Review restored work/.test(error.message));
+  await new Promise(resolve=>setTimeout(resolve,70));assert.equal(calls.length,0);
+  const check=createLocalDataStore(root);assert.equal(JSON.stringify(check.currentRatingJob()),original);check.close();
+  permitted=true;service.resumeAutomaticWork();service.resumeAutomaticWork();
+  const deadline=Date.now()+3000;
+  while(!calls.some(call=>call.route.endsWith('/prompt_async'))&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,20));
+  assert.equal(calls.filter(call=>call.route.endsWith('/prompt_async')).length,1);
+  service.close();permitted=false;service=createModelRatingService(options);service.status();
+  const before=calls.length;await new Promise(resolve=>setTimeout(resolve,70));assert.equal(calls.length,before);
+  permitted=true;service.resumeAutomaticWork();await new Promise(resolve=>setTimeout(resolve,70));
+  assert.equal(calls.filter(call=>call.route.endsWith('/prompt_async')).length,1,'Review observes an existing uncertain request; it never resends its saved identity.');
+});
+
+test('rating start rechecks restore authorization after an asynchronous catalog read',async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-rating-guard-race-'));let allowed=true,release,entered;
+  const ready=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;}),calls=[];
+  const rows=[{id:'opencode/fixture',provider:'opencode',name:'Fixture'}];
+  const service=createModelRatingService({backendRoot:root,dataRoot:root,canRun:()=>allowed,
+    project:async()=>({id:'p',directory:root}),host:{async request(route){calls.push(route);throw Error('No native action expected.');}},
+    getCatalog:async()=>{entered();await gate;return {models:rows,providers:{connected:['opencode']}};}});
+  t.after(async()=>{release();service.close();await rm(root,{recursive:true,force:true});});
+  service.catalog(rows);const pending=service.start('p','opencode/fixture');
+  const rejected=assert.rejects(pending,error=>error.status===409);
+  await ready;allowed=false;release();await rejected;
+  assert.deepEqual(calls,[]);assert.equal(service.status(),null);
+});
+
+for(const revokedBy of ['review guard','close'])test(`pending rating request persistence cannot dispatch after ${revokedBy}`,async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-rating-persist-race-'));
+  const db=createLocalDataStore(root),rows=[{id:'opencode/target',provider:'opencode',name:'Target'}],calls=[];
+  db.modelCatalog(rows);db.saveRatingJob({id:'held-rating-job',project:'p',session:'ses_held',model:'opencode/fixture',targets:rows.map(row=>row.id),status:'running',summary:'Held fixture research',createdAt:Date.now(),
+    progress:{rows,queue:rows,workers:[{session:'ses_held',model:'opencode/fixture',status:'ready',batch:[]}],updated:[],missing:[]}});
+  let allowed=true,release,entered,service;
+  const ready=new Promise(resolve=>{entered=resolve;}),gate=new Promise(resolve=>{release=resolve;});
+  t.after(async()=>{release();service?.close();await new Promise(resolve=>setTimeout(resolve,50));db.close();await rm(root,{recursive:true,force:true});});
+  const host={async request(route){calls.push(route);
+    if(route==='/session/status')return {ses_held:{type:'busy'}};
+    if(route==='/permission'||route==='/question'||route.endsWith('/message'))return [];
+    throw Error('No execution request expected.');
+  }};
+  const captured=[];
+  service=createModelRatingService({backendRoot:root,host,localData:{get:()=>db},canRun:()=>allowed,project:async()=>({id:'p',directory:root}),
+    store:{async recordRequest(receipt){captured.push(receipt);entered();await gate;}}});
+  service.resumeAutomaticWork();await ready;
+  assert.ok(db.currentRatingJob().progress.workers[0].messageID,'Native request identity is durable before its delivery boundary.');
+  if(revokedBy==='close')service.close();else {allowed=false;service.suspendAutomaticWork();}
+  release();await new Promise(resolve=>setTimeout(resolve,80));
+  assert.equal(captured.length,1);assert.equal(calls.filter(route=>route.endsWith('/prompt_async')).length,0);
+  assert.equal(db.currentRatingJob().status,'running','The uncertain persisted identity is retained for inspection.');
+  if(revokedBy==='review guard') {allowed=true;service.resumeAutomaticWork();await new Promise(resolve=>setTimeout(resolve,80));
+    assert.equal(calls.filter(route=>route.endsWith('/prompt_async')).length,0,'Restoring authorization does not replay the uncertain saved request.');}
+});
+
 test('rating contract accepts labeled estimates and rejects unrelated or incomplete scores', () => {
   const text = JSON.stringify({ models: [{ id: 'opencode/example', scores, confidence: 'low', summary: 'Estimated from its predecessor.', sources: [] }] });
   assert.equal(parseModelRatings(text, ['opencode/example'])[0].rating.provenance, 'inferred estimate');

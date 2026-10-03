@@ -1,4 +1,7 @@
 import { randomUUID } from 'node:crypto';
+import { contentMatch } from '../../domain/content-query.mjs';
+import { createMemoryCaptureService } from './memory-capture.mjs';
+import { createKnowledgeQueries } from './knowledge-queries.mjs';
 
 const normalize = value => String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('en-US');
 const json = value => JSON.stringify(value ?? {});
@@ -11,7 +14,7 @@ export function createMemoryService(db, tx) {
   function pinConversationSnapshotInTransaction({ projectID, sessionID, title, parentID = null, originalPinnedAt, annotationRevision = 0 }) {
     if (!projectID || !sessionID || !Number.isFinite(originalPinnedAt)) throw Error('Pinned conversation identity and original timestamp are required.');
     const id = `conversation:${projectID}:${sessionID}`, now = Date.now(), revisionID = randomUUID();
-    const existing = db.prepare('SELECT memory_id FROM memory_items WHERE memory_id=?').get(id);
+    const existing = db.prepare('SELECT memory_id,deleted_at FROM memory_items WHERE memory_id=?').get(id);
     const header = db.prepare('SELECT created_at AS createdAt,updated_at AS updatedAt,title FROM session_headers WHERE project_id=? AND session_id=?').get(projectID,sessionID);
     const metadata = header ? { title: header.title, createdAt: header.createdAt, updatedAt: header.updatedAt, parentID } : { title: title || 'Missing conversation source', missingSource: true, parentID };
     if (!existing) {
@@ -20,9 +23,11 @@ export function createMemoryService(db, tx) {
       db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)').run(revisionID,0,'conversation',`${projectID}/${sessionID}`,null,json(metadata),null,header ? 'not_captured' : 'missing_source');
       db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,'legacy_pin_imported',null,revisionID,'migration',`${projectID}/${sessionID}`,'Transcript snapshot was not present in the legacy pin record.',now);
     }
+    if (existing?.deleted_at != null)
+      db.prepare("UPDATE memory_items SET status='active',deleted_at=NULL,updated_at=? WHERE memory_id=?").run(now,id);
     db.prepare('INSERT INTO memory_pins VALUES(?,?,?,?,?) ON CONFLICT(memory_id) DO UPDATE SET original_pinned_at=COALESCE(memory_pins.original_pinned_at,excluded.original_pinned_at),revision=max(memory_pins.revision,excluded.revision)')
-      .run(id,now,originalPinnedAt,null,Math.max(1,annotationRevision));
-    return { id, pinnedAt:now, originalPinnedAt, sourceStatus:header ? 'metadata_only' : 'missing_source', created:!existing };
+      .run(id,originalPinnedAt,originalPinnedAt,null,Math.max(1,annotationRevision));
+    return { id, pinnedAt:originalPinnedAt, originalPinnedAt, sourceStatus:header ? 'metadata_only' : 'missing_source', created:!existing };
   }
   function createEntity({ id = randomUUID(), type, name, aliases = [], sourceRef = '' }) {
     const entityType = requiredText(type, 'Entity type', 200), canonicalName = requiredText(name, 'Entity name', 1000);
@@ -47,7 +52,28 @@ export function createMemoryService(db, tx) {
     if (collision && collision.entity_id !== id) throw Error('Alias already identifies a different entity.');
     db.prepare('INSERT INTO entity_aliases VALUES(?,?,?,?,?) ON CONFLICT(entity_id,normalized_alias) DO NOTHING').run(id, alias, key, String(sourceRef), Date.now());
   }
+  function latestRelationRevision(id) {
+    return db.prepare('SELECT * FROM entity_relation_revisions WHERE relation_id=? ORDER BY revision DESC LIMIT 1').get(id);
+  }
+  function recordRelationRevision({ relationID, revision, from, type, to, provenance, validFrom, validTo,
+    operation, actor = 'user', reason = '', recordedAt = Date.now() }) {
+    const revisionID = randomUUID();
+    db.prepare(`INSERT INTO entity_relation_revisions(revision_id,relation_id,revision,from_entity_id,relation_type,to_entity_id,
+      provenance_json,valid_from,valid_to,operation,actor,reason,recorded_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+      .run(revisionID,relationID,revision,from,type,to,json(provenance),validFrom,validTo,operation,
+        String(actor).slice(0,200),String(reason).slice(0,2000),recordedAt);
+    return { revisionID, revision };
+  }
+  const relationTimes = (validFrom, validTo, fallback = Date.now()) => {
+    const start = validFrom === undefined ? fallback : validFrom;
+    const end = validTo === undefined ? null : validTo;
+    if (!Number.isSafeInteger(start) || (end !== null && !Number.isSafeInteger(end)))
+      throw Error('Relation validity timestamps must be safe integer milliseconds.');
+    if (end !== null && end < start) throw Error('Relation validity ends before it begins.');
+    return { validFrom: start, validTo: end };
+  };
   return {
+    ...createKnowledgeQueries(db,tx),
     createEntity,
     addAlias(id, alias, sourceRef = '') { return tx(() => { addAlias(id, alias, sourceRef); return { id, alias }; }); },
     deleteEntity({ id, actor = 'user', reason = '' }) {
@@ -58,9 +84,21 @@ export function createMemoryService(db, tx) {
         const claimRefs = db.prepare(`SELECT count(*) AS n FROM claims
           WHERE subject_entity_id=? OR object_entity_id=?`).get(entityID,entityID).n;
         if (claimRefs) return { id:entityID, deleted:false, reason:'claims_reference_entity', claimsRetained:claimRefs };
-        const relationsDeleted = db.prepare('SELECT count(*) AS n FROM entity_relations WHERE from_entity_id=? OR to_entity_id=?').get(entityID,entityID).n;
+        const relations = db.prepare('SELECT * FROM entity_relations WHERE from_entity_id=? OR to_entity_id=?').all(entityID,entityID);
+        const relationsDeleted = relations.length, now = Date.now();
+        for (const relation of relations) {
+          const current = latestRelationRevision(relation.relation_id);
+          const times = relationTimes(current?.valid_from, current?.valid_to, relation.created_at);
+          recordRelationRevision({ relationID:relation.relation_id,revision:(current?.revision ?? 0)+1,
+            from:relation.from_entity_id,type:relation.relation_type,to:relation.to_entity_id,
+            provenance:JSON.parse(relation.provenance_json),validFrom:times.validFrom,
+            validTo:times.validTo ?? Math.max(now,times.validFrom),operation:'retracted',actor,reason,recordedAt:now });
+          db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+            randomUUID(),null,null,'relation_deleted_with_entity',relation.relation_id,null,String(actor),
+            `${relation.from_entity_id}/${relation.relation_type}/${relation.to_entity_id}`,String(reason),now);
+        }
         db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(
-          randomUUID(),null,null,'entity_deleted',entityID,null,String(actor),'',String(reason),Date.now());
+          randomUUID(),null,null,'entity_deleted',entityID,null,String(actor),'',String(reason),now);
         db.prepare('DELETE FROM entities WHERE entity_id=?').run(entityID);
         return { id:entityID, deleted:true, relationsDeleted };
       });
@@ -71,27 +109,85 @@ export function createMemoryService(db, tx) {
         UNION SELECT e.entity_id,e.entity_type,e.canonical_name FROM entity_aliases a JOIN entities e USING(entity_id) WHERE a.normalized_alias=? LIMIT 20`).all(key, key);
       return exact;
     },
-    addRelation({ id = randomUUID(), from, type, to, provenance = {} }) {
+    addRelation({ id = randomUUID(), from, type, to, provenance = {}, validFrom, validTo, actor = 'user', reason = '' }) {
       const relationType = requiredText(type, 'Relation type', 200);
       if (!from || !to || from === to) throw Error('Choose two existing, distinct relation endpoints.');
       return tx(() => {
         if (!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(from) || !db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(to))
           throw Error('Both relation endpoints must exist.');
         const prior = db.prepare('SELECT relation_id AS id FROM entity_relations WHERE from_entity_id=? AND relation_type=? AND to_entity_id=?').get(from, relationType, to);
-        if (prior) return { id: prior.id, created: false };
-        db.prepare('INSERT INTO entity_relations VALUES(?,?,?,?,?,?)').run(id, from, relationType, to, json(provenance), Date.now());
-        return { id, created: true };
+        if (prior) return { id: prior.id, created: false, revision:latestRelationRevision(prior.id)?.revision ?? 1 };
+        const now=Date.now(),times=relationTimes(validFrom,validTo,now);
+        db.prepare('INSERT INTO entity_relations VALUES(?,?,?,?,?,?)').run(id, from, relationType, to, json(provenance), now);
+        const saved=recordRelationRevision({relationID:id,revision:1,from,type:relationType,to,provenance,
+          ...times,operation:'created',actor,reason,recordedAt:now});
+        return { id, created: true, revision:saved.revision, validFrom:times.validFrom, validTo:times.validTo };
       });
     },
-    listRelations({ entityID, limit = 100 } = {}) {
+    reviseRelation({ id, expectedRevision, from, type, to, provenance, validFrom, validTo, actor='user', reason='' }) {
+      const relationID=requiredText(id,'Relation ID',2000);
+      if (!Number.isSafeInteger(expectedRevision)||expectedRevision<1) throw Error('Relation revision must be a positive integer.');
+      return tx(()=>{
+        const prior=db.prepare('SELECT * FROM entity_relations WHERE relation_id=?').get(relationID);
+        const current=latestRelationRevision(relationID);
+        if (!prior||!current||current.operation==='retracted') throw Error('Relation does not exist.');
+        if (current.revision!==expectedRevision) throw Object.assign(Error('Relation changed; reload before revising it.'),{status:409});
+        const next={from:from===undefined?prior.from_entity_id:requiredText(from,'From entity ID',2000),
+          type:type===undefined?prior.relation_type:requiredText(type,'Relation type',200),
+          to:to===undefined?prior.to_entity_id:requiredText(to,'To entity ID',2000),
+          provenance:provenance===undefined?JSON.parse(prior.provenance_json):provenance};
+        if(next.from===next.to) throw Error('Choose two existing, distinct relation endpoints.');
+        if(!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(next.from)||!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(next.to))
+          throw Error('Both relation endpoints must exist.');
+        const duplicate=db.prepare('SELECT relation_id FROM entity_relations WHERE from_entity_id=? AND relation_type=? AND to_entity_id=? AND relation_id<>?')
+          .get(next.from,next.type,next.to,relationID);
+        if(duplicate) throw Error('Another relation already has these endpoints and type.');
+        const times=relationTimes(validFrom===undefined?current.valid_from:validFrom,validTo===undefined?current.valid_to:validTo,current.valid_from);
+        const now=Date.now();
+        db.prepare('UPDATE entity_relations SET from_entity_id=?,relation_type=?,to_entity_id=?,provenance_json=? WHERE relation_id=?')
+          .run(next.from,next.type,next.to,json(next.provenance),relationID);
+        const saved=recordRelationRevision({relationID,revision:current.revision+1,...next,...times,
+          operation:'revised',actor,reason,recordedAt:now});
+        return {id:relationID,revision:saved.revision,updated:true,validFrom:times.validFrom,validTo:times.validTo};
+      });
+    },
+    listRelations({ entityID, asOf, limit = 100 } = {}) {
       const bounded = Math.max(1,Math.min(500,Number(limit) || 100));
       if (entityID !== undefined) requiredText(entityID,'Entity ID',2000);
+      if (asOf !== undefined) {
+        if (!Number.isSafeInteger(asOf)) throw Error('Relation as-of time must be a safe integer in milliseconds.');
+        const rows = db.prepare(`WITH qualified AS (
+            SELECT h.*,row_number() OVER(PARTITION BY h.relation_id ORDER BY h.revision DESC) AS selected_revision
+            FROM entity_relation_revisions h
+            WHERE h.operation<>'retracted' AND h.valid_from<=? AND (h.valid_to IS NULL OR h.valid_to>?)
+              AND NOT EXISTS (SELECT 1 FROM entity_relation_revisions deleted
+                WHERE deleted.relation_id=h.relation_id AND deleted.operation='retracted' AND deleted.recorded_at<=?)
+          ) SELECT relation_id AS id,from_entity_id AS fromEntityID,relation_type AS type,to_entity_id AS toEntityID,
+            provenance_json AS provenance,(SELECT min(created.recorded_at) FROM entity_relation_revisions created
+              WHERE created.relation_id=qualified.relation_id) AS createdAt,revision,valid_from AS validFrom,valid_to AS validTo
+          FROM qualified WHERE selected_revision=1 AND (? IS NULL OR from_entity_id=? OR to_entity_id=?)
+          ORDER BY createdAt,relation_id LIMIT ?`).all(asOf,asOf,asOf,entityID ?? null,entityID ?? null,entityID ?? null,bounded);
+        return rows.map(row=>({...row,provenance:JSON.parse(row.provenance)}));
+      }
       const rows = entityID === undefined
-        ? db.prepare(`SELECT relation_id AS id,from_entity_id AS fromEntityID,relation_type AS type,to_entity_id AS toEntityID,
-            provenance_json AS provenance,created_at AS createdAt FROM entity_relations ORDER BY created_at,relation_id LIMIT ?`).all(bounded)
-        : db.prepare(`SELECT relation_id AS id,from_entity_id AS fromEntityID,relation_type AS type,to_entity_id AS toEntityID,
-            provenance_json AS provenance,created_at AS createdAt FROM entity_relations
-            WHERE from_entity_id=? OR to_entity_id=? ORDER BY created_at,relation_id LIMIT ?`).all(entityID,entityID,bounded);
+        ? db.prepare(`SELECT r.relation_id AS id,r.from_entity_id AS fromEntityID,r.relation_type AS type,r.to_entity_id AS toEntityID,
+            r.provenance_json AS provenance,r.created_at AS createdAt,h.revision,h.valid_from AS validFrom,h.valid_to AS validTo
+            FROM entity_relations r JOIN entity_relation_revisions h ON h.relation_id=r.relation_id
+            AND h.revision=(SELECT max(x.revision) FROM entity_relation_revisions x WHERE x.relation_id=r.relation_id)
+            WHERE h.operation<>'retracted' ORDER BY r.created_at,r.relation_id LIMIT ?`).all(bounded)
+        : db.prepare(`SELECT r.relation_id AS id,r.from_entity_id AS fromEntityID,r.relation_type AS type,r.to_entity_id AS toEntityID,
+            r.provenance_json AS provenance,r.created_at AS createdAt,h.revision,h.valid_from AS validFrom,h.valid_to AS validTo
+            FROM entity_relations r JOIN entity_relation_revisions h ON h.relation_id=r.relation_id
+            AND h.revision=(SELECT max(x.revision) FROM entity_relation_revisions x WHERE x.relation_id=r.relation_id)
+            WHERE h.operation<>'retracted' AND (r.from_entity_id=? OR r.to_entity_id=?) ORDER BY r.created_at,r.relation_id LIMIT ?`).all(entityID,entityID,bounded);
+      return rows.map(row=>({...row,provenance:JSON.parse(row.provenance)}));
+    },
+    relationHistory({id,limit=100}={}) {
+      const relationID=requiredText(id,'Relation ID',2000),bounded=Math.max(1,Math.min(500,Number(limit)||100));
+      const rows=db.prepare(`SELECT revision_id AS revisionID,relation_id AS relationID,revision,from_entity_id AS fromEntityID,
+        relation_type AS type,to_entity_id AS toEntityID,provenance_json AS provenance,valid_from AS validFrom,valid_to AS validTo,
+        operation,actor,reason,recorded_at AS recordedAt FROM entity_relation_revisions
+        WHERE relation_id=? ORDER BY revision DESC LIMIT ?`).all(relationID,bounded);
       return rows.map(row=>({...row,provenance:JSON.parse(row.provenance)}));
     },
     deleteRelation({ id, actor = 'user', reason = '' }) {
@@ -100,9 +196,14 @@ export function createMemoryService(db, tx) {
         const relation = db.prepare(`SELECT from_entity_id AS fromID,relation_type AS type,to_entity_id AS toID
           FROM entity_relations WHERE relation_id=?`).get(relationID);
         if (!relation) return { id:relationID, deleted:false };
+        const current=latestRelationRevision(relationID),now=Date.now();
+        const times=relationTimes(current?.valid_from,current?.valid_to);
+        recordRelationRevision({relationID,revision:(current?.revision??0)+1,from:relation.fromID,type:relation.type,to:relation.toID,
+          provenance:JSON.parse(db.prepare('SELECT provenance_json FROM entity_relations WHERE relation_id=?').get(relationID).provenance_json),
+          validFrom:times.validFrom,validTo:times.validTo??Math.max(now,times.validFrom),operation:'retracted',actor,reason,recordedAt:now});
         db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(
           randomUUID(),null,null,'relation_deleted',relationID,null,String(actor),
-          `${relation.fromID}/${relation.type}/${relation.toID}`,String(reason),Date.now());
+          `${relation.fromID}/${relation.type}/${relation.toID}`,String(reason),now);
         db.prepare('DELETE FROM entity_relations WHERE relation_id=?').run(relationID);
         return { id:relationID, deleted:true };
       });
@@ -143,8 +244,8 @@ export function createMemoryService(db, tx) {
       const now = Date.now();
       return tx(() => {
         const prior = db.prepare('SELECT * FROM claims WHERE claim_id=?').get(requiredText(id, 'Claim ID', 2000));
-        if (!prior || prior.superseded_at !== null || prior.epistemic_state === 'superseded') throw Error('Claim is missing or already superseded.');
-        if (expectedEpistemicState && prior.epistemic_state !== expectedEpistemicState) throw Error('Claim changed; reload before correcting it.');
+        if (!prior || prior.superseded_at !== null || prior.epistemic_state === 'superseded') throw Object.assign(Error('Claim is missing or already superseded.'),{status:409});
+        if (expectedEpistemicState && prior.epistemic_state !== expectedEpistemicState) throw Object.assign(Error('Claim changed; reload before correcting it.'),{status:409});
         const next = {
           predicate: requiredText(predicate ?? prior.predicate, 'Claim predicate', 1000),
           subjectEntityID: subjectEntityID === undefined ? prior.subject_entity_id : subjectEntityID,
@@ -216,9 +317,12 @@ export function createMemoryService(db, tx) {
         if (pinned) pinConversationSnapshotInTransaction({ projectID,sessionID,title,parentID,
           originalPinnedAt:old.pinnedAt ?? Date.now(),annotationRevision:revision + 1 });
         else db.prepare('DELETE FROM memory_pins WHERE memory_id=?').run(id);
+        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)')
+          .run(randomUUID(),id,null,pinned?'pin':'unpin',null,null,'user',`${projectID}/${sessionID}`,'',Date.now());
         db.prepare('INSERT INTO session_annotations VALUES(?,?,?,?,?) ON CONFLICT(project_id,session_id) DO UPDATE SET pinned_at=NULL,hidden_at=excluded.hidden_at,revision=excluded.revision')
           .run(projectID,sessionID,null,old.hiddenAt,revision + 1);
-        return { pinnedAt:pinned ? db.prepare('SELECT pinned_at FROM memory_pins WHERE memory_id=?').get(id).pinned_at : null,
+        const capture = pinned ? createMemoryCaptureService(db,tx).queueMemoryCapture({memoryID:id,projectID,sessionID}) : undefined;
+        return { capture,pinnedAt:pinned ? db.prepare('SELECT pinned_at FROM memory_pins WHERE memory_id=?').get(id).pinned_at : null,
           hiddenAt:old.hiddenAt,revision:revision + 1 };
       });
     },
@@ -261,7 +365,7 @@ export function createMemoryService(db, tx) {
         const item = db.prepare('SELECT updated_at FROM memory_items WHERE memory_id=? AND deleted_at IS NULL').get(id);
         const current = db.prepare('SELECT revision,revision_id AS revisionID FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(id);
         if (!item || !current) throw Error('Memory does not exist.');
-        if (current.revision !== expectedRevision) throw Error('Memory changed; reload before revising.');
+        if (current.revision !== expectedRevision) throw Object.assign(Error('Memory changed; reload before revising.'),{status:409});
         const revisionID = randomUUID(), revision = current.revision + 1, now = Date.now();
         db.prepare('INSERT INTO memory_item_revisions VALUES(?,?,?,?,?,?,?)').run(revisionID,id,revision,body,json(provenance),json(boundary),now);
         db.prepare('UPDATE memory_items SET updated_at=? WHERE memory_id=?').run(now,id);
@@ -269,29 +373,47 @@ export function createMemoryService(db, tx) {
         return { id, revisionID, revision, created: true };
       });
     },
-    getMemory(id) {
+    getMemory(id, requestedRevision) {
       const item = db.prepare('SELECT * FROM memory_items WHERE memory_id=? AND deleted_at IS NULL').get(id);
       if (!item) return null;
-      const revision = db.prepare('SELECT * FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(id);
-      return { ...item, revision: { ...revision, provenance: JSON.parse(revision.provenance_json), captureBoundary: JSON.parse(revision.capture_boundary_json) } };
+      if (requestedRevision !== undefined && (!Number.isSafeInteger(requestedRevision) || requestedRevision < 1)) throw Error('Choose a valid memory revision.');
+      const revision = requestedRevision === undefined
+        ? db.prepare('SELECT * FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(id)
+        : db.prepare('SELECT * FROM memory_item_revisions WHERE memory_id=? AND revision=?').get(id,requestedRevision);
+      if (!revision) return null;
+      const members = db.prepare(`SELECT ordinal,member_kind AS kind,source_ref AS ref,source_revision AS revision,
+        locator_json AS locator,content_hash AS hash,availability FROM memory_members WHERE revision_id=? ORDER BY ordinal`)
+        .all(revision.revision_id).map(member => ({...member,locator:JSON.parse(member.locator)}));
+      const revisions = db.prepare('SELECT revision,created_at AS createdAt FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC').all(id);
+      const pin = db.prepare('SELECT pinned_at AS pinnedAt,original_pinned_at AS originalPinnedAt,revision AS pinRevision FROM memory_pins WHERE memory_id=?').get(id);
+      const archiveRevision=db.prepare("SELECT count(*) AS n FROM memory_changes WHERE memory_id=? AND change_type IN ('archived','restored')").get(id).n;
+      return { ...item, ...pin,pinRevision:this.memoryPinRevision(id), archiveRevision, members, revisions, revision: { ...revision, provenance: JSON.parse(revision.provenance_json), captureBoundary: JSON.parse(revision.capture_boundary_json) } };
     },
-    searchMemory(query, { kind, includeForgotten = false, limit = 25 } = {}) {
-      const text = requiredText(query, 'Memory search', 1000);
-      const bounded = Math.max(1, Math.min(100, Number(limit) || 25));
-      const exact = db.prepare(`SELECT memory_id AS id FROM memory_items WHERE memory_id=? AND (? IS NULL OR kind=?) AND (?=1 OR deleted_at IS NULL)`).get(text,kind ?? null,kind ?? null,includeForgotten ? 1 : 0);
-      if (exact) return { status:'ok', items:[{ ...this.getMemory(exact.id), id:exact.id }] };
-      const terms = text.match(/[\p{L}\p{N}_]+/gu)?.slice(0,16) ?? [];
-      if (!terms.length) return { status:'empty', items:[] };
-      const match = terms.map(term => `"${term.replaceAll('"','""')}"*`).join(' AND ');
+    searchMemory(query = '', { kind, projectID, model, phrase = false, pinned = false, includeForgotten = false, includeArchived = false, limit = 25 } = {}) {
+      if (typeof query !== 'string') throw Error('Memory search must be text.');
+      const text = query.trim(), match = contentMatch(query,{phrase});
+      const bounded = Math.max(1, Math.min(200, Number(limit) || 25));
+      const where = ['r.revision=(SELECT max(x.revision) FROM memory_item_revisions x WHERE x.memory_id=m.memory_id)'], params = [];
+      if (!includeForgotten) where.push('m.deleted_at IS NULL');
+      if (!includeArchived) where.push("m.status<>'archived'");
+      if (kind) { where.push('m.kind=?'); params.push(kind); }
+      if (projectID) { where.push('m.source_project_id=?'); params.push(projectID); }
+      if (pinned) where.push('p.memory_id IS NOT NULL');
+      if (model) { where.push(`EXISTS (SELECT 1 FROM memory_members mm WHERE mm.revision_id=r.revision_id
+        AND json_extract(mm.locator_json,'$.providerID') || '/' || json_extract(mm.locator_json,'$.modelID')=?)`); params.push(model); }
+      const exact = text && db.prepare(`SELECT m.memory_id FROM memory_items m JOIN memory_item_revisions r USING(memory_id)
+        LEFT JOIN memory_pins p USING(memory_id) WHERE m.memory_id=? AND ${where.join(' AND ')}`).get(text,...params);
+      if (exact) return { status:'ok', items:[{ ...this.getMemory(exact.memory_id), id:exact.memory_id }],truncated:false };
+      if (text && !match) return { status:'empty',items:[],truncated:false };
+      if (match) { where.push('memory_search_fts MATCH ?'); params.push(match); }
       const rows = db.prepare(`SELECT m.memory_id AS id,m.kind,m.title,m.status,m.source_project_id AS projectID,
-        m.source_session_id AS sessionID,r.revision,r.body,bm25(memory_search_fts) AS score,
-        snippet(memory_search_fts,1,'[',']',' … ',18) AS excerpt
-        FROM memory_search_fts JOIN memory_item_revisions r ON r.revision_id=memory_search_fts.revision_id
-        JOIN memory_items m ON m.memory_id=r.memory_id
-        WHERE memory_search_fts MATCH ? AND r.revision=(SELECT max(x.revision) FROM memory_item_revisions x WHERE x.memory_id=m.memory_id)
-          AND (? IS NULL OR m.kind=?) AND (?=1 OR m.deleted_at IS NULL)
-        ORDER BY bm25(memory_search_fts),m.updated_at DESC LIMIT ?`).all(match,kind ?? null,kind ?? null,includeForgotten ? 1 : 0,bounded);
-      return { status: rows.length ? 'ok' : 'empty', items: rows.map(row => ({ ...row, source: { system: row.projectID ? 'freelancer-project' : 'freelancer', projectID: row.projectID, sessionID: row.sessionID } })) };
+        m.source_session_id AS sessionID,r.revision,r.body,p.pinned_at AS pinnedAt,
+        ${match ? "bm25(memory_search_fts)" : '0'} AS score
+        FROM memory_item_revisions r JOIN memory_items m USING(memory_id) LEFT JOIN memory_pins p USING(memory_id)
+        ${match ? 'JOIN memory_search_fts ON memory_search_fts.revision_id=r.revision_id' : ''}
+        WHERE ${where.join(' AND ')} ORDER BY score,m.updated_at DESC,m.memory_id LIMIT ?`).all(...params,bounded+1);
+      return { status: rows.length ? 'ok' : 'empty', truncated:rows.length>bounded,
+        items: rows.slice(0,bounded).map(row => ({ ...row,excerpt:row.body.slice(0,240), source: { system: row.projectID ? 'freelancer-project' : 'freelancer', projectID: row.projectID, sessionID: row.sessionID } })) };
     },
     memoryStatus() {
       return {
@@ -300,6 +422,38 @@ export function createMemoryService(db, tx) {
         memories: db.prepare("SELECT count(*) n FROM memory_items WHERE deleted_at IS NULL").get().n,
         pinned: db.prepare('SELECT count(*) n FROM memory_pins p JOIN memory_items m USING(memory_id) WHERE m.deleted_at IS NULL').get().n,
       };
+    },
+    archiveMemory({id,expectedRevision,actor='user',reason=''}) {
+      const memoryID=requiredText(id,'Memory ID',2000);
+      return tx(()=>{
+        const current=db.prepare("SELECT count(*) AS n FROM memory_changes WHERE memory_id=? AND change_type IN ('archived','restored')").get(memoryID).n;
+        if(expectedRevision!==undefined&&(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)) throw Error('Archive revision must be a non-negative integer.');
+        if(expectedRevision!==undefined&&expectedRevision!==current) throw Object.assign(Error('Archive state changed; reload before saving.'),{status:409});
+        const item=db.prepare('SELECT status,deleted_at AS deletedAt FROM memory_items WHERE memory_id=?').get(memoryID);
+        if(!item||item.deletedAt!==null||item.status==='forgotten') return {id:memoryID,archived:false,archiveRevision:current};
+        if(item.status==='archived') return {id:memoryID,archived:true,changed:false,archiveRevision:current};
+        const now=Date.now();
+        db.prepare("UPDATE memory_items SET status='archived',updated_at=? WHERE memory_id=?").run(now,memoryID);
+        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+          randomUUID(),memoryID,null,'archived',null,null,String(actor),'',String(reason),now);
+        return {id:memoryID,archived:true,changed:true,archiveRevision:current+1};
+      });
+    },
+    restoreMemory({id,expectedRevision,actor='user',reason=''}) {
+      const memoryID=requiredText(id,'Memory ID',2000);
+      return tx(()=>{
+        const current=db.prepare("SELECT count(*) AS n FROM memory_changes WHERE memory_id=? AND change_type IN ('archived','restored')").get(memoryID).n;
+        if(expectedRevision!==undefined&&(!Number.isSafeInteger(expectedRevision)||expectedRevision<0)) throw Error('Archive revision must be a non-negative integer.');
+        if(expectedRevision!==undefined&&expectedRevision!==current) throw Object.assign(Error('Archive state changed; reload before saving.'),{status:409});
+        const item=db.prepare('SELECT status,deleted_at AS deletedAt FROM memory_items WHERE memory_id=?').get(memoryID);
+        if(!item||item.deletedAt!==null||item.status==='forgotten') return {id:memoryID,restored:false,archiveRevision:current};
+        if(item.status!=='archived') return {id:memoryID,restored:false,changed:false,archiveRevision:current};
+        const now=Date.now();
+        db.prepare("UPDATE memory_items SET status='active',updated_at=? WHERE memory_id=?").run(now,memoryID);
+        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(
+          randomUUID(),memoryID,null,'restored',null,null,String(actor),'',String(reason),now);
+        return {id:memoryID,restored:true,changed:true,archiveRevision:current+1};
+      });
     },
     forgetMemory({ id, actor = 'user', reason = '' }) {
       return tx(() => {

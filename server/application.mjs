@@ -9,6 +9,7 @@ import { executionContext } from "../backend/tools/runtime/execution-context.mjs
 import { modelInputEvidence } from '../backend/tools/runtime/input-observations.mjs';
 import { ensureAgentProfiles } from "./agent-profiles.mjs";
 import { createHistoryService } from "./history.mjs";
+import { createKnowledgeQuery } from './data/knowledge-query.mjs';
 import { createModelRatingService } from "./model-ratings.mjs";
 import { rebuildContentIndex } from "./content-index.mjs";
 import { createIndexJobs } from './index-jobs.mjs';
@@ -89,6 +90,7 @@ export function createApplication({
   dataRoot,
   gitOptions = {},
   importOptions = {},
+  automaticWorkAllowed = true,
 }) {
   const localData = createLocalDataService(dataRoot ?? path.join(backendRoot, ".state", "local-data"));
   const gitProjects = createGitProjects({ store, project, host, backendRoot, ...gitOptions });
@@ -99,6 +101,7 @@ export function createApplication({
   let refreshingUsage;
   let providerFlight;
   let providerSnapshot;
+  let automaticWork = automaticWorkAllowed === true;
   const sessionDefaultWrites = new Map();
   async function changeCredentials(change, checkDecisions = false) {
     if (connecting || sending || refreshingContext || refreshingAgents)
@@ -224,8 +227,15 @@ export function createApplication({
   }
   const contentIndexRefresh = new Map();
   const modelRatings = createModelRatingService({ host, backendRoot, dataRoot, localData, project, store,
+    canRun: () => automaticWork,
     getCatalog: async (id) => app.bootstrap(id) });
   const app = {
+    automaticWorkAllowed: () => automaticWork,
+    setAutomaticWorkAllowed(allowed) {
+      if (typeof allowed !== 'boolean') throw Error('Automatic work authorization must be explicit.');
+      automaticWork = allowed;
+      if (!allowed) modelRatings.suspendAutomaticWork();
+    },
     async capabilities(projectID, options = {}) {
       const p = await project(projectID);
       let inspectionOnly = null;
@@ -1455,6 +1465,8 @@ export function createApplication({
     },
   };
   app.localData = localData;
+  app.knowledgeQuery = createKnowledgeQuery({ data: () => localData.get(),
+    getProjects: async () => (await store.read('settings')).projects });
   app.history = createHistoryService({ app, host, backendRoot, dataRoot, localData });
   app.chatgpt = createChatGPTImport({ app, backendRoot, dataRoot, localData, ...importOptions });
   app.indexJobs = createIndexJobs({ app, backendRoot, dataRoot, localData });

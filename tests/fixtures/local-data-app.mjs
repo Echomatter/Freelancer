@@ -13,7 +13,7 @@ import { startServer } from "../../server/http.mjs";
 import { createActivityReader } from "../../server/activity.mjs";
 import { defaults } from "../../shared/strategy.mjs";
 
-export async function localDataFixture({ gitOptions = {}, timers = true, persistPreferences = false } = {}) {
+export async function localDataFixture({ gitOptions = {}, timers = true, persistPreferences = false, recoveryDataHome } = {}) {
   const root = await realpath(await mkdtemp(path.join(os.tmpdir(), "freelancer-history-")));
   const directory = path.join(root, "project");
   await mkdir(directory);
@@ -251,6 +251,7 @@ export async function localDataFixture({ gitOptions = {}, timers = true, persist
   });
   const runtime = await startServer({
     timers,
+    recoveryDataHome,
     remoteAccess: await createRemoteAccess({ file: path.join(root, "remote-access.json") }),
     application: app,
     readActivity: createActivityReader({ project: app.project, host }),

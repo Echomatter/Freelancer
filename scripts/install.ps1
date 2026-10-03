@@ -51,8 +51,8 @@ if (-not $NoShortcuts) {
 }
 
 $versionText = (& node.exe --version).TrimStart('v')
-if ($LASTEXITCODE -ne 0 -or [version]$versionText -lt [version]'22.13.0') {
-    throw "Node.js 22.13 or newer is required (found $versionText)."
+if ($LASTEXITCODE -ne 0 -or [version]$versionText -lt [version]'24.10.0') {
+    throw "Node.js 24.10 or newer is required (found $versionText)."
 }
 if (-not (Get-Command 'opencode.cmd' -ErrorAction SilentlyContinue) -and
     -not (Get-Command 'opencode.exe' -ErrorAction SilentlyContinue)) {

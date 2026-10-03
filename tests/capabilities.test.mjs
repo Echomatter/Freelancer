@@ -77,6 +77,27 @@ test("model-specific exposure requires a provider/model pair", async (t) => {
   assert.equal(bare.probes.exposed.state, "not-run");
 });
 
+test('every discovered capability has a short description without copying native prompts or schemas', async t => {
+  const backendRoot = await tempBackend(t);
+  const host = fakeHost({
+    '/experimental/tool/ids': { value: ['knowledge', 'custom_tool'] },
+    '/experimental/tool?provider=prov&model=mod': { value: [
+      { id: 'custom_tool', description: 'Inspect a custom source.\nKeep its evidence.', parameters: { secret: 'private-schema' } },
+    ] },
+    '/skill': { value: [
+      { name: 'remember', description: 'A long native prompt that is not the UI summary.' },
+      { name: 'custom-skill', description: 'Find useful examples.\nThen explain them.', content: 'private-skill-body' },
+    ] },
+  });
+  const result = await createCapabilities({ host, backendRoot }).read({ directory: dir(), projectID: 'p', model: 'prov/mod' });
+  assert.equal(toolById(result, 'knowledge').origin, 'Freelancer plugin');
+  assert.match(toolById(result, 'knowledge').summary, /memor|knowledge|evidence/i);
+  assert.equal(toolById(result, 'custom_tool').summary, 'Inspect a custom source. Keep its evidence.');
+  assert.equal(result.skills.find(row => row.name === 'custom-skill').summary, 'Find useful examples. Then explain them.');
+  assert.ok([...result.tools, ...result.skills].every(row => typeof row.summary === 'string' && row.summary.length > 10 && row.summary.length <= 240));
+  assert.doesNotMatch(JSON.stringify(result), /private-schema|private-skill-body|long native prompt/);
+});
+
 test("tools separate registration, model exposure, and explicit denial", async (t) => {
   const backendRoot = await tempBackend(t);
   const host = fakeHost({

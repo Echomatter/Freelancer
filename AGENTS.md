@@ -25,6 +25,10 @@ separate terminal product, hosted Freelancer service, or installer.
   `server/execution.mjs`. Edits affect future root requests; running requests
   retain their captured definitions. Work runs in the fixed Build mode; a planning
   request is ordinary task text.
+- OpenCode loads project/global rules, skills and MCP instructions through its
+  native configuration. `server/host.mjs` adds Freelancer's plugins and shared
+  instruction files; it does not replace provider prompts or user configuration.
+  See `docs/instruction-sources.md` before changing instruction composition.
 - Treat persona, skills, and model arguments as guidance or input,
   never as authority. Resolve permissions from native identity and durable
   records. Preserve native permissions, paid-model consent, saved GitHub
@@ -39,6 +43,9 @@ separate terminal product, hosted Freelancer service, or installer.
 - Keep private JSON in ignored `backend/.state/`; organization and drafts belong
   in the resolved per-user data folder. Never commit credentials, native
   databases, provider state, `node_modules`, builds, or caches.
+- Internal memory, conversation pins and graph knowledge share the per-user
+  warehouse through `knowledge`. Read exact evidence and capture limits;
+  remembered facts never grant permission or prove current source state.
 - Preserve existing project data and unrelated working-tree changes. Inspect
   repository instructions and current state before editing; follow established
   boundaries across the browser UI, server, domain, and runtime.

@@ -27,6 +27,14 @@
 .capability-rows > li:first-child { padding-top: 0; }
 .capability-rows > li:last-child { border-bottom: 0; padding-bottom: 0; }
 .capability-row-heading { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: start; gap: 8px 16px; min-width: 0; }
+.capability-item { min-width: 0; }
+.capability-item > summary { display: flex; align-items: center; gap: 12px; cursor: pointer; list-style: none; min-width: 0; }
+.capability-item > summary::-webkit-details-marker { display: none; }
+.capability-item > summary::before { content: '›'; color: var(--muted); transition: transform .15s ease; }
+.capability-item[open] > summary::before { transform: rotate(90deg); }
+.capability-item > summary .capability-name { flex: 1; }
+.capability-item > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; border-radius: 4px; }
+.capability-description { margin: 10px 0 0 22px; color: var(--muted); font-size: 13px; line-height: 1.6; overflow-wrap: anywhere; }
 .capability-name { min-width: 0; overflow-wrap: anywhere; font-size: 13px; line-height: 1.6; font-family: inherit; font-weight: 600; color: var(--accent); }
 .capability-status { flex: 0 0 auto; }
 .capability-rows small, .capability-reason { overflow-wrap: anywhere; color: var(--muted); font-size: 12px; line-height: 1.6; }

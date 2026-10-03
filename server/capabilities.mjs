@@ -1,10 +1,17 @@
 import { readFile } from 'node:fs/promises';
 import path from 'node:path';
+import { describeCapability } from '../domain/capability-descriptions.mjs';
 
 const nativeTools = ['bash', 'read', 'glob', 'grep', 'edit', 'write', 'apply_patch',
   'webfetch', 'websearch', 'skill', 'todowrite', 'question'];
-const freelancerTools = ['delegate', 'git_project', 'content_index', 'goal_checkpoint'];
+const freelancerTools = ['delegate', 'git_project', 'content_index', 'goal_checkpoint', 'knowledge'];
 const text = value => typeof value === 'string' ? value.slice(0, 300) : null;
+const summary = value => typeof value === 'string' && value.trim()
+  ? value.replace(/\s+/g, ' ').trim().slice(0, 240) : null;
+const describe = (kind, id, nativeDescription) => describeCapability(kind, id)?.description
+  ?? summary(nativeDescription) ?? (kind === 'skills'
+    ? 'Reusable guidance loaded through OpenCode when it fits your task.'
+    : 'A tool registered by OpenCode. Its native inputs and permissions control use.');
 const names = value => Array.isArray(value) ? value.filter(v => typeof v === 'string') : [];
 const actions = new Set(['allow', 'ask', 'deny']);
 
@@ -74,7 +81,8 @@ export function createCapabilities({ host, backendRoot }) {
             ? 'Native websearch requires an eligible OpenCode/OpenCode Go provider or explicit OPENCODE_ENABLE_EXA/OPENCODE_ENABLE_PARALLEL opt-in. Native permissions still apply.'
             : 'Tool is not exposed to the selected model.')
           : discovered === null ? ids.reason : exposure === null ? exposed.reason : null;
-        return { id, origin: freelancerTools.includes(id) ? 'Freelancer plugin' : nativeTools.includes(id) ? 'OpenCode native' : 'OpenCode custom/plugin/MCP',
+        return { id, summary: describe('tools', id, exposed.value?.find?.(row => row?.id === id)?.description),
+          origin: freelancerTools.includes(id) ? 'Freelancer plugin' : nativeTools.includes(id) ? 'OpenCode native' : 'OpenCode custom/plugin/MCP',
           discovered, configured: !disabled, modelExposure: exposure, nativePermission, applicationAccess,
           dependency: 'unverified', unavailableReason: reason,
           evidence: 'Native inventory/configuration; successful use not verified.' };
@@ -84,14 +92,15 @@ export function createCapabilities({ host, backendRoot }) {
       const skillRows = nativeSkills.filter(row => typeof row?.name === 'string').map(row => {
         if (seen.has(row.name)) diagnostics.push({ kind: 'duplicate-skill', name: text(row.name) });
         seen.add(row.name);
-        return { name: text(row.name), origin: text(row.location ?? row.path) ?? 'Native skill discovery',
+        return { name: text(row.name), summary: describe('skills', row.name, row.description),
+          origin: text(row.location ?? row.path) ?? 'Native skill discovery',
           discovered: true, dependency: 'unverified', unavailableReason: 'Dependency requirements have not been verified by native discovery.' };
       });
       for (const name of names(manifest.skills)) {
         let present = true;
         try { await readFile(path.join(backendRoot, 'skills', name, 'SKILL.md'), 'utf8'); } catch { present = false; }
         if (!present) diagnostics.push({ kind: 'stale-skill-manifest', name });
-        if (!seen.has(name)) skillRows.push({ name, origin: 'Freelancer shared skill', discovered: false,
+        if (!seen.has(name)) skillRows.push({ name, summary: describe('skills', name), origin: 'Freelancer shared skill', discovered: false,
           dependency: present ? 'unverified' : 'missing', unavailableReason: !present ? 'Manifest skill file is missing.'
             : skills.state === 'observed' ? 'Skill was not returned by native discovery.' : skills.reason });
       }

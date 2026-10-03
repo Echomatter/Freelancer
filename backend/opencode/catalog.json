@@ -8,6 +8,8 @@
     "debug",
     "verify",
     "browser-verify",
+    "context7-mcp",
+    "fetch",
     "playwright",
     "web-research",
     "remember",
@@ -16,11 +18,15 @@
     "bounded-judgment",
     "typesafe-ai",
     "review",
-    "handoff"
+    "handoff",
+    "managed-git"
   ],
   "agent_source": "domain/workspace.mjs + private settings overrides",
   "tools": [
+    "delegate",
+    "git_project",
     "content_index",
+    "goal_checkpoint",
     "knowledge"
   ],
   "plugins": [

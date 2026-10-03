@@ -23,6 +23,39 @@ Edit expertise, instructions and an optional default model on Agents. Explicit a
 
 Root requests capture their catalog and limits. Later edits affect future roots; current workers retain captured instructions. Root and child use `server/execution.mjs`. Native profiles contain identity/permissions, not duplicate personas or pins. New IDs refresh native discovery only while idle.
 
+## Defaults and instruction ownership
+
+Engineer, Researcher and Designer start from OpenCode's ordinary tool-driven
+development behavior, then add their engineering, investigation or interface
+focus. The default text lives in `domain/workspace.mjs`; saved custom definitions
+and edits override it. Updating defaults does not rewrite saved settings.
+Freelancer supplies that captured guidance as request `system` text and keeps
+native profile prompts empty, preserving OpenCode's provider prompt. It does not
+create an `agent.md` master prompt, copy provider/lifecycle instructions or return
+the retired Build/Plan/General catalog as a second set of personas.
+
+OpenCode discovers the actual project's rules, skills, connected MCP tools and
+native permissions. `server/host.mjs` adds Freelancer's shared instruction files
+and plugins to the inherited native configuration; the delegation plugin adds
+`backend/skills` as a native skill root. The source is the runtime overlay and
+plugin, not an app-owned `backend/opencode/opencode.jsonc`. See
+[Instruction sources](instruction-sources.md) for the exact paths and
+[OpenCode agents](https://opencode.ai/docs/agents/) for native conventions.
+
+Every named agent can use internal `knowledge` for memories, conversation pins,
+source-linked claims and graph queries, subject to native permissions. No external
+Memory setup is required. Read exact retained evidence and scope global queries
+when needed; retention is not truth or proof of live state. Useful native skills
+and services remain optional: Context7 for current API/library documentation,
+browser/Playwright for rendered checks, Fetch for primary sources, Sequential
+Thinking for difficult reasoning and Jev for bounded advisory judgments. Jev's
+internal SDK bridge and an optional external MCP service are separate routes;
+neither changes permissions, paid consent or routing eligibility.
+The canonical provider skill names and their local adaptations are listed in the
+[Skills library](skills-library.md). Skills teach usage, not access control.
+
+## Assignments and delegation
+
 The current catalog is supplied in execution context. Use `delegate({agent, task, model?})`; no preflight or second selection call is needed. `delegate()` with no arguments returns the current agent IDs and eligible `budget.modelPool`. An explicit `model` must be an exact provider/model ID from that pool; omit it for automatic eligible routing. Use `freeOnly:true` when free capacity is a hard requirement rather than passing aliases such as `free`. Optional `inspectionOnly` and `independentReview` express real constraints. `fork:true` creates a fresh child session from a worker, and `cancel:true` requests scoped worker cancellation; inspect verified stop status before assuming cancellation succeeded.
 
 New workers start in the background so the parent can continue independent work; their card updates with observed progress and completion. The native child session and a local assignment receipt preserve the parent/worker link from dispatch. The parent can call `delegate({workers: true})` to rediscover assignments and `delegate({worker: childSessionID})` to read the current native child transcript, tool activity and status. Use `from` and `limit` to page messages. This reads OpenCode directly; the content index is not involved. Results contain a child session and compact `worker_result`, labeled structured completion, fallback or partial. Completion remains unverified until acceptance checks pass. Follow up with `delegate({worker: childSessionID, task})` to keep the same agent/model/context. Busy or uncertain workers cannot be silently restarted.

@@ -13,7 +13,38 @@ description: >
   Read live docs and cookbooks to find useful patterns and discover new combinations.
 ---
 
-> Freelancer integration note: This vendor skill is optional guidance for building a TypeSafe API integration. For the platform's existing Jev capability, consider the shared Jev MCP tools exposed by native OpenCode; `bounded-judgment` offers optional usage hints. Vendor patterns below are design examples for requested applications, not Freelancer routing rules or mandatory stages. JEV advises bounded judgments and never sets eligibility, grants delegation, overrides an explicit model choice, authorizes paid use or proves verification. Neither skill is a prerequisite or access gate. Never put credentials in a repository or tool arguments.
+## Freelancer native integration
+
+This official vendor skill is optional guidance for requested TypeSafe development.
+The upstream body below is retained; its MIT notice is in LICENSE.upstream.
+Refreshed 2026-10-03 from revision 65a39f393687675ce170e6094757de20370365b9.
+
+This skill is optional guidance. It does not grant or gate access to tools.
+
+Freelancer already exposes bounded judgments through the shared native `knowledge`
+tool. Discover its actual schema. Read `judgment-provider-status` for configuration;
+configured status is not a connection or inference proof. For stored memory/fact
+candidates, `judgment-evidence` (also `query-evidence`) returns bounded state,
+candidateIDs, and exact evidenceRefs. Reuse those values without inventing source
+identities or hashes. `judgment-definition` records a versioned question;
+`judgment-evaluate` and `judgment-evaluate-batch` evaluate selected definitions.
+The adapter maps `check` to Noul, `classify` to Choice, and `score` to Score.
+Use `judgment-history` or `judgment-cache` to inspect retained results. A changed
+or forgotten source can invalidate reuse; a stale historical receipt is not a
+current verified result.
+
+These operations keep native permission requests and explicit paid-use consent.
+A judgment cannot grant permissions, authorize Git/GitHub actions, alter a project
+agreement, permit delegation, override an explicit model choice, or establish task
+success. Ordinary search, memory, and pins work without TypeSafe. If the optional
+provider fails, continue the task with the evidence available.
+
+A separately configured Jev MCP connection remains available through OpenCode's
+observed tools. Read that connection's current schema rather than assuming its
+operations match this SDK adapter. Freelancer's SDK reads server-side
+TYPESAFE_API_KEY and optional TYPESAFE_DEFAULT_MODEL; MCP environment references
+are a separate configuration boundary. Never copy credentials between them or
+put keys in tool arguments, source files, browser state, or documentation.
 
 
 # Build with TypeSafe

@@ -20,7 +20,7 @@ status or behavior claims. Start with local index/search, then authoritative loc
 source; consider Context7 or Fetch only when external documentation/evidence is
 needed. Missing Memory never blocks orientation with the repository.
 
-When delegation materially helps, use `delegate({agent, task})` with a named agent from the supplied catalog (Researcher is a useful starting point).
+When delegation materially helps, use `delegate({agent, task})` with a named agent ID from the supplied catalog (`researcher` is a useful starting point).
 Give a bounded investigation and request supported
 findings, file locations and coverage gaps. Do not make another
 helper a separate mandatory stage. A no-subagents request means work directly.

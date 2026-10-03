@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
 import path from "node:path";
+import { describeCapability } from "../domain/capability-descriptions.mjs";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const SKILLS = path.join(ROOT, "backend", "skills");
@@ -12,6 +13,7 @@ const EXPECTED = [
   "browser-verify",
   "review",
   "handoff",
+  "managed-git",
   "reorient",
   "search-index",
   "model-routing",
@@ -20,7 +22,7 @@ const EXPECTED = [
 ];
 const CAPABILITY_SKILLS = [
   "playwright", "web-research", "remember", "reason-through", "docs-research",
-  "bounded-judgment", "typesafe-ai",
+  "bounded-judgment", "typesafe-ai", "context7-mcp", "fetch",
 ];
 
 function read(skill, file = "SKILL.md") {
@@ -166,6 +168,23 @@ test("manifest lists exactly the implemented skills; sync is absent", () => {
       `manifest skill ${skill} has no backend/skills/${skill}/SKILL.md`,
     );
   }
+});
+
+test("authored skills and registered tools have concise capability summaries", () => {
+  const manifest = JSON.parse(readFileSync(path.join(ROOT, "backend", "opencode", "catalog.json"), "utf8"));
+  for (const skill of manifest.skills) {
+    assert.match(skill, /^[a-z0-9]+(?:-[a-z0-9]+)*$/, `invalid canonical skill ID ${skill}`);
+    const summary = describeCapability("skills", skill);
+    assert.ok(summary?.name, `missing display name for ${skill}`);
+    assert.ok(summary?.description && summary.description.length <= 240, `missing or too-long summary for ${skill}`);
+    assert.match(summary.description, /^[^.!?]+[.!?]$/, `summary for ${skill} should be one short sentence`);
+  }
+  for (const tool of manifest.tools) {
+    const summary = describeCapability("tools", tool);
+    assert.ok(summary?.name, `missing display name for ${tool}`);
+    assert.ok(summary?.description && summary.description.length <= 240, `missing or too-long summary for ${tool}`);
+  }
+  assert.equal(describeCapability("tools", "unlisted_native_mcp_tool"), null);
 });
 
 test("optional flows stay task-triggered", () => {

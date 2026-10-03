@@ -67,7 +67,7 @@ export function McpConnections({ onChanged }: { onChanged: () => void }) {
     {inventory?.state === 'observed' && <>
       <p className="mcp-summary">{mcpCatalog.length} suggested · {readiness} ready. Shared native OpenCode connections are available to all agents, models and projects.</p>
       {!inventory.services.length && <p>No custom MCP connections.</p>}
-      <ul className="capability-list mcp-service-list">{[...mcpCatalog.map(preset => ({
+      <ul className="capability-rows mcp-service-list">{[...mcpCatalog.map(preset => ({
         name: preset.id, title: preset.name, cost: preset.cost,
         service: inventory.services.find(row => row.name === preset.id), preset,
       })), ...inventory.services.filter(row => !mcpCatalog.some(item => item.id === row.name)).map(service => ({

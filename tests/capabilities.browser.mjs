@@ -171,6 +171,44 @@ test('fresh no-project workspace shows shared Tools and Skills with persistent i
   assert.equal(fixture.calls.filter(call => /\/prompt(?:_async)?$/.test(call.route)).length, 0);
 });
 
+test('skill and tool rows reveal short descriptions by click and keyboard without invoking capabilities', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
+  const fixture = await own(localDataFixture({ timers: false }));
+  await fixture.store.update('settings', settings => ({ ...settings, projects: [], lastProjectID: undefined }));
+  const native = attachMcpHost(fixture.host);
+  const original = fixture.host.request.bind(fixture.host);
+  fixture.host.request = async (route, options) => {
+    if (route === '/experimental/tool/ids') return ['read', 'knowledge', 'skill'];
+    if (route === '/skill') return [{ name: 'remember', location: 'native/skills/remember/SKILL.md' },
+      { name: 'custom-skill', description: 'Read the custom guide for this task.', location: 'native/custom-skill/SKILL.md' }];
+    return original(route, options);
+  };
+  const page = await appBrowser.newPage({ viewport: { width: 1280, height: 900 } });
+  await openCapabilities(page, fixture.url);
+  const item = (list, name) => page.getByRole('list', { name: list, exact: true })
+    .locator('details.capability-item').filter({ has: page.getByText(name, { exact: true }) });
+  const knowledge = item('Tool inventory', 'knowledge'), remember = item('Skill inventory', 'remember');
+  await expect(knowledge.locator('.capability-description')).not.toBeVisible();
+  await knowledge.locator('summary').click();
+  await expect(knowledge.locator('.capability-description')).toContainText(/memor|knowledge|evidence/i);
+  await remember.locator('summary').focus();
+  await page.keyboard.press('Enter');
+  await expect(remember.locator('.capability-description')).toBeVisible();
+  await expect(remember.locator('.capability-description')).toContainText(/knowledge|memory|remember/i);
+  await page.keyboard.press('Space');
+  await expect(remember.locator('.capability-description')).not.toBeVisible();
+  const custom = item('Skill inventory', 'custom-skill');
+  await custom.locator('summary').click();
+  await expect(custom.locator('.capability-description')).toHaveText('Read the custom guide for this task.');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await knowledge.locator('summary').click();
+  await knowledge.locator('summary').click();
+  await expect(knowledge.locator('.capability-description')).toBeVisible();
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true);
+  if (process.env.FREELANCER_QA_SHOTS) await page.screenshot({ path: process.env.FREELANCER_QA_SHOTS + '/capability-descriptions-narrow.png' });
+  assert.ok(native.calls.every(call => !['POST', 'PATCH', 'DELETE'].includes(call.options.method)));
+  assert.equal(fixture.calls.filter(call => /\/prompt(?:_async)?$/.test(call.route)).length, 0);
+});
+
 test('native service states are shown distinctly for every shared service', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
   const fixture = await own(localDataFixture({ timers: false }));
   const native = attachMcpHost(fixture.host, {
@@ -203,6 +241,15 @@ test('generic service templates persist native configuration and keep credential
   for (const name of ['Playwright', 'Fetch', 'Sequential Thinking', 'Context7', 'JEV'])
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Set up Memory', exact: true })).toHaveCount(0);
+  const serviceRows = page.locator('.mcp-service-list > li');
+  for (const row of await serviceRows.all()) await expect(row).toHaveCSS('display', 'grid');
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect.poll(() => serviceRows.evaluateAll(rows => rows.every(row => {
+    const lines = [...row.querySelectorAll(':scope > small')].map(line => line.getBoundingClientRect());
+    return lines.every((line, index) => index === 0 || line.top >= lines[index - 1].bottom);
+  }))).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+  await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   await expect(page.getByLabel('Service template').getByRole('option', { name: 'Memory', exact: true })).toHaveCount(0);
   await page.getByLabel('Service template').selectOption('jev');

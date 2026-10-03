@@ -558,7 +558,7 @@ export function createApplication({
           preferences: { ...snapshot.preferences.preferences, parentModel: "auto", reasoningVariant: "" },
           revision: snapshot.preferences.revision,
         });
-      // The app-local OpenCode resources supply the plugin, five skills,
+      // The app-local OpenCode resources supply the shared plugins, skills,
       // and helpers to every project. Persist project policy, not duplicate plugins.
       await writeFile(
         marker,

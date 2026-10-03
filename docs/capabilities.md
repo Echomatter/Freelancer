@@ -65,6 +65,10 @@ permissions, skills, MCP state, references and commands. It does not change them
 Tools and Skills remain available as collapsible lists even before opening a
 project. Their saved collapse preferences affect presentation only. The page
 lists the shared tools and skills without filters or agent/model selectors.
+Click a tool or skill name to expand its short description. These rows support
+keyboard activation and use canonical runtime names. Freelancer-owned summaries
+are curated; other native entries use their source description or a concise
+fallback. The description does not execute or configure the capability.
 Short statuses such as Loaded, Unavailable, Unknown and Needs permission
 describe the current inspection. Loaded means the tool is present, not that it
 has successfully run. Details and native permission explanations are in the
@@ -91,14 +95,20 @@ the platform's ordinary native inventory, not an app-owned LSP feature.
 
 ## Shared MCP skills
 
-The shared `playwright`, `web-research`, `remember`, `reason-through`,
-`docs-research`, and `bounded-judgment` skills guide capability use. `remember`
+The shared `context7-mcp`, `fetch`, `playwright`, `typesafe-ai`, `reason-through`,
+`web-research`, `docs-research`, `remember`, and `bounded-judgment` skills guide
+capability use. `managed-git` describes the existing saved-agreement flow. `remember`
 uses Freelancer's internal memory; the other hints can describe connected MCP
 services. `browser-verify` covers UI verification and evidence boundaries.
 OpenCode supplies connected tools to eligible models. Skills are optional
 guidance: they never grant access, gate direct tool calls, or restrict a
 capability by agent, model, project or workflow. Memory MCP does not mirror or
 replace Freelancer persistence.
+
+The [skill library source report](skills-library.md) identifies official skill
+revisions, documentation-derived adaptations and API differences. The
+[internal skill audit](skills-internal-audit.md) maps authored workflow hints to
+their runtime sources.
 
 The captured execution contract supplies shared capability-use hints, with short
 contextual advice in existing skills. Hints help select methods and suitable

@@ -7,9 +7,9 @@ import { McpConnections } from './McpConnections';
 import './capabilities.css';
 
 type Probe = { state: string; reason?: string | null };
-type Tool = { id: string; origin: string; discovered: boolean | null; configured?: boolean; dependency?: string;
+type Tool = { id: string; summary?: string; origin: string; discovered: boolean | null; configured?: boolean; dependency?: string;
   nativePermission?: string; applicationAccess?: string; modelExposure?: boolean | null; unavailableReason?: string | null };
-type Skill = { name: string; origin: string; discovered: boolean; dependency?: string; unavailableReason?: string | null };
+type Skill = { name: string; summary?: string; origin: string; discovered: boolean; dependency?: string; unavailableReason?: string | null };
 type Service = { name: string; status: string; unavailableReason?: string | null };
 type Inventory = { observedAt: number; tools: Tool[]; skills: Skill[]; mcp: Service[];
   probes?: Record<string, Probe>; context: { model?: string }; instructions?: { composition: string; requestID?: string; sources: { id: string; origin: string; state: string; note: string }[] } };
@@ -66,7 +66,10 @@ export function Capabilities({ data, sessionID, onClose }: {
           </details>
         </>}>
           <ul className="capability-rows" aria-label="Tool inventory">{tools.map(row => <li key={row.id}>
-            <div className="capability-row-heading"><span className="capability-name">{row.id}</span><Badge tone={toolLabel(row) === 'Available' ? 'success' : 'neutral'}>{toolLabel(row)}</Badge></div>
+            <details className="capability-item">
+              <summary><span className="capability-name">{row.id}</span><Badge tone={toolLabel(row) === 'Available' ? 'success' : 'neutral'}>{toolLabel(row)}</Badge></summary>
+              <p className="capability-description">{row.summary || 'Use this tool through OpenCode with its native inputs and permissions.'}</p>
+            </details>
           </li>)}</ul>
           {!tools.length && <p>No tools were returned by this inspection.</p>}
         </Panel>
@@ -75,7 +78,10 @@ export function Capabilities({ data, sessionID, onClose }: {
           {inventory.probes?.skills?.reason && <p>{inventory.probes.skills.reason}</p>}
         </details>}>
           <ul className="capability-rows" aria-label="Skill inventory">{skills.map((row, index) => <li key={`${row.name}:${row.origin}:${index}`}>
-            <div className="capability-row-heading"><span className="capability-name">{row.name}</span><Badge tone={skillLabel(row, inventory.probes?.skills) === 'Found' ? 'success' : 'neutral'}>{skillLabel(row, inventory.probes?.skills)}</Badge></div>
+            <details className="capability-item">
+              <summary><span className="capability-name">{row.name}</span><Badge tone={skillLabel(row, inventory.probes?.skills) === 'Found' ? 'success' : 'neutral'}>{skillLabel(row, inventory.probes?.skills)}</Badge></summary>
+              <p className="capability-description">{row.summary || 'Guidance OpenCode can load when it fits your task.'}</p>
+            </details>
           </li>)}</ul>
           {!skills.length && <p>{inventory.probes?.skills?.state === 'unavailable'
             ? inventory.probes.skills.reason || 'Skill discovery is unavailable.' : 'No skills were returned by this inspection.'}</p>}

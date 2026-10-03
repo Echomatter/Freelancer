@@ -135,6 +135,35 @@ file separately from other contract-file workers. The 30-second per-command
 timeout stays bounded; a timeout or nonzero exit still fails the suite. Every
 selected contract batch must pass.
 
+For a bounded integration run, use
+`npm run test:contracts -- --test-timeout=180000`. An individual fixture's
+explicit timeout may override that default; all selected batches must still
+finish and pass. Avoid overlapping complete contract/browser runs with native
+smokes when diagnosing a loaded Windows host.
+
+Optional services created by a fixture must share its owned `localData` service
+or close their own service before recursive cleanup. One ChatGPT preview fixture
+omitted that dependency, opened an incidental database, and hung during Windows
+cleanup. Production already supplied the shared service. The fixture now passes
+the owned service and asserts that no fallback database was created. A killed
+or incomplete worker is failed evidence, even if its preceding assertions passed.
+
+Use asynchronous bounded child processes in HTTP fixtures. Synchronous CLI or
+indexer calls block the fixture server and fetch client's shared event loop;
+an expired keepalive socket can then be reused before its close is processed.
+The conversation/knowledge contracts reproduced this connection-reset race and
+now await bounded `execFile` calls. They retain their assertions and do not
+retry failed HTTP requests or extend the server's timeout.
+
+A native startup deadline fixture originally spent 140 ms in real stage delays
+before awaiting tool readiness within its 180 ms total budget. Under concurrent
+load, startup could correctly time out before that stage, leaving the fixture's
+stage promise unresolved. The test now advances those same durations with Node
+mocked Date/setTimeout and races each stage against startup settlement. Its
+180 ms logical budget, 25 ms close delay and resolver/signal/closure assertions
+are unchanged; product and smoke deadlines are unchanged. The first cancelled
+run remains failed evidence, separate from the corrected full rerun.
+
 ### Native startup dependency fixtures
 
 The native smokes seed dependency folders only inside their disposable temporary
@@ -142,6 +171,13 @@ roots using the source checkout's installed `node_modules` and lockfile. Run
 `npm ci` first. Native settings, project JSONC, MCP configuration and provider
 authentication remain separate from this fixture seeding; no user's OpenCode
 directory is changed.
+
+`nativeSmokeConfigPaths` uses `XDG_CONFIG_HOME=<fixture>/native-config` and
+`OPENCODE_CONFIG_DIR=<fixture>/native-config/opencode`. The pinned native engine
+appends `opencode` to the XDG root and deduplicates that directory with its
+explicit config directory. Both variables therefore name one effective global
+configuration. Receipts include both paths. Installed-source seeding writes
+that directory once; cold mode seeds neither dependencies nor package caches.
 
 Runtime, context, MCP, history, event and launcher smokes also redirect the
 native home, user profile, AppData and temporary directories into their owned
@@ -151,23 +187,93 @@ their own processes stop.
 This proves native plugin loading and the tested configuration interfaces with
 installed dependencies. It does not prove a first-time npm registry install.
 `node scripts/diagnose-native-startup.mjs` observes the cold dependency path;
-adding `--seed-dependencies` measures the installed dependency fixture. Both
-write redacted stage logs, bound the first native request to 45 seconds and
-dispose their own runtime without model inference. On OpenCode 1.18.31, the cold
-fixture waited beyond that bound before plugin initialization, while the seeded
-fixture loaded the shared tools in under five seconds. Its persisted driver
-observation reported embedded Bun 1.3.14 and SQLite 3.53.0 with FTS5, JSON,
-STRICT tables and named bindings. Authentication, inference and cold installation
-need their own evidence.
+adding `--seed-dependencies` measures the installed dependency fixture. It
+isolates HOME/profile/AppData/TEMP/XDG and launches from its own disposable
+backend directory, retaining source paths for Freelancer's real plugins.
+The diagnostic explicitly observes native initialization through its agent
+request; it does not use the product's tool-readiness preflight. The default
+agent-request deadline is 45 seconds. For a separate longer
+observation, use `--request-timeout-ms 180000` (maximum 300000); its report
+records the actual window and duration. A longer observation does not turn a
+failed 45-second sample into a pass. Cleanup requires the owned child to close;
+an uncertain process preserves its fixture and log.
 
-`--native-only` removes Freelancer plugins from the diagnostic. A fresh native
-control initialized in about eight seconds. `--empty-plugin` loads only a local
-plugin that returns an empty object, without imports; its cold first request
-still exceeded 45 seconds. That comparison narrows the delay to OpenCode's
-dependency wait for external plugins. The
-[upstream headless installation issue](https://github.com/anomalyco/opencode/issues/44684)
-describes the same control result and incomplete dependency installation; an
-individual registry fetch failure has not been observed in our redacted logs.
+`--native-only` removes external plugins. `--empty-plugin` injects a native
+file URL for a plugin that returns an empty object and emits an initialization
+marker; that marker must be observed before the control can pass. The earlier
+empty-plugin diagnostic incorrectly passed its absolute path as a Freelancer
+plugin name, producing a malformed path. Its successful seeded result did not
+prove plugin initialization and is superseded by the corrected controls.
+
+On OpenCode 1.18.31 the corrected native-only agent request took 883 ms; the
+seeded empty plugin initialized and responded in 569 ms. The cold empty-plugin
+request failed at 45 seconds. A separate unseeded 180-second observation loaded
+the plugin in 85.67 seconds and completed both native dependency directories.
+The full Freelancer plugin set then exceeded its 180-second observation without
+completing dependency lockfiles. These historical samples used two distinct
+global configuration directories; they do not establish the ordinary
+single-directory cold result. The [upstream headless installation issue](https://github.com/anomalyco/opencode/issues/44684)
+describes related dependency-wait behavior, but a specific registry fetch
+failure has not been observed in our logs. Current Context7 plugin docs confirm
+async hook exports and file-URL configuration; installed-version source and
+actual native observations determine installer behavior. Authentication and
+model inference require separate evidence.
+
+Runtime and launcher smokes accept `--cold-dependencies` to exercise unseeded
+native configuration directories. The launcher smoke retains its 90-second
+outer process deadline and 60-second API deadline. Product startup has one
+75-second native budget, including executable resolution, listening, health
+and tool readiness; the PowerShell launcher waits at most 85 seconds for the
+published web endpoint. On restart, warming the selected saved project consumes
+that same native budget. A new project has a 55-second native preflight before
+Freelancer policy, marker and registration writes. HTTP disconnect cancels the
+registration waiter. The normal browser GET deadline remains 30 seconds, and
+the capability observation remains 15 seconds. Readiness is actual native tool
+inventory observation, never permission approval or a successful cache.
+The pinned [OpenCode 1.18.31 registry](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/tool/registry.ts)
+builds the complete registry through native plugin loading before returning
+`ids`; model-specific tool selection occurs later. Freelancer preserves the
+observed IDs, including an empty response, and the real native smoke separately
+asserts its required shared registrations. Native tool permission denial does
+not become a startup entitlement check.
+
+The earlier corrected schema-22
+cold Windows launcher reached `GET /api/bootstrap` but timed out after 60,001 ms
+(`artifacts/storage-launcher-cold-schema22-final.log`). Its receipt confirms
+the owned server/native process tree closed, launch record and lock disappeared,
+native config and authored backend sources were unchanged, and temporary data
+was removed. The earlier failed process-audit sample provides no capability
+evidence. Installed-source runtime success is recorded separately and cannot
+establish cold installation. A subsequent standalone unseeded sample returned
+bootstrap in 59,286 ms, then failed the 15-second project capability observation
+(`artifacts/storage-launcher-cold-schema22-standalone.log`). Its owned processes
+and temporary data also closed cleanly. This exposed premature HTTP readiness
+and project acknowledgment; both failures predate the readiness preflight.
+The first unseeded sample after that repair failed the 75-second native
+preflight before the web endpoint was published
+(`artifacts/storage-launcher-cold-readiness-schema22.log`). No launch record was
+created. Its original harness recorded no process IDs before HTTP readiness,
+so its empty process receipt does not independently prove native shutdown;
+the lock/config/source/temp checks and host close contracts remain separately
+scoped. The [native installer](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/core/src/npm.ts)
+uses npm Arborist with [native npm configuration](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/core/src/npm-config.ts).
+The exact installer substep in those historical two-directory failures has not
+been observed. The corrected standard-layout cold launcher passed on source
+commit `17e6f18` (`artifacts/storage-launcher-cold-integrated-schema22.log`):
+bootstrap returned in 2,421 ms, project registration in 436 ms, complete shared
+tool observation in 271 ms and restart bootstrap in 2,432 ms. All eight observed
+owned process IDs closed; config/backend bytes, launch record/lock cleanup and
+temporary-data removal were checked. It seeded no native dependencies or
+package caches and retained the normal 90-second outer/60-second API deadlines.
+The source checkout had its normal installed npm dependencies. The smoke does
+not establish a registry download trace, arbitrary custom two-directory
+configuration behavior, provider sign-in, inference or a visible browser launch.
+
+The native-config sentinel includes OpenCode's `$schema` field before startup,
+then compares exact bytes. One earlier run omitted that field and failed the
+comparison after OpenCode added it. Its native child was closed; automatic
+approval review rejected cleanup with only `blocked by policy`, so that failed
+temporary fixture remains preserved. It is not an active Freelancer data store.
 
 `node scripts/smoke-history-pagination.mjs` checks the actual OpenCode 1.18.31
 history API with disposable empty conversations, including an archived chat and

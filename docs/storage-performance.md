@@ -10,7 +10,7 @@
 
 ## Unified storage and fresh bootstrap
 
-The current per-user SQLite store uses schema 21. Schema 17 introduced
+The current per-user SQLite store uses schema 22. Schema 17 introduced
 `runtime_instances`, retained indexed source/unit revisions, runtime-scoped
 `operational_records`, `application_documents`, `project_registrations` and
 `runtime_settings`, `settings_update_journal`, plus stable content source/revision identities and `data_migration_runs` with a `data_table_lifecycle` registry in the per-user
@@ -35,6 +35,75 @@ be searchable while remaining partial for absence/deletion reconciliation.
 Unsafe, malformed, truncated or oversized manifests do not replace the last
 safe search projection. Source changes create newer work, and an old worker
 cannot publish or acknowledge that newer revision.
+
+Schema 22 binds each published conversation search projection to its immutable
+derivation manifest. Hits report the source origin, exact snapshot and header
+hashes, capture/index dates, and evidence availability. A newer native capture
+does not silently change the retained source behind an older search hit. The
+shared query preserves worker and orphan session IDs; the browser's history
+adapter adds parent navigation separately. Unpinned conversation results can
+open retained evidence or their live conversation independently. Older or
+directly indexed projections without a recorded manifest remain searchable
+with an explicit unavailable-evidence label until refreshed.
+Their cached-text digest is recorded during indexing and keeps result IDs
+stable across identical reindexing; it does not establish native provenance.
+
+The common file, conversation, memory and fact query returns `nextCursor` and
+page metadata. Each page is limited to 200 results plus one overflow row;
+continuation offsets stop at 100,000. Cursors bind the database, current project
+registry, query, filters and page size. They do not pin an immutable database
+snapshot: indexing or authored changes can move results between pages. The UI
+replaces each result group's page and offers Next, Previous and Start over,
+keeping at most 100 visible results per group. Failed continuation preserves
+the current page and retries the same cursor; scope changes cancel pending
+reads and begin a new search. Native tools and the read-only CLI accept the
+same continuation.
+
+Each domain returns explicit per-hit result identity/type, source references,
+revision/hash metadata, known or null capture/observation/index dates, match
+reasons, coverage, evidence/claim status and at most 2,000 characters of model
+text. Memory cards read an excerpt and bounded source summaries without loading
+the full retained reader. Claim hashes use the canonical evidence resolver;
+unavailable or excessive hash work leaves a searchable, labelled result with a
+null hash. Memory-body and claim-source hashing each have a 4 MB page work
+budget, with claim preflight additionally limited to 8,192 stored rows. Returned
+result arrays have a separate 4,000,000-byte limit. Oversized values, scopes and
+source lists carry explicit omission flags. Exact retained reads remain separate;
+the fact editor reads an omitted value/scope before preparing a correction and
+keeps the original claim and evidence in history. An unchanged retained value
+keeps its JSON type, including numbers, booleans and objects. Unchanged scope
+is retained by the transactional API; choosing a different project preserves
+the other applicability fields. A global claim stays global. A correction is
+a new claim with an explicit method, reason, epistemic state and evidence.
+
+Retained-memory readers report newer source data separately from a newer memory
+revision. The source status compares only retained local metadata: native
+conversation snapshot/header hashes are scoped by source system, project and
+session; file members use canonical source/revision identities. Legacy members
+can use their recorded update/observation metadata. The comparison does not
+read live native sources or retained bodies, and it never rewrites a capture,
+pin or revision. Missing bindings, unavailable comparisons and over-limit input
+remain unknown; the UI states that live source data has not been checked.
+One read-only analytics-worker request is bounded to one row, 4,000 bytes and
+one second, after at most 5,000 members, 1 MiB of cumulative identifiers and
+8 KiB per identifier. Ordinary authored notes with no comparable members skip
+that worker. An explicit Refresh still creates a new immutable memory revision.
+
+Native `message.part.updated` and `message.part.delta` hints use a 100 ms quiet
+window capped at 350 ms per session/subscription generation. Dirty markers are
+durable before scheduling and the final authoritative read carries the newest
+marker revision for compare-and-swap acknowledgement. Immediate header/status
+or removal hints flush deferred work; shutdown cancels timers while retaining
+durable markers for restart. Deferred sessions obey the same bounded queue as
+other hints, with overflow recorded as project-level reconciliation work.
+
+Live Freelancer SQLite roots must be on a local filesystem. Windows checks
+canonical junction/alias paths and native volume type before opening storage;
+volume observations are cached for the process lifetime, so remapping a drive
+requires restarting Freelancer. Canonical paths are checked again on each open.
+Offline backup archives may live elsewhere. Backup/restore containment uses
+canonical paths and Windows case comparison to keep archives out of active
+data and prevent a restored copy from overlapping its source or current store.
 
 Backfill reads `/experimental/session` with `archived=true`, a registered project
 directory and the native `x-next-cursor` response header. Its `cursor` is an
@@ -64,9 +133,10 @@ reconciles one registered project per pass, with page size 50, at most 8 page
 reads, 100 sessions and 20 seconds per slice. It resumes durable backfill
 cursors. No event or partial inventory is used to delete retained warehouse
 records. Focused fixture contracts cover recovery and deadline cancellation.
-The latest OpenCode 1.18.31 SSE smoke passed and matched stored API-version
-metadata to `/global/health`; the latest timestamp-paging smoke, full contracts
-and production browser sign-off remain pending.
+The schema-22 OpenCode 1.18.31 SSE and timestamp-paging smokes passed. The SSE
+receipt matched stored API-version metadata to `/global/health`. Complete
+contract and production browser results are recorded separately in
+[warehouse-completion-audit.md](warehouse-completion-audit.md).
 
 Successful-result cache lookup includes the definition version, state digest,
 ordered candidate IDs, evidence references/revisions, and both requested and

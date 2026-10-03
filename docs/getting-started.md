@@ -10,7 +10,7 @@ For a fresh computer, download and extract the repository's source ZIP, or clone
 
 | Dependency | Required for |
 | --- | --- |
-| Windows, Node.js **22.13+**, and npm | The supported source-run application; the local data service uses Node's built-in `node:sqlite`. |
+| Windows, Node.js **24.10+**, and npm | The supported source-run application; the local data service uses Node's built-in `node:sqlite`. |
 | Native OpenCode | Model inventory/authentication, chat execution, tools, permissions, todos, native history/export. |
 | Windows PowerShell **5.1** | Native executable discovery and backend quota/model-selection scripts. Installing `pwsh` on another OS does not by itself make startup supported. |
 | Git | Cloning the repository and enabling project history. GitHub CLI is needed only for managed GitHub connection/upload. |
@@ -26,7 +26,7 @@ npm.cmd install -g opencode-ai@1.18.31
 opencode.cmd --version
 ```
 
-A different installed native version needs its own startup/behavior check. Freelancer disables OpenCode's in-app automatic update in its local configuration; it does not manage your global installation lifecycle. Keep provider credentials out of repository files and chat instructions.
+A different installed native version needs its own startup/behavior check. OpenCode owns its update configuration and installation lifecycle. Keep provider credentials out of repository files and chat instructions.
 
 ## Start in a browser
 
@@ -53,9 +53,46 @@ The server prints a JSON line containing its loopback `url`. Open that URL. The 
 
 The **Available Usage** meter is an estimate from provider observations. A missing percentage is not proof of exhaustion. Its sidebar disclosure keeps you in the current chat. [Interpret the meter →](available-usage.md)
 
-The sidebar keeps the project picker, recent chats, and Available Usage meter visible. Expand **Project settings** for Files, Search project content, Goals, Session defaults, Delegation, and GitHub. Expand **Application settings** for Agents, Models, Available Usage, Providers, Appearance, Capabilities, Scheduled prompts, Search all content, Content & Storage, File access, and Remote access. Capabilities lists tools and skills, with one shared MCP connection section. Technical explanations are in each card’s help bubble. File access scope is under **Application settings → File access**. The text-only breadcrumb starts with the project folder, which opens Files. In delegated chats, parent titles return to their conversations; the current chat appears last. File browsing follows the folder path through to the current file. Settings use folder → current page without an extra settings-scope crumb. Narrow screens keep the folder and nearest parent above the current title. Connection state and controls such as Details remain beside the breadcrumb. Each icon opens its feature in the main pane; collapsing the drawers leaves more room for recent chats. Search results let you pin chats; use Manage chats for archive, restore, and export. Project search stays inside the selected project; application search covers indexed files and conversations across registered projects and opens either source. Open chats refresh their indexed text as they load. **Application settings → Content & Storage** shows project archive state, local data locations, index coverage and database stats; it refreshes files throughout all registered project roots or all native conversations and offers SQLite maintenance. Both indexes are retrieval aids; native chats and project files remain the sources of truth.
+The sidebar keeps the project picker, recent chats, and Available Usage meter visible. Expand **Project settings** for Files, Search project content, Goals, Session defaults, Delegation, and GitHub. Expand **Application settings** for Agents, Models, Available Usage, Providers, Appearance, Capabilities, Scheduled prompts, Search all content, Content & Storage, File access, and Remote access. Capabilities lists tools and skills, with one shared MCP connection section. Technical explanations are in each card’s help bubble. File access scope is under **Application settings → File access**. The text-only breadcrumb starts with the project folder, which opens Files. In delegated chats, parent titles return to their conversations; the current chat appears last. File browsing follows the folder path through to the current file. Settings use folder → current page without an extra settings-scope crumb. Narrow screens keep the folder and nearest parent above the current title. Connection state and controls such as Details remain beside the breadcrumb. Each icon opens its feature in the main pane; collapsing the drawers leaves more room for recent chats. Use **Manage chats** for conversation archive, restore, and export. **Content & Storage** shows project archives, local data locations, index coverage and database stats, and offers index refresh and SQLite maintenance.
 
 GitHub is optional. **Project settings → GitHub** separately configures local checkpoints, account sign-in, the destination repository, and the working agreement. Connecting is not uploading. [Set up Git safely →](github-projects.md)
+
+## Search and retained knowledge
+
+Open **Application settings → Search all content** to search across registered
+projects, or **Project settings → Search project content** to stay within one
+project. An empty search opens your pinned memories. Choose **Files**,
+**Conversations**, **Memories**, **Facts**, or **Pinned Memory** to focus the list.
+Search matches the words you enter; **Exact phrase** also requires their order.
+It may miss paraphrases. Coverage messages describe which sources were indexed;
+**Show more** expands a limited result list.
+
+- **Files and conversations:** Open the live source or read retained file
+  evidence. Live content can differ from the indexed revision. Refresh indexes
+  in Content & Storage; open chats also refresh their indexed text as they load.
+- **Pinned conversations:** Pin a chat to keep a retained memory. Capture can
+  take time; the reader shows progress and incomplete or unavailable coverage.
+  **Refresh snapshot** reads the source again. Earlier revisions remain available
+  in the revision picker. **Open live conversation** opens the current native
+  chat separately. A source error does not prove that the chat was deleted.
+  Capture details show when the text was captured separately from the latest
+  source check; a failed check preserves earlier retained text.
+- **Notes:** Use **New memory** to save a title and text, choosing a project scope
+  when needed. Open the note to edit it; older revisions remain readable.
+- **Facts:** Use **New fact** to record a statement and value. Explain how you
+  established it and add at least one exact retained memory revision or file
+  unit as evidence. New facts start as **User stated** and **Unverified**; choose
+  another origin or status only when your evidence supports it. **Correct fact**
+  records a replacement and reason while preserving the previous claim and its
+  evidence. Include historical facts to inspect earlier or disputed claims.
+
+**Unpin** removes an item from pinned memory while keeping its retained content.
+**Archive memory** hides it from the ordinary memory list; include archived
+memories to find it and choose **Restore memory**. Neither action archives the
+native conversation. **Forget memory** requires confirmation and removes the
+retained content, revisions and pins. Its native conversation remains in
+OpenCode, and existing backups may contain copies. Conversation and project
+archives have separate controls in Manage chats and Content & Storage.
 
 ## Convenient Windows shortcut
 
@@ -96,15 +133,24 @@ npm.cmd start
 
 Use the new printed URL. A browser reload alone leaves old server code running. The client/server compatibility check can report **Restart needed** when their contracts differ.
 
+After an explicit backup restore, **Content & Storage** shows **Restored work is
+paused**. Review restored chats, queued messages, goals, schedules, model research and Git
+activity, then choose **Review automatic work → Allow automatic work** when
+ready. Cancelling leaves background continuation paused. If another restore
+superseded the one you reviewed, reload the storage status and review the current
+restore before confirming again. The review survives restart; uncertain sends
+and Git actions still require their usual inspection.
+
 | Symptom | Check first |
 | --- | --- |
-| SQLite/startup import error | `node --version` must be at least 22.13. Confirm the process is using that Node installation. |
+| SQLite/startup import error | `node --version` must be at least 24.10. Confirm the process is using that Node installation. |
 | OpenCode will not start | Confirm the native executable is installed and discoverable. The current host launcher is Windows-specific; the npm plugin dependency alone is not the native engine. |
 | Freelancer is already running | Reuse the existing server/shortcut or stop that checkout's server normally. Do not remove the lock while its owner is live. |
 | Vite opens but API calls fail | Start the application server too, with the development port below. Vite is not the backend. |
 | Usage is unknown or refresh fails | Check the provider connection and collector/runtime; preserve the distinction between failed telemetry and failed model execution. Do not edit quota files to invent availability. |
 | Draft conflict or failed save | Preserve the text in the composer. Retry, or copy it before explicitly choosing **Load saved draft**, which replaces the box with the saved revision. |
 | Archive is blocked | Resolve active work, pending questions/permissions, or unresolved sender delivery. Archive does not implicitly stop or cancel them. |
+| Restored work is paused | Review the restored state in Content & Storage, then explicitly allow automatic work for the current restore. |
 | Git action is blocked | Reinspect the agreement, preview, repository state, and credential-store guidance. Do not force-push or use raw shell commands to bypass the managed action. |
 
 **Application settings → Content & Storage** shows resolved locations. `FREELANCER_DATA_HOME` must be absolute and selects the unified per-user Freelancer database and its separate Freelancer-only settings document. A fresh install does not import earlier Freelancer files or databases; OpenCode configuration, credentials and conversations remain under OpenCode's native ownership. Archive is not a backup. [Data and recovery limits →](local-data.md)

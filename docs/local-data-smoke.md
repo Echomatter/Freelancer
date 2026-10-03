@@ -2,7 +2,7 @@
 
 Use these checks after updating the application. They supplement the automated native-data fixtures; they are not claims that a real provider or browser export has already been exercised.
 
-1. Use Node.js 22.13 or newer, run `npm ci` and `npm run build`, then restart the local server and reload the interface. The UI protocol must match `domain/protocol.mjs`. Do not reuse an older running server.
+1. Use Node.js 24.10 or newer, run `npm ci` and `npm run build`, then restart the local server and reload the interface. The UI protocol must match `domain/protocol.mjs`. Do not reuse an older running server.
 2. Open Application settings > Content & Storage. Confirm the displayed Freelancer location, legacy JSON location and shared OpenCode database location. A missing native database path must say unavailable, not show a guessed path. No credentials should be displayed.
 3. In a disposable project, type a draft, wait for the saved indicator, reload and verify recovery. Open the same chat in another window, edit both, and verify a conflicting save retains local text and asks for explicit reload rather than silently overwriting.
 4. Pin a completed chat, put it away, use Undo, and verify its messages, child-worker links and usage remain unchanged. A running chat, unresolved queued delivery or pending approval must block archiving. When native archive cannot be safely reversed, the interface must say Hidden in Freelancer.

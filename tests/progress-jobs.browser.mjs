@@ -9,6 +9,7 @@ test('progress-jobs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =>
   await mkdir(path.join(f.root, 'tools'));
   const indexerSource = await readFile('backend/tools/project-content-indexer.mjs', 'utf8');
   assert.ok(indexerSource.includes('../../server/data/schema.sql'));
+  assert.ok(indexerSource.includes('../../domain/content-query.mjs'));
   await writeFile(path.join(f.root, 'tools/project-content-indexer.mjs'),
     indexerSource.replace('../../server/data/schema.sql', '../server/data/schema.sql').replace('../../domain/content-query.mjs','../domain/content-query.mjs'));
   await mkdir(path.join(f.root, 'server', 'data'), { recursive: true });
@@ -51,7 +52,7 @@ test('progress-jobs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =>
     chats.release();
     await expect.poll(async () => (await f.api('index/stats')).projects[0].chats.conversations).toBe(3);
     const stats = await f.api('index/stats');
-    assert.equal(stats.projects[0].files.sources, 1);
+    assert.equal(stats.projects[0].files.sources, 2, 'the project has source.txt and its native OpenCode configuration');
     assert.equal(stats.projects[0].chats.conversations, 3);
     await page.reload();
     await page.getByRole('button', { name: 'Application settings', exact: true }).waitFor();

@@ -1,10 +1,10 @@
 # Local data, history and archives
 
-New-project setup offers an optional [one-time ChatGPT / Codex import](chatgpt-import.md) before indexing. Imported snapshots have their own tables, use the shared chat view, and can orient a new native chat without writing to OpenCode's database. They are an explicit exception to native conversation ownership described below; native conversations still belong to OpenCode. Cloud-only chats and general Freelancer backup imports are not supported.
+New-project setup offers an optional [one-time ChatGPT / Codex import](chatgpt-import.md) before indexing. Imported snapshots have their own tables, use the shared chat view, and can orient a new native chat without writing to OpenCode's database. They are an explicit exception to native conversation ownership described below; native conversations still belong to OpenCode. Cloud-only chats and a general backup-import UI are not supported. Stopped-runtime backup and restore are separate maintenance commands.
 
 ## Start here
 
-Use Node.js **22.13 or newer** and restart the application server after pulling.
+Use Node.js **24.10 or newer** and restart the application server after pulling.
 The UI/application contract is checked against the current
 [`domain/protocol.mjs`](../domain/protocol.mjs). A browser refresh alone cannot
 upgrade the local server. There is no new database server or installer to run.
@@ -15,14 +15,32 @@ conversation-history organizer. It has Active, Archived and All views, pins,
 multiple selection, Undo, and progressive **Load more history** for one selected
 project. Archive and export selection remains limited to one project at a time.
 
-**Project settings → Search project content** searches indexed files and
-conversations only in the selected project. **Application settings → Search all
-content** searches both indexes across all registered projects, including archived
-ones. A result opens either its conversation or its source file in **Project
-settings → Files**. Refresh the search copies in **Application settings → Content &
-Storage**; searching never changes project files or conversations. Putting a
-project away first refreshes that project's file and conversation indexes. Later
-global refreshes skip it until it is restored.
+**Project settings → Search project content** scopes files, conversations,
+retained memories and facts to the selected project. **Application settings →
+Search all content** covers registered projects, including put-away projects.
+An empty search starts with **Pinned Memory**. Tabs select Files, Conversations,
+Memories or Facts; the memory archive filter includes retained archived items.
+Readers distinguish the current live source from an exact retained revision.
+Refresh the file and conversation search copies in **Application settings →
+Content & Storage**. Putting a project away first refreshes its indexes; later
+global refreshes skip it until restored. See the [user guide](getting-started.md#search-and-retained-knowledge)
+for note editing, fact corrections and memory organization.
+
+Pinning a conversation commits a durable capture job before reading native
+messages. Its first revision is explicitly metadata-only. Capture retains bounded
+user/assistant text, safe source identifiers, provenance, a hash and a coverage
+boundary; tool output, reasoning and attachment bytes are excluded. **Refresh
+snapshot** queues another source read and retains earlier revisions. Active or
+bounded captures report incomplete coverage. A confirmed native 404 and an
+unreachable source are distinct conditions; historical evidence remains readable.
+The reader separates the original source capture time, latest source-check time
+and retained revision creation time. A failed check does not make old text appear
+newly captured.
+Unpinning retains the captured memory. Archiving a memory is reversible and
+independent of pin state. **Forget memory** removes its retained bodies, revisions,
+members and pins; it leaves an audit record and never deletes the native chat.
+Copies can remain in backups. Search and capture do not change source files or
+native conversations.
 
 **Application settings → Content & Storage** shows actual locations and explains ownership.
 Use **Put project away** to hide a project from active navigation, and **Restore
@@ -30,7 +48,16 @@ project** to bring it back. Its folder and Git agreement remain untouched.
 
 The backup checklist distinguishes a local copy of project folders and data locations from conversation export. Stop the server and OpenCode before copying live databases, and include SQLite sidecar files. Exports cover selected conversations only; Freelancer export bundles have no restore/import action. Both search indexes are derived data: **Application settings → Content & Storage** refreshes files throughout every registered project root or native OpenCode messages across all registered projects. File indexing includes source code, configuration, documents, and other readable text throughout each root; generated folders, private state, and binary formats without an extractor are skipped. The conversation index includes titles and user/assistant text, including archived chats and workers, with model IDs; it does not copy tool output, reasoning, attachments, or drafts. OpenCode remains the conversation authority. The same page can optimize the full-text indexes, run SQLite quick check, and compact free pages; these jobs do not operate on OpenCode's native database.
 
-File and conversation search share the same default query rule: up to twelve words are AND-matched. Exact phrase matching is an explicit option. File searches also accept optional source-path, source-role, and source-status filters; the app API, native content tool, and command-line indexer use the same fields and meaning. Path matching treats SQL wildcard characters as literal text.
+Files, conversations, memories and facts use the shared query service in
+`server/data/knowledge-query.mjs`, exposed by the app adapters, native
+`knowledge` tool and read-only `scripts/knowledge.mjs` CLI. Up to twelve query
+words are AND-matched; exact phrase matching is explicit. Domain filters retain
+their meaning across those entry points. Files accept source-path, source-role
+and source-status filters; path matching treats SQL wildcard characters as
+literal text. Conversation lookup also supports exact native session/message
+IDs. Scoped results and deterministic tie ordering are applied before limits.
+The search is lexical; it does not automatically call JEV to recover paraphrases.
+Each domain reports coverage and truncation independently.
 
 Native knowledge judgments can reuse a successful single-question receipt when the caller pins a model ID that exactly matches the provider-reported model. The state, definition version, candidates, evidence revisions, and requested/reported provider and model identities must match. Moving aliases such as jev-latest are evaluated live. Batch requests reuse results only when every question has a complete matching successful receipt; a partial match reruns the whole batch. Cache hits return the original typed answer and receipt ID without counting historical token usage again.
 
@@ -97,7 +124,7 @@ remain accessible. Usage/accounting still includes archived work.
 | Previously seen session headers                                                      | OpenCode; SQLite copy is a cache       | `session_headers`                                                       | Titles/IDs/ancestry/timestamps only, checked natively before actions |
 | Agent/skill defaults                                                                 | Application source                     | Existing domain/backend files                                           | Definitions are not running jobs                                     |
 
-Source startup now creates or validates an empty `workspace-v1` runtime before launching OpenCode, then activates the unified database for the app and its child processes. A non-empty, unregistered database is rejected; no previous Freelancer database, JSON state, settings profile, pins, Memory files, or browser-local navigation preferences are opened or imported. Native OpenCode owns general options, provider inventory and authentication, and MCP configuration. Freelancer-only appearance and billing preferences remain in a separate application-settings surface. Process locks and launch rendezvous remain filesystem coordination. The source-level [storage consumer inventory](storage-consumer-inventory.md) maps current consumers and remaining verification. Quiescence-gated import commands are maintenance utilities and are not part of first-run setup. See [storage performance](storage-performance.md) for current validation and boundaries.
+Source startup now creates or validates an empty `workspace-v2` runtime before launching OpenCode, then activates the unified database for the app and its child processes. A non-empty, unregistered database is rejected; no previous Freelancer database, JSON state, settings profile, pins, Memory files, or browser-local navigation preferences are opened or imported. Native OpenCode owns general options, provider inventory and authentication, and MCP configuration. Freelancer-only appearance and billing preferences remain in a separate application-settings surface. Process locks and launch rendezvous remain filesystem coordination. The source-level [storage consumer inventory](storage-consumer-inventory.md) maps current consumers and remaining verification. Quiescence-gated import commands are maintenance utilities and are not part of first-run setup. See [storage performance](storage-performance.md) for current validation and boundaries.
 
 ## The parts and their relationships
 
@@ -118,10 +145,16 @@ The Freelancer SQLite store links by project/native session ID but has **no fore
 key into OpenCode's database**. Native IDs must be ownership-checked through the
 API before mutations or exports. Missing native sessions are not recreated.
 
-## SQLite schema 17
+## SQLite schema 21
 
-The executable schema is `server/data/schema.sql`. Application history/draft access goes through
-`server/data/store.mjs` and `server/history.mjs`; the local content-index tool uses the same database through its Python indexer. React does not open SQLite directly. A schema-6 fixture copied from main commit `dd60841` now exercises the full migration chain to schema 17, preserving a draft and indexed source evidence and checking SQLite integrity and foreign keys. It is a small fixture; migration cost and preservation across the active full-size profile database remain unverified.
+The executable schema is `server/data/schema.sql`; the shared version contract is
+`shared/data-contract.mjs`. Application history/draft access goes through
+`server/data/store.mjs` and `server/history.mjs`. Node and Bun consumers use the
+same resolved database; optional Python extractors supply document text. React
+does not open SQLite directly. Historical schema fixtures exercise structural
+upgrades while preserving drafts and indexed evidence. They do not import a
+previous Freelancer installation into the fresh `workspace-v2` runtime or prove
+migration performance on a full user database.
 
 | Table                 | Key and contents                                          | Purpose                                 |
 | --------------------- | --------------------------------------------------------- | --------------------------------------- |
@@ -133,29 +166,72 @@ The executable schema is `server/data/schema.sql`. Application history/draft acc
 | `content_meta`        | Project key + build metadata                              | Per-project index manifest/status       |
 | `content_sources`     | Project-scoped source metadata, deterministic source and content-revision identities | Indexed files and archive members; stable references survive staged publication |
 | `content_units`       | Source retrieval units                                    | Searchable document sections with stable source/revision references            |
+| `content_source_revisions`, `content_unit_revisions` | Retained source metadata and unit text keyed by exact revision and hash | Evidence remains resolvable after reindexing or live-source deletion |
 | `content_units_fts`   | FTS5 projection of retrieval units                        | Local full-text/BM25 search              |
 | `content_facts`       | Derived source-linked facts                               | Optional analysis aid                   |
 | `content_fact_stats`  | Project-scoped fact aggregates                            | Optional analysis summaries             |
 | `chat_search` / `chat_search_state` | Indexed native messages and refresh timestamps | Rebuildable conversation search |
-| opencode_sources, opencode_sessions, opencode_session_revisions, opencode_messages, opencode_message_revisions | Hashed native database locator, current session/message projections and immutable safe revisions | Native OpenCode source warehouse; stable revision references; reasoning parts excluded; file payload bytes are hashed, not copied |
-| opencode_ingest_runs, opencode_ingest_cursors, opencode_ingest_failures | Per-project backfill state, numeric API offset plus prior-session boundary cursor, discovered/captured counters, and failed-session receipts | Bounded resumable API ingestion; failed sessions resume from their earliest offset and detected ordering shifts restart from zero while coverage remains partial |
+| opencode_sources, opencode_sessions, opencode_session_revisions, opencode_messages, opencode_message_revisions | Hashed native database locator, nullable observed API version, current session/message projections and immutable safe revisions | Native OpenCode source warehouse; stable revision references; reasoning parts excluded; file payload bytes are hashed, not copied |
+| opencode_ingest_runs, opencode_ingest_cursors, opencode_ingest_failures | Per-project backfill state, exclusive updated-time cursor, failed native IDs, initial head signature, unfinished-page signature/success IDs, counters and failure receipts | Native timestamp paging with bounded tie reads; finite slices resume within a page without repeating committed message reads; changed head/page identity invalidates cached progress |
+| `opencode_derivation_jobs` | Immutable bounded header/message membership manifest, derivation version, revision token, pending/due/blocked/completed/superseded state and retry receipts | Snapshot capture atomically queues work; retained-input publication checks the current manifest and commits FTS plus completion together. Unsafe/truncated/oversized manifests preserve the previous projection |
+| `opencode_refresh_needed` | Coalesced source/project/session dirty markers, reason, revision token, retry/backoff state and cleared receipts | Event failures, overflow and unaddressable scopes survive restart; compare-and-set acknowledgements prevent an older worker clearing a newer hint |
 | opencode_source_coverage | Per-source session, message and revision counts | Read-only capture coverage |
 | `model_catalog` | Public native model metadata and dated estimated ratings | Models-page catalog; not routing policy |
 | `entities`, `entity_aliases`, `claims`, `claim_evidence`, `entity_relations` | Provenance-aware shared knowledge graph | Claims retain origin, epistemic state, scope, time and evidence |
-| `memory_items`, `memory_item_revisions`, `memory_members`, `memory_pins`, `memory_changes` | Versioned durable notes and conversation-pin records | A pin records a metadata-only snapshot placeholder until transcript capture completes |
+| `entity_relation_revisions` | Immutable graph relation revisions, validity interval and recorded operation | Audited corrections and retractions; half-open `validFrom <= asOf < validTo` reads |
+| `memory_items`, `memory_item_revisions`, `memory_members`, `memory_pins`, `memory_changes` | Versioned notes, conversation snapshots, pin/archive state and audit records | Exact historical readers; unpin/archive preserve retained revisions; forget removes retained bodies |
+| `memory_capture_jobs` | Memory/source identity, expected revision, durable status and attempts | Restartable source reads; capture jobs never send model work |
+| `memory_search_fts`, `claims_search_fts` | Derived lexical projections over retained memory and claim evidence | Search includes Unicode, provenance and scoped current/history claims |
 | History pin compatibility | Canonical memory_pins for new pin/unpin writes; legacy session_annotations.pinned_at is read only as migration fallback | Pin state and annotation revision change in one transaction; unpin retains the conversation memory |
-| `runtime_instances`, `runtime_collection_markers` | Explicit runtime ID, source path/schema/hash, import time and legacy one-time markers | Identity mapping and fail-closed cutover eligibility; source path is provenance, not inferred identity |
-| `operational_records`, `application_documents`, `project_registrations`, `runtime_settings`, `settings_update_journal` | Runtime-scoped operational rows and documents, project agreements and domain settings, plus recovery for split settings writes | Staged migration target; global preferences are stored in per-user `application-settings.json` outside SQLite |
+| `runtime_instances`, `runtime_collection_markers` | Explicit registered runtime identity and collection initialization markers | Empty fresh bootstrap and fail-closed identity validation; a path alone cannot authorize existing data |
+| `operational_records`, `application_documents`, `project_registrations`, `runtime_settings`, `settings_update_journal` | Runtime-scoped operational rows and documents, project agreements and domain settings, plus recovery for split settings writes | Active unified authority; Freelancer-only global preferences stay in per-user `application-settings.json` outside SQLite |
+| `data_migration_runs`, `data_table_lifecycle` | Maintenance receipts, exact restore/review identities and table retention classifications | Explicit restore recovery and durable/derived classification |
 | `model_rating_jobs` | Native configuration session, chosen model, state and summary | Background rating update recovery |
 | `knowledge_pinned_memories`, `knowledge_current_claims`, `knowledge_claim_evidence`, `knowledge_memory_evidence`, `knowledge_source_coverage` | Read-only warehouse views | Bounded native knowledge queries over pins, evidence and indexed-source coverage |
+| `knowledge_task_outcomes`, `knowledge_outcome_summary` | Safe normalized task/model/type records and aggregate counts | Execution completion and verified success remain separate; unknown/cancelled/skipped/unavailable are explicit |
 | `chatgpt_chats` / `chatgpt_messages` | Project-scoped imported headers, provenance and normalized messages | One-time source snapshots, separate from OpenCode |
 | `chatgpt_continuations` | Imported ID to native session link and creation state | Supported-API continuation; guards uncertain creation |
 | `project_onboarding` | Completed setup timestamp and import count | Prevents repeated imports or live sync |
 | `judgment_definitions`, `judgment_runs`, `judgment_results` | Immutable primitive/question/criteria versions, hashed bounded evidence packets, requested and reported provider/model metadata, typed answers, probabilities, confidence and optional usage | Preserves model judgments separately from underlying facts; provider failures and missing measurements remain explicit |
 
-The native knowledge tool can ask for permission and send a bounded caller-supplied state packet to the shared TypeSafe SDK adapter. Single and batched evaluation calls accept up to twenty immutable question definitions in one System One request. Before provider use, each candidate and evidence citation must resolve to a retained indexed content revision/unit or a captured OpenCode text part, and the packet text must occur in the resolved source. It stores typed answers and provenance hashes, not the state content or API key. Batch receipts share one ID and record token usage once to avoid double-counting. `judgment-provider-status` reports credential configuration without claiming live connectivity, and evaluation failure does not block ordinary search or memory operations. Exact pinned model IDs can reuse complete successful cache matches; moving model aliases and partial batch matches run live. A cached result does not count historical token usage again. The same native `knowledge` tool supports exact entity lookup, duplicate-safe entity and relation creation, bounded relation listing, and audited relation/entity deletion. Entity deletion removes its aliases and graph edges only when no claim references it; otherwise it reports the retained claim count and makes no change. Relation and entity deletion results are explicit and repeatable.
+Schema 21 treats source retention and search derivation as separate durable work.
+Each captured snapshot atomically queues an immutable manifest job. The worker
+publishes only when that exact manifest is still current, and commits search
+publication with its completion receipt. `projectionSafe` means the bounded
+message window was validated for indexing; it does not prove historical
+completeness. Active windows remain `partial`, while only a matching complete
+archived snapshot can establish message absence. Malformed snapshots are
+rejected, and truncated/oversized snapshots cannot replace the prior safe search
+projection.
 
-`node scripts/evaluate-knowledge-retrieval.mjs` runs eight synthetic candidate pairs that cover exact IDs, Unicode, paraphrases, contradictory current/history evidence, historical questions, pinned conversation snapshots, missing-source placeholders and project identity. The live JEV 1.13.0 run scored top-1 accuracy 1.0 and mean reciprocal rank 1.0 across these eight labeled pairs (5,041 input tokens, 301 output tokens, 367 ms). This measures the judgment layer against fabricated fixtures; it does not establish retrieval quality on real projects or the full search pipeline.
+Native event failures, overflow and unaddressable scopes create durable
+revisioned refresh markers. Compare-and-set acknowledgement protects newer
+hints from old workers; retries are bounded and eligible work is ordered fairly
+with fresh work. Startup resumes due markers and derivation jobs after project
+registration. Periodic reconciliation visits one registered project every 30
+minutes, with at most 8 page reads, 100 sessions and 20 seconds per slice (page
+size 50); it resumes the durable cursor and never deletes from event absence. Queue
+counters are process-local diagnostics. OpenCode's observed API version is
+retained when valid and is otherwise nullable. These mechanisms have focused
+fixture coverage. The latest OpenCode 1.18.31 SSE smoke passed and matched the
+stored API version to `/global/health`; the latest full timestamp-paging smoke,
+full contracts and production browser sign-off remain pending.
+
+The native knowledge tool asks for permission before sending a bounded caller-supplied state packet to the shared TypeSafe SDK adapter. Single and batched evaluation calls accept up to twenty immutable question definitions in one System One request. Each candidate and citation must resolve to retained content, a captured OpenCode text part, an exact memory revision, or a hashed claim record; the cited text must occur in that source. `judgment-evidence` builds a bounded memory/fact packet from an existing record ID. Evidence is checked before and after provider use and when looking up a typed cache entry. Changed or forgotten evidence invalidates reuse; a source change during inference retains an `evidence-changed` receipt with explicitly stale answers. `judgment-history` remains available for inspecting historical receipts. The service stores typed answers and provenance hashes, not the state content or API key. Batch receipts share one ID and record token usage once. `judgment-provider-status` reports process-environment credential configuration without claiming connectivity or copying native MCP credentials. Exact pinned model IDs can reuse complete successful cache matches; moving model aliases and partial batch matches run live. Cached answers do not count historical usage again. Jev failure never blocks ordinary search or memory operations, and its confidence grants no authority. The native `knowledge` tool also supports exact entity lookup, duplicate-safe entities/relations, bounded relation listing and audited deletion. Entity deletion removes aliases and graph edges only when no claim references it; otherwise it reports the retained claim count and makes no change.
+
+`node scripts/evaluate-knowledge-retrieval.mjs` runs eight synthetic candidate pairs that cover exact IDs, Unicode, paraphrases, contradictory current/history evidence, historical questions, pinned conversation snapshots, missing-source placeholders and project identity. An earlier storage-branch note reported JEV 1.13.0 ranking every labeled candidate first. That historical report has not been reverified in this integration and does not establish current authentication, native MCP inference, real-project relevance or full-pipeline retrieval quality. Running the script requires an explicitly configured TypeSafe credential and makes an external provider request.
+
+`node scripts/evaluate-local-retrieval.mjs --output artifacts/local-retrieval-evaluation.json`
+evaluates the actual SQLite query service and parsed CLI envelopes against a
+small representative authored corpus. Its 26 functional cases cover exact IDs,
+Unicode, phrases, contradictory current/historical facts, pinned conversations,
+missing live sources, archive state and project/model scope. The two separate
+semantic paraphrase probes currently miss both expected targets; this records
+the lexical limit without a hidden JEV fallback. Per-case and aggregate timings
+describe that fixture only. Concurrency fixtures use separate Node connections
+to verify duplicate-safe graph writes and stale revision 409s; HTTP responsiveness
+fixtures keep draft writes and reads available during timed-out analytical work
+and a pending extraction job.
 
 Uses STRICT tables, prepared statements, foreign keys, short BEGIN IMMEDIATE
 transactions, a busy timeout, WAL journaling and FULL synchronization. The file
@@ -168,8 +244,10 @@ The local store uses one lazy connection shared by the server's history,
 ratings, import and indexing services. The server runtime closes it during
 graceful shutdown. Startup performs a passive WAL checkpoint, which does not
 wait for active readers or truncate the log. Do not force-kill the server as a
-normal restart method. A derived-index reset pauses the shared connection while
-its worker replaces the database file; services reopen it after the reset.
+normal restart method. A normal derived-index reset validates table ownership
+and rebuilds its projections in place. Retained source revisions, memories,
+pins and operational records remain intact; corrupt-database recovery is a
+separate operation.
 
 The UI debounces draft writes and drains edits serially. Every write checks a
 revision. Cross-window conflicts and lost acknowledgements preserve local text
@@ -181,11 +259,11 @@ chat creation, later typing follows the newly bound conversation.
 
 Production resolves new data separately from the installation:
 
-- Windows: `%LOCALAPPDATA%\Freelancer\workspace-v1\freelancer.sqlite` (profile fallback when
+- Windows: `%LOCALAPPDATA%\Freelancer\workspace-v2\freelancer.sqlite` (profile fallback when
   LOCALAPPDATA is unavailable).
-- macOS: `~/Library/Application Support/Freelancer/workspace-v1/freelancer.sqlite`.
-- Linux: `$XDG_DATA_HOME/freelancer/workspace-v1/freelancer.sqlite` or
-  `~/.local/share/freelancer/workspace-v1/freelancer.sqlite`.
+- macOS: `~/Library/Application Support/Freelancer/workspace-v2/freelancer.sqlite`.
+- Linux: `$XDG_DATA_HOME/freelancer/workspace-v2/freelancer.sqlite` or
+  `~/.local/share/freelancer/workspace-v2/freelancer.sqlite`.
 
 An absolute `FREELANCER_DATA_HOME` explicitly chooses another directory. It is
 not a data migration; pointing it elsewhere opens that directory's independent
@@ -230,7 +308,7 @@ save location and any save prompt. A click acknowledgement means the download
 was requested, not that Freelancer verified a final on-disk save. No export is
 uploaded automatically.
 
-## Future migration boundary
+## Fresh setup and explicit recovery
 
 Do not permanently dual-write JSON and SQLite copies of the same authority.
 Before moving existing records: inventory every application/plugin/PowerShell
@@ -240,12 +318,9 @@ a tested rollback route. Reject unknown future schemas. Do not point native
 OpenCode at this database, copy its credential store, or give editable agent
 prompts direct SQL access.
 
-Schema 17 includes the provenance-aware memory service, versioned immutable JEV
-question definitions, retained indexed source/unit revisions, and shared `knowledge` OpenCode tool. Pinning creates a canonical memory item and preserves the original
-pin time, but the current capture boundary is explicitly `metadata_only`; no
-historical transcript is fabricated. Memory search uses a rebuildable FTS
-projection. The maintenance importer copies the v1 runtime records database and
-registered standalone state JSON after explicit quiescence. Migration and
+Vanilla setup creates an empty registered runtime. Earlier Freelancer data is
+not an automatic input. The maintenance importer can copy v1 runtime records and
+registered standalone state JSON only after explicit quiescence. Migration and
 backup CLIs acquire the runtime's normal application lock so they reject an
 active Freelancer server and prevent a new server from starting during the
 operation; `FREELANCER_MIGRATION_QUIESCED=1` remains an operator assertion for
@@ -266,8 +341,17 @@ of the legacy inputs into an empty runtime root with
 That copies only the archived migration inputs; it does not restore the live
 launch rendezvous or storage pointer. Neither command
 creates a runtime pointer or makes copied operational rows authoritative;
-settings-profile reconciliation and production cutover remain explicit
-migration work.
+settings-profile reconciliation and use of imported operational records remain
+explicit maintenance work outside first-run setup.
+
+Explicit database restore records `automaticReplay: false` and preserves
+uncertain operations. Startup keeps sender, goal, schedule and model-research continuation paused
+until the user reviews **Content & Storage → Restored work is paused** and chooses
+**Allow automatic work**. The server checks the exact current restore identity
+inside a transaction; a superseded confirmation returns 409 and remains blocked.
+The matching review is durable across restart and repeating it is idempotent.
+Review does not replay an uncertain delivery or bypass normal Git review. Native
+OpenCode credentials and database remain outside this backup/restore contract.
 
 ## Verification and remaining live checks
 
@@ -278,9 +362,12 @@ The Windows panel workflow exercises the same browser application.
 Tests exercise real application/HTTP/SQLite/sender integration; only the native
 OpenCode and TypeSafe provider interfaces are stubbed. Pure draft-controller tests cover save
 races, exact-generation acceptance, multi-window conflicts, reload, lost
-acknowledgements and rebinding. The focused judgment-provider tests use a mock;
-a separate synthetic call verified the live TypeSafe API response without project
-data. No paid OpenCode model calls or real user account changes are used. Normal browser verification uses loopback HTTP/CSP. PANEL_OFFLINE=1 is an optional restricted-environment bridge and is not normal-navigation evidence.
+acknowledgements and rebinding. The focused judgment-provider tests use a mock.
+The earlier synthetic TypeSafe call is a historical branch report; authenticated
+inference was not reverified on this integration. No paid OpenCode model calls or
+real user account changes were made. Normal browser verification uses loopback
+HTTP/CSP. PANEL_OFFLINE=1 is an optional restricted-environment bridge and is not
+normal-navigation evidence.
 
 Before relying on a real installation: restart the Windows app; save/reopen a
 draft; archive/Undo an idle test conversation; inspect the displayed paths; download

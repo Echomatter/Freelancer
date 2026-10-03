@@ -241,7 +241,7 @@ This is a source-run React interface served by a local Node.js server. Native Op
 
 For phone or tablet access, open **Application settings → Remote access**. Choose the private network or HTTPS connection, pair each browser with a one-time QR code and remove devices individually when needed. See the [remote access guide](docs/network-access.md) for setup and the security boundary.
 
-To run an already installed checkout manually, use Node.js **22.13 or newer** and the native OpenCode executable (`opencode-ai@1.18.31` is the [documented baseline](docs/getting-started.md#prerequisites)):
+To run an already installed checkout manually, use Node.js **24.10 or newer** and the native OpenCode executable (`opencode-ai@1.18.31` is the [documented baseline](docs/getting-started.md#prerequisites)):
 
 ```powershell
 npm.cmd ci

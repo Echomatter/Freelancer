@@ -53,6 +53,7 @@ type StorageData = {
   projects: StorageProject[];
   nativeWarning?: string;
   notice?: string;
+  recovery?: { automaticWorkBlocked: boolean; restore: null | { id: string; restoredAt: number } };
 };
 
 const locationHelp: Record<string, HelpTopic> = {
@@ -87,6 +88,7 @@ export function ContentStorage({
   const [storagePending, setStoragePending] = useState(false);
   const [confirmCompact, setConfirmCompact] = useState(false);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [confirmRecovery, setConfirmRecovery] = useState<string | null>(null);
   const [confirmProject, setConfirmProject] = useState<StorageProject | null>(null);
   const indexPending = starting || (jobs?.job?.status === "running" ? jobs.job.kind : "");
 
@@ -99,6 +101,16 @@ export function ContentStorage({
     setStorageError("");
     try { setStorage(await api("storage")); }
     catch (failure) { setStorageError((failure as Error).message); }
+  }
+  async function resumeRestoredWork() {
+    const restoreID=confirmRecovery;
+    if(!restoreID||storagePending) return;
+    setStoragePending(true);setStorageError('');
+    try {
+      await api('data/recovery',{restoreID,confirm:true});
+      setConfirmRecovery(null);await refreshStorage();await onChange();
+    } catch(failure) { setStorageError((failure as Error).message); }
+    finally {setStoragePending(false);}
   }
   useEffect(() => {
     let live = true;
@@ -174,6 +186,10 @@ export function ContentStorage({
     {indexError && <div className="notice error content-storage-notice" role="alert">
       <span>Index data: {indexError}</span><Button disabled={!!indexPending} onClick={() => void refreshIndex()}>Retry index data</Button>
     </div>}
+    {storage?.recovery?.automaticWorkBlocked && <Panel title="Restored work is paused">
+      <p>Review restored chats, queued messages, goals, schedules, model research, and Git activity before allowing automatic work.</p>
+      <Button disabled={storagePending} onClick={()=>setConfirmRecovery(storage.recovery?.restore?.id ?? null)}>Review automatic work</Button>
+    </Panel>}
     {storageError && <div className="notice error content-storage-notice" role="alert">
       <span>Storage data: {storageError}</span><Button disabled={storagePending} onClick={() => void refreshStorage()}>Retry storage data</Button>
     </div>}
@@ -270,6 +286,11 @@ export function ContentStorage({
       onCancel={() => setConfirmCompact(false)} onConfirm={() => void runIndex("compact")} busy={!!indexPending}
       confirmLabel={indexPending === "compact" ? "Compacting…" : "Compact now"} error={indexError}>
       <p>Compact Freelancer’s local SQLite database now? This needs temporary disk space.</p>
+    </ConfirmDialog>}
+    {confirmRecovery && <ConfirmDialog title="Allow automatic work?" ariaLabel="Confirm restored work recovery"
+      onCancel={()=>setConfirmRecovery(null)} onConfirm={()=>void resumeRestoredWork()} busy={storagePending}
+      confirmLabel="Allow automatic work" error={storageError}>
+      <p>Confirm that you have reviewed restored chats and delivery state. Queued messages, active goals, enabled schedules, and model research can continue. Uncertain deliveries and Git actions still require their normal review.</p>
     </ConfirmDialog>}
     {confirmReset && <ConfirmDialog title="Start search indexes clean?" ariaLabel="Confirm clean search indexes"
       onCancel={() => setConfirmReset(false)} onConfirm={() => void runIndex("reset")} busy={!!indexPending}

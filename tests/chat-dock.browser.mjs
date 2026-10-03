@@ -1,16 +1,30 @@
 import assert from 'node:assert/strict';
 import { mkdir } from 'node:fs/promises';
+import { createServer as createTcpServer } from 'node:net';
+import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createServer } from 'vite';
 import { test, expect } from './support/browser-test.mjs';
 
 test('chat-dock', { tag: ['@presentation', '@chat'] }, async ({ appBrowser: browser, own }) => {
-  const vite = await own(createServer({ root: fileURLToPath(new URL('../', import.meta.url)), optimizeDeps: { entries: ['tests/fixtures/chat-ui.html'] }, server: { host: '127.0.0.1', port: 0 } }));
+  const artifactRoot = process.env.FREELANCER_BROWSER_ARTIFACTS ?? 'artifacts';
+  // Vite treats port 0 as its default port in some configurations. Reserve an
+  // ephemeral loopback port, then require Vite to bind that exact address.
+  const probe = createTcpServer();
+  await new Promise((resolve, reject) => probe.listen(0, '127.0.0.1', resolve).once('error', reject));
+  const port = probe.address().port;
+  await new Promise((resolve, reject) => probe.close(error => error ? reject(error) : resolve()));
+  const vite = await own(createServer({ root: fileURLToPath(new URL('../', import.meta.url)), optimizeDeps: { entries: ['tests/fixtures/chat-ui.html'] }, server: { host: '127.0.0.1', port, strictPort: true } }));
   await vite.listen();
+  const address = vite.httpServer.address();
+  assert.ok(address && typeof address === 'object', 'Vite exposes its bound HTTP address');
+  assert.equal(address.port, port, 'Vite binds the reserved fixture port');
+  const fixtureUrl = `http://127.0.0.1:${address.port}/tests/fixtures/chat-ui.html`;
+  await expect.poll(async () => {
+    try { return (await fetch(fixtureUrl)).status; } catch { return 0; }
+  }, { timeout: 10_000 }).toBe(200);
   const page = await browser.newPage({ viewport: { width: 1200, height: 850 } });
-  page.on('pageerror', error => console.log('DEBUG pageerror', error.message));
-  page.on('console', message => { if (message.type() !== 'warning') console.log('DEBUG console', message.text()); });
-  await page.goto(new URL('/tests/fixtures/chat-ui.html', vite.resolvedUrls.local[0]).href);
+  await page.goto(fixtureUrl);
   const scroll = page.locator('.chat-scroll'), dock = page.locator('.chat-tool-overlay');
   await test.step('Current-turn tools stay docked while the transcript scrolls', async () => {
     await page.getByRole('button', { name: /^Commands / }).click();
@@ -57,7 +71,6 @@ test('chat-dock', { tag: ['@presentation', '@chat'] }, async ({ appBrowser: brow
     await expect(dock.locator('.tool-card summary').filter({ hasText: 'Read live-update.ts' })).toBeVisible();
     await page.getByRole('button', { name: 'Append delegation handoff' }).click();
     await page.waitForTimeout(100);
-    console.log('DEBUG handoff DOM', await page.locator('.chat-transcript').evaluate(el => ({ groups:el.querySelectorAll('.request-group').length, cards:el.querySelectorAll('.handoff-card').length, text:el.innerText.slice(-300) })));
     await page.getByRole('button', { name: 'Open agents for turn 12', exact: true }).click();
     await expect(page.locator('.handoff-card')).toBeVisible();
     await expect(page.locator('.chat-view')).toHaveCount(1);
@@ -73,7 +86,7 @@ test('chat-dock', { tag: ['@presentation', '@chat'] }, async ({ appBrowser: brow
     assert.ok(rect.x >= 0 && rect.x + rect.width <= 430);
     assert.ok(rect.y + rect.height <= composer.y, 'tools never cover the composer');
     assert.ok((await page.getByRole('button', { name: 'Open tools for turn 1', exact: true }).boundingBox()).height <= 40);
-    await mkdir('artifacts/composer', { recursive: true });
-    await page.screenshot({ path: 'artifacts/composer/phone-tools.png' });
+    await mkdir(path.join(artifactRoot, 'composer'), { recursive: true });
+    await page.screenshot({ path: path.join(artifactRoot, 'composer', 'phone-tools.png') });
   });
 });

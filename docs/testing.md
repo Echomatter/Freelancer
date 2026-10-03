@@ -29,6 +29,13 @@ Playwright accepts filenames and `--grep` filters. A filter matching no tests
 fails. `--last-failed` is useful while fixing a failure, but is not a full-suite
 result. Independent journeys continue after a failure; automatic retries are off.
 
+The contract runner executes regular files first, real Git fixtures separately
+with at most two workers, then the Windows recorder with one worker. Every
+selected batch runs even if an earlier batch fails, and any failed batch makes
+the command fail. Explicit concurrency can lower the isolated limits. Run full
+browser journeys separately from the process-heavy Git fixtures when collecting
+responsiveness evidence.
+
 ## What belongs where
 
 User-visible behavior belongs in `tests/*.browser.mjs`: interact through buttons,
@@ -125,5 +132,75 @@ not forecast any provider's ability to use them.
 PowerShell recorder integration tests are Windows-only and report explicit skips
 on other systems. On Windows the contract runner executes that process-heavy
 file separately from other contract-file workers. The 30-second per-command
-timeout stays bounded; a timeout or nonzero exit still fails the suite. Both
-contract batches must pass.
+timeout stays bounded; a timeout or nonzero exit still fails the suite. Every
+selected contract batch must pass.
+
+### Native startup dependency fixtures
+
+The native smokes seed dependency folders only inside their disposable temporary
+roots using the source checkout's installed `node_modules` and lockfile. Run
+`npm ci` first. Native settings, project JSONC, MCP configuration and provider
+authentication remain separate from this fixture seeding; no user's OpenCode
+directory is changed.
+
+Runtime, context, MCP, history, event and launcher smokes also redirect the
+native home, user profile, AppData and temporary directories into their owned
+fixtures. They use the installed executable and remove those directories after
+their own processes stop.
+
+This proves native plugin loading and the tested configuration interfaces with
+installed dependencies. It does not prove a first-time npm registry install.
+`node scripts/diagnose-native-startup.mjs` observes the cold dependency path;
+adding `--seed-dependencies` measures the installed dependency fixture. Both
+write redacted stage logs, bound the first native request to 45 seconds and
+dispose their own runtime without model inference. On OpenCode 1.18.31, the cold
+fixture waited beyond that bound before plugin initialization, while the seeded
+fixture loaded the shared tools in under five seconds. Its persisted driver
+observation reported embedded Bun 1.3.14 and SQLite 3.53.0 with FTS5, JSON,
+STRICT tables and named bindings. Authentication, inference and cold installation
+need their own evidence.
+
+`--native-only` removes Freelancer plugins from the diagnostic. A fresh native
+control initialized in about eight seconds. `--empty-plugin` loads only a local
+plugin that returns an empty object, without imports; its cold first request
+still exceeded 45 seconds. That comparison narrows the delay to OpenCode's
+dependency wait for external plugins. The
+[upstream headless installation issue](https://github.com/anomalyco/opencode/issues/44684)
+describes the same control result and incomplete dependency installation; an
+individual registry fetch failure has not been observed in our redacted logs.
+
+`node scripts/smoke-history-pagination.mjs` checks the actual OpenCode 1.18.31
+history API with disposable empty conversations, including an archived chat and
+a child chat. It sets deterministic equal-time session timestamps only while
+that fixture's native database is stopped, then restarts the engine and checks
+native HTTP lower-bound `start`, exclusive experimental `cursor`,
+`x-next-cursor`, complete boundary-bucket capture and common search retrieval of
+the oldest conversation with a page size of two. It uses installed dependencies,
+changes no user's native database or configuration, and performs no inference.
+Contract fixtures model these timestamp filters; they do not mimic an offset API.
+
+`node scripts/smoke-warehouse-events.mjs` checks actual OpenCode SSE with two
+disposable empty chats, one parent and one child. Initial and changed titles
+must retain distinct immutable header revisions and match exact native,
+warehouse and common-search identities. Its isolated home, app data, temporary
+and native configuration directories are removed after shutdown. This checks
+event transport and source identity with installed dependencies; message
+capture is covered by contracts, and authentication, inference and cold
+dependency installation require separate evidence.
+
+### TypeSafe judgment evidence
+
+The shared TypeSafe SDK adapter reads `TYPESAFE_API_KEY` and
+`TYPESAFE_DEFAULT_MODEL` from the Freelancer server's process environment. It
+does not copy credentials or service-local environment values from OpenCode.
+A Jev MCP service configured in OpenCode remains available to native agents
+through that engine independently of the SDK adapter. A configured status only
+confirms that an environment key exists; it does not prove authentication or
+inference. This optional adapter is not required for ordinary installation.
+
+`judgment-evidence` returns bounded, exact record references for stored memories
+and facts. Contracts exercise immutable revisions, forgotten sources, changed
+claim provenance, source hashes, stale cache keys and evidence changes while a
+provider request is pending. Provider responses in these contracts are fixtures;
+no paid or live inference is performed. Historical receipts retain actual
+answers and usage, while stale evidence prevents successful cache reuse.

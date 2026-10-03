@@ -10,7 +10,8 @@
 
 ## Unified storage and fresh bootstrap
 
-SQLite schema 17 adds `runtime_instances`, retained indexed source/unit revisions, runtime-scoped
+The current per-user SQLite store uses schema 21. Schema 17 introduced
+`runtime_instances`, retained indexed source/unit revisions, runtime-scoped
 `operational_records`, `application_documents`, `project_registrations` and
 `runtime_settings`, `settings_update_journal`, plus stable content source/revision identities and `data_migration_runs` with a `data_table_lifecycle` registry in the per-user
 `freelancer.sqlite`. The registry classifies every owned schema table as
@@ -22,7 +23,50 @@ results are durable registered tables. They retain immutable question and
 criteria versions, SHA-256 identities for bounded state/candidate/evidence
 packets, requested and provider-reported identities, nullable measured usage,
 latency, typed answers, probability distributions and supplied confidence.
-Native OpenCode history refresh also captures session headers and normalized message revisions in durable warehouse tables, keyed by a hashed source-database locator and registered project/session IDs. Revisions hash canonical safe message metadata and parts. Text, tool, patch, file metadata and step summaries are bounded; reasoning parts are omitted, sensitive object keys and bearer strings are redacted, and file payloads are represented only by hash and byte count. Search repair leaves these durable snapshots intact. The native knowledge bridge exposes bounded registered-project reads, capture coverage and an explicit resumable backfill action. Backfill uses the session-list API's numeric start offset, checkpoints each session with the prior session identity, retains failed session IDs and messages, and resumes from the earliest failed offset. It rechecks the two-session overlap at page boundaries; detected ordering changes leave coverage partial and restart from offset zero. This is a drift guard, not a proof of a stable or authoritative complete inventory. Coverage describes the API responses actually read, not a direct native-database reconciliation.
+Native OpenCode history refresh also captures session headers and normalized message revisions in durable warehouse tables, keyed by a hashed source-database locator and registered project/session IDs. The observed native API version is retained only when valid; otherwise it is null. Revisions hash canonical safe message metadata and parts. Text, tool, patch, file metadata and step summaries are bounded; reasoning parts are omitted, sensitive object keys and bearer strings are redacted, and file payloads are represented only by hash and byte count. Search repair leaves these durable snapshots intact. The native knowledge bridge exposes bounded registered-project reads, capture coverage and an explicit resumable backfill action.
+
+Schema 21 commits an immutable bounded session/message membership manifest and
+a pending derivation job in the same transaction as each source snapshot. A
+retained-input worker publishes full-text search only when that exact manifest
+is still current; it commits the projection and completion receipt together.
+The `projectionSafe` bit records whether the observed bounded window is valid
+for search, separately from `snapshotCompleteness`: active complete windows can
+be searchable while remaining partial for absence/deletion reconciliation.
+Unsafe, malformed, truncated or oversized manifests do not replace the last
+safe search projection. Source changes create newer work, and an old worker
+cannot publish or acknowledge that newer revision.
+
+Backfill reads `/experimental/session` with `archived=true`, a registered project
+directory and the native `x-next-cursor` response header. Its `cursor` is an
+exclusive updated-time upper bound; native `start` is an inclusive updated-time
+lower bound, not a row offset. Equal-timestamp boundary buckets are drained with
+`start=t`, `cursor=t+1` and one bounded request of up to 5,000 rows before
+advancing below `t`; a larger bucket remains partial. Durable cursors record the
+`opencode-updated-v1` contract, timestamp boundary, failed native IDs, the
+initial head signature, and an unfinished page signature with successfully
+captured IDs. A page cache is reused only when the newly fetched page still has
+the same signature. Each source capture commits separately; page progress
+advances only after committed captures and completed bucket reads. Cancellation,
+source failures, unsupported paging or an over-limit tie bucket retain partial
+coverage and a resumable boundary. Changed head or page signatures invalidate
+cached progress. Old offset cursors cannot be treated as timestamps. Concurrent
+native updates can still move sessions during traversal; this is not an atomic
+inventory or a direct native-database reconciliation. Coverage describes the
+API responses actually read.
+
+Native event notifications are hints, not deletion proof. Schema-21
+`opencode_refresh_needed` stores coalesced source/project/session scopes,
+revision tokens and bounded retry state. A failed, overflowed or unaddressable
+hint remains recoverable across restart; compare-and-set clearing cannot erase a
+newer hint. Startup drains due markers and derivation jobs after registered
+projects load. The coordinator's periodic pass runs every 30 minutes and
+reconciles one registered project per pass, with page size 50, at most 8 page
+reads, 100 sessions and 20 seconds per slice. It resumes durable backfill
+cursors. No event or partial inventory is used to delete retained warehouse
+records. Focused fixture contracts cover recovery and deadline cancellation.
+The latest OpenCode 1.18.31 SSE smoke passed and matched stored API-version
+metadata to `/global/health`; the latest timestamp-paging smoke, full contracts
+and production browser sign-off remain pending.
 
 Successful-result cache lookup includes the definition version, state digest,
 ordered candidate IDs, evidence references/revisions, and both requested and
@@ -31,10 +75,12 @@ Failed, unavailable, cancelled and invalid-response attempts remain
 distinguishable from successful empty answers. Persisted judgments are advisory
 and do not become fact, permission or verification authority.
 
-Engine verification on the October 2, 2026 development host reported Node.js
-v24.16.0 with embedded SQLite 3.53.0. Bun was not available on that host, so
-the SQLite engine used by OpenCode's Bun plugin runtime still needs a separate
-runtime check before production use.
+Disposable native checks on the development host verified Node.js 24.16.0,
+OpenCode's embedded Bun 1.3.14, and SQLite 3.53.0, including a shared-store
+roundtrip. Both engines reported FTS5, JSON, STRICT tables and named bindings.
+The Node engine reported authorizer support; the Bun driver did not. Analytical
+SQL therefore runs in the dedicated Node worker. These checks used installed
+dependencies and do not establish cold installation or provider inference.
 
 The repository retains explicit maintenance utilities for an operator who
 separately selects a source runtime, verifies a backup, and requests a controlled
@@ -94,7 +140,7 @@ operator action and is outside the active fresh-install goal.
 ## Current runtime and compatibility boundary
 
 Normal source startup initializes or validates the registered per-user
-`workspace-v1` database before launching OpenCode. New request receipts, usage,
+`workspace-v2` database before launching OpenCode. New request receipts, usage,
 goals, sender state, project registrations, search indexes and warehouse data
 use that runtime. App-wide Freelancer preferences use the separate,
 revisioned `application-settings.json`. Legacy paths are adapters for

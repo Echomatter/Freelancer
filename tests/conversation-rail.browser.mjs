@@ -108,7 +108,8 @@ test('conversation rail: turn tools, statistics, scroll gestures, resize, and st
     await expect(checkbox).toBeChecked(); await checkbox.uncheck();
     await page.getByRole('button', { name: 'Save context settings' }).click();
     await expect(page.getByText('Saved for this project', { exact: true })).toBeVisible();
-    assert.equal((await f.store.read('settings')).contextSettings[f.project.id].autoCompact, false);
+    assert.equal((await f.api(`context-settings?project=${f.project.id}`)).autoCompact, false);
+    assert.equal((await f.store.read('settings')).contextSettings, undefined, 'OpenCode owns native compaction settings');
     await page.getByRole('button', { name: 'Help: Automatic context compaction' }).hover();
     await expect(page.getByRole('tooltip')).toContainText('OpenCode owns');
     await page.screenshot({ path: 'artifacts/conversation-rail/context-settings.png' });
@@ -119,7 +120,7 @@ test('conversation rail: turn tools, statistics, scroll gestures, resize, and st
     f.state.status.ses_history = { type: 'busy' }; await checkbox.check();
     await page.getByRole('button', { name: 'Save context settings' }).click();
     await expect(page.getByRole('alert').filter({ hasText: 'running chats' })).toBeVisible();
-    assert.equal((await f.store.read('settings')).contextSettings[f.project.id].autoCompact, false);
+    assert.equal((await f.api(`context-settings?project=${f.project.id}`)).autoCompact, false);
     f.state.status = {};
   });
 });

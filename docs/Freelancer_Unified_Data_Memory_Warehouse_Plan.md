@@ -23,7 +23,7 @@ Keep application-wide settings outside this database. Move operational data too:
 
 ### Status and source baseline
 
-At proposal time, this was design and source investigation only; no application implementation, database migration, repository write, or new provider call had been performed. Implementation has since advanced on the storage-maintenance branch: normal source startup now initializes a fresh empty unified runtime before launching OpenCode. Warehouse coverage and retrieval requirements remain unfinished; see the implementation status in §12. The reviewed GitHub main at proposal time was `dd608415800635eedd053f67c3d0b6cd0d918756`, titled “Integrate shared native MCP capabilities.” This superseded the earlier plan based on `5976007` that proposed retaining a separate runtime database and exposing a custom knowledge MCP.
+At proposal time, this was design and source investigation only; no application implementation, database migration, repository write, or new provider call had been performed. Implementation has since advanced on the storage-maintenance branch: normal source startup now initializes a fresh empty unified runtime before launching OpenCode, and the shared warehouse, memory and query services are implemented. Current evidence and remaining startup gates are recorded in [the completion audit](warehouse-completion-audit.md). The reviewed GitHub main at proposal time was `dd608415800635eedd053f67c3d0b6cd0d918756`, titled “Integrate shared native MCP capabilities.” This superseded the earlier plan based on `5976007` that proposed retaining a separate runtime database and exposing a custom knowledge MCP.
 
 The current schema, pin path, content-query branch, search-repair routine, MCP presets, and storage documentation were checked directly. Additional application consumers are mapped from those sources and the preceding dependency inventory. Source review is not proof about a user's private installation or a completed end-to-end migration.
 
@@ -396,7 +396,7 @@ Deletion must distinguish unpin, archive, forget, source deletion, derived-index
 
 ### Implementation status (2026-10-02)
 
-The branch has schema 17, memory/pin and evidence-backed claim foundations, and fail-closed Node/Bun adapters. The source-level inventory in [storage-consumer-inventory.md](storage-consumer-inventory.md) covers in-repository consumers. Normal source startup checks the fresh `workspace-v1` directory before opening SQLite for writes. It initializes an empty runtime, validates its stable registration on later starts, and activates unified storage before OpenCode starts. A non-empty unregistered directory/database is rejected without importing prior Freelancer data. Old storage adapters and importers remain available for explicitly invoked maintenance workflows; clean first-run setup never opens or imports a user's previous Freelancer data.
+The branch has schema 17, memory/pin and evidence-backed claim foundations, and fail-closed Node/Bun adapters. The source-level inventory in [storage-consumer-inventory.md](storage-consumer-inventory.md) covers in-repository consumers. Normal source startup checks the fresh `workspace-v2` directory before opening SQLite for writes. It initializes an empty runtime, validates its stable registration on later starts, and activates unified storage before OpenCode starts. A non-empty unregistered directory/database is rejected without importing prior Freelancer data. Old storage adapters and importers remain available for explicitly invoked maintenance workflows; clean first-run setup never opens or imports a user's previous Freelancer data.
 
 Schema 13 adds stable content-source identities and revisions. Schema 17 retains immutable source and unit revisions through reindexing and index repair. Schema 14 adds typed judgment definitions and receipts; schema 16 repairs definition versioning without changing existing receipts. Schema 15 adds safe OpenCode session/message snapshots and bounded API backfill; reasoning parts are omitted and file payload bytes are hashed, not copied. The native knowledge adapter can evaluate immutable question definitions against bounded caller-supplied state packets, requests native permission before provider use, and records typed answers and provenance. A synthetic eight-pair relevance fixture ranked every labeled candidate first (top-1 accuracy and mean reciprocal rank 1.0); representative live retrieval evaluation remains open.
 
@@ -437,6 +437,11 @@ Remove obsolete writable runtime data stores, duplicated query implementations, 
 Implementation can use bounded parallel work with disjoint ownership. Rotate eligible free workers for isolated implementation/tests/review where useful; the parent also implements bounded parts and reviews/integrates all changes. Do not add a permanent routing ceremony to the product to enforce this development method.
 
 ## 13. Acceptance checklist
+
+This is the specification's acceptance definition. For current implementation,
+verification and open gates, use [the completion audit](warehouse-completion-audit.md).
+Optional JEV remains in scope through the installed capability or the shared
+TypeSafe SDK adapter; authenticated inference needs separate live evidence.
 
 ### Consolidation and authority
 

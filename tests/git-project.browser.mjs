@@ -1,9 +1,11 @@
 import assert from "node:assert/strict";
 import { mkdir, readdir, readFile } from "node:fs/promises";
+import path from "node:path";
 import { gitProjectFixture } from "./fixtures/git-project-app.mjs";
 import { test, expect } from './support/browser-test.mjs';
 
 test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
+  const artifactRoot = process.env.FREELANCER_BROWSER_ARTIFACTS ?? 'artifacts';
   // Real HTTP and Git, simulated native transport.
 
   const fixture = await own(gitProjectFixture());
@@ -131,7 +133,7 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
         }
       });
       await expect.poll(() => oldReadReady, { message: 'Capture a background Git inspection' }).toBe(true);
-      oldCancelled = page.waitForEvent('requestfailed', request => request === oldRequest);
+      oldCancelled = page.waitForEvent('requestfailed', request => request === oldRequest, { timeout: 15000 });
       await page.route('**/api/git/initialize', async route => {
         const response = await route.fetch();
         initialized = true;
@@ -145,9 +147,12 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await page.getByRole("button", { name: "Continue", exact: true }).click();
     if (!offline) {
       await expect.poll(() => initialized, { message: 'Real Git initialization completes' }).toBe(true);
+      // Release the intercepted route before waiting for the cancellation event.
+      // Chromium can defer requestfailed for a routed, still-paused fetch until
+      // Playwright resumes or fulfills the route.
+      releaseInspection();
       const cancelled = await oldCancelled;
       assert.match(cancelled.failure().errorText, /abort|cancel/i, 'the obsolete inspection is cancelled, not the mutation');
-      releaseInspection();
       await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
       await expect(page.getByText('Outdated inspection must not replace setup')).toHaveCount(0);
       releaseInitialize();
@@ -220,12 +225,12 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       (await fixture.app.gitProjects.policy(fixture.project.id)).preset,
       "branch",
     );
-    await mkdir("artifacts/git-project", { recursive: true });
+    await mkdir(path.join(artifactRoot, 'git-project'), { recursive: true });
     await page.locator(".git-project-page").evaluate((e) => {
       e.scrollTop = 0;
     });
     await page.screenshot({
-      path: "artifacts/git-project/desktop.png",
+      path: path.join(artifactRoot, 'git-project/desktop.png'),
       fullPage: true,
     });
     await page.setViewportSize({ width: 600, height: 850 });
@@ -236,7 +241,7 @@ test('git-project', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
       true,
     );
     await page.screenshot({
-      path: "artifacts/git-project/narrow.png",
+      path: path.join(artifactRoot, 'git-project/narrow.png'),
       fullPage: true,
     });
     await page.getByRole("button", { name: "Edit local history", exact: true }).click();

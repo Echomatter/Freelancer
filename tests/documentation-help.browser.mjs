@@ -4,6 +4,7 @@ import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { test, expect } from './support/browser-test.mjs';
 
 const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
+const artifactRoot = process.env.FREELANCER_BROWSER_ARTIFACTS ?? 'artifacts';
 function documented(topic) {
   const section = readme.split(`<!-- help:${topic} -->`)[1]?.split('<!-- /help -->')[0].trim();
   if (!section) throw Error(`Missing documentation for ${topic}`);
@@ -44,7 +45,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     expect(box.x + box.width).toBeLessThanOrEqual(viewport.width);
     expect(box.y + box.height).toBeLessThanOrEqual(viewport.height);
   };
-  await mkdir('artifacts/documentation-help', { recursive: true });
+  await mkdir(path.join(artifactRoot, 'documentation-help'), { recursive: true });
 
   await test.step('hover help without moving the page title or menu cards', async () => {
     await setting('Scheduled prompts');
@@ -63,7 +64,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await insideViewport(tip);
     await tip.hover();
     await expect(tip).toBeVisible();
-    await page.screenshot({ path: 'artifacts/documentation-help/schedules-desktop.png', fullPage: true });
+    await page.screenshot({ path: path.join(artifactRoot, 'documentation-help/schedules-desktop.png'), fullPage: true });
     await page.mouse.move(0, 0);
     await expect(tip).toBeHidden();
     await hint.focus();
@@ -88,7 +89,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await page.getByRole('combobox', { name: 'Help topic' }).selectOption('schedule-timing');
     const tip = await content('schedule-timing');
     await insideViewport(tip);
-    await page.screenshot({ path: 'artifacts/documentation-help/schedule-mobile.png', fullPage: true });
+    await page.screenshot({ path: path.join(artifactRoot, 'documentation-help/schedule-mobile.png'), fullPage: true });
     await page.getByLabel('Name', { exact: true }).tap();
     await expect(tip).toBeHidden();
     await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Keep this unsaved schedule');
@@ -104,7 +105,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await page.getByRole('button', { name: 'Help: Local backups', exact: true }).focus();
     await content('local-backup');
     await page.keyboard.press('Escape');
-    await page.screenshot({ path: 'artifacts/documentation-help/content-storage-desktop.png', fullPage: true });
+    await page.screenshot({ path: path.join(artifactRoot, 'documentation-help/content-storage-desktop.png'), fullPage: true });
     await page.getByRole('button', { name: 'Help: Index coverage', exact: true }).hover();
     await content('index-coverage');
     await page.keyboard.press('Escape');
@@ -112,7 +113,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
     const dialog = page.getByRole('dialog', { name: 'Confirm clean search indexes' });
     await expect(dialog).toContainText('Project files, OpenCode conversations, settings, and drafts are not changed.');
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click();
-    await page.screenshot({ path: 'artifacts/documentation-help/content-storage-maintenance.png', fullPage: true });
+    await page.screenshot({ path: path.join(artifactRoot, 'documentation-help/content-storage-maintenance.png'), fullPage: true });
     await page.locator('.page-title-actions').getByRole('button', { name: 'Search all content', exact: true }).click();
     await page.getByRole('button', { name: 'Help: Search indexed content', exact: true }).focus();
     await content('file-search');
@@ -146,9 +147,14 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await content('worker-models');
     await page.keyboard.press('Escape');
     await setting('Providers');
-    await page.getByRole('button', { name: 'Help: OpenAI color — Provider colors', exact: true }).focus();
+    const picker = page.locator('.provider-color-picker').first();
+    await expect(picker).toBeVisible();
+    const providerName = (await picker.locator('legend').innerText()).replace(/\s+color$/, '');
+    const colorHelp = page.getByRole('button', { name: `Help: ${providerName} color — Provider colors`, exact: true });
+    await colorHelp.focus();
     await content('provider-color');
     await page.keyboard.press('Escape');
+    await expect(picker.getByRole('button', { name: 'Save color', exact: true })).toBeVisible();
     await expect(page.getByRole('button', { name: 'Save provider settings', exact: true })).toBeVisible();
   });
 });

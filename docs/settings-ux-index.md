@@ -73,17 +73,17 @@
 
 ### application/search — Search all content
 
-**Source:** [`IndexedSearch.tsx`](../src/IndexedSearch.tsx). **Type:** global utility; no configuration write. **Width:** collection.
+**Source:** [`IndexedSearch.tsx`](../src/IndexedSearch.tsx). **Type:** knowledge utility with authored memory/fact actions. **Width:** collection.
 
-**Anatomy:** heading/Close/Content & Storage action; search field and explicit All registered projects scope; independent file/conversation errors and Retry; progress/result count; Conversation results and File results groups with project identity, excerpts, source/archive/import information and Open actions; complete-no-results panel linking to index maintenance.
+**Anatomy:** heading/Close/Content & Storage action; search field and explicit All registered projects scope; All content, Files, Conversations, Memories, Facts and Pinned Memory tabs; blank pinned home; independent domain errors, coverage, truncation and Retry; project/model/source/phrase/history/archive filters; live-source actions and exact retained-evidence readers. Memories support note creation/revision, pinning, reversible archive/restore, confirmed forget, historical revisions and durable capture progress. Facts require provenance and selected retained evidence, default to user-stated/unverified, and retain correction history. Complete-no-results panels link to index maintenance.
 
-**Placement verdict:** useful alongside history and indexed data; not a reason to put search inputs inside maintenance. **PR treatment:** standardized heading/context and responsive page geometry. The two result sources retain independent failure handling and provenance.
+**Placement verdict:** useful alongside history and indexed data; search inputs stay on their own page. Shared controls and responsive page geometry apply to search, evidence and edit dialogs. Each domain retains independent failure handling and provenance.
 
 ### application/content-storage — Content & Storage
 
 **Source:** [`ContentStorage.tsx`](../src/ContentStorage.tsx). **Scope:** content indexes and application-local storage. **Width:** collection.
 
-**Anatomy after this PR:** heading with Search all content and Close; section-jump links; independent index/storage error-retry notices; index metrics; Projects; Local data; SQLite maintenance. File access has its own Application settings destination. Projects rows show name/path/archive state, file and chat coverage, archive/restore, and file/conversation index refresh actions. Local data shows ownership flow and nested location cards (owner, path, size/note, Open folder), native warning and Export conversations. Maintenance exposes database/WAL/free-page stats, refresh, Start clean, Optimize, Check and Compact, with reset/compaction confirmations. Project archiving has its own index-before-archive confirmation.
+**Anatomy after this PR:** heading with Search all content and Close; section-jump links; independent index/storage error-retry notices; restored-work warning and explicit recovery confirmation for the captured restore identity; index metrics; Projects; Local data; SQLite maintenance. File access has its own Application settings destination. Projects rows show name/path/archive state, file and chat coverage, archive/restore, and file/conversation index refresh actions. Local data shows ownership flow and nested location cards (owner, path, size/note, Open folder), native warning and Export conversations. Maintenance exposes database/WAL/free-page stats, refresh, Start clean, Optimize, Check and Compact, with reset/compaction confirmations. Project archiving has its own index-before-archive confirmation.
 
 **Placement verdict:** shared file access was wrongly buried after database maintenance. **PR treatment:** a real React slot moves the single existing control panel ahead of maintenance, with an anchor; DOM, reading and keyboard order agree. Storage/index APIs, ownership, archive revisions, confirmations and data-retention behavior remain unchanged. No filesystem access policy is broadened or narrowed.
 

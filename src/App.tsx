@@ -1930,6 +1930,7 @@ export default function App() {
                 )}
                 {view === "search" && (
                   <ContentSearch
+                    projects={data.settings.projects}
                     key={`${settingsScope}:${settingsScope === "project" ? project : "all"}`}
                     project={
                       settingsScope === "project" ? data.project : undefined

@@ -3,12 +3,12 @@ import { resolveDataRoot } from '../server/runtime-config.mjs';
 import { backupLocalData, restoreLocalData } from '../server/data/backup.mjs';
 import { backupRuntimeMigrationSources, restoreRuntimeMigrationSources } from '../server/data/migration-source-backup.mjs';
 import { withRuntimeMaintenanceLock } from '../server/runtime-maintenance.mjs';
+import { storagePathContains } from '../shared/local-storage-path.mjs';
 
 const [operation,...args] = process.argv.slice(2);
 const quiesced = process.env.FREELANCER_MIGRATION_QUIESCED === '1';
 const outsideRuntimeRoot = (runtimeRoot, target) => {
-  const root=path.resolve(runtimeRoot),resolved=path.resolve(target);
-  if (resolved===root || resolved.startsWith(`${root}${path.sep}`))
+  if (storagePathContains(runtimeRoot,target))
     throw Error('Backup bundle and restore destination must be outside the runtime root.');
 };
 let result;

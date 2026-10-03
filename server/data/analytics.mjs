@@ -1,5 +1,6 @@
 import { fork } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 
 const safeInteger = (value, fallback, min, max) => {
   const number = Number(value);
@@ -25,6 +26,7 @@ function validate(sql, params, signal) {
 }
 
 export function createAnalyticsService(filename) {
+  assertLocalStoragePath(filename);
   const pending = new Set();
   let closed = false;
   return {
@@ -32,6 +34,8 @@ export function createAnalyticsService(filename) {
       const statement = validate(sql, params, signal);
       if (closed) throw Object.assign(Error('Analytics service is closed.'), { code: 'ERR_SQLITE_ANALYTICS_CLOSED' });
       if (pending.size >= 4) throw Object.assign(Error('Too many local analytics queries are running.'), { code: 'ERR_SQLITE_ANALYTICS_BUSY' });
+      // Volume inspection belongs to the parent before the per-query deadline.
+      assertLocalStoragePath(filename);
       const timeout = safeInteger(timeoutMs, 2000, 1, 10_000);
       const worker = fork(fileURLToPath(new URL('./analytics-worker.mjs', import.meta.url)), [], {
         execArgv: [], serialization: 'advanced', stdio: ['ignore', 'ignore', 'ignore', 'ipc'],

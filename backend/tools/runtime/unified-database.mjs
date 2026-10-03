@@ -1,4 +1,5 @@
 import { LOCAL_DATA_SCHEMA_VERSION } from '../../../shared/data-contract.mjs';
+import { assertLocalStoragePath } from '../../../shared/local-storage-path.mjs';
 import { existsSync, lstatSync, readFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
@@ -37,9 +38,11 @@ export function unifiedConfig(runtimeRoot, env = process.env) {
   const dataHome = env.FREELANCER_DATA_HOME || resolveDataRoot(env);
   if (!dataHome || !path.isAbsolute(dataHome) || !ID.test(runtimeID ?? ''))
     throw Error('Unified runtime storage requires an absolute data home and explicit runtime ID.');
+  assertLocalStoragePath(dataHome);
   return { dataHome: path.resolve(dataHome), runtimeID };
 }
 export function withUnifiedDatabase(config, write, action) {
+  assertLocalStoragePath(config.dataHome);
   const filename = path.join(config.dataHome, 'freelancer.sqlite');
   if (!existsSync(filename)) throw Error('Unified runtime storage is unavailable; legacy storage remains authoritative.');
   const stat = lstatSync(filename);

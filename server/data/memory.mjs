@@ -1,7 +1,8 @@
 import { randomUUID } from 'node:crypto';
-import { contentMatch } from '../../domain/content-query.mjs';
+import { contentMatch, contentOffset } from '../../domain/content-query.mjs';
 import { createMemoryCaptureService } from './memory-capture.mjs';
 import { createKnowledgeQueries } from './knowledge-queries.mjs';
+import { installKnowledgeResultFunctions } from './knowledge-result.mjs';
 
 const normalize = value => String(value ?? '').normalize('NFKC').trim().toLocaleLowerCase('en-US');
 const json = value => JSON.stringify(value ?? {});
@@ -11,6 +12,7 @@ const requiredText = (value, name, limit = 4000) => {
 };
 
 export function createMemoryService(db, tx) {
+  installKnowledgeResultFunctions(db);
   function pinConversationSnapshotInTransaction({ projectID, sessionID, title, parentID = null, originalPinnedAt, annotationRevision = 0 }) {
     if (!projectID || !sessionID || !Number.isFinite(originalPinnedAt)) throw Error('Pinned conversation identity and original timestamp are required.');
     const id = `conversation:${projectID}:${sessionID}`, now = Date.now(), revisionID = randomUUID();
@@ -389,10 +391,11 @@ export function createMemoryService(db, tx) {
       const archiveRevision=db.prepare("SELECT count(*) AS n FROM memory_changes WHERE memory_id=? AND change_type IN ('archived','restored')").get(id).n;
       return { ...item, ...pin,pinRevision:this.memoryPinRevision(id), archiveRevision, members, revisions, revision: { ...revision, provenance: JSON.parse(revision.provenance_json), captureBoundary: JSON.parse(revision.capture_boundary_json) } };
     },
-    searchMemory(query = '', { kind, projectID, model, phrase = false, pinned = false, includeForgotten = false, includeArchived = false, limit = 25 } = {}) {
+    searchMemory(query = '', { kind, projectID, model, phrase = false, pinned = false, includeForgotten = false, includeArchived = false, limit = 25, offset = 0 } = {}) {
       if (typeof query !== 'string') throw Error('Memory search must be text.');
       const text = query.trim(), match = contentMatch(query,{phrase});
       const bounded = Math.max(1, Math.min(200, Number(limit) || 25));
+      const start = contentOffset(offset);
       const where = ['r.revision=(SELECT max(x.revision) FROM memory_item_revisions x WHERE x.memory_id=m.memory_id)'], params = [];
       if (!includeForgotten) where.push('m.deleted_at IS NULL');
       if (!includeArchived) where.push("m.status<>'archived'");
@@ -403,17 +406,65 @@ export function createMemoryService(db, tx) {
         AND json_extract(mm.locator_json,'$.providerID') || '/' || json_extract(mm.locator_json,'$.modelID')=?)`); params.push(model); }
       const exact = text && db.prepare(`SELECT m.memory_id FROM memory_items m JOIN memory_item_revisions r USING(memory_id)
         LEFT JOIN memory_pins p USING(memory_id) WHERE m.memory_id=? AND ${where.join(' AND ')}`).get(text,...params);
-      if (exact) return { status:'ok', items:[{ ...this.getMemory(exact.memory_id), id:exact.memory_id }],truncated:false };
+      if (exact) { where.push('m.memory_id=?'); params.push(exact.memory_id); }
       if (text && !match) return { status:'empty',items:[],truncated:false };
-      if (match) { where.push('memory_search_fts MATCH ?'); params.push(match); }
-      const rows = db.prepare(`SELECT m.memory_id AS id,m.kind,m.title,m.status,m.source_project_id AS projectID,
-        m.source_session_id AS sessionID,r.revision,r.body,p.pinned_at AS pinnedAt,
-        ${match ? "bm25(memory_search_fts)" : '0'} AS score
+      const useMatch = exact ? '' : match;
+      if (useMatch) { where.push('memory_search_fts MATCH ?'); params.push(useMatch); }
+      const rows = db.prepare(`WITH hits AS MATERIALIZED (
+        SELECT r.revision_id,m.updated_at,m.memory_id,length(CAST(r.body AS BLOB)) AS bodyBytes,${useMatch ? 'bm25(memory_search_fts)' : '0'} AS score
         FROM memory_item_revisions r JOIN memory_items m USING(memory_id) LEFT JOIN memory_pins p USING(memory_id)
-        ${match ? 'JOIN memory_search_fts ON memory_search_fts.revision_id=r.revision_id' : ''}
-        WHERE ${where.join(' AND ')} ORDER BY score,m.updated_at DESC,m.memory_id LIMIT ?`).all(...params,bounded+1);
+        ${useMatch ? 'JOIN memory_search_fts ON memory_search_fts.revision_id=r.revision_id' : ''}
+        WHERE ${where.join(' AND ')} ORDER BY score,m.updated_at DESC,m.memory_id LIMIT ? OFFSET ?),
+        budgeted AS MATERIALIZED (SELECT *,sum(bodyBytes) OVER(ORDER BY score,updated_at DESC,memory_id ROWS UNBOUNDED PRECEDING) AS hashBytes FROM hits)
+        SELECT m.memory_id AS id,m.kind,m.title,m.status,m.source_project_id AS projectID,
+        m.source_session_id AS sessionID,m.source_system AS sourceSystem,r.revision,r.revision_id AS revisionID,
+        substr(r.body,1,240) AS body,length(r.body)>240 AS bodyTruncated,
+        CASE WHEN hits.hashBytes<=4000000 THEN freelancer_body_sha256(r.body) ELSE NULL END AS bodySha256,
+        CASE WHEN hits.hashBytes>4000000 THEN 'hash-work-limit' ELSE NULL END AS bodyHashUnavailableReason,
+        r.created_at AS revisionCreatedAt,m.created_at AS createdAt,m.updated_at AS updatedAt,p.pinned_at AS pinnedAt,
+        (SELECT count(*) FROM memory_changes ch WHERE ch.memory_id=m.memory_id AND ch.change_type IN ('pin','unpin','legacy_pin_imported')) AS pinRevision,
+        (SELECT count(*) FROM memory_changes ch WHERE ch.memory_id=m.memory_id AND ch.change_type IN ('archived','restored')) AS archiveRevision,
+        json_extract(r.provenance_json,'$.snapshotHash') AS snapshotHash,
+        json_object('status',json_extract(r.capture_boundary_json,'$.status'),
+          'capturedAt',json_extract(r.capture_boundary_json,'$.capturedAt'),
+          'attemptedAt',json_extract(r.capture_boundary_json,'$.attemptedAt'),
+          'snapshotCreatedAt',json_extract(r.capture_boundary_json,'$.snapshotCreatedAt'),
+          'messageCount',json_extract(r.capture_boundary_json,'$.messageCount'),
+          'truncated',json_extract(r.capture_boundary_json,'$.truncated')) AS boundaryJSON,
+        (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id) AS sourceRefCount,
+        (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id AND mm.availability='missing_source') AS missingSourceCount,
+        (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id AND mm.availability='unknown_source') AS unknownSourceCount,
+        (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id AND mm.availability='not_captured') AS uncapturedSourceCount,
+        (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id AND (mm.content_hash IS NULL OR mm.source_revision IS NULL)) AS unresolvedSourceCount,
+        (SELECT json_group_array(json(CASE WHEN
+          length(CAST(mr.member_kind||mr.source_ref||COALESCE(mr.source_revision,'')||COALESCE(mr.content_hash,'') AS BLOB))
+            +length(CAST(COALESCE(json_extract(mr.safeLocator,'$.id'),'')||COALESCE(json_extract(mr.safeLocator,'$.providerID'),'')||COALESCE(json_extract(mr.safeLocator,'$.modelID'),'') AS BLOB))
+              >1000000/(SELECT count(*) FROM budgeted)/32 OR mr.locatorOversized
+          THEN json_object('ordinal',mr.ordinal,'kind',substr(mr.member_kind,1,100),'availability',substr(mr.availability,1,100),'summaryTruncated',json('true'))
+          ELSE json_object('ordinal',mr.ordinal,'kind',mr.member_kind,'ref',mr.source_ref,
+          'revision',mr.source_revision,'hash',mr.content_hash,'availability',mr.availability,
+          'locator',json_object('messageID',json_extract(mr.locator_json,'$.id'),
+            'providerID',json_extract(mr.locator_json,'$.providerID'),'modelID',json_extract(mr.locator_json,'$.modelID'))) END))
+          FROM (SELECT *,CASE WHEN length(CAST(locator_json AS BLOB))<=8192 THEN locator_json ELSE '{}' END AS safeLocator,
+            length(CAST(locator_json AS BLOB))>8192 AS locatorOversized
+            FROM memory_members WHERE revision_id=r.revision_id ORDER BY ordinal LIMIT 32) mr) AS sourceRefsJSON,
+        hits.score AS score
+        FROM budgeted hits JOIN memory_item_revisions r USING(revision_id) JOIN memory_items m USING(memory_id) LEFT JOIN memory_pins p USING(memory_id)
+        ORDER BY hits.score,m.updated_at DESC,m.memory_id`).all(...params,bounded+1,start);
       return { status: rows.length ? 'ok' : 'empty', truncated:rows.length>bounded,
-        items: rows.slice(0,bounded).map(row => ({ ...row,excerpt:row.body.slice(0,240), source: { system: row.projectID ? 'freelancer-project' : 'freelancer', projectID: row.projectID, sessionID: row.sessionID } })) };
+        items: rows.slice(0,bounded).map(({boundaryJSON,sourceRefsJSON,...row}) => {
+          const boundary=JSON.parse(boundaryJSON),sourceRefs=JSON.parse(sourceRefsJSON);
+          const omitted=sourceRefs.some(ref=>ref.summaryTruncated);
+          return {...row,bodyTruncated:!!row.bodyTruncated,excerpt:row.body,boundary,messageCount:boundary.messageCount??0,
+            sourceRefs,sourceRefsTruncated:row.sourceRefCount>sourceRefs.length||omitted,
+            ...(omitted?{metadataTruncated:true,metadataTruncationReasons:['source-ref-byte-limit']}:{}),
+            matchKind:exact?'exact-id':useMatch?'fts':'browse',coverage:boundary.status??'authored',
+            sourceAvailability:['missing_source','unknown_source','metadata_only'].includes(boundary.status)?boundary.status:
+              row.missingSourceCount?'missing_source':row.unknownSourceCount?'unknown_source':row.uncapturedSourceCount?'not_captured':
+                row.unresolvedSourceCount?'recorded-provenance':row.sourceRefCount?'retained':'authored',
+            observedAt:boundary.capturedAt??null,capturedAt:boundary.capturedAt??null,indexedAt:row.revisionCreatedAt,
+            source: { system: row.sourceSystem || (row.projectID ? 'freelancer-project' : 'freelancer'),projectID:row.projectID,sessionID:row.sessionID }};
+        }) };
     },
     memoryStatus() {
       return {

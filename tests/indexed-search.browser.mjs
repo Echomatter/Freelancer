@@ -182,11 +182,13 @@ test('indexed-search', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
   try {
     await mkdir(path.join(f.root, 'tools'));
     const indexer = await readFile('backend/tools/project-content-indexer.mjs', 'utf8');
-    await writeFile(path.join(f.root, 'tools', 'project-content-indexer.mjs'), indexer.replace('../../server/data/schema.sql', '../server/data/schema.sql').replace('../../domain/content-query.mjs','../domain/content-query.mjs'));
+    await writeFile(path.join(f.root, 'tools', 'project-content-indexer.mjs'), indexer.replace('../../server/data/schema.sql', '../server/data/schema.sql').replace('../../domain/content-query.mjs','../domain/content-query.mjs').replace('../../shared/local-storage-path.mjs','../shared/local-storage-path.mjs'));
     await mkdir(path.join(f.root, 'server', 'data'), { recursive: true });
     await copyFile('server/data/schema.sql', path.join(f.root, 'server', 'data', 'schema.sql'));
     await mkdir(path.join(f.root,'domain'),{recursive:true});
     await copyFile('domain/content-query.mjs',path.join(f.root,'domain','content-query.mjs'));
+    await mkdir(path.join(f.root,'shared'),{recursive:true});
+    await copyFile('shared/local-storage-path.mjs',path.join(f.root,'shared','local-storage-path.mjs'));
     const secondDirectory = path.join(f.root, 'second-project');
     await mkdir(secondDirectory);
     await writeFile(path.join(f.directory, 'search-source.txt'), 'shared cross project needle appears in the first project file');
@@ -216,7 +218,8 @@ test('indexed-search', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
     const scoped = await f.api('index/search?' + new URLSearchParams({ q: 'shared cross project needle', project: second.id }));
     assert.deepEqual(scoped.results.map((row) => row.project), [second.id]);
     const chats = await f.api('history/search?' + new URLSearchParams({ q: 'shared cross project needle' }));
-    assert.deepEqual(chats.results.map((row) => [row.project, row.session]), [[f.project.id, 'ses_history']]);
+    assert.deepEqual(chats.results.map((row) => [row.project, row.session]), [[f.project.id, 'ses_worker']]);
+    assert.equal(chats.results[0].navigationSession, 'ses_history');
     const scopedChats = await f.api('history/search?' + new URLSearchParams({ q: 'shared cross project needle', project: second.id }));
     assert.deepEqual(scopedChats.results, []);
 
@@ -232,38 +235,38 @@ test('indexed-search', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
     await page.getByRole('button', { name: 'Search all content', exact: true }).click();
     await page.getByRole('searchbox', { name: 'Search all content' }).fill('shared cross project needle');
     await page.getByRole('button', { name: 'Open file Second project/search-source.txt', exact: true }).waitFor();
-    await page.getByRole('button', { name: 'Open conversation Important conversation in History project', exact: true }).waitFor();
+    await page.getByRole('button', { name: 'Open conversation Linked worker in History project', exact: true }).waitFor();
     assert.equal(await page.locator('.indexed-search-result').count(), 3);
     await page.getByRole('tab', { name: 'Files', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Open conversation Important conversation in History project', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Open conversation Linked worker in History project', exact: true })).toHaveCount(0);
     await page.getByRole('button', { name: 'Read retained file evidence Second project/search-source.txt', exact: true }).click();
     const evidenceReader = page.getByRole('dialog', { name: 'Retained file evidence', exact: true });
     await expect(evidenceReader).toContainText('shared cross project needle appears in the second project file');
     await expect(evidenceReader.getByRole('button', { name: 'Open live file', exact: true })).toBeVisible();
     await evidenceReader.getByRole('button', { name: 'Close dialog', exact: true }).click();
     await page.getByRole('tab', { name: 'All content', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Open conversation Important conversation in History project', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open conversation Linked worker in History project', exact: true })).toBeVisible();
     if (process.env.FREELANCER_QA_SHOTS) {
       await mkdir(process.env.FREELANCER_QA_SHOTS, { recursive: true });
       await page.screenshot({ path: path.join(process.env.FREELANCER_QA_SHOTS, 'search-results.png'), fullPage: true });
     }
     await expect(page.locator('#application-settings-links').getByRole('button', { name: 'Conversation history', exact: true, includeHidden: true })).toHaveCount(0);
     await expect(page.locator('#application-settings-links').getByRole('button', { name: 'Git defaults', exact: true, includeHidden: true })).toHaveCount(0);
-    await page.getByRole('button', { name: 'Pin Important conversation', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Pin parent conversation Important conversation', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Unpin parent conversation Important conversation', exact: true })).toBeEnabled();
     assert.ok((await f.api('history?project=' + f.project.id)).sessions.find(row => row.id === 'ses_history').organization.pinnedAt);
     await page.getByRole('button', { name: 'Manage chats', exact: true }).click();
     await expect(page.locator('.history-page').getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeVisible();
     await page.getByRole('button', { name: 'Back to search', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Unpin parent conversation Important conversation', exact: true })).toBeVisible();
     await page.route('**/api/history/pin', route => route.fulfill({ status: 503, contentType: 'application/json', body: JSON.stringify({ error: 'Pin unavailable' }) }));
-    await page.getByRole('button', { name: 'Unpin Important conversation', exact: true }).click();
+    await page.getByRole('button', { name: 'Unpin parent conversation Important conversation', exact: true }).click();
     await expect(page.getByRole('alert')).toContainText('Pin unavailable');
-    await expect(page.getByRole('button', { name: 'Unpin Important conversation', exact: true })).toBeEnabled();
+    await expect(page.getByRole('button', { name: 'Unpin parent conversation Important conversation', exact: true })).toBeEnabled();
     await page.unroute('**/api/history/pin');
-    await page.getByRole('button', { name: 'Unpin Important conversation', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Pin Important conversation', exact: true })).toBeEnabled();
-    await page.getByRole('button', { name: 'Open conversation Important conversation in History project', exact: true }).click();
+    await page.getByRole('button', { name: 'Unpin parent conversation Important conversation', exact: true }).click();
+    await expect(page.getByRole('button', { name: 'Pin parent conversation Important conversation', exact: true })).toBeEnabled();
+    await page.getByRole('button', { name: 'Open conversation Linked worker in History project', exact: true }).click();
     await expect(page.locator('.composer textarea')).toBeVisible();
 
     await openApplicationSettings();
@@ -290,7 +293,7 @@ test('indexed-search', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
     await expect(page.getByRole('button', { name: 'Open file Second project/search-source.txt', exact: true })).toBeVisible();
     failConversationSearch = false;
     await page.getByRole('button', { name: 'Retry search', exact: true }).click();
-    await expect(page.getByRole('button', { name: 'Open conversation Important conversation in History project', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open conversation Linked worker in History project', exact: true })).toBeVisible();
     await page.unroute('**/api/history/search?**');
 
     await page.getByRole('button', { name: 'Search all content', exact: true }).click();
@@ -301,7 +304,7 @@ test('indexed-search', { tag: ['@app'] }, async ({ appBrowser: browser, own }) =
     await page.getByRole('searchbox', { name: 'Search all content' }).fill('');
     await page.getByRole('searchbox', { name: 'Search all content' }).fill('shared cross project needle');
     await expect(page.getByRole('alert')).toContainText('Files: File search unavailable');
-    await expect(page.getByRole('button', { name: 'Open conversation Important conversation in History project', exact: true })).toBeVisible();
+    await expect(page.getByRole('button', { name: 'Open conversation Linked worker in History project', exact: true })).toBeVisible();
     failFileSearch = false;
     await page.getByRole('button', { name: 'Retry search', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Open file Second project/search-source.txt', exact: true })).toBeVisible();

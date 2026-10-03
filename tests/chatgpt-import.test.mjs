@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile, appendFile, writeFile } from 'node:fs/promises';
+import { readFile, appendFile, writeFile, access } from 'node:fs/promises';
 import path from 'node:path';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { codexHistoryFixture } from './fixtures/codex-history.mjs';
@@ -84,8 +84,10 @@ test('skip is final, missing installations are optional, and malformed/foreign t
   const reopened = await f.app.chatgpt.complete(reopen.token, []);
   assert.equal(reopened.project.id, skipped.project.id);
   await f.store.update('settings', settings => ({ ...settings, projects: [] }));
-  const noInstallation = createChatGPTImport({ app: f.app, backendRoot: f.root, codexHome: path.join(f.root, 'absent') });
+  const noInstallation = createChatGPTImport({ app: f.app, backendRoot: f.root, localData: f.app.localData, codexHome: path.join(f.root, 'absent') });
   assert.deepEqual((await noInstallation.preview(f.directory)).chats, []);
+  await assert.rejects(access(path.join(f.root,'.state','local-data','freelancer.sqlite')),/ENOENT/,
+    'the optional importer uses the application-owned store instead of leaking a second SQLite handle');
 });
 
 test('same-name old-folder chats require an explicit source and preserve that provenance', async t => {

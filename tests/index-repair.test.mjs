@@ -17,7 +17,7 @@ test('derived index reset is in-place and preserves memory, pins, revision evide
   const raw = await import('node:sqlite').then(({ DatabaseSync }) => new DatabaseSync(store.filename));
   raw.prepare('INSERT INTO content_meta VALUES(?,?,?)').run('p', 'built_at_utc', 'now');
   raw.prepare(`INSERT INTO chat_search VALUES(?,?,?,?,?,?,?,?)`).run('p','s','m','user','model','1','','stale searchable transcript');
-  raw.prepare('INSERT INTO chat_search_state VALUES(?,?,?,?)').run('p','s',1,1);
+  raw.prepare('INSERT INTO chat_search_state(project_id,session_id,native_updated_at,indexed_at) VALUES(?,?,?,?)').run('p','s',1,1);
   raw.prepare('INSERT INTO project_index_state VALUES(?,?)').run('p',1);
   raw.prepare('INSERT INTO content_source_revisions VALUES(?,?,?,?,?,?)').run('source-1','revision-1','p','notes.md','{}',1);
   raw.close();

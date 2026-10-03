@@ -236,6 +236,7 @@ export function createOpenCodeWarehouse(db,tx) {
       }
       return {status:'ok',job:publicJob,jobStatus:job.status,isCurrent,projectionSafe:manifest.projectionSafe,
         snapshotCompleteness:manifest.snapshotCompleteness,snapshotRevisionSha256:job.snapshotRevisionSha256,retainedPayloadBytes,
+        sessionRevisionSha256:manifest.sessionRevisionSha256,messageRefs:manifest.messageRefs,
         session:{id:header.id,parentID:header.parentID,title:header.title,directorySha256:header.directorySha256,
           time:{created:header.createdAt,updated:header.updatedAt,archived:header.archivedAt}},messages};
     },
@@ -471,7 +472,28 @@ export function createOpenCodeWarehouse(db,tx) {
         WHERE (? IS NULL OR ids.source_system_id=?) ORDER BY ids.source_system_id`)
         .all(sourceSystemID??null,sourceSystemID??null).map(row=>({...row}));
     },
-    readOpenCodeSession({projectID,sessionID,sourceSystemID,limit=100}={}) {
+    readOpenCodeSession({projectID,sessionID,sourceSystemID,snapshotRevisionSha256,limit=100}={}) {
+      if(snapshotRevisionSha256!==undefined) {
+        if(typeof snapshotRevisionSha256!=='string'||!/^[a-f0-9]{64}$/.test(snapshotRevisionSha256)||!sourceSystemID)
+          throw Error('An exact retained snapshot hash and source identity are required.');
+        const job=db.prepare(`SELECT ${jobColumns} FROM opencode_derivation_jobs
+          WHERE source_system_id=? AND project_id=? AND session_id=? AND snapshot_revision_sha256=?
+          ORDER BY created_at DESC,job_id LIMIT 1`).get(sourceSystemID,projectID,sessionID,snapshotRevisionSha256);
+        if(!job) return {status:'missing',projectID,sessionID,sourceSystemID,snapshotRevisionSha256};
+        const retained=this.readWarehouseDerivationSnapshot({id:job.id,revisionToken:job.revisionToken});
+        if(retained.status!=='ok') return {status:retained.status,projectID,sessionID,sourceSystemID,snapshotRevisionSha256,
+          reason:retained.reason,coverage:retained.snapshotCompleteness};
+        const count=Math.max(1,Math.min(500,Math.floor(Number(limit)||100)));
+        const messages=retained.messages.slice(0,count).map((row,ordinal)=>({messageID:row.info.id,ordinal,role:row.info.role,
+          info:row.info,parts:row.parts,omittedPartTypes:row.omittedPartTypes,revisionSha256:retained.messageRefs[ordinal].revisionSha256,
+          sourceRef:`${sourceSystemID}/${projectID}/${sessionID}/${row.info.id}@${retained.messageRefs[ordinal].revisionSha256}`}));
+        return {status:'ok',snapshotRevisionSha256,capturedAt:job.createdAt,indexedAt:job.completedAt,
+          session:{sourceSystemID,projectID,sessionID,parentID:retained.session.parentID,title:retained.session.title,
+            createdAt:retained.session.time.created,updatedAt:retained.session.time.updated,archivedAt:retained.session.time.archived,
+            currentRevisionSha256:retained.sessionRevisionSha256,
+            sourceRef:`${sourceSystemID}/${projectID}/${sessionID}@${retained.sessionRevisionSha256}`},messages,
+          truncated:retained.messages.length>count,coverage:retained.snapshotCompleteness,isCurrent:retained.isCurrent};
+      }
       const session=db.prepare(`SELECT s.source_system_id AS sourceSystemID,s.project_id AS projectID,s.session_id AS sessionID,s.parent_id AS parentID,
         s.title,s.created_at AS createdAt,s.updated_at AS updatedAt,s.archived_at AS archivedAt,s.directory_sha256 AS directorySha256,
         s.current_revision_sha256 AS currentRevisionSha256,r.payload_json AS revisionPayload,r.captured_at AS capturedAt

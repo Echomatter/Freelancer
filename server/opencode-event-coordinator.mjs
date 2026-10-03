@@ -28,7 +28,9 @@ function sessionHint(event) {
   } else if (['session.updated', 'session.created', 'session.status', 'session.idle', 'session.compacted'].includes(type)) {
     id = properties.sessionID ?? properties.info?.id ?? properties.session?.id;
   } else return null;
-  return typeof id === 'string' && idPattern.test(id) ? id : null;
+  return typeof id === 'string' && idPattern.test(id)
+    ? { sessionID: id, coalesce: type === 'message.part.updated' || type === 'message.part.delta' }
+    : null;
 }
 
 // Native notifications are hints only. Each accepted identity is re-read from
@@ -46,6 +48,8 @@ export function createOpenCodeEventCoordinator({
   reconciliationMaxPages = 8,
   reconciliationMaxSessions = 100,
   reconciliationMaxDurationMs = 20_000,
+  partUpdateCoalesceMs = 100,
+  partUpdateMaxWindowMs = 350,
 } = {}) {
   if (!host?.events || !store?.read || !history?.refreshSessionSnapshot || !history?.markWarehouseRefreshNeeded)
     throw Error('OpenCode event coordinator needs the native stream, project store, and snapshot reader.');
@@ -56,8 +60,11 @@ export function createOpenCodeEventCoordinator({
   reconciliationMaxPages = Math.max(1, Math.min(32, Math.floor(Number(reconciliationMaxPages) || 8)));
   reconciliationMaxSessions = Math.max(1, Math.min(500, Math.floor(Number(reconciliationMaxSessions) || 100)));
   reconciliationMaxDurationMs = Math.max(100, Math.min(120_000, Math.floor(Number(reconciliationMaxDurationMs) || 20_000)));
+  partUpdateCoalesceMs = Math.max(10, Math.min(500, Math.floor(Number(partUpdateCoalesceMs) || 100)));
+  partUpdateMaxWindowMs = Math.max(partUpdateCoalesceMs, Math.min(2000, Math.floor(Number(partUpdateMaxWindowMs) || 350)));
   const projects = new Map();
   const pending = new Map();
+  const deferredParts = new Map();
   const active = new Set();
   const activeKeys = new Set();
   const rerunAfterActive = new Map();
@@ -93,6 +100,26 @@ export function createOpenCodeEventCoordinator({
   };
 
   const keyOf = (projectID, sessionID, generation) => `${projectID}\0${generation}\0${sessionID}`;
+  const newerRefresh = (left, right) => !left ? right : !right ? left
+    : (right.revision ?? -1) >= (left.revision ?? -1) ? right : left;
+  const mergeTask = (left, right) => ({ ...left, ...right, refresh: newerRefresh(left?.refresh, right?.refresh) });
+  const scheduledKeys = () => new Set([
+    ...pending.keys(), ...rerunAfterActive.keys(), ...deferredParts.keys(), ...hintWrites.keys(),
+  ]);
+  function clearDeferred(key) {
+    const state = deferredParts.get(key);
+    if (!state) return null;
+    clearTimeout(state.timer);
+    deferredParts.delete(key);
+    return state.task;
+  }
+  function clearProjectDeferred(projectID, generation) {
+    for (const [key, state] of deferredParts) {
+      if (state.task.projectID !== projectID || state.task.generation !== generation) continue;
+      clearTimeout(state.timer);
+      deferredParts.delete(key);
+    }
+  }
   const trackDurableWrite = promise => {
     let tracked;
     tracked = Promise.resolve(promise).finally(() => durableWrites.delete(tracked));
@@ -114,38 +141,75 @@ export function createOpenCodeEventCoordinator({
     projectDirtyWrites.set(key, write);
     return write;
   }
-  function persistHint(project, sessionID, reason = 'event-hint') {
+  function scheduleHint(project, sessionID, refresh, coalesce) {
+    if (stopped || project.controller.signal.aborted) return;
+    const key = keyOf(project.id, sessionID, project.generation);
+    const task = { projectID: project.id, sessionID, directory: project.directory, generation: project.generation,
+      ...(refresh?.id && Number.isSafeInteger(refresh.revision) ? { refresh: { id: refresh.id, revision: refresh.revision } } : {}) };
+    if (!coalesce) {
+      const deferred = clearDeferred(key);
+      enqueue(project, sessionID, newerRefresh(deferred?.refresh, task.refresh));
+      return;
+    }
+    let state = deferredParts.get(key);
+    const now = Date.now();
+    if (!state) {
+      const queued = scheduledKeys();
+      if (!queued.has(key) && queued.size >= queueLimit) {
+        status.droppedHints++;
+        void markProjectDirty(project, 'overflow');
+        return;
+      }
+      state = { firstAt: now, task, timer: null };
+    }
+    else state.task = mergeTask(state.task, task);
+    clearTimeout(state.timer);
+    const deadline = Math.min(now + partUpdateCoalesceMs, state.firstAt + partUpdateMaxWindowMs);
+    state.timer = setTimeout(() => {
+      if (deferredParts.get(key) !== state) return;
+      deferredParts.delete(key);
+      enqueue(project, sessionID, state.task.refresh);
+    }, Math.max(0, deadline - now));
+    deferredParts.set(key, state);
+    notifyIdle();
+  }
+  function persistHint(project, sessionID, reason = 'event-hint', { coalesce = false } = {}) {
     const key = keyOf(project.id, sessionID, project.generation);
     const existing = hintWrites.get(key);
-    if (existing) { existing.again = true; return existing.promise; }
-    if (hintWrites.size >= queueLimit) {
+    if (existing) {
+      existing.again = true;
+      existing.immediate ||= !coalesce;
+      return existing.promise;
+    }
+    const queued = scheduledKeys();
+    if (!queued.has(key) && queued.size >= queueLimit) {
       status.droppedHints++;
       void markProjectDirty(project, 'overflow');
       return Promise.resolve(null);
     }
-    const state = { again: false, promise: null };
+    const state = { again: false, immediate: !coalesce, promise: null };
     state.promise = trackDurableWrite((async () => {
       let marker;
       do {
         state.again = false;
         try { marker = await history.markWarehouseRefreshNeeded({ projectID: project.id, sessionID, reason,
-          signal: shutdownController.signal }); }
+          signal: shutdownController.signal });
+          scheduleHint(project, sessionID, marker, !state.immediate); }
         catch { status.failures++; }
       } while (state.again && !stopped);
-      enqueue(project, sessionID, marker);
       return marker;
     })()).finally(() => hintWrites.delete(key));
     hintWrites.set(key, state);
     return state.promise;
   }
   const notifyIdle = () => {
-    status.pendingSessions = pending.size;
+    status.pendingSessions = pending.size + deferredParts.size;
     status.activeSnapshots = active.size;
-    if (!pending.size && !active.size) {
+    if (!pending.size && !deferredParts.size && !active.size) {
       for (const resolve of idleWaiters.splice(0)) resolve();
     }
   };
-  const waitIdle = () => !pending.size && !active.size
+  const waitIdle = () => !pending.size && !deferredParts.size && !active.size
     ? Promise.resolve()
     : new Promise(resolve => idleWaiters.push(resolve));
 
@@ -201,8 +265,8 @@ export function createOpenCodeEventCoordinator({
     const key = keyOf(project.id, sessionID, project.generation);
     const task = { projectID: project.id, sessionID, directory: project.directory, generation: project.generation,
       ...(refresh?.id && Number.isSafeInteger(refresh.revision) ? { refresh: { id: refresh.id, revision: refresh.revision } } : {}) };
-    if (pending.has(key)) { pending.set(key, task); return; }
-    if (activeKeys.has(key)) { rerunAfterActive.set(key, task); return; }
+    if (pending.has(key)) { pending.set(key, mergeTask(pending.get(key), task)); return; }
+    if (activeKeys.has(key)) { rerunAfterActive.set(key, mergeTask(rerunAfterActive.get(key), task)); return; }
     if (pending.size >= queueLimit) {
       status.droppedHints++;
       void markProjectDirty(project, 'overflow');
@@ -223,17 +287,20 @@ export function createOpenCodeEventCoordinator({
         reader = body.getReader();
         const decoder = new TextDecoder();
         const invalidator = createEventInvalidator(events => {
-          const affected = new Set();
+          const affected = new Map();
           for (const event of events) {
             status.lastEventAt = new Date().toISOString();
-            const sessionID = sessionHint(event);
-            if (sessionID) affected.add(sessionID);
+            const hint = sessionHint(event);
+            if (hint) {
+              const previous = affected.get(hint.sessionID);
+              affected.set(hint.sessionID, { coalesce: hint.coalesce && (previous?.coalesce ?? true) });
+            }
             else {
               status.unaddressableHints++;
               void markProjectDirty(project, 'unaddressable-hint');
             }
           }
-          for (const sessionID of affected) void persistHint(project, sessionID);
+          for (const [sessionID, hint] of affected) void persistHint(project, sessionID, 'event-hint', hint);
         }, 256 * 1024);
         while (!stopped && !signal.aborted) {
           const { done, value } = await reader.read();
@@ -272,6 +339,7 @@ export function createOpenCodeEventCoordinator({
         if (!next || normalizeDirectory(next.directory) !== old.directoryKey) {
           old.controller.abort();
           projects.delete(id);
+          clearProjectDeferred(id, old.generation);
           for (const [key, task] of pending) if (task.projectID === id) pending.delete(key);
           for (const key of rerunAfterActive.keys()) if (key.startsWith(`${id}\0`)) rerunAfterActive.delete(key);
         }
@@ -455,6 +523,8 @@ export function createOpenCodeEventCoordinator({
       clearTimeout(reconciliationTimer);
       for (const controller of maintenanceControllers) controller.abort();
       for (const project of projects.values()) project.controller.abort();
+      for (const state of deferredParts.values()) clearTimeout(state.timer);
+      deferredParts.clear();
       pending.clear();
       rerunAfterActive.clear();
       const loops = [...projects.values()].map(project => project.loop).filter(Boolean);

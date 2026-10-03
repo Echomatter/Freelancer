@@ -2,8 +2,11 @@
 // Python never writes the live application database or its shared WAL.
 import { DatabaseSync } from 'node:sqlite';
 import { pathToFileURL } from 'node:url';
+import { assertLocalStoragePath } from '../../../shared/local-storage-path.mjs';
 
 export function publishProjectIndex(database, staged, projectKey) {
+  assertLocalStoragePath(database);
+  assertLocalStoragePath(staged);
   const db = new DatabaseSync(database);
   try {
     db.exec('PRAGMA busy_timeout=10000; PRAGMA foreign_keys=ON;');

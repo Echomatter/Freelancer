@@ -72,8 +72,11 @@ export default tool({
       .describe("Focused rebuild rules as FAMILY=REGEX"),
     ocr: tool.schema.boolean().optional().describe("Use optional OCR fallback for nearly blank PDF pages"),
     limit: tool.schema.number().int().min(1).max(200).optional().describe("Maximum returned rows"),
+    cursor: tool.schema.string().max(1024).optional().describe("nextCursor for search/chats; repeat the same query, filters, project scope and limit"),
   },
   async execute(args, context: Ctx) {
+    if (args.cursor !== undefined && !['search', 'chats'].includes(args.operation))
+      throw new Error('Cursor is supported only for content search and chats operations.')
     if (args.operation === 'rebuild') {
       await (context as any).ask({ permission: 'edit', patterns: ['content-index database'], always: [], metadata: { operation: 'rebuild' } })
     }
@@ -109,7 +112,7 @@ export default tool({
         method: "POST", headers: { "Content-Type": "application/json", "X-Freelancer-Git-Bridge": process.env.FREELANCER_GIT_BRIDGE || "" },
         body: JSON.stringify({ operation: "query", domain: args.operation === "search" ? "files" : "conversations",
           query: args.query, phrase: args.phrase, source: args.source, role: args.role, status: args.status, model: args.model,
-          limit: args.limit ?? 20, ...scope }), signal: context.abort,
+          limit: args.limit ?? 20, cursor: args.cursor, ...scope }), signal: context.abort,
       })
       const result = await response.json()
       if (!response.ok) throw new Error(result.error || "Content search failed.")

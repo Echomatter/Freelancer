@@ -3,15 +3,23 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { writeFile } from 'node:fs/promises';
-import { spawnSync } from 'node:child_process';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 import { gitProjectFixture } from './fixtures/git-project-app.mjs';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 import { openCodeEvidenceCandidateID } from '../server/data/judgment-evidence.mjs';
 
+const executeNode = promisify(execFile);
+// The HTTP fixture shares this event loop; leave its socket lifecycle responsive.
+async function runNode(args, options = {}) {
+  const output = await executeNode(process.execPath, args, { encoding: 'utf8', timeout: 30_000, windowsHide: true, ...options });
+  return { ...output, status: 0 }; // execFile rejects unsuccessful child exits.
+}
+
 async function indexedEvidence(f, { filename, text, query }) {
   const data=f.app.localData.get(),projectKey=process.platform==='win32'?f.project.directory.toLowerCase():f.project.directory;
   await writeFile(path.join(f.project.directory,filename),text);
-  const indexed=spawnSync(process.execPath,[path.resolve('backend/tools/project-content-indexer.mjs'),'--db',data.filename,'--project-key',projectKey,
+  const indexed=await runNode([path.resolve('backend/tools/project-content-indexer.mjs'),'--db',data.filename,'--project-key',projectKey,
     'rebuild','--root',f.project.directory,'--facts','none'],{cwd:f.project.directory,encoding:'utf8'});
   assert.equal(indexed.status,0,indexed.stderr);
   const hit=data.searchFiles(query,[projectKey]).find(row=>row.path===filename);
@@ -147,7 +155,7 @@ test('knowledge bridge sends bounded evidence to TypeSafe only for an explicit e
   assert.equal(changedCriteria.status,200);assert.equal((await changedCriteria.json()).cached,undefined,'a new immutable criteria version cannot reuse the older judgment');
   await writeFile(path.join(f.project.directory,'judgment-evidence.txt'),'The source file now has a newer revision.');
   const projectKey=process.platform==='win32'?f.project.directory.toLowerCase():f.project.directory;
-  const reindex=spawnSync(process.execPath,[path.resolve('backend/tools/project-content-indexer.mjs'),'--db',data.filename,'--project-key',projectKey,
+  const reindex=await runNode([path.resolve('backend/tools/project-content-indexer.mjs'),'--db',data.filename,'--project-key',projectKey,
     'rebuild','--root',f.project.directory,'--facts','none'],{cwd:f.project.directory,encoding:'utf8'});
   assert.equal(reindex.status,0,reindex.stderr);
   const callsBeforeHistoricalReuse=calls;
@@ -251,10 +259,59 @@ test('knowledge bridge reads bounded OpenCode warehouse snapshots and coverage',
   assert.equal(reasoning.status,400);assert.equal(evaluated,1,'omitted reasoning cannot be cited to TypeSafe');
 });
 
+test('knowledge reads preserve target sessions while mutation provenance uses only the native caller', async t => {
+  const f=await localDataFixture({timers:false});t.after(()=>f.close());
+  const prior=process.env.FREELANCER_GIT_BRIDGE;process.env.FREELANCER_GIT_BRIDGE='knowledge-actor-target-fixture';
+  t.after(()=>{if(prior===undefined)delete process.env.FREELANCER_GIT_BRIDGE;else process.env.FREELANCER_GIT_BRIDGE=prior;});
+  const data=f.app.localData.get(),source=(await import('../server/data/opencode-warehouse.mjs')).openCodeSourceIdentity('actor-target-native-db');
+  let snapshotRevisionSha256;
+  for(const [sessionID,text] of [['target-session','Exact retained target'],['caller-session','Unrelated caller transcript']]) {
+    const captured=data.recordOpenCodeSnapshot({...source,projectID:f.project.id,projectionSafe:true,session:{id:sessionID,title:text,directory:f.directory},messages:[{
+      info:{id:`message-${sessionID}`,role:'assistant'},parts:[{type:'text',text}],
+    }]});
+    if(sessionID==='target-session') snapshotRevisionSha256=captured.snapshotRevisionSha256;
+  }
+  const send=(body,native=true)=>fetch(f.url+`/api/knowledge${native?'/agent':''}`,{method:'POST',headers:{
+    'X-Freelancer-Client':'webpage','Content-Type':'application/json',...(native?{'X-Freelancer-Git-Bridge':'knowledge-actor-target-fixture'}:{}),
+  },body:JSON.stringify(body)});
+  let response=await send({operation:'opencode-read',projectID:f.project.id,sourceSystemID:source.sourceSystemID,
+    sessionID:'target-session',actorSessionID:'caller-session',messageID:'native-caller-message'});
+  assert.equal(response.status,200,await response.clone().text());
+  const retained=await response.json();
+  assert.equal(retained.session.sessionID,'target-session');
+  assert.match(JSON.stringify(retained),/Exact retained target/);
+  assert.doesNotMatch(JSON.stringify(retained),/Unrelated caller transcript/);
+  assert.match(snapshotRevisionSha256,/^[a-f0-9]{64}$/);
+  data.recordOpenCodeSnapshot({...source,projectID:f.project.id,projectionSafe:true,
+    session:{id:'target-session',title:'Changed live target',directory:f.directory},messages:[{
+      info:{id:'message-target-session',role:'assistant'},parts:[{type:'text',text:'Changed live target transcript'}],
+    }]});
+  response=await send({operation:'opencode-read',projectID:f.project.id,sourceSystemID:source.sourceSystemID,
+    sessionID:'target-session',snapshotRevisionSha256,actorSessionID:'forged-native-actor'},false);
+  assert.equal(response.status,200,await response.clone().text());
+  const historical=await response.json();
+  assert.equal(historical.session.sessionID,'target-session');
+  assert.match(JSON.stringify(historical),/Exact retained target/);
+  assert.doesNotMatch(JSON.stringify(historical),/Changed live target transcript/,'browser evidence reads never substitute newer current text');
+  response=await send({operation:'opencode-read',projectID:'unregistered',sourceSystemID:source.sourceSystemID,
+    sessionID:'target-session',snapshotRevisionSha256},false);
+  assert.equal(response.status,400,'browser reads still require a current registered project');
+  response=await send({operation:'remember',title:'Native caller note',body:'Native caller evidence',projectID:f.project.id,
+    sessionID:'target-session',actorSessionID:'caller-session',messageID:'native-caller-message',actor:'forged-actor'});
+  assert.equal(response.status,200,await response.clone().text());const note=await response.json();
+  assert.deepEqual(data.getMemory(note.id).revision.provenance,{sessionID:'caller-session',messageID:'native-caller-message'});
+  assert.equal((await data.analyze('SELECT actor FROM memory_changes WHERE memory_id=$id AND change_type=$type',{$id:note.id,$type:'created'})).rows[0].actor,'caller-session');
+  response=await send({operation:'revise',id:note.id,expectedRevision:1,body:'Browser-authored correction',
+    sessionID:'forged-native-session',actorSessionID:'forged-native-actor',messageID:'forged-native-message',actor:'forged-actor'},false);
+  assert.equal(response.status,200,await response.clone().text());
+  assert.deepEqual(data.getMemory(note.id).revision.provenance,{},'browser input cannot assert native execution provenance');
+  assert.equal((await data.analyze('SELECT actor FROM memory_changes WHERE memory_id=$id AND change_type=$type',{$id:note.id,$type:'revised'})).rows[0].actor,'user');
+});
+
 test('file search applies the same AND, phrase, source, role and status filters through HTTP', async t => {
   const f=await gitProjectFixture();t.after(()=>f.close());
   const projectKey=process.platform==='win32'?f.project.directory.toLowerCase():f.project.directory;
-  const indexed=spawnSync(process.execPath,[path.resolve('backend/tools/project-content-indexer.mjs'),'--db',f.app.localData.get().filename,'--project-key',projectKey,'rebuild','--root',f.project.directory,'--facts','none'],{cwd:f.project.directory,encoding:'utf8'});
+  const indexed=await runNode([path.resolve('backend/tools/project-content-indexer.mjs'),'--db',f.app.localData.get().filename,'--project-key',projectKey,'rebuild','--root',f.project.directory,'--facts','none'],{cwd:f.project.directory,encoding:'utf8'});
   assert.equal(indexed.status,0,indexed.stderr);
   const search=(params)=>fetch(f.url+`/api/index/search?${new URLSearchParams({q:'Hello',project:f.project.id,...params})}`,{headers:{'X-Freelancer-Client':'webpage'}});
   let response=await search({source:'hello.txt',role:'project_source',status:'source'});assert.equal(response.status,200);assert.equal((await response.json()).results.length,1);

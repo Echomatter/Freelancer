@@ -1,5 +1,6 @@
 import { DatabaseSync } from 'node:sqlite';
 import path from 'node:path';
+import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 
 const conflict = () => Object.assign(Error('Index job state changed in another runtime. Refresh before retrying.'), { status:409 });
 
@@ -9,6 +10,7 @@ export function createIndexJobState(filename, runtimeID) {
   if (!path.isAbsolute(filename) || typeof runtimeID !== 'string' || !runtimeID)
     throw Error('Index job state requires a database path and runtime identity.');
   const open = (write, action) => {
+    assertLocalStoragePath(filename);
     const db = new DatabaseSync(filename, { readOnly:!write });
     try {
       db.exec('PRAGMA busy_timeout=10000');

@@ -2,6 +2,7 @@
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { assertLocalStoragePath } from '../shared/local-storage-path.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 export const FRESH_RUNTIME_ID = "freelancer-workspace-v2";
@@ -59,11 +60,16 @@ export function runtimeEnv(config) {
 
 /** Resolve a fresh per-user Freelancer namespace; an explicit override is honored as-is. */
 export function resolveDataRoot(env = process.env, platform = process.platform, home = os.homedir()) {
+  let directory;
   if (env.FREELANCER_DATA_HOME) {
     if (!path.isAbsolute(env.FREELANCER_DATA_HOME)) throw Error("FREELANCER_DATA_HOME must be an absolute path.");
-    return path.resolve(env.FREELANCER_DATA_HOME);
-  }
-  if (platform === "win32") return path.join(env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "Freelancer", "workspace-v2");
-  if (platform === "darwin") return path.join(home, "Library", "Application Support", "Freelancer", "workspace-v2");
-  return path.join(env.XDG_DATA_HOME || path.join(home, ".local", "share"), "freelancer", "workspace-v2");
+    directory = path.resolve(env.FREELANCER_DATA_HOME);
+  } else if (platform === "win32") directory = path.join(env.LOCALAPPDATA || path.join(home, "AppData", "Local"), "Freelancer", "workspace-v2");
+  else if (platform === "darwin") directory = path.join(home, "Library", "Application Support", "Freelancer", "workspace-v2");
+  else directory = path.join(env.XDG_DATA_HOME || path.join(home, ".local", "share"), "freelancer", "workspace-v2");
+  // Other-platform calls are path previews used by fixtures, not storage opens.
+  // Actual consumers always validate the host filesystem before using SQLite.
+  if (platform === process.platform) assertLocalStoragePath(directory);
+  else if (platform === 'win32') assertLocalStoragePath(directory,{platform,inspectFilesystem:false});
+  return directory;
 }

@@ -814,3 +814,8 @@ INSERT INTO data_table_lifecycle VALUES
   ('opencode_refresh_needed','durable','opencode-refresh',21);
 INSERT INTO schema_migrations VALUES (21,'durable-warehouse-publication-and-refresh',unixepoch() * 1000);
 PRAGMA user_version = 21;
+
+ALTER TABLE chat_search_state ADD COLUMN derivation_job_id TEXT REFERENCES opencode_derivation_jobs(job_id);
+ALTER TABLE chat_search_state ADD COLUMN indexed_text_sha256 TEXT;
+INSERT INTO schema_migrations VALUES (22,'conversation-query-evidence',unixepoch() * 1000);
+PRAGMA user_version = 22;

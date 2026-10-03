@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, symlink } from 'node:fs/promises';
+import { existsSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
@@ -107,4 +108,40 @@ test('restore review is monotonic and cannot release background work for a later
   assert.equal(readRestoreRecoveryState(second).automaticWorkBlocked,true);
   assert.throws(()=>acknowledgeRestoreRecovery({dataHome:second,restoreID:firstRestore.restore.id}),{status:409});
   assert.equal(readRestoreRecoveryState(second).automaticWorkBlocked,true);
+});
+
+test('backup and restore reject destinations inside their source through directory aliases',async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-backup-containment-'));
+  t.after(()=>rm(root,{recursive:true,force:true,maxRetries:8,retryDelay:150}));
+  const source=path.join(root,'source'),sourceAlias=path.join(root,'source-alias'),bundle=path.join(root,'bundle'),bundleAlias=path.join(root,'bundle-alias');
+  const store=createLocalDataStore(source);
+  try { store.initializeFreshRuntime(FRESH_RUNTIME_ID); } finally { store.close(); }
+  await symlink(source,sourceAlias,process.platform==='win32'?'junction':'dir');
+  const nestedBackup=path.join(sourceAlias,'nested-backup');
+  await assert.rejects(backupLocalData(source,nestedBackup,{quiesced:true}),/outside the active data directory/);
+  assert.equal(existsSync(nestedBackup),false);
+  await backupLocalData(source,bundle,{quiesced:true});
+  const manifest=await readFile(path.join(bundle,'manifest.json'));
+  await symlink(bundle,bundleAlias,process.platform==='win32'?'junction':'dir');
+  const nestedRestore=path.join(bundleAlias,'nested-restore');
+  await assert.rejects(restoreLocalData(bundle,nestedRestore,{quiesced:true}),/outside the backup directory/);
+  assert.equal(existsSync(nestedRestore),false);
+  assert.deepEqual(await readFile(path.join(bundle,'manifest.json')),manifest);
+  assertFreshRuntimeRoot(source,FRESH_RUNTIME_ID);
+});
+
+test('Windows backup and restore containment ignores path casing', {skip:process.platform!=='win32'},async t=>{
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-backup-case-'));
+  t.after(()=>rm(root,{recursive:true,force:true,maxRetries:8,retryDelay:150}));
+  const source=path.join(root,'MixedCaseSource'),bundle=path.join(root,'MixedCaseBundle');
+  const store=createLocalDataStore(source);
+  try { store.initializeFreshRuntime(FRESH_RUNTIME_ID); } finally { store.close(); }
+  const nestedBackup=path.join(source.toLowerCase(),'nested-backup');
+  await assert.rejects(backupLocalData(source,nestedBackup,{quiesced:true}),/outside the active data directory/);
+  assert.equal(existsSync(nestedBackup),false);
+  await backupLocalData(source,bundle,{quiesced:true});
+  const nestedRestore=path.join(bundle.toLowerCase(),'nested-restore');
+  await assert.rejects(restoreLocalData(bundle,nestedRestore,{quiesced:true}),/outside the backup directory/);
+  assert.equal(existsSync(nestedRestore),false);
+  assertFreshRuntimeRoot(source,FRESH_RUNTIME_ID);
 });

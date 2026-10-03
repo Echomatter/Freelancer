@@ -33,6 +33,7 @@ const Knowledge: Plugin = async ({ directory }) => {
         locator: tool.schema.string().optional(),
         unitHash: tool.schema.string().optional(),
         limit: tool.schema.number().int().min(1).max(200).optional(),
+        cursor: tool.schema.string().max(1024).optional().describe('nextCursor from a query page; repeat the same domain, query, filters, project scope and limit. Pages reflect a moving index, not a stable snapshot.'),
         kind: tool.schema.string().optional(),
         id: tool.schema.string().optional(),
         relationID: tool.schema.string().optional(),
@@ -80,7 +81,8 @@ const Knowledge: Plugin = async ({ directory }) => {
         reportedProvider: tool.schema.string().optional(),
         reportedModel: tool.schema.string().optional(),
         projectID: tool.schema.string().optional(),
-        sessionID: tool.schema.string().optional(),
+        sessionID: tool.schema.string().optional().describe('Target native conversation for opencode-read; independent of the caller conversation'),
+        snapshotRevisionSha256: tool.schema.string().optional().describe('Exact retained snapshot hash returned by a conversation search hit'),
         sourceSystemID: tool.schema.string().optional(),
         runID: tool.schema.string().optional(),
         resume: tool.schema.boolean().optional(),
@@ -98,7 +100,9 @@ const Knowledge: Plugin = async ({ directory }) => {
         if (url.protocol !== 'http:' || url.hostname !== '127.0.0.1') throw Error('Local knowledge service required.');
         const response = await fetch(new URL('/api/knowledge/agent', url), {
           method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Freelancer-Git-Bridge': process.env.FREELANCER_GIT_BRIDGE || '' },
-          body: JSON.stringify({ ...args, directory, sessionID: context.sessionID, messageID: context.messageID }), signal: context.abort,
+          // The selected source is independent of the native caller identity.
+          // Stamp provenance after caller input so it cannot impersonate a session.
+          body: JSON.stringify({ ...args, directory, actorSessionID: context.sessionID, messageID: context.messageID }), signal: context.abort,
         });
         const result = await response.json();
         if (!response.ok) throw Error(result.error || 'Knowledge operation failed.');

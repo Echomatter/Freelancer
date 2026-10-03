@@ -57,8 +57,8 @@ function eventHost() {
   };
 }
 
-const messageEvent = sessionID => ({
-  type: 'message.part.updated',
+const messageEvent = (sessionID, type = 'message.updated') => ({
+  type,
   properties: { part: { id: 'part_fixture', sessionID } },
 });
 
@@ -93,6 +93,137 @@ test('native message hints coalesce per session and refresh both parent and work
   ]);
   assert.equal(coordinator.status.snapshots, 2);
   assert.equal(coordinator.status.unaddressableHints, 0, 'unknown projects cannot enqueue session IDs');
+});
+
+test('distinct streamed part deltas coalesce across completed snapshot boundaries and retain the newest marker', async t => {
+  const host = eventHost(), calls = [], cleared = [], marked = [];
+  let latest = 'delta one', revision = 0, releaseFirst;
+  const firstSnapshot = new Promise(resolve => { releaseFirst = resolve; });
+  const history = refreshStore({
+    async markWarehouseRefreshNeeded({ projectID, sessionID }) {
+      const marker = { id: `refresh_${projectID}_${sessionID}`, revision: ++revision, projectID, sessionID };
+      marked.push(marker);
+      return marker;
+    },
+    async clearWarehouseRefreshNeeded(marker) { cleared.push(marker); return { cleared: true }; },
+    async refreshSessionSnapshot(projectID, sessionID) {
+      calls.push({ projectID, sessionID, body: latest });
+      if (calls.length === 1) await firstSnapshot;
+      return { captured: true, adequateCapture: true };
+    },
+  });
+  const coordinator = createOpenCodeEventCoordinator({ host,
+    store: { read: async () => ({ projects: [{ id: 'p', directory: 'C:/project' }] }) }, history,
+    partUpdateCoalesceMs: 35, partUpdateMaxWindowMs: 140, projectRefreshMs: 100_000 });
+  t.after(() => coordinator.stop());
+  await coordinator.refreshProjects();
+
+  host.send('C:/project', messageEvent('ses_stream', 'message.part.updated'));
+  await waitFor(() => calls.length === 1, 'first authoritative snapshot begins after the bounded quiet window');
+  latest = 'delta two';
+  host.send('C:/project', messageEvent('ses_stream', 'message.part.delta'));
+  releaseFirst();
+  await waitFor(() => cleared.some(marker => marker.id.includes('ses_stream')));
+  await tick();
+  assert.equal(calls.length, 1, 'a distinct delta just after a completed read remains in its coalescing window');
+
+  latest = 'delta three';
+  host.send('C:/project', messageEvent('ses_stream', 'message.part.updated'));
+  await coordinator.flush();
+  assert.deepEqual(calls.map(row => row.body), ['delta one', 'delta three'],
+    'the follow-up authoritative read captures the latest source state without indexing the intermediate delta');
+  assert.equal(coordinator.status.snapshots, 2);
+  const sessionMarkers = marked.filter(marker => marker.sessionID === 'ses_stream');
+  assert.equal(cleared.filter(marker => marker.id.includes('ses_stream')).at(-1).revision,
+    sessionMarkers.at(-1).revision, 'the follow-up read acknowledges the latest durable marker revision');
+});
+
+test('sustained streamed deltas cannot postpone a session snapshot beyond the maximum coalescing window', async t => {
+  const host = eventHost(), calls = [];
+  let latest = 'delta 0';
+  const history = refreshStore({ async refreshSessionSnapshot(projectID, sessionID) {
+    calls.push({ projectID, sessionID, body: latest, at: Date.now() });
+    return { captured: true, adequateCapture: true };
+  } });
+  const coordinator = createOpenCodeEventCoordinator({ host,
+    store: { read: async () => ({ projects: [{ id: 'p', directory: 'C:/project' }] }) }, history,
+    partUpdateCoalesceMs: 40, partUpdateMaxWindowMs: 120, projectRefreshMs: 100_000 });
+  t.after(() => coordinator.stop());
+  await coordinator.refreshProjects();
+  const started = Date.now();
+  for (let index = 0; index < 8; index++) {
+    latest = `delta ${index}`;
+    host.send('C:/project', messageEvent('ses_stream', index % 2 ? 'message.part.delta' : 'message.part.updated'));
+    await new Promise(resolve => setTimeout(resolve, 15));
+  }
+  await waitFor(() => calls.length > 0, 'a snapshot starts while part updates continue');
+  assert.ok(calls[0].at - started < 240, `the maximum-window snapshot started after ${calls[0].at - started}ms`);
+  await coordinator.flush();
+  assert.equal(calls.at(-1).body, latest, 'the final authoritative snapshot reflects the latest streamed state');
+});
+
+test('slow durable marker writes cannot hold part scheduling behind an unbounded hint loop', async t => {
+  const host = eventHost(), calls = [], marks = [];
+  let latest = 'delta 0', revision = 0;
+  const history = refreshStore({
+    async markWarehouseRefreshNeeded({ projectID, sessionID, reason }) {
+      if (sessionID) await new Promise(resolve => setTimeout(resolve, 70));
+      const marker = { id: `refresh_${projectID}_${sessionID ?? reason}`, revision: ++revision, projectID, sessionID, reason };
+      marks.push(marker);
+      return marker;
+    },
+    async refreshSessionSnapshot(projectID, sessionID) {
+      calls.push({ projectID, sessionID, body: latest, at: Date.now() });
+      return { captured: true, adequateCapture: true };
+    },
+  });
+  const coordinator = createOpenCodeEventCoordinator({ host,
+    store: { read: async () => ({ projects: [{ id: 'p', directory: 'C:/project' }] }) }, history,
+    partUpdateCoalesceMs: 35, partUpdateMaxWindowMs: 100, projectRefreshMs: 100_000 });
+  t.after(() => coordinator.stop());
+  await coordinator.refreshProjects();
+  const started = Date.now();
+  for (let index = 0; index < 12; index++) {
+    latest = `delta ${index}`;
+    host.send('C:/project', messageEvent('ses_slow_writer', index % 2 ? 'message.part.delta' : 'message.part.updated'));
+    await new Promise(resolve => setTimeout(resolve, 18));
+  }
+  await waitFor(() => calls.length > 0, 'a snapshot runs while marker writes and part deltas continue');
+  assert.ok(calls[0].at - started < 350, `first snapshot started after ${calls[0].at - started}ms despite slow writes`);
+  await coordinator.flush();
+  assert.equal(calls.at(-1).body, latest, 'the final refresh follows the last marker and sees the latest authoritative state');
+  assert.ok(marks.filter(marker => marker.sessionID === 'ses_slow_writer').length > 1,
+    'the durable marker writer processed additional coalesced revisions while refresh scheduling progressed');
+});
+
+test('distinct deferred sessions respect maxPending and overflow creates a durable project marker', async t => {
+  const host = eventHost(), marks = [], calls = [];
+  const history = refreshStore({
+    async markWarehouseRefreshNeeded(input) {
+      const marker = { id: `refresh_${input.projectID}_${input.sessionID ?? input.reason}`, revision: 1, ...input };
+      marks.push(marker);
+      return marker;
+    },
+    async refreshSessionSnapshot(projectID, sessionID) {
+      calls.push({ projectID, sessionID });
+      return { captured: true, adequateCapture: true };
+    },
+  });
+  const coordinator = createOpenCodeEventCoordinator({ host,
+    store: { read: async () => ({ projects: [{ id: 'p', directory: 'C:/project' }] }) }, history,
+    maxPending: 2, partUpdateCoalesceMs: 35, partUpdateMaxWindowMs: 100, projectRefreshMs: 100_000 });
+  t.after(() => coordinator.stop());
+  await coordinator.refreshProjects();
+  host.send('C:/project', messageEvent('ses_one', 'message.part.updated'));
+  await waitFor(() => marks.some(marker => marker.sessionID === 'ses_one'), 'first deferred session has a durable marker');
+  host.send('C:/project', messageEvent('ses_two', 'message.part.delta'));
+  await waitFor(() => marks.some(marker => marker.sessionID === 'ses_two'), 'second deferred session has a durable marker');
+  host.send('C:/project', messageEvent('ses_three', 'message.part.updated'));
+  await waitFor(() => coordinator.status.droppedHints === 1, 'a third deferred session overflows the bounded queue');
+  await coordinator.flush();
+  assert.deepEqual(calls.map(row => row.sessionID).sort(), ['ses_one', 'ses_two']);
+  assert.ok(marks.some(marker => marker.reason === 'overflow' && marker.projectID === 'p' && marker.sessionID === null),
+    'dropped session-specific work leaves a durable project-wide reconciliation marker');
 });
 
 test('snapshot refresh verifies native project ownership and records only authoritative message responses', async t => {

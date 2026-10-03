@@ -179,9 +179,16 @@ export async function startServer({ application: app, assets, port = 0, readActi
         }
         if (route === '/api/knowledge/agent' || route === '/api/knowledge') {
           if (req.method !== 'POST' || route.endsWith('/agent') && !agentBridge) return send(403, { error: 'Native knowledge tool only' });
-          if (route==='/api/knowledge' && !['query','search','read','status','claims','read-claim','pin','archive','refresh','evidence','remember','revise','forget','entity','entity-search','claim','correct-claim','relate','revise-relation','relation-history','relations','delete-relation','delete-entity'].includes(body.operation))
+          if (body.cursor !== undefined && !['query','search','claims'].includes(body.operation))
+            return send(400,{error:'Query continuation is supported only for query, search or claims.'});
+          if (route==='/api/knowledge' && !['query','search','read','status','claims','read-claim','opencode-read','pin','archive','refresh','evidence','remember','revise','forget','entity','entity-search','claim','correct-claim','relate','revise-relation','relation-history','relations','delete-relation','delete-entity'].includes(body.operation))
             return send(403,{error:'This operation requires the native knowledge tool.'});
           const data = app.localData.get();
+          // Native tools stamp execution identity separately from a source read
+          // target. Older trusted adapters used sessionID for their actor.
+          const actorSessionID = agentBridge ? body.actorSessionID ?? body.sessionID : undefined;
+          const actor = actorSessionID ?? 'user';
+          const actorMessageID = agentBridge ? body.messageID : undefined;
           const parseObject = (value, label, limit = 20_000) => {
             if (value === undefined) return {};
             if (typeof value !== 'string' || value.length > limit) throw Error(`${label} must be bounded JSON text.`);
@@ -207,18 +214,30 @@ export async function startServer({ application: app, assets, port = 0, readActi
           };
           switch (body.operation) {
             case 'query': return send(200,await app.knowledgeQuery.query(body));
-            case 'search': return send(200, data.searchMemory(body.query ?? '', { kind: body.kind,projectID:body.projectID,model:body.model,phrase:body.phrase===true,pinned:body.pinnedOnly===true,includeArchived:body.includeArchived===true, limit: body.limit }));
+            case 'search': {
+              const found=await app.knowledgeQuery.query({domain:'memories',query:body.query ?? '',projectID:body.projectID,
+                projectDirectory:body.projectDirectory,global:body.global,kind:body.kind,model:body.model,
+                phrase:body.phrase ?? false,pinnedOnly:body.pinnedOnly ?? body.pinned ?? false,
+                includeArchived:body.includeArchived ?? false,limit:body.limit,cursor:body.cursor});
+              return send(200,{...found,status:found.results.length?'ok':'empty',items:found.results});
+            }
             case 'read': return send(200, data.getMemory(body.id,body.revision) ?? { status: 'missing', id: body.id });
-            case 'claims': return send(200,data.searchClaims(body));
+            case 'claims': {
+              const found=await app.knowledgeQuery.query({domain:'facts',query:body.query ?? '',
+                projectID:body.projectID,projectDirectory:body.projectDirectory,global:body.global,model:body.model,
+                modelProvider:body.modelProvider,epistemicState:body.epistemicState,origin:body.origin,
+                phrase:body.phrase ?? false,includeHistorical:body.includeHistorical ?? false,limit:body.limit,cursor:body.cursor});
+              return send(200,{...found,status:found.results.length?'ok':'empty'});
+            }
             case 'read-claim': return send(200,data.readClaim(body.id) ?? {status:'missing',id:body.id});
-            case 'pin': return send(200,data.setMemoryPin({id:body.id,pinned:body.pinned,expectedRevision:body.expectedRevision,actor:body.sessionID ?? 'user'}));
+            case 'pin': return send(200,data.setMemoryPin({id:body.id,pinned:body.pinned,expectedRevision:body.expectedRevision,actor}));
             case 'archive':
             case 'restore': {
               const archived=body.operation==='restore'?false:body.archived ?? (agentBridge?true:undefined);
               if(typeof archived!=='boolean'||!Number.isSafeInteger(body.expectedRevision)||body.expectedRevision<0)
                 throw Error('Choose Archive or Restore and the current memory archive revision.');
               const action=archived?'archiveMemory':'restoreMemory';
-              return send(200,data[action]({id:body.id,expectedRevision:body.expectedRevision,actor:body.sessionID ?? 'user',reason:body.reason}));
+              return send(200,data[action]({id:body.id,expectedRevision:body.expectedRevision,actor,reason:body.reason}));
             }
             case 'refresh': return send(200,await app.history.refreshMemory(body.id));
             case 'evidence': return send(200,data.readContentEvidence(body));
@@ -232,22 +251,22 @@ export async function startServer({ application: app, assets, port = 0, readActi
             case 'claim': {
               const evidence = parseObject(body.evidenceJson, 'Claim evidence', 100_000).items;
               if (!Array.isArray(evidence)) throw Error('Claim evidence must contain an items array.');
-              return send(200, data.addClaim({ ...body, value: body.valueJson === undefined ? undefined : parseJSON(body.valueJson, 'Claim value'), scope: parseObject(body.scopeJson, 'Claim scope'), evidence, actor: body.sessionID, method: body.method ?? (agentBridge?'native-tool':'user-interface') }));
+              return send(200, data.addClaim({ ...body, value: body.valueJson === undefined ? undefined : parseJSON(body.valueJson, 'Claim value'), scope: parseObject(body.scopeJson, 'Claim scope'), evidence, actor, method: body.method ?? (agentBridge?'native-tool':'user-interface') }));
             }
             case 'correct-claim': {
               const evidence = parseObject(body.evidenceJson, 'Claim evidence', 100_000).items;
               if (!Array.isArray(evidence)) throw Error('Claim evidence must contain an items array.');
-              return send(200, data.correctClaim({ ...body, id: body.id, value: body.valueJson === undefined ? undefined : parseJSON(body.valueJson, 'Claim value'), scope: body.scopeJson === undefined ? undefined : parseObject(body.scopeJson, 'Claim scope'), evidence, actor: body.sessionID, method: body.method ?? 'native-tool' }));
+              return send(200, data.correctClaim({ ...body, id: body.id, value: body.valueJson === undefined ? undefined : parseJSON(body.valueJson, 'Claim value'), scope: body.scopeJson === undefined ? undefined : parseObject(body.scopeJson, 'Claim scope'), evidence, actor, method: body.method ?? 'native-tool' }));
             }
-            case 'relate': return send(200, data.addRelation({ from: body.from, to: body.to, type: body.type, validFrom:body.validFrom,validTo:body.validTo,actor:body.sessionID,reason:body.reason,provenance: { sessionID: body.sessionID, messageID: body.messageID } }));
-            case 'revise-relation': return send(200,data.reviseRelation({...body,id:body.relationID,actor:body.sessionID,provenance:body.provenanceJson===undefined?undefined:parseObject(body.provenanceJson,'Relation provenance')}));
+            case 'relate': return send(200, data.addRelation({ from: body.from, to: body.to, type: body.type, validFrom:body.validFrom,validTo:body.validTo,actor,reason:body.reason,provenance: { sessionID: actorSessionID, messageID: actorMessageID } }));
+            case 'revise-relation': return send(200,data.reviseRelation({...body,id:body.relationID,actor,provenance:body.provenanceJson===undefined?undefined:parseObject(body.provenanceJson,'Relation provenance')}));
             case 'relation-history': return send(200,{status:'ok',revisions:data.relationHistory({id:body.relationID,limit:body.limit})});
             case 'relations': return send(200, { status:'ok', relations:data.listRelations({ entityID:body.id, asOf:body.asOf, limit:body.limit }) });
-            case 'delete-relation': return send(200, data.deleteRelation({ id:body.relationID, actor:body.sessionID, reason:body.reason }));
-            case 'delete-entity': return send(200, data.deleteEntity({ id:body.id, actor:body.sessionID, reason:body.reason }));
-            case 'remember': return send(200, data.createMemory({ kind: body.type ?? 'note', title: body.title, body: body.body, provenance: { sessionID: body.sessionID, messageID: body.messageID }, source: { projectID: body.projectID }, actor: body.sessionID }));
-            case 'revise': return send(200, data.reviseMemory({ id: body.id, expectedRevision: body.expectedRevision, body: body.body, provenance: { sessionID: body.sessionID, messageID: body.messageID }, actor: body.sessionID }));
-            case 'forget': return send(200, data.forgetMemory({ id: body.id, actor: body.sessionID, reason: body.reason }));
+            case 'delete-relation': return send(200, data.deleteRelation({ id:body.relationID, actor, reason:body.reason }));
+            case 'delete-entity': return send(200, data.deleteEntity({ id:body.id, actor, reason:body.reason }));
+            case 'remember': return send(200, data.createMemory({ kind: body.type ?? 'note', title: body.title, body: body.body, provenance: { sessionID: actorSessionID, messageID: actorMessageID }, source: { projectID: body.projectID }, actor }));
+            case 'revise': return send(200, data.reviseMemory({ id: body.id, expectedRevision: body.expectedRevision, body: body.body, provenance: { sessionID: actorSessionID, messageID: actorMessageID }, actor }));
+            case 'forget': return send(200, data.forgetMemory({ id: body.id, actor, reason: body.reason }));
             case 'analyze': return send(200, await data.analyze(body.sql, parseObject(body.paramsJson, 'SQL parameters'), { maxRows: 200, maxBytes: 400_000, timeoutMs: 1500, signal: requestAbort.signal }));
             case 'judgment-definition': return send(200, data.createJudgmentDefinition({ id:body.definitionID, version:body.definitionVersion, questionID:body.questionID, primitive:body.primitive, question:parseJSON(body.questionJson,'Judgment question'), criteria:parseObject(body.criteriaJson,'Judgment criteria',20_000) }));
             case 'judgment-provider-status': return send(200, app.judgmentProvider.status());
@@ -345,7 +364,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
             case 'opencode-read': {
               const settings=await app.store.read('settings');
               if(!settings.projects.some(item=>item.id===body.projectID)) throw Error('Choose a registered project.');
-              return send(200,data.readOpenCodeSession({projectID:body.projectID,sessionID:body.sessionID,sourceSystemID:body.sourceSystemID,limit:body.limit}));
+              return send(200,data.readOpenCodeSession({projectID:body.projectID,sessionID:body.sessionID,sourceSystemID:body.sourceSystemID,snapshotRevisionSha256:body.snapshotRevisionSha256,limit:body.limit}));
             }
             case 'warehouse-status': {
               const ingestRuns=data.openCodeIngestStatus({sourceSystemID:body.sourceSystemID,projectID:body.projectID});
@@ -486,7 +505,8 @@ export async function startServer({ application: app, assets, port = 0, readActi
             return send(200,await history.searchMemory(url.searchParams.get('q') ?? '',{
               projectID:url.searchParams.get('project') || undefined,kind:url.searchParams.get('kind') || undefined,
               model:url.searchParams.get('model') || undefined,phrase:url.searchParams.get('phrase')==='true',
-              pinned:url.searchParams.get('pinnedOnly')==='true',includeArchived:url.searchParams.get('includeArchived')==='true',limit:Number(url.searchParams.get('limit'))||undefined}));
+              pinned:url.searchParams.get('pinnedOnly')==='true',includeArchived:url.searchParams.get('includeArchived')==='true',limit:Number(url.searchParams.get('limit'))||undefined,
+              cursor:url.searchParams.get('cursor')||undefined}));
           if (route==='/api/memory/item'&&req.method==='GET')
             return send(200,await history.readMemory(url.searchParams.get('id'),url.searchParams.has('revision')?Number(url.searchParams.get('revision')):undefined));
           if (route==='/api/memory/refresh'&&req.method==='POST') return send(200,await history.refreshMemory(body.id));
@@ -504,6 +524,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
               source: url.searchParams.get("source") ?? "", role: url.searchParams.get("role") ?? "",
               status: url.searchParams.get("status") ?? "", phrase: url.searchParams.get("phrase") === "true",
               limit:Number(url.searchParams.get('limit'))||undefined,
+              cursor:url.searchParams.get('cursor')||undefined,
             }));
           if (route === "/api/index/maintenance" && req.method === "POST")
             return send(200, await history.maintainIndex(body.operation));
@@ -512,6 +533,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
               project: url.searchParams.get("project") ?? "", model: url.searchParams.get("model") ?? "",
               phrase: url.searchParams.get("phrase") === "true",
               limit:Number(url.searchParams.get('limit'))||undefined,
+              cursor:url.searchParams.get('cursor')||undefined,
             }));
           if (route === "/api/history/index" && req.method === "POST")
             return send(200, await history.rebuildChatSearch());

@@ -3,6 +3,7 @@ import { existsSync, lstatSync } from 'node:fs';
 import { DatabaseSync } from 'node:sqlite';
 import { randomUUID } from 'node:crypto';
 import { LOCAL_DATA_SCHEMA_VERSION } from '../../shared/data-contract.mjs';
+import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 
 const APP_ID=1414482766;
 const conflict=message=>Object.assign(Error(message),{status:409});
@@ -15,6 +16,7 @@ const conflict=message=>Object.assign(Error(message),{status:409});
 export function readRestoreRecoveryState(dataHome) {
   if (typeof dataHome!=='string'||!path.isAbsolute(dataHome)) throw Error('Restore recovery requires an absolute data home.');
   dataHome=path.resolve(dataHome);
+  assertLocalStoragePath(dataHome);
   if (!existsSync(dataHome)) return {required:false,automaticWorkBlocked:false,restoreID:null,restore:null};
   const root=lstatSync(dataHome);
   if (!root.isDirectory()||root.isSymbolicLink()) throw Error('Restore recovery data home must be a regular directory.');
@@ -64,6 +66,7 @@ export function acknowledgeRestoreRecovery({dataHome,restoreID}={}) {
   if (typeof dataHome!=='string'||!path.isAbsolute(dataHome)||typeof restoreID!=='string'||!restoreID.startsWith('explicit-restore:'))
     throw Error('Restore review requires the current restore identity and an absolute data home.');
   dataHome=path.resolve(dataHome);
+  assertLocalStoragePath(dataHome);
   const root=lstatSync(dataHome),filename=path.join(dataHome,'freelancer.sqlite');
   if(!root.isDirectory()||root.isSymbolicLink()) throw Error('Restore recovery data home must be a regular directory.');
   const database=lstatSync(filename);

@@ -13,6 +13,7 @@ type FileHit = {
 };
 type ConversationHit = {
   project: string; projectName: string; session: string; title: string; excerpt: string; imported?: boolean;
+  navigationSession?: string; navigationTitle?: string; evidence?: EvidenceRef | null; capturedAt?: number; indexedAt?: number;
   organization?: { pinnedAt?: number | null; revision?: number; archiveScope?: string; nativeArchived?: boolean; projectArchived?: boolean };
 };
 type CaptureJob = { id?: string; status: string; error?: string; attempts?: number };
@@ -28,28 +29,38 @@ type MemoryItem = MemoryHit & {
   members?: MemoryMember[]; revisions?: { revision: number; createdAt: number }[];
   messages: { ordinal: number; role: string; createdAt: number | null; text: string; providerID?: string | null; modelID?: string | null }[];
 };
-type EvidenceRef = { kind?: string; sourceIdentity?: string; revisionIdentity?: string; locator?: string; unitSha256?: string; revisionSha256?: string; projectID?: string; sessionID?: string; memoryID?: string; memoryRevision?: number; revision?: number };
+type EvidenceRef = { kind?: string; sourceIdentity?: string; revisionIdentity?: string; locator?: string; unitSha256?: string; revisionSha256?: string; projectID?: string; sessionID?: string; sourceSystemID?: string; snapshotRevisionSha256?: string; memoryID?: string; memoryRevision?: number; revision?: number };
+type RetainedConversation = { status: string; snapshotRevisionSha256: string; capturedAt?: number; truncated?: boolean; coverage?: string;
+  session?: { title: string; sourceSystemID: string; projectID: string; sessionID: string; sourceRef?: string };
+  messages?: { messageID: string; role: string; revisionSha256: string; parts: { type: string; text?: string }[] }[];
+  navigationProject: string; navigationSession: string };
 type SelectedEvidence = EvidenceRef & { id: string; relation: string; label?: string };
-type ClaimEditor = { id?: string; expectedEpistemicState?: string; predicate: string; value: string; origin: string; epistemicState: string; method: string; reason: string; projectID: string; evidence: SelectedEvidence[] };
+type ClaimEditor = { id?: string; expectedEpistemicState?: string; predicate: string; value: string; originalValue?: unknown; originalScope?: Record<string, unknown>; originalProjectID?: string; origin: string; epistemicState: string; method: string; reason: string; projectID: string; evidence: SelectedEvidence[] };
 type EvidenceChoice = { id: string; label: string; evidence: SelectedEvidence };
 type ClaimHit = {
   id: string; predicate: string; value?: unknown; subjectName?: string; objectName?: string;
   origin: string; method: string; epistemicState: string; scope?: unknown;
   validFrom?: number | null; validTo?: number | null; observedAt?: number | null; recordedAt?: number;
   evidence?: (EvidenceRef & { id: string; relation: string; ref?: EvidenceRef })[];
+  sourceRefCount?: number; sourceRefsTruncated?: boolean; valueTruncated?: boolean; scopeTruncated?: boolean;
 };
 type RetainedFile = { text?: string; availability: string; path?: string; project?: string; hash?: string; revisionIdentity?: string };
-type SearchState<T> = { results: T[]; error: string; loading: boolean; complete: boolean; coverage: string; truncated: boolean };
+type SearchDomain = "files" | "conversations" | "memories" | "facts";
+type SearchPage = { limit: number; offset: number; returned: number; hasMore: boolean; continuation: string; consistency: "moving-index" };
+type PageTarget = { cursor?: string; previousCursors: (string | undefined)[] };
+type SearchState<T> = PageTarget & { results: T[]; error: string; loading: boolean; complete: boolean; coverage: string; truncated: boolean;
+  nextCursor: string | null; page: SearchPage | null; retryPage?: PageTarget };
 type ResultType = "all" | "files" | "conversations" | "memories" | "facts" | "pinned";
 const resultTypes: [ResultType, string][] = [["all", "All content"], ["files", "Files"], ["conversations", "Conversations"], ["memories", "Memories"], ["facts", "Facts"], ["pinned", "Pinned Memory"]];
-const empty = <T,>(): SearchState<T> => ({ results: [], error: "", loading: false, complete: false, coverage: "", truncated: false });
+const empty = <T,>(): SearchState<T> => ({ results: [], error: "", loading: false, complete: false, coverage: "", truncated: false, nextCursor: null, page: null, previousCursors: [] });
 const pending = <T,>(): SearchState<T> => ({ ...empty<T>(), loading: true });
 const readResult = <T,>(value: any): SearchState<T> => {
-  if (!Array.isArray(value?.results)) throw Error("The knowledge result could not be read. Retry the query.");
-  return { results: value.results, error: "", loading: false, complete: true,
-    coverage: typeof value.coverage === "string" ? value.coverage : value.coverage?.summary ?? "", truncated: value.truncated === true };
+  if (!Array.isArray(value?.results) || value.results.length > 100) throw Error("The knowledge result could not be read. Retry the query.");
+  const page = value.page && Number.isSafeInteger(value.page.offset) && value.page.offset >= 0 && value.page.consistency === "moving-index" ? value.page : null;
+  return { ...empty<T>(), results: value.results, error: "", loading: false, complete: true, page,
+    nextCursor: typeof value.nextCursor === "string" && value.nextCursor.length > 0 && value.nextCursor.length <= 1024 ? value.nextCursor : null,
+    coverage: typeof value.coverage === "string" ? value.coverage : value.coverage?.summary ?? "", truncated: value.truncated === true || page?.hasMore === true };
 };
-const failureResult = <T,>(error: Error): SearchState<T> => ({ ...empty<T>(), error: error.message, complete: true });
 const words = (value?: string) => (value ?? "Unknown").replaceAll("_", " ");
 const when = (value?: number | null) => value == null ? "Not recorded" : new Date(value).toLocaleString();
 const shownValue = (value: unknown) => typeof value === "string" ? value : value === undefined ? "" : JSON.stringify(value);
@@ -79,6 +90,7 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
   const [files, setFiles] = useState<SearchState<FileHit>>(empty), [conversations, setConversations] = useState<SearchState<ConversationHit>>(empty);
   const [memories, setMemories] = useState<SearchState<MemoryHit>>(empty), [facts, setFacts] = useState<SearchState<ClaimHit>>(empty);
   const [selectedMemory, setSelectedMemory] = useState<MemoryItem | null>(null), [retainedFile, setRetainedFile] = useState<RetainedFile | null>(null);
+  const [retainedConversation, setRetainedConversation] = useState<RetainedConversation | null>(null);
   const [opening, setOpening] = useState(""), [openError, setOpenError] = useState(""), [pinning, setPinning] = useState("");
   const [revision, setRevision] = useState(0), [limit, setLimit] = useState(25);
   const [readerError, setReaderError] = useState(""), [memoryWorking, setMemoryWorking] = useState("");
@@ -89,6 +101,7 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
   const [evidenceQuery, setEvidenceQuery] = useState(""), [evidenceOptions, setEvidenceOptions] = useState<EvidenceChoice[]>([]);
   const [evidenceChoice, setEvidenceChoice] = useState(""), [evidenceError, setEvidenceError] = useState(""), [evidenceLoading, setEvidenceLoading] = useState(false);
   const evidenceRead = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
+  const searchRead = useRef({ generation: 0, controllers: new Map<SearchDomain, AbortController>() });
   const trimmed = query.trim(), scoped = !!project?.id;
   const wantFiles = !!trimmed && (resultType === "all" || resultType === "files");
   const wantConversations = !!trimmed && (resultType === "all" || resultType === "conversations");
@@ -100,49 +113,92 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
   const loading = activeStates.some(value => value.loading), complete = !!activeStates.length && activeStates.every(value => value.complete);
   const total = activeStates.reduce((count, value) => count + value.results.length, 0);
   const needsMore = activeStates.some(value => value.truncated);
+  const firstPages = activeStates.every(value => !value.cursor);
+  const domainStates = { files, conversations, memories, facts };
+  const domainSetters = { files: setFiles, conversations: setConversations, memories: setMemories, facts: setFacts };
+
+  async function requestPage(domain: SearchDomain, target: PageTarget, generation = searchRead.current.generation) {
+    searchRead.current.controllers.get(domain)?.abort();
+    const controller = new AbortController();
+    searchRead.current.controllers.set(domain, controller);
+    const currentRequest = () => !controller.signal.aborted && searchRead.current.generation === generation
+      && searchRead.current.controllers.get(domain) === controller;
+    domainSetters[domain]((current: SearchState<any>) => ({ ...current, error: "", loading: true, retryPage: target }));
+    const params = new URLSearchParams({ q: trimmed, limit: String(limit), ...(project?.id ? { project: project.id } : {}),
+      ...(phrase ? { phrase: "true" } : {}), ...(target.cursor ? { cursor: target.cursor } : {}) });
+    try {
+      let value;
+      if (domain === "files") {
+        for (const [key, filter] of [["source", source], ["role", role], ["status", status]]) if (filter) params.set(key, filter);
+        value = await api(`index/search?${params}`, undefined, undefined, controller.signal);
+      } else if (domain === "conversations") {
+        if (model) params.set("model", model);
+        value = await api(`history/search?${params}`, undefined, undefined, controller.signal);
+      } else if (domain === "memories") {
+        params.set("pinnedOnly", String(pinnedOnly)); params.set("includeArchived", String(includeArchived));
+        if (model) params.set("model", model);
+        value = await api(`memory/search?${params}`, undefined, undefined, controller.signal);
+      } else value = await api("knowledge", { operation: "query", domain: "facts", query: trimmed, projectID: project?.id,
+        model: model || undefined, epistemicState: claimState || undefined, includeHistorical: historical, phrase, limit, cursor: target.cursor }, "POST", controller.signal);
+      if (!currentRequest()) return;
+      const result = readResult<any>(value);
+      if (domain === "conversations") {
+        const unique = new Map<string, ConversationHit>();
+        for (const hit of result.results) if (!unique.has(`${hit.project}:${hit.session}`)) unique.set(`${hit.project}:${hit.session}`, hit);
+        result.results = [...unique.values()];
+      }
+      domainSetters[domain]({ ...result, ...target });
+    } catch (error) {
+      if (currentRequest()) domainSetters[domain]((current: SearchState<any>) => ({ ...current, error: (error as Error).message, loading: false, complete: true, retryPage: target }));
+    } finally {
+      if (currentRequest()) searchRead.current.controllers.delete(domain);
+    }
+  }
+
+  function retrySearch(domain: SearchDomain) {
+    const state = domainStates[domain];
+    void requestPage(domain, state.retryPage ?? { cursor: state.cursor, previousCursors: state.previousCursors });
+  }
+
+  function pageNavigation(domain: SearchDomain, label: string, state: SearchState<unknown>) {
+    if (!state.truncated && !state.nextCursor && !state.previousCursors.length && !state.error) return null;
+    const offset = state.page?.offset ?? 0;
+    const returned = state.page?.returned ?? state.results.length;
+    return <div className="knowledge-actions" role="group" aria-label={`${label} pages`}>
+      <span aria-live="polite">{returned ? `Matches ${offset + 1}–${offset + returned}` : "No matches on this page"}</span>
+      <Button disabled={state.loading || !state.previousCursors.length} aria-label={`Previous ${label} page`} onClick={() => {
+        const previousCursors = state.previousCursors.slice(0, -1);
+        void requestPage(domain, { cursor: state.previousCursors.at(-1), previousCursors });
+      }}>Previous</Button>
+      <Button disabled={state.loading || !state.nextCursor} aria-label={`Next ${label} page`} onClick={() => {
+        if (state.nextCursor) void requestPage(domain, { cursor: state.nextCursor, previousCursors: [...state.previousCursors, state.cursor] });
+      }}>Next</Button>
+      <Button disabled={state.loading || !state.cursor && !state.error} aria-label={`Start over ${label}`} onClick={() => void requestPage(domain, { previousCursors: [] })}>Start over</Button>
+      <span>Results may move as the index updates.</span>
+      {state.truncated && !state.nextCursor && <span>{state.page?.continuation === "offset-limit" ? "Continuation limit reached. Narrow the query or start over." : "Additional matches were reported without a continuation. Narrow the query or start over."}</span>}
+    </div>;
+  }
 
   useEffect(() => {
     setOpenError("");
-    const controller = new AbortController();
+    const generation = ++searchRead.current.generation;
+    for (const controller of searchRead.current.controllers.values()) controller.abort();
+    searchRead.current.controllers.clear();
     setFiles(wantFiles ? pending() : empty());
     setConversations(wantConversations ? pending() : empty());
     setMemories(wantMemories ? pending() : empty());
     setFacts(wantFacts ? pending() : empty());
-    const params = new URLSearchParams({ q: trimmed, limit: String(limit), ...(project?.id ? { project: project.id } : {}), ...(phrase ? { phrase: "true" } : {}) });
     const timer = setTimeout(() => {
-      if (wantFiles) {
-        const fileParams = new URLSearchParams(params);
-        for (const [key, value] of [["source", source], ["role", role], ["status", status]]) if (value) fileParams.set(key, value);
-        void api(`index/search?${fileParams}`, undefined, undefined, controller.signal)
-          .then(value => { if (!controller.signal.aborted) setFiles(readResult(value)); })
-          .catch(error => { if (!controller.signal.aborted) setFiles(failureResult(error)); });
-      }
-      if (wantConversations) {
-        const chatParams = new URLSearchParams(params);
-        if (model) chatParams.set("model", model);
-        void api(`history/search?${chatParams}`, undefined, undefined, controller.signal)
-          .then(value => {
-            if (controller.signal.aborted) return;
-            const result = readResult<ConversationHit>(value), unique = new Map<string, ConversationHit>();
-            for (const hit of result.results) if (!unique.has(`${hit.project}:${hit.session}`)) unique.set(`${hit.project}:${hit.session}`, hit);
-            setConversations({ ...result, results: [...unique.values()] });
-          }).catch(error => { if (!controller.signal.aborted) setConversations(failureResult(error)); });
-      }
-      if (wantMemories) {
-        const memoryParams = new URLSearchParams(params);
-        memoryParams.set("pinnedOnly", String(pinnedOnly));
-        memoryParams.set("includeArchived", String(includeArchived));
-        if (model) memoryParams.set("model", model);
-        void api(`memory/search?${memoryParams}`, undefined, undefined, controller.signal)
-          .then(value => { if (!controller.signal.aborted) setMemories(readResult(value)); })
-          .catch(error => { if (!controller.signal.aborted) setMemories(failureResult(error)); });
-      }
-      if (wantFacts) void api("knowledge", { operation: "query", domain: "facts", query: trimmed, projectID: project?.id,
-        model: model || undefined, epistemicState: claimState || undefined, includeHistorical: historical, phrase, limit }, "POST", controller.signal)
-        .then(value => { if (!controller.signal.aborted) setFacts(readResult(value)); })
-        .catch(error => { if (!controller.signal.aborted) setFacts(failureResult(error)); });
+      if (wantFiles) void requestPage("files", { previousCursors: [] }, generation);
+      if (wantConversations) void requestPage("conversations", { previousCursors: [] }, generation);
+      if (wantMemories) void requestPage("memories", { previousCursors: [] }, generation);
+      if (wantFacts) void requestPage("facts", { previousCursors: [] }, generation);
     }, 180);
-    return () => { clearTimeout(timer); controller.abort(); };
+    return () => {
+      clearTimeout(timer); searchRead.current.generation++;
+      for (const controller of searchRead.current.controllers.values()) controller.abort();
+      searchRead.current.controllers.clear();
+    };
   }, [trimmed, project?.id, source, role, status, model, phrase, historical, claimState, includeArchived, resultType, limit, revision, managing]);
 
   useEffect(() => () => invalidateEvidenceRead(), []);
@@ -206,7 +262,7 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
     setPinning(`${hit.project}:${hit.session}`); setOpenError("");
     let saved = false;
     try {
-      await api("history/pin", { project: hit.project, session: hit.session, pinned: !hit.organization?.pinnedAt, revision: hit.organization?.revision ?? 0 }, "PUT");
+      await api("history/pin", { project: hit.project, session: hit.navigationSession ?? hit.session, pinned: !hit.organization?.pinnedAt, revision: hit.organization?.revision ?? 0 }, "PUT");
       saved = true; setRevision(value => value + 1); await onChange();
     } catch (error) { setOpenError(saved ? "Pin saved, but the workspace could not refresh. Reopen Search content to refresh." : (error as Error).message); }
     finally { setPinning(""); }
@@ -217,7 +273,7 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
     evidenceRead.current.controller = null;
   }
   function clearEvidenceOpening() {
-    setOpening(current => current.startsWith("memory:") || current === "file-evidence" ? "" : current);
+    setOpening(current => current.startsWith("memory:") || current === "file-evidence" || current === "conversation-evidence" ? "" : current);
   }
   function closeMemoryReader() {
     invalidateEvidenceRead();
@@ -227,6 +283,26 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
   function closeFileReader() {
     invalidateEvidenceRead();
     setRetainedFile(null); clearEvidenceOpening();
+  }
+  function closeConversationReader() {
+    invalidateEvidenceRead(); setRetainedConversation(null); clearEvidenceOpening();
+  }
+  async function readConversationEvidence(hit: ConversationHit) {
+    const ref = hit.evidence;
+    if (ref?.kind !== "opencode-snapshot" || !ref.sourceSystemID || !ref.snapshotRevisionSha256) return;
+    invalidateEvidenceRead();
+    const generation = evidenceRead.current.generation, controller = new AbortController();
+    evidenceRead.current.controller = controller;
+    const currentRequest = () => !controller.signal.aborted && evidenceRead.current.generation === generation;
+    setOpening("conversation-evidence"); setOpenError("");
+    try {
+      const result = await api("knowledge", { operation: "opencode-read", projectID: ref.projectID, sessionID: ref.sessionID,
+        sourceSystemID: ref.sourceSystemID, snapshotRevisionSha256: ref.snapshotRevisionSha256, limit: 500 }, "POST", controller.signal);
+      if (!currentRequest()) return;
+      setSelectedMemory(null); setRetainedFile(null);
+      setRetainedConversation({ ...result, navigationProject: hit.project, navigationSession: hit.navigationSession ?? hit.session });
+    } catch (error) { if (currentRequest()) setOpenError((error as Error).message); }
+    finally { if (currentRequest()) { evidenceRead.current.controller = null; setOpening(""); } }
   }
   async function readMemory(hit: Pick<MemoryHit, "id">, requestedRevision?: number) {
     invalidateEvidenceRead();
@@ -239,7 +315,7 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
       const item = await api(`memory/item?${params}`, undefined, undefined, controller.signal);
       if (!currentRequest()) return;
       if (!item) throw Error("This retained memory is no longer available.");
-      setRetainedFile(null); setSelectedMemory(item); setCaptureUncertain(false); setCapturePollEpoch(value => value + 1);
+      setRetainedFile(null); setRetainedConversation(null); setSelectedMemory(item); setCaptureUncertain(false); setCapturePollEpoch(value => value + 1);
     } catch (error) { if (currentRequest()) selectedMemory ? setReaderError((error as Error).message) : setOpenError((error as Error).message); }
     finally { if (currentRequest()) { evidenceRead.current.controller = null; setOpening(""); } }
   }
@@ -272,20 +348,47 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
     } catch (error) { setReaderError((error as Error).message); }
     finally { setMemoryWorking(""); }
   }
-  function editClaim(fact?: ClaimHit) {
-    const scope = fact?.scope && typeof fact.scope === "object" ? fact.scope as { projectID?: string } : {};
+  function openClaimEditor(fact?: ClaimHit) {
+    const scope = fact?.scope && typeof fact.scope === "object" && !Array.isArray(fact.scope) ? fact.scope as Record<string, unknown> : {};
+    const factProjectID = typeof scope.projectID === "string" ? scope.projectID : typeof scope.project === "string" ? scope.project : "";
+    const projectID = fact ? factProjectID : project?.id ?? "";
     setClaimError(""); setEvidenceQuery(""); setEvidenceOptions([]); setEvidenceChoice("");
-    setClaimEditor({ id: fact?.id, expectedEpistemicState: fact?.epistemicState, predicate: fact?.predicate ?? "", value: fact ? shownValue(fact.value) : "",
-      origin: "user-stated", epistemicState: "unverified", method: "", reason: "", projectID: scope.projectID ?? project?.id ?? "", evidence: [] });
+    setClaimEditor({ id: fact?.id, expectedEpistemicState: fact?.epistemicState, predicate: fact?.predicate ?? "", value: fact ? shownValue(fact.value) : "", originalValue: fact?.value,
+      originalScope: scope, originalProjectID: projectID, origin: "user-stated", epistemicState: "unverified", method: "", reason: "", projectID, evidence: [] });
+  }
+  async function editClaim(fact?: ClaimHit) {
+    if (!fact?.valueTruncated && !fact?.scopeTruncated) { openClaimEditor(fact); return; }
+    invalidateEvidenceRead();
+    const generation = evidenceRead.current.generation, controller = new AbortController();
+    evidenceRead.current.controller = controller;
+    const currentRequest = () => !controller.signal.aborted && evidenceRead.current.generation === generation;
+    setOpening("claim"); setOpenError("");
+    try {
+      const retained = await api("knowledge", { operation: "read-claim", id: fact.id }, undefined, controller.signal);
+      if (!currentRequest()) return;
+      if (retained?.id !== fact.id || retained.status === "missing" || retained.valueTruncated || retained.scopeTruncated) throw Error("The retained fact could not be read. Retry before correcting it.");
+      openClaimEditor(retained);
+    } catch (error) { if (currentRequest()) setOpenError((error as Error).message); }
+    finally { if (currentRequest()) { evidenceRead.current.controller = null; setOpening(""); } }
   }
   async function saveClaim() {
     if (!claimEditor || claimWorking) return;
     if (!claimEditor.evidence.length) { setClaimError("Select at least one retained source revision for this fact."); return; }
     setClaimWorking(true); setClaimError("");
     try {
+      const value = claimEditor.id && claimEditor.value === shownValue(claimEditor.originalValue) ? claimEditor.originalValue : claimEditor.value;
+      // An unchanged scope is preserved by the transactional correction API.
+      // Changing its project keeps the other recorded applicability fields.
+      let scopeJson: string | undefined;
+      if (!claimEditor.id || claimEditor.projectID !== claimEditor.originalProjectID) {
+        const scope = { ...claimEditor.originalScope };
+        delete scope.projectID; delete scope.project;
+        if (claimEditor.projectID) scope.projectID = claimEditor.projectID;
+        scopeJson = JSON.stringify(scope);
+      }
       await api("knowledge", { operation: claimEditor.id ? "correct-claim" : "claim", id: claimEditor.id, expectedEpistemicState: claimEditor.expectedEpistemicState,
-        predicate: claimEditor.predicate, valueJson: JSON.stringify(claimEditor.value), origin: claimEditor.origin, epistemicState: claimEditor.epistemicState,
-        method: claimEditor.method, reason: claimEditor.reason, sessionID: "user", scopeJson: JSON.stringify(claimEditor.projectID ? { projectID: claimEditor.projectID } : {}),
+        predicate: claimEditor.predicate, valueJson: JSON.stringify(value), origin: claimEditor.origin, epistemicState: claimEditor.epistemicState,
+        method: claimEditor.method, reason: claimEditor.reason, sessionID: "user", scopeJson,
         evidenceJson: JSON.stringify({ items: claimEditor.evidence.map(({ label: _label, ...item }) => item) }) });
       setClaimEditor(null); setResultType("facts"); setQuery(""); setClaimState(""); setRevision(current => current + 1);
     } catch (error) { setClaimError((error as Error).message); }
@@ -322,7 +425,7 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
       const params = new URLSearchParams({ sourceIdentity: ref.sourceIdentity!, revisionIdentity: ref.revisionIdentity!, locator: ref.locator!, unitHash: ref.unitSha256! });
       const result = await api(`knowledge/evidence?${params}`, undefined, undefined, controller.signal);
       if (!currentRequest()) return;
-      setSelectedMemory(null); setReaderError("");
+      setSelectedMemory(null); setRetainedConversation(null); setReaderError("");
       setRetainedFile({ ...result, path: result.path ?? fallback?.path, project: result.project ?? fallback?.project });
     } catch (error) { if (currentRequest()) setOpenError((error as Error).message); }
     finally { if (currentRequest()) { evidenceRead.current.controller = null; setOpening(""); } }
@@ -353,40 +456,43 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
     {(resultType === "memories" || resultType === "pinned") && <div className="knowledge-actions"><Button onClick={() => { setEditorError(""); setEditor({ title: "", body: "", projectID: project?.id ?? "" }); }}><Plus size={16} />New memory</Button><label className="content-search-phrase"><input type="checkbox" checked={includeArchived} onChange={event => setIncludeArchived(event.target.checked)} />Include archived memories</label><span>Archive is reversible. Unpin keeps the retained memory.</span></div>}
     {resultType === "facts" && <div className="knowledge-fact-filters"><Button onClick={() => editClaim()}><Plus size={16} />New fact</Button><Field label="Claim status"><select value={claimState} onChange={event => setClaimState(event.target.value)}><option value="">All statuses</option><option value="supported">Supported</option><option value="unverified">Unverified</option><option value="disputed">Disputed</option><option value="superseded">Superseded</option></select></Field><label className="content-search-phrase"><input type="checkbox" checked={historical} onChange={event => setHistorical(event.target.checked)} />Include historical claims</label></div>}
     {openError && <p className="notice error" role="alert">{openError}</p>}
-    {([["Files", files], ["Conversations", conversations], [memoryTitle, memories], ["Facts", facts]] as const).map(([label, value]) => value.error && <div key={label} className="notice error content-search-error" role="alert"><span>{label}: {value.error}</span><Button onClick={() => setRevision(current => current + 1)}>Retry search</Button></div>)}
+    {([["files", "Files", files], ["conversations", "Conversations", conversations], ["memories", memoryTitle, memories], ["facts", "Facts", facts]] as const).map(([domain, label, value]) => value.error && <div key={label} className="notice error content-search-error" role="alert"><span>{label}: {value.error}</span><Button onClick={() => retrySearch(domain)}>Retry search</Button></div>)}
     <div className="indexed-search-status" aria-live="polite">{loading ? <span role="status">Searching indexed content…</span> : complete ? <span>{total ? `${total} matching ${total === 1 ? "result" : "results"}` : "No indexed content matched."}</span> : <span>Enter search words to find {resultType}.</span>}</div>
 
-    {wantConversations && !!conversations.results.length && <section className="content-search-group" aria-label="Conversation results"><h2><MessageSquare size={17} />Conversations <span>{conversations.results.length}</span></h2>
+    {wantConversations && (!!conversations.results.length || !!conversations.previousCursors.length || !!conversations.cursor || !!conversations.error) && <section className="content-search-group" aria-label="Conversation results"><h2><MessageSquare size={17} />Conversations <span>{conversations.results.length}</span></h2>
       <div className="indexed-search-results">{conversations.results.map(hit => {
         const key = `conversation:${hit.project}:${hit.session}`, archived = hit.organization?.archiveScope === "freelancer" || hit.organization?.nativeArchived || hit.organization?.projectArchived;
-        return <div className="content-search-conversation" key={key}><button type="button" className="indexed-search-result" aria-label={`Open conversation ${hit.title} in ${hit.projectName}`} disabled={!!opening} onClick={() => void open(key, () => onOpenConversation(hit.project, hit.session))}>
+        const hasParent = !!hit.navigationSession && hit.navigationSession !== hit.session;
+        const pinLabel = `${hit.organization?.pinnedAt ? "Unpin" : "Pin"}${hasParent ? ` parent conversation ${hit.navigationTitle ?? hit.navigationSession}` : ` ${hit.title}`}`;
+        return <div className="content-search-conversation" key={key}><button type="button" className="indexed-search-result" aria-label={`Open conversation ${hit.title} in ${hit.projectName}`} disabled={!!opening} onClick={() => void open(key, () => onOpenConversation(hit.project, hit.navigationSession ?? hit.session))}>
           <span className="indexed-result-heading"><strong>{hit.title}</strong><small>{opening === key ? "Opening conversation…" : "Conversation"}</small></span><span className="indexed-result-path"><span>{hit.projectName}</span><span>{hit.imported ? "Imported snapshot" : archived ? "Archived" : "OpenCode conversation"}</span></span>
-          <span className="indexed-result-excerpt">{hit.excerpt || "Title match"}</span><span className="indexed-result-open"><MessageSquare size={15} />Open conversation</span>
-        </button><Button aria-label={`${hit.organization?.pinnedAt ? "Unpin" : "Pin"} ${hit.title}`} aria-pressed={!!hit.organization?.pinnedAt} disabled={!!pinning} onClick={() => void pin(hit)}><Pin size={16} />{hit.organization?.pinnedAt ? "Unpin" : "Pin"}</Button></div>;
-      })}</div></section>}
-    {wantMemories && !!memories.results.length && <section className="content-search-group" aria-label={pinnedOnly ? "Pinned memory results" : "Memory results"}><h2><BookOpen size={17} />{memoryTitle} <span>{memories.results.length}</span></h2>
+          <span className="indexed-result-excerpt">{hit.excerpt || "Title match"}</span><span className="indexed-result-open"><MessageSquare size={15} />{hit.navigationSession && hit.navigationSession !== hit.session ? `Open parent conversation: ${hit.navigationTitle}` : "Open conversation"}</span>
+        </button><div className="knowledge-reader-actions"><Button aria-label={pinLabel} aria-pressed={!!hit.organization?.pinnedAt} disabled={!!pinning} onClick={() => void pin(hit)}><Pin size={16} />{hit.organization?.pinnedAt ? "Unpin" : "Pin"}{hasParent ? " parent" : ""}</Button><Button disabled={!!opening || !hit.evidence} onClick={() => void readConversationEvidence(hit)}><BookOpen size={15} />Read retained evidence</Button>{!hit.evidence && <small>Exact retained evidence was not recorded for this search copy.</small>}</div></div>;
+      })}</div>{pageNavigation("conversations", "Conversations", conversations)}</section>}
+    {wantMemories && (!!memories.results.length || !!memories.previousCursors.length || !!memories.cursor || !!memories.error) && <section className="content-search-group" aria-label={pinnedOnly ? "Pinned memory results" : "Memory results"}><h2><BookOpen size={17} />{memoryTitle} <span>{memories.results.length}</span></h2>
       <div className="indexed-search-results">{memories.results.map(hit => <button type="button" className="indexed-search-result" key={hit.id} aria-label={`Read ${hit.pinnedAt ? "pinned " : ""}memory ${hit.title}`} disabled={!!opening} onClick={() => void readMemory(hit, hit.revision)}>
         <span className="indexed-result-heading"><strong>{hit.title}</strong><small>Revision {hit.revision}{hit.pinnedAt ? " · pinned" : ""}{hit.status === "archived" ? " · archived" : ""}</small></span><span className="indexed-result-path"><span>{hit.projectName || "Global memory"}</span><span>{words(hit.kind)} · {captureLabel(hit)}</span></span>
         <span className="indexed-result-excerpt">{hit.excerpt || (hit.kind === "conversation_snapshot" ? `${hit.messageCount} captured messages` : "Retained note")}</span><span className="indexed-result-open"><BookOpen size={15} />Read retained {hit.kind === "conversation_snapshot" ? "snapshot" : "memory"}</span>
-      </button>)}</div></section>}
-    {wantFiles && !!files.results.length && <section className="content-search-group" aria-label="File results"><h2><FolderOpen size={17} />Files <span>{files.results.length}</span></h2>
+      </button>)}</div>{pageNavigation("memories", "Memories", memories)}</section>}
+    {wantFiles && (!!files.results.length || !!files.previousCursors.length || !!files.cursor || !!files.error) && <section className="content-search-group" aria-label="File results"><h2><FolderOpen size={17} />Files <span>{files.results.length}</span></h2>
       <div className="indexed-search-results">{files.results.map(hit => {
         const key = `file:${hit.project}:${hit.path}`;
         return <div className="knowledge-file-result" key={`${key}:${hit.unit}:${hit.locator}`}><button type="button" className="indexed-search-result" aria-label={`Open file ${hit.projectName}/${hit.path}`} disabled={!!opening} onClick={() => void open(key, () => onOpenFile(hit.project, hit.path))}>
           <span className="indexed-result-heading"><strong>{hit.heading || hit.path.split(/[\\/]/).at(-1)}</strong><small>{opening === key ? "Opening project file…" : hit.role}</small></span><span className="indexed-result-path"><span>{hit.projectName}{hit.projectArchived ? " · archived" : ""}</span><span>{hit.path}</span></span>
           <span className="indexed-result-excerpt">{hit.excerpt}</span><span className="indexed-result-open"><FolderOpen size={15} />Open in project Files</span>
         </button>{canReadFileEvidence(hit) && <Button disabled={!!opening} aria-label={`Read retained file evidence ${hit.projectName}/${hit.path}`} onClick={() => void readFileEvidence(hit, hit)}><BookOpen size={15} />Read retained evidence</Button>}</div>;
-      })}</div></section>}
-    {wantFacts && !!facts.results.length && <section className="content-search-group" aria-label="Fact results"><h2><Database size={17} />Facts <span>{facts.results.length}</span></h2><div className="indexed-search-results">{facts.results.map(fact => <Panel key={fact.id} className="knowledge-claim">
+      })}</div>{pageNavigation("files", "Files", files)}</section>}
+    {wantFacts && (!!facts.results.length || !!facts.previousCursors.length || !!facts.cursor || !!facts.error) && <section className="content-search-group" aria-label="Fact results"><h2><Database size={17} />Facts <span>{facts.results.length}</span></h2><div className="indexed-search-results">{facts.results.map(fact => <Panel key={fact.id} className="knowledge-claim">
       <div className="indexed-result-heading"><strong>{[fact.subjectName, fact.predicate, fact.objectName, fact.value == null ? "" : shownValue(fact.value)].filter(Boolean).join(" · ")}</strong><Badge tone={fact.epistemicState === "supported" ? "success" : "neutral"}>{words(fact.epistemicState)}</Badge></div>
-      <p>{fact.origin} · {fact.method}</p><details><summary>Evidence and validity</summary><dl className="knowledge-metadata"><dt>Claim ID</dt><dd>{fact.id}</dd><dt>Scope</dt><dd>{shownValue(fact.scope) || "Not specified"}</dd><dt>Valid from</dt><dd>{when(fact.validFrom)}</dd><dt>Valid to</dt><dd>{when(fact.validTo)}</dd><dt>Observed</dt><dd>{when(fact.observedAt)}</dd></dl>
+      <p>{fact.origin} · {fact.method}</p>{fact.valueTruncated && <p>The value exceeds the search summary limit. Correct fact loads its retained value.</p>}<details><summary>Evidence and validity</summary><dl className="knowledge-metadata"><dt>Claim ID</dt><dd>{fact.id}</dd><dt>Scope</dt><dd>{fact.scopeTruncated ? "Omitted from the bounded search summary; correction loads the retained scope." : shownValue(fact.scope) || "Not specified"}</dd><dt>Valid from</dt><dd>{when(fact.validFrom)}</dd><dt>Valid to</dt><dd>{when(fact.validTo)}</dd><dt>Observed</dt><dd>{when(fact.observedAt)}</dd></dl>
+        {fact.sourceRefsTruncated && <p>Showing {fact.evidence?.length ?? 0} of {fact.sourceRefCount} retained evidence references.</p>}
         {(fact.evidence ?? []).map(evidence => {
           const ref = evidence.ref ?? evidence, memoryRef = memoryEvidenceReference(ref);
           return <div className="knowledge-evidence" key={`${evidence.id}:${evidence.relation}`}><strong>{evidence.relation}</strong><span>{evidence.id}</span>{canReadFileEvidence(ref) && <Button onClick={() => void readFileEvidence(ref)}>Read retained evidence</Button>}{ref.memoryID && <><Button disabled={!memoryRef} onClick={() => { if (memoryRef) void readMemory(memoryRef, memoryRef.revision); }}>Read retained memory evidence</Button>{!memoryRef && <span>Retained memory evidence is unavailable: its exact retained revision was not recorded.</span>}</>}</div>;
         })}
-      </details>{fact.epistemicState !== "superseded" && <Button aria-label={`Correct fact ${fact.predicate}`} onClick={() => editClaim(fact)}><Pencil size={15} />Correct fact</Button>}</Panel>)}</div></section>}
+      </details>{fact.epistemicState !== "superseded" && <Button disabled={!!opening} aria-label={`Correct fact ${fact.predicate}`} onClick={() => void editClaim(fact)}><Pencil size={15} />Correct fact</Button>}</Panel>)}</div>{pageNavigation("facts", "Facts", facts)}</section>}
     {!!activeStates.some(value => value.coverage) && <details className="knowledge-coverage"><summary>Search coverage</summary>{activeStates.filter(value => value.coverage).map((value, index) => <p key={index}>{value.coverage}</p>)}</details>}
-    {needsMore && <div className="knowledge-actions"><span>Results are limited. Narrow the query{limit < 100 ? " or show more matches." : "."}</span>{limit < 100 && <Button onClick={() => setLimit(current => Math.min(100, current + 25))}>Show more results</Button>}</div>}
+    {needsMore && firstPages && limit < 100 && <div className="knowledge-actions"><span>Show more matches on each first page, or use Next within a result group.</span><Button onClick={() => setLimit(current => Math.min(100, current + 25))}>Show more results</Button></div>}
     {complete && !total && activeStates.every(value => !value.error) && <Panel className="indexed-search-empty"><FileSearch size={22} aria-hidden="true" /><strong>{pinnedOnly ? "No pinned memories" : "No indexed content found"}</strong><p>{pinnedOnly ? "Pin a conversation or retained note to keep it here." : "Try different words, or refresh the file and conversation indexes."}</p><Button onClick={onIndex}><Database size={16} />Open Content &amp; Storage</Button></Panel>}
 
     {selectedMemory && <Dialog title={selectedMemory.title} description={`${selectedMemory.projectName || "Global memory"} · retained revision ${selectedMemory.revision} · ${words(selectedMemory.coverage)}`} size="wide" className="memory-reader" bodyClassName="memory-reader-body" busy={!!memoryWorking} onClose={closeMemoryReader}
@@ -411,6 +517,13 @@ export function ContentSearch({ project, projects = [], onOpenFile, onOpenConver
     </Dialog>}
     {retainedFile && <Dialog title="Retained file evidence" description={`${retainedFile.path ?? "Indexed source"} · ${words(retainedFile.availability)}`} size="wide" onClose={closeFileReader} footer={retainedFile.project && retainedFile.path && <Button onClick={() => { const item = retainedFile; closeFileReader(); void open("live-file-source", () => onOpenFile(item.project!, item.path!)); }}>Open live file</Button>}>
       {retainedFile.text !== undefined ? <pre className="knowledge-retained-text">{retainedFile.text}</pre> : <p>This retained evidence is unavailable. Its source revision was not replaced with live text.</p>}<details><summary>Evidence identity</summary><p className="knowledge-identity">{retainedFile.revisionIdentity}</p><p className="knowledge-identity">{retainedFile.hash}</p></details>
+    </Dialog>}
+    {retainedConversation && <Dialog title="Retained conversation evidence" description={`${retainedConversation.session?.title ?? "Indexed conversation"} · ${words(retainedConversation.coverage ?? retainedConversation.status)}`} size="wide" onClose={closeConversationReader}
+      footer={<Button onClick={() => { const item = retainedConversation; closeConversationReader(); void open("live-conversation-source", () => onOpenConversation(item.navigationProject, item.navigationSession)); }}>Open live conversation</Button>}>
+      {retainedConversation.status !== "ok" && <p>This retained source window is unavailable. It was not replaced with live conversation text.</p>}
+      {retainedConversation.truncated && <p className="notice">This reader shows the first 500 retained messages. The source window contains additional messages.</p>}
+      <div className="memory-reader-messages">{(retainedConversation.messages ?? []).map(message => <article key={message.messageID} className={`memory-reader-message ${message.role}`}><strong>{words(message.role)}</strong><p>{message.parts.filter(part => part.type === "text").map(part => part.text).join("\n")}</p></article>)}</div>
+      <details><summary>Source identity and capture</summary><dl className="knowledge-metadata"><dt>Source captured</dt><dd>{when(retainedConversation.capturedAt)}</dd><dt>Session</dt><dd>{retainedConversation.session?.sessionID ?? "Unavailable"}</dd><dt>Snapshot hash</dt><dd className="knowledge-identity">{retainedConversation.snapshotRevisionSha256}</dd></dl></details>
     </Dialog>}
     {editor && <Dialog title={editor.id ? "Edit memory" : "New memory"} size="wide" onClose={() => setEditor(null)} busy={!!memoryWorking} onSubmit={event => { event.preventDefault(); void saveNote(); }} footer={<><Button disabled={!!memoryWorking} onClick={() => setEditor(null)}>Cancel</Button><Button type="submit" variant="primary" disabled={!!memoryWorking}>{memoryWorking === "save" ? "Saving…" : "Save memory"}</Button></>}>
       <Field label="Memory title"><input required maxLength={1000} value={editor.title} disabled={!!editor.id} onChange={event => setEditor(current => current ? { ...current, title: event.target.value } : current)} /></Field>

@@ -6,7 +6,7 @@ import { maintainLocalData } from './data/maintenance.mjs';
 import { openDataFolder } from "./native-data.mjs";
 import { importedChatID } from './chatgpt-import.mjs';
 import { openCodeSourceIdentity, openCodeSnapshotProof } from './data/opencode-warehouse.mjs';
-import { contentMatch, contentFilters } from '../domain/content-query.mjs';
+import { createKnowledgeQuery } from './data/knowledge-query.mjs';
 import { createMemoryCaptureRunner } from './memory-capture.mjs';
 import {
   idPattern,
@@ -97,6 +97,8 @@ export function createHistoryService({
   const currentIndexes = new Set();
   let projectArchiveIndexer;
   const data = () => localData.get();
+  const knowledgeQuery = app.knowledgeQuery ?? createKnowledgeQuery({ data,
+    getProjects: async () => (await app.store.read('settings')).projects });
   const projectsToIndex = (projects, projectID, includeArchivedProject = false) => {
     const annotations = data().projects();
     const targets = projectID ? projects.filter(project => project.id === projectID) : projects;
@@ -818,12 +820,13 @@ export function createHistoryService({
       return refresh;
     },
     async searchChats(query, options = {}) {
-      if (typeof query !== "string" || !query.trim() || query.length > 200) return { results: [], coverage: "Enter up to 200 characters." };
       const projects = (await app.store.read("settings")).projects;
       if (options.project && !projects.some((project) => project.id === options.project)) throw Error("Choose a registered project.");
       const allowed = new Map(projects.map((project) => [project.id, project.name]));
-      const limit=Math.max(1,Math.min(200,Number(options.limit)||50));
-      const hits = data().searchChats(query, {...options,projectIDs:[...allowed.keys()],limit:limit+1});
+      const limit=options.limit ?? 50;
+      const found = await knowledgeQuery.query({ domain: 'conversations', query, projectID: options.project || undefined,
+        model: options.model || undefined, phrase: options.phrase === true, limit, cursor: options.cursor });
+      const hits = found.results;
       const matchingProjects = new Set(hits.map((row) => row.project));
       const archivedProjects = data().projects();
       const headers = new Map(projects.filter((project) => matchingProjects.has(project.id)).map((project) => {
@@ -835,7 +838,7 @@ export function createHistoryService({
           !!archivedProjects[project.id]?.archivedAt, data().systemSessions(project.id)).map((s) => [s.id, s]))];
       }));
       const results = hits
-        .map(({ rank, ...row }) => {
+        .map(row => {
           const sessions = headers.get(row.project);
           let root = sessions?.get(row.session);
           const seen = new Set();
@@ -843,20 +846,13 @@ export function createHistoryService({
             seen.add(root.id);
             root = sessions.get(root.parentID);
           }
-          if (!root || root.parentID) return null;
-          return { ...row, session: root.id, title: root.title, updatedAt: root.time?.updated,
-            projectName: allowed.get(row.project), organization: root.organization };
-        }).filter(Boolean);
-      return { results:results.slice(0,limit),truncated:results.length>limit,filters:options, coverage: "Search uses local copies of OpenCode chats and imported ChatGPT / Codex snapshots, including captured archived chats and workers. Refresh updates recent conversations; native history backfill covers older conversations. Current chats refresh when opened. Results are a local search copy, not a backup." };
+          const navigation = root && !root.parentID ? root : null;
+          return { ...row, navigationSession: navigation?.id ?? row.session, navigationTitle: navigation?.title ?? row.title,
+            projectName: allowed.get(row.project), organization: navigation?.organization ?? sessions?.get(row.session)?.organization };
+        });
+      return { ...found, results, coverage: `${found.coverage} Worker hits retain their source identity; live navigation can open the parent conversation. Retained evidence reads the exact indexed source window.` };
     },
     async searchFiles(query, options = {}) {
-      if (typeof query !== "string" || !query.trim())
-        return { results: [], coverage: "Search indexed files across registered projects." };
-      if (query.length > 200) throw Error("Search is limited to 200 characters.");
-      const match=contentMatch(query,{phrase:options.phrase===true});
-      if (!match)
-        return { results: [], coverage: "Enter words to search indexed file content." };
-      const filters=contentFilters(options);
       const settingsProjects = (await app.store.read("settings")).projects;
       if (options.project && !settingsProjects.some((item) => item.id === options.project))
         throw Error("Choose a registered project.");
@@ -866,21 +862,20 @@ export function createHistoryService({
         .map((item) => ({
           id: item.id,
           name: item.name,
-          key: process.platform === "win32"
-            ? path.resolve(item.directory).toLowerCase()
-            : path.resolve(item.directory),
           archived: !!organizations[item.id]?.archivedAt,
         }));
-      const byKey = new Map(projects.map((item) => [item.key, item]));
-      const limit=Math.max(1,Math.min(200,Number(options.limit)||50));
-      const hits = data().searchFiles(match, [...byKey.keys()], filters, limit+1);
+      const byID = new Map(projects.map((item) => [item.id, item]));
+      const limit=options.limit ?? 50;
+      const found = await knowledgeQuery.query({ domain: 'files', query, projectID: options.project || undefined,
+        source: options.source || undefined, role: options.role || undefined, status: options.status || undefined,
+        phrase: options.phrase === true, limit, cursor: options.cursor });
       return {
-        results: hits.slice(0,limit).flatMap(({ projectKey, ...hit }) => {
-          const project = byKey.get(projectKey);
+        ...found,
+        results: found.results.flatMap(({ projectKey, ...hit }) => {
+          const project = byID.get(hit.projectID);
           return project ? [{ ...hit, project: project.id, projectName: project.name, projectArchived: project.archived }] : [];
         }),
-        truncated:hits.length>limit,filters:options,
-        coverage: "Search uses the local file index for registered projects, including archived projects. Open Content & Storage to refresh recent file changes; results are derived search copies, not project files.",
+        coverage: `${found.coverage} Search includes archived projects. Open Content & Storage to refresh recent file changes; pages follow the moving index and results are derived search copies.`,
       };
     },
     async indexStats() {
@@ -1044,14 +1039,17 @@ export function createHistoryService({
     },
     async searchMemory(query,options={}) {
       if (options.projectID) await app.project(options.projectID);
-      const found=data().searchMemory(query,options);
-      const results=[];
-      for (const item of found.items) {
-        const memory=await this.readMemory(item.id,typeof item.revision==='number'?item.revision:undefined);
-        if (memory) results.push(memory);
-      }
-      return {status:found.status,results,truncated:found.truncated,
-        coverage:'Retained memory revisions in this Freelancer database; native sources may have changed.',filters:options};
+      const found=await knowledgeQuery.query({ domain: 'memories', query, projectID: options.projectID,
+        kind: options.kind, model: options.model, phrase: options.phrase === true, pinnedOnly: options.pinned === true,
+        includeArchived: options.includeArchived === true, limit: options.limit, cursor: options.cursor });
+      const settings=await app.store.read('settings');
+      const projects=new Map(settings.projects.map(project=>[project.id,project]));
+      const results=found.results.map(item=>({...item,project:item.projectID,session:item.sessionID,
+        projectName:projects.get(item.projectID)?.name ?? 'Shared memory',
+        annotationRevision:item.sessionID ? data().annotation(item.projectID,item.sessionID).revision : undefined,
+        job:data().memoryCaptureJob(item.id)}));
+      return {...found,status:results.length?'ok':'empty',results,
+        coverage:`${found.coverage} Native sources may have changed; pages follow the moving index.`};
     },
     async archive(projectID, id, body, fence) {
       if (

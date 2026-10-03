@@ -5,6 +5,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { DatabaseSync } from 'node:sqlite';
+import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 import { contentMatch, contentFilters, contentSubstring } from '../../domain/content-query.mjs';
 
 const SCHEMA_VERSION = '3.1';
@@ -174,7 +175,7 @@ function argsParse(argv) {
   if(!out.projectKey&&!out.projectID&&!out.global)throw Error('--project-key or --project-id is required');
   return out;
 }
-function openDb(file, readOnly=false) { return new DatabaseSync(file,{readOnly}); }
+function openDb(file, readOnly=false) { assertLocalStoragePath(file); return new DatabaseSync(file,{readOnly}); }
 function print(value) { process.stdout.write(JSON.stringify(value,null,2)+'\n'); }
 async function rebuild(a, dbFile, root, key) {
   if(!['none','general','special','both'].includes(a.facts))throw Error('invalid --facts mode');

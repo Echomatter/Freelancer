@@ -1,4 +1,5 @@
 import { LOCAL_DATA_SCHEMA_VERSION } from '../../shared/data-contract.mjs';
+import { assertLocalStoragePath, storagePathContains } from '../../shared/local-storage-path.mjs';
 import { createHash } from 'node:crypto';
 import { chmodSync, closeSync, copyFileSync, existsSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from 'node:fs';
 import { createReadStream } from 'node:fs';
@@ -68,6 +69,7 @@ function settingsProfileInfo(filename, expectedName = path.basename(filename)) {
 }
 
 function validateDatabase(filename) {
+  assertLocalStoragePath(filename);
   const db = new DatabaseSync(filename,{readOnly:true});
   try {
     const applicationID = db.prepare('PRAGMA application_id').get().application_id;
@@ -113,6 +115,7 @@ const freshRuntimeHash = (runtimeID, sourcePath) =>
   createHash('sha256').update(JSON.stringify(['fresh-empty-runtime', runtimeID, sourcePath, APP_ID])).digest('hex');
 
 function rebindRestoredFreshRuntime(filename, outputDataHome, manifest, manifestSha256) {
+  assertLocalStoragePath(filename);
   const db = new DatabaseSync(filename);
   try {
     db.exec('PRAGMA foreign_keys=ON; PRAGMA busy_timeout=5000; BEGIN IMMEDIATE');
@@ -204,7 +207,8 @@ export async function backupLocalData(dataHome, outputDirectory, { quiesced = fa
   if (quiesced !== true) throw Error('Stop Freelancer, OpenCode plugins and runtime helpers before backing up local data.');
   if (!path.isAbsolute(dataHome) || !path.isAbsolute(outputDirectory)) throw Error('Data and backup paths must be absolute.');
   dataHome = path.resolve(dataHome); outputDirectory = path.resolve(outputDirectory);
-  if (dataHome === outputDirectory || outputDirectory.startsWith(`${dataHome}${path.sep}`))
+  assertLocalStoragePath(dataHome);
+  if (storagePathContains(dataHome,outputDirectory))
     throw Error('Backup output must be outside the active data directory.');
   if (!existsSync(dataHome) || !lstatSync(dataHome).isDirectory() || lstatSync(dataHome).isSymbolicLink())
     throw Error('Freelancer data home must be an existing regular directory.');
@@ -268,7 +272,8 @@ export async function restoreLocalData(bundleDirectory, outputDataHome, { quiesc
   if (quiesced !== true) throw Error('Use a stopped runtime and restore into a new, empty data directory.');
   if (!path.isAbsolute(bundleDirectory) || !path.isAbsolute(outputDataHome)) throw Error('Backup and restore paths must be absolute.');
   bundleDirectory = path.resolve(bundleDirectory); outputDataHome = path.resolve(outputDataHome);
-  if (outputDataHome === bundleDirectory || outputDataHome.startsWith(`${bundleDirectory}${path.sep}`))
+  assertLocalStoragePath(outputDataHome);
+  if (storagePathContains(bundleDirectory,outputDataHome))
     throw Error('Restore destination must be outside the backup directory.');
   if (!existsSync(bundleDirectory) || !lstatSync(bundleDirectory).isDirectory() || lstatSync(bundleDirectory).isSymbolicLink())
     throw Error('Backup bundle must be an existing regular directory.');

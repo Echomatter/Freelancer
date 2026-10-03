@@ -1,4 +1,5 @@
 import { LOCAL_DATA_SCHEMA_VERSION } from '../../shared/data-contract.mjs';
+import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 import { createChatSearch } from './chat-search.mjs';
 import { createModelRatings } from './model-ratings.mjs';
 import { createImportedChats } from './imported-chats.mjs';
@@ -7,7 +8,7 @@ import { createMemoryCaptureService } from './memory-capture.mjs';
 import { createOpenCodeWarehouse } from './opencode-warehouse.mjs';
 import { createJudgmentEvidenceResolver } from './judgment-evidence.mjs';
 import { createAnalyticsService } from './analytics.mjs';
-import { contentSubstring } from '../../domain/content-query.mjs';
+import { contentSubstring, contentOffset } from '../../domain/content-query.mjs';
 import { readApplicationSettings, readSettingsProfile, splitSettingsByAuthority, writeApplicationSettings, writeSettingsProfile } from '../application-settings.mjs';
 import { normalizePlans } from '../../domain/costs.mjs';
 import { createRequire } from "node:module";
@@ -53,6 +54,7 @@ const freshRuntimeHash = (runtimeID, sourcePath) =>
 
 /** Reject anything already in a fresh namespace before opening SQLite writable. */
 export function assertFreshRuntimeRoot(directory, runtimeID) {
+  assertLocalStoragePath(directory);
   if (!path.isAbsolute(directory)) throw Error('The local data folder must be an absolute path.');
   const sourcePath = path.resolve(directory);
   if (!existsSync(directory)) return;
@@ -141,6 +143,7 @@ export function createLocalDataService(directory) {
   };
 }
 export function createLocalDataStore(directory, { readOnly = false } = {}) {
+  assertLocalStoragePath(directory);
   if (!path.isAbsolute(directory))
     throw Error("The local data folder must be an absolute path.");
   if (!readOnly) mkdirSync(directory, { recursive: true, mode: 0o700 });
@@ -689,7 +692,8 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
         walBytes };
     },
     analyze(sql, params = {}, options = {}) { return analytics.analyze(sql, params, options); },
-    searchFiles(match, projectKeys, filters = {}, limit = 50) {
+    searchFiles(match, projectKeys, filters = {}, limit = 50, offset = 0) {
+      const start = contentOffset(offset);
       if (!Array.isArray(projectKeys) || !projectKeys.length) return [];
       const keys = [...new Set(projectKeys.filter((key) => typeof key === "string" && key))];
       if (!keys.length) return [];
@@ -703,6 +707,12 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
         s.revision_identity AS revisionIdentity,
         s.virtual_path AS path,
         s.sha256 AS sourceSha256,
+        s.modified_utc AS sourceModifiedAt,
+        cr.captured_at AS capturedAt,
+        (SELECT value FROM content_meta WHERE project_key=s.project_key AND key='built_at_utc') AS indexBuiltAt,
+        CASE WHEN EXISTS(SELECT 1 FROM content_unit_revisions ur WHERE ur.source_identity=s.source_identity
+          AND ur.revision_identity=s.revision_identity AND ur.unit_no=u.unit_no AND ur.sha256=u.sha256)
+          THEN 'retained' ELSE 'unavailable' END AS evidenceAvailability,
         s.source_role AS role,
         s.status AS status,
         u.unit_no AS unit,
@@ -714,9 +724,12 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
         FROM content_units_fts
         JOIN content_units u ON u.unit_id=content_units_fts.rowid
         JOIN content_sources s ON s.source_id=u.source_id
+        LEFT JOIN content_source_revisions cr ON cr.source_identity=s.source_identity AND cr.revision_identity=s.revision_identity
         WHERE ${where.join(' AND ')}
-        ORDER BY bm25(content_units_fts), s.routing_rank DESC, s.project_key,s.virtual_path,u.unit_no,u.locator
-        LIMIT ?`).all(...params, Math.max(1, Math.min(201, Number(limit)||50))).map(plain);
+        ORDER BY bm25(content_units_fts), s.routing_rank DESC, s.project_key,s.virtual_path,u.unit_no,u.locator,u.unit_id
+        LIMIT ? OFFSET ?`).all(...params, Math.max(1, Math.min(201, Number(limit)||50)), start).map(row => ({ ...row,
+          observedAt: row.capturedAt ?? null, indexedAt: row.indexBuiltAt && Number.isFinite(Date.parse(row.indexBuiltAt)) ? Date.parse(row.indexBuiltAt) : null,
+          sourceUpdatedAt: row.sourceModifiedAt && Number.isFinite(Date.parse(row.sourceModifiedAt)) ? Date.parse(row.sourceModifiedAt) : null }));
     },
     projectIndexesReady(id) {
       return !!db.prepare('SELECT ready_at FROM project_index_state WHERE project_id=?').get(id);
@@ -784,7 +797,7 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
         if(snapshot.status!=='ok'||!snapshot.projectionSafe) return {published:false,status:'blocked',reason:snapshot.reason||'unsafe-message-window'};
         // BEGIN IMMEDIATE holds the current-manifest check, FTS publication and
         // receipt together. No native read, extraction or model call runs here.
-        chatSearch.indexChat(snapshot.job.projectID,snapshot.session,snapshot.messages);
+        chatSearch.indexChat(snapshot.job.projectID,snapshot.session,snapshot.messages,{derivationJobID:id});
         const outcome=warehouse.completeWarehouseDerivationJob({id,revisionToken,status:'complete'});
         if(!outcome.completed||outcome.status!=='complete') throw Error('Warehouse source changed before publication.');
         return {published:true,status:'complete',id,revisionToken,snapshotRevisionSha256:snapshot.snapshotRevisionSha256};

@@ -59,6 +59,13 @@ test("Windows gets a clean Freelancer namespace without inspecting the former da
     path.join("C:\\Users\\Test\\AppData\\Local", "Freelancer", "workspace-v2"));
 });
 
+test('other-platform data-root previews retain path math without inspecting a foreign filesystem',()=>{
+  assert.equal(resolveDataRoot({},'darwin','/Users/example'),
+    path.join('/Users/example','Library','Application Support','Freelancer','workspace-v2'));
+  assert.equal(resolveDataRoot({},'linux','/home/example'),
+    path.join('/home/example','.local','share','freelancer','workspace-v2'));
+});
+
 // ── runtimeEnv ────────────────────────────────────────────────────────
 
 test("runtimeEnv returns Freelancer-owned paths and leaves native OpenCode configuration alone", () => {

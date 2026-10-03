@@ -97,6 +97,8 @@ test('schema 17 archives the current indexed source and unit when upgrading sche
   db.prepare('INSERT INTO content_units(source_id,unit_no,locator,heading,text,word_count,char_count,sha256) VALUES(?,?,?,?,?,?,?,?)')
     .run(source.lastInsertRowid,1,'md:1','Fixture','Historic source sentence.',3,25,'b'.repeat(64));
   db.exec(`DROP TRIGGER opencode_derivation_inputs_immutable;
+    ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
+    ALTER TABLE chat_search_state DROP COLUMN indexed_text_sha256;
     DROP TABLE opencode_derivation_jobs; DROP TABLE opencode_refresh_needed;
     DELETE FROM data_table_lifecycle WHERE table_name IN ('opencode_derivation_jobs','opencode_refresh_needed');
     ALTER TABLE opencode_sessions DROP COLUMN current_snapshot_sha256;
@@ -408,6 +410,8 @@ test('schema 9 upgrade assigns legacy runtime identity without losing copied sta
   store.close();
   const db = new DatabaseSync(filename);
   db.exec(`DROP TRIGGER opencode_derivation_inputs_immutable;
+    ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
+    ALTER TABLE chat_search_state DROP COLUMN indexed_text_sha256;
     DROP TABLE opencode_derivation_jobs; DROP TABLE opencode_refresh_needed;
     DELETE FROM data_table_lifecycle WHERE table_name IN ('opencode_derivation_jobs','opencode_refresh_needed');
     DROP VIEW IF EXISTS knowledge_outcome_summary; DROP VIEW IF EXISTS knowledge_task_outcomes; DELETE FROM data_table_lifecycle WHERE table_name IN ('knowledge_outcome_summary','knowledge_task_outcomes'); DROP VIEW knowledge_pinned_memories; DROP VIEW knowledge_current_claims; DROP VIEW knowledge_claim_evidence; DROP VIEW knowledge_memory_evidence; DROP VIEW knowledge_source_coverage;
@@ -985,7 +989,7 @@ async function fixture(t) {
 }
 const historyQuery = (scope) =>
   `history?project=history_project&scope=${scope ?? "all"}`;
-test("indexed worker hits resolve to selectable parent with current pin and archive state", async (t) => {
+test("indexed worker hits retain identity and separate selectable parent pin and archive state", async (t) => {
   const f = await fixture(t);
   await f.api(historyQuery());
   await f.app.history.indexCurrent(f.project.id, "ses_worker", [
@@ -993,14 +997,16 @@ test("indexed worker hits resolve to selectable parent with current pin and arch
   ]);
   const search = () => f.api("history/search?q=unique%20worker%20phrase");
   const first = (await search()).results[0];
-  assert.equal(first.session, "ses_history");
-  assert.equal(first.title, "Important conversation");
+  assert.equal(first.session, "ses_worker");
+  assert.equal(first.title, "Linked worker");
+  assert.equal(first.navigationSession, "ses_history");
+  assert.equal(first.navigationTitle, "Important conversation");
   assert.equal(first.organization.revision, 0);
-  const pinned = await f.api("history/pin", { project: f.project.id, session: first.session, pinned: true, revision: 0 }, "PUT");
+  const pinned = await f.api("history/pin", { project: f.project.id, session: first.navigationSession, pinned: true, revision: 0 }, "PUT");
   assert.equal((await search()).results[0].organization.pinnedAt, pinned.pinnedAt);
-  await f.api("history/archive", { project: f.project.id, session: first.session, archived: true, revision: pinned.revision }, "PUT");
+  await f.api("history/archive", { project: f.project.id, session: first.navigationSession, archived: true, revision: pinned.revision }, "PUT");
   const pinState = new DatabaseSync(f.app.localData.get().filename,{readOnly:true});
-  assert.equal(pinState.prepare('SELECT pinned_at FROM session_annotations WHERE project_id=? AND session_id=?').get(f.project.id,first.session).pinned_at,null);
+  assert.equal(pinState.prepare('SELECT pinned_at FROM session_annotations WHERE project_id=? AND session_id=?').get(f.project.id,first.navigationSession).pinned_at,null);
   pinState.close();
   assert.equal((await search()).results[0].organization.archived, true);
 });

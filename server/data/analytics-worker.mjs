@@ -1,4 +1,5 @@
 import { createRequire } from 'node:module';
+import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 
 const require = createRequire(import.meta.url);
 const { DatabaseSync, constants: SQLITE } = require('node:sqlite');
@@ -19,6 +20,9 @@ process.once('message', workerData => {
   try {
     const started = Date.now();
     const deadline = started + workerData.timeoutMs;
+    // The parent already observed the volume before starting this query's budget.
+    // Keep canonical/UNC checks here without spawning another Windows probe.
+    assertLocalStoragePath(workerData.filename,{inspectVolume:false});
     reader = new DatabaseSync(workerData.filename, { readOnly: true });
     reader.exec('PRAGMA query_only=ON; PRAGMA trusted_schema=OFF; PRAGMA busy_timeout=10000;');
     const allowed = new Set([SQLITE.SQLITE_SELECT, SQLITE.SQLITE_READ, SQLITE.SQLITE_RECURSIVE, SQLITE.SQLITE_FUNCTION]);

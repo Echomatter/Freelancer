@@ -135,10 +135,112 @@ test('all four domains retain a 200-result boundary and report the overflow row'
       scope:{projectID:'alpha'},evidence:[{id:'source:many'}]});
   }
   for(const domain of ['files','conversations','memories','facts']) {
-    const found=await service.query({domain,query:'日本語 amber',projectID:'alpha',limit:200});
+    const input={domain,query:'日本語 amber',projectID:'alpha',limit:200};
+    const found=await service.query(input);
     assert.equal(found.results.length,200,`${domain} must not silently cap results at 100`);
     assert.equal(found.truncated,true,`${domain} preserves the overflow sentinel`);
+    assert.equal(found.page.continuation,'available');
+    assert.equal(found.page.consistency,'moving-index');
+    assert.equal(found.page.returned,200);
+    assert.equal(found.page.offset,0);
+    assert.ok(found.nextCursor);
+    const next=await service.query({...input,cursor:found.nextCursor});
+    assert.equal(next.results.length,1,`${domain} continuation executes beyond the first 200 rows`);
+    assert.equal(next.page.offset,200);
+    assert.equal(next.truncated,false);
+    assert.equal(next.nextCursor,null);
+    assert.equal(next.page.continuation,'complete');
+    const identity=row=>domain==='files'?`${row.sourceIdentity}:${row.unit}:${row.locator}`:
+      domain==='conversations'?`${row.project}:${row.session}:${row.message}`:row.id;
+    assert.equal(new Set([...found.results,...next.results].map(identity)).size,201,`${domain} ordered pages do not repeat a tied row`);
+    assert.deepEqual(await service.query({...input,cursor:found.nextCursor}),next,'repeated reads have deterministic ties in an unchanged index');
   }
+});
+
+test('continuation criteria reject changed queries, Unicode filters, scopes, registries and malformed offsets before SQL', async t => {
+  const { service, store, projects, setRegistry }=await fixture(t);
+  const input={domain:'files',query:'日本語 amber',phrase:true,limit:1};
+  const first=await service.query(input);
+  const cursor=first.nextCursor;
+  assert.ok(cursor);
+  const next=await service.query({...input,cursor});
+  assert.deepEqual(next.results.map(row=>row.projectID),['beta']);
+  const original=store.searchFiles;
+  let calls=0;
+  store.searchFiles=(...args)=>{calls++;return original.apply(store,args);};
+  for(const changes of [
+    {query:'Café 日本語'}, {domain:'conversations'}, {phrase:false}, {limit:2},
+    {source:'日本語'}, {role:'current_project_source'}, {status:'historical'},
+    {projectID:'alpha'}, {projectDirectory:projects[0].directory},
+  ]) await assert.rejects(service.query({...input,...changes,cursor}),{status:400});
+  const decoded=JSON.parse(Buffer.from(cursor,'base64url').toString('utf8'));
+  const token=value=>Buffer.from(JSON.stringify(value)).toString('base64url');
+  for(const invalid of ['', 'not-a-valid-cursor', cursor+'=', 'x'.repeat(1025),
+    token({...decoded,v:2}),token({...decoded,o:-1}),token({...decoded,o:0}),token({...decoded,o:0.5}),
+    token({...decoded,o:100001}),token({...decoded,o:'1'}),token({...decoded,extra:true}),token({...decoded,c:'0'.repeat(64)})])
+    await assert.rejects(service.query({...input,cursor:invalid}),{status:400});
+  setRegistry([projects[1]]);
+  await assert.rejects(service.query({...input,cursor}),{status:400});
+  setRegistry(projects.map(project=>project.id==='beta'?{...project,directory:path.join(project.directory,'moved')}:project));
+  await assert.rejects(service.query({...input,cursor}),{status:400});
+  assert.equal(calls,0,'invalid cursors fail before invoking SQL search');
+  setRegistry([...projects].reverse());
+  assert.deepEqual(await service.query({...input,cursor}),next,'registry presentation order does not change the canonical scope');
+  const other=createKnowledgeQuery({data:{...store,filename:path.join(path.dirname(store.filename),'different.sqlite')},getProjects:()=>projects});
+  await assert.rejects(other.query({...input,cursor}),{status:400});
+});
+
+test('memory and fact continuation preserve global authored records, exact IDs, blank pins and provider-only filters', async t => {
+  const { service,store }=await fixture(t);
+  store.createMemory({id:'projectless-note',kind:'note',title:'Café 日本語',body:'Café 日本語 amber observatory'});
+  store.addClaim({id:'projectless-claim',predicate:'Café 日本語 amber observatory',origin:'user-stated',epistemicState:'unverified',
+    modelProvider:'fixture',evidence:[{id:'memory:projectless-note@1'}]});
+  for(const domain of ['memories','facts']) {
+    const input={domain,query:'日本語',limit:1};
+    const rows=[];
+    let cursor;
+    do {
+      const found=await service.query({...input,cursor});
+      assert.ok(found.results.length<=1);
+      rows.push(...found.results);
+      cursor=found.nextCursor??undefined;
+    }while(cursor);
+    assert.equal(rows.length,4);
+    assert.ok(rows.some(row=>row.projectID==='other'),'global retained authored data is not excluded by the current project registry');
+    assert.ok(rows.some(row=>row.projectID===null),'projectless authored data remains searchable');
+  }
+  for(const id of ['memory-alpha','memory-beta']) store.setMemoryPin({id,pinned:true,expectedRevision:0});
+  const pins={domain:'memories',query:'',pinnedOnly:true,limit:1};
+  const first=await service.query(pins),next=await service.query({...pins,cursor:first.nextCursor});
+  assert.equal(first.results.length,1);assert.equal(next.results.length,1);
+  assert.notEqual(first.results[0].id,next.results[0].id);assert.equal(next.nextCursor,null);
+  for(const [domain,id] of [['memories','memory-alpha'],['facts','claim-alpha']]) {
+    const exact=await service.query({domain,query:id,limit:1});
+    assert.equal(exact.results[0].id,id);assert.equal(exact.nextCursor,null);assert.equal(exact.page.continuation,'complete');
+  }
+  const providers=await service.query({domain:'facts',query:'日本語',modelProvider:'fixture',limit:1});
+  assert.equal(providers.truncated,true);
+  assert.equal((await service.query({domain:'facts',query:'日本語',modelProvider:'absent'})).results.length,0);
+  await assert.rejects(service.query({domain:'facts',model:'fixture/model-a',modelProvider:'different'}),{status:400});
+  await assert.rejects(service.query({domain:'files',modelProvider:'fixture'}),{status:400});
+  await assert.rejects(service.query({domain:'facts',query:'日本語',modelProvider:'different',limit:1,cursor:providers.nextCursor}),{status:400});
+});
+
+test('finite continuation bounds never advertise an unusable next cursor', async () => {
+  const directory=path.resolve('paging-bound-project');
+  const calls=[];
+  const service=createKnowledgeQuery({getProjects:()=>[{id:'bound',directory}],data:{
+    searchFiles:(match,projects,filters,limit,offset)=>{
+      calls.push({limit,offset});return Array.from({length:limit},(_,index)=>({projectKey:directory,path:'bounded.md',unit:offset+index}));
+    },
+  }});
+  const input={domain:'files',query:'bounded',limit:1};
+  const first=await service.query(input);
+  const token=JSON.parse(Buffer.from(first.nextCursor,'base64url').toString('utf8'));token.o=100000;
+  const last=await service.query({...input,cursor:Buffer.from(JSON.stringify(token)).toString('base64url')});
+  assert.equal(last.results.length,1);assert.equal(last.truncated,true);
+  assert.equal(last.page.continuation,'offset-limit');assert.equal(last.page.hasMore,true);assert.equal(last.nextCursor,null);
+  assert.deepEqual(calls,[{limit:2,offset:0},{limit:2,offset:100000}]);
 });
 
 test('read-only CLI has query parity and refuses absent or unregistered databases without initialization', async t => {
@@ -151,7 +253,18 @@ test('read-only CLI has query parity and refuses absent or unregistered database
     const result = invoke(['query', domain, '日本語 amber', '--phrase', '--project-id', 'beta', '--limit', '1']);
     assert.equal(result.status, 0, result.stderr);
     assert.deepEqual(JSON.parse(result.stdout), expected);
+    const input={domain,query:'日本語 amber',phrase:true,limit:1};
+    const first=await service.query(input);
+    const expectedNext=await service.query({...input,cursor:first.nextCursor});
+    const continued=invoke(['query',domain,'日本語 amber','--phrase','--limit','1','--cursor',first.nextCursor]);
+    assert.equal(continued.status,0,continued.stderr);
+    assert.deepEqual(JSON.parse(continued.stdout),expectedNext,'CLI executes the same continuation as the shared service');
+    const mismatch=invoke(['query',domain,'different query','--phrase','--limit','1','--cursor',first.nextCursor]);
+    assert.equal(mismatch.status,1);assert.match(mismatch.stderr,/Cursor is invalid/);
   }
+  const providerOnly=invoke(['query','facts','日本語','--model-provider','fixture','--limit','1']);
+  assert.equal(providerOnly.status,0,providerOnly.stderr);
+  assert.deepEqual(JSON.parse(providerOnly.stdout),await service.query({domain:'facts',query:'日本語',modelProvider:'fixture',limit:1}));
   const before = await readFile(store.filename);
   const badScope = invoke(['query', 'conversations', 'observatory', '--project-id', 'other']);
   assert.equal(badScope.status, 1);
@@ -164,12 +277,18 @@ test('read-only CLI has query parity and refuses absent or unregistered database
 });
 
 test('native knowledge and content tools send canonical bridge queries and ask permission for mutations', async t => {
+  const paging=await fixture(t);
   const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-native-query-'));
   const requests = [], permissions = [];
   const server = createServer(async (request, response) => {
     let body = ''; for await (const chunk of request) body += chunk;
-    requests.push({ path: request.url, token: request.headers['x-freelancer-git-bridge'], body: JSON.parse(body) });
-    response.setHeader('Content-Type', 'application/json'); response.end(JSON.stringify({ status: 'ok', results: [] }));
+    const input=JSON.parse(body);
+    requests.push({ path: request.url, token: request.headers['x-freelancer-git-bridge'], body: input });
+    response.setHeader('Content-Type', 'application/json');
+    try {
+      const result=input.operation==='query'&&input.query==='日本語 amber'?await paging.service.query(input):{status:'ok',results:[]};
+      response.end(JSON.stringify(result));
+    }catch(error){response.statusCode=error.status??500;response.end(JSON.stringify({error:error.message}));}
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const oldRoot = process.env.FREELANCER_RUNTIME_ROOT, oldToken = process.env.FREELANCER_GIT_BRIDGE;
@@ -189,10 +308,18 @@ test('native knowledge and content tools send canonical bridge queries and ask p
   const knowledge = (await plugin({ directory: root })).tool.knowledge;
   assert.equal(existsSync(path.join(root, 'observed.txt')), true, 'initializer observes actual runtime storage capabilities');
   assert.equal(knowledge.args.expectedRevision.parse(0), 0);
+  assert.equal(knowledge.args.cursor.parse('next-page'),'next-page');
+  assert.throws(()=>knowledge.args.cursor.parse('x'.repeat(1025)));
   for (const operation of ['query', 'claims', 'read-claim', 'pin', 'refresh', 'archive', 'restore', 'evidence', 'judgment-evidence', 'query-evidence', 'revise-relation', 'relation-history'])
     assert.equal(knowledge.args.operation.parse(operation), operation);
   const context = { directory: root, sessionID: 'session', messageID: 'message', abort: new AbortController().signal,
     ask: async input => { permissions.push(input); } };
+  for(const operation of ['sources','unit','status','meta','facts','rebuild']) {
+    const requested=requests.length,asked=permissions.length;
+    await assert.rejects(content.execute({operation,cursor:'unsupported-cursor'},context),/Cursor is supported only/);
+    assert.equal(requests.length,requested,'unsupported continuation must not contact the bridge');
+    assert.equal(permissions.length,asked,'unsupported continuation must fail before mutation permissions');
+  }
   await knowledge.execute({ operation: 'query', domain: 'facts', query: '日本語', phrase: true, model: 'fixture/model-a' }, context);
   assert.equal(requests[0].body.projectID, undefined, 'native knowledge defaults globally');
   assert.equal(requests[0].body.phrase, true);
@@ -202,6 +329,19 @@ test('native knowledge and content tools send canonical bridge queries and ask p
   assert.equal(requests.at(-1).body.operation,'judgment-evidence');
   for (const operation of ['pin', 'refresh', 'archive', 'restore', 'revise-relation']) await knowledge.execute({ operation, id: 'memory', pinned: true, expectedRevision: 0 }, context);
   assert.deepEqual(permissions.map(item => item.metadata.operation), ['pin', 'refresh', 'archive', 'restore', 'revise-relation']);
+  const snapshotRevisionSha256 = 'a'.repeat(64);
+  assert.equal(knowledge.args.snapshotRevisionSha256.parse(snapshotRevisionSha256), snapshotRevisionSha256);
+  await knowledge.execute({ operation: 'opencode-read', projectID: 'project', sessionID: 'retained-target',
+    snapshotRevisionSha256, actorSessionID: 'forged-actor', messageID: 'forged-message' }, context);
+  assert.equal(requests.at(-1).body.sessionID, 'retained-target', 'source reads preserve the selected conversation');
+  assert.equal(requests.at(-1).body.snapshotRevisionSha256, snapshotRevisionSha256);
+  assert.equal(requests.at(-1).body.actorSessionID, context.sessionID, 'caller input cannot replace native actor identity');
+  assert.equal(requests.at(-1).body.messageID, context.messageID);
+  await knowledge.execute({ operation: 'remember', title: 'Source note', body: 'Retained source evidence',
+    sessionID: 'retained-target', actorSessionID: 'forged-actor', messageID: 'forged-message' }, context);
+  assert.equal(requests.at(-1).body.sessionID, 'retained-target');
+  assert.equal(requests.at(-1).body.actorSessionID, context.sessionID, 'mutations record their native caller, independently of a source target');
+  assert.equal(requests.at(-1).body.messageID, context.messageID);
   for(const operation of ['judgment-evaluate','judgment-evaluate-batch']) {
     const before=requests.length;
     let asked=false;
@@ -214,13 +354,27 @@ test('native knowledge and content tools send canonical bridge queries and ask p
     await assert.rejects(knowledge.execute({operation,stateJson:'{"evidence":[]}'},{...context,ask:async()=>{throw Error('Native permission explicitly denied');}}),/explicitly denied/);
     assert.equal(requests.length,deniedBefore,'native denial prevents the evaluation HTTP request');
   }
-  await content.execute({ operation: 'chats', query: '日本語', model: 'fixture/model-a', phrase: true }, context);
+  await content.execute({ operation: 'chats', query: '日本語', model: 'fixture/model-a', phrase: true, cursor: 'fixture-cursor' }, context);
   const chats = requests.at(-1);
   assert.equal(chats.path, '/api/knowledge/agent'); assert.equal(chats.token, 'fixture-bridge');
   assert.equal(chats.body.operation, 'query'); assert.equal(chats.body.domain, 'conversations');
   assert.equal(chats.body.projectDirectory, root); assert.equal(chats.body.global, false);
+  assert.equal(chats.body.cursor,'fixture-cursor');
   await content.execute({ operation: 'search', query: '日本語', global: true, source: '%_' }, context);
   assert.equal(requests.at(-1).body.global, true); assert.equal(requests.at(-1).body.projectDirectory, undefined);
   const cancelled = new AbortController(); cancelled.abort();
   await assert.rejects(content.execute({ operation: 'search', query: '日本語' }, { ...context, abort: cancelled.signal }), { name: 'AbortError' });
+  for(const domain of ['files','conversations','memories','facts']) {
+    const input={operation:'query',domain,query:'日本語 amber',phrase:true,limit:1};
+    const first=JSON.parse((await knowledge.execute(input,context)).output);
+    assert.ok(first.nextCursor);
+    const next=JSON.parse((await knowledge.execute({...input,cursor:first.nextCursor},context)).output);
+    assert.deepEqual(next,await paging.service.query({...input,cursor:first.nextCursor}));
+    assert.equal(next.page.offset,1);
+    await assert.rejects(knowledge.execute({...input,limit:2,cursor:first.nextCursor},context),/Cursor is invalid/);
+  }
+  const contentInput={operation:'search',query:'日本語 amber',phrase:true,global:true,limit:1};
+  const contentFirst=JSON.parse(await content.execute(contentInput,context));
+  const contentNext=JSON.parse(await content.execute({...contentInput,cursor:contentFirst.nextCursor},context));
+  assert.deepEqual(contentNext,await paging.service.query({domain:'files',query:'日本語 amber',phrase:true,global:true,limit:1,cursor:contentFirst.nextCursor}));
 });

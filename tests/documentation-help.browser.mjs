@@ -15,11 +15,14 @@ test('documentation help stays contextual, accessible and sourced from the READM
   const f = await own(localDataFixture());
   await mkdir(path.join(f.root, 'tools'));
   const indexer = await readFile('backend/tools/project-content-indexer.mjs', 'utf8');
-  await writeFile(path.join(f.root, 'tools', 'project-content-indexer.mjs'), indexer.replace('../../server/data/schema.sql', '../server/data/schema.sql').replace('../../domain/content-query.mjs','../domain/content-query.mjs'));
+  await writeFile(path.join(f.root, 'tools', 'project-content-indexer.mjs'), indexer.replace('../../server/data/schema.sql', '../server/data/schema.sql').replace('../../domain/content-query.mjs','../domain/content-query.mjs')
+    .replace('../../shared/local-storage-path.mjs', '../shared/local-storage-path.mjs'));
   await mkdir(path.join(f.root, 'server', 'data'), { recursive: true });
   await copyFile('server/data/schema.sql', path.join(f.root, 'server', 'data', 'schema.sql'));
   await mkdir(path.join(f.root,'domain'),{recursive:true});
   await copyFile('domain/content-query.mjs',path.join(f.root,'domain','content-query.mjs'));
+  await mkdir(path.join(f.root, 'shared'), { recursive: true });
+  await copyFile('shared/local-storage-path.mjs', path.join(f.root, 'shared', 'local-storage-path.mjs'));
   await f.store.update('settings', s => ({ ...s, appearance: { ...s.appearance, theme: 'light' } }));
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true });
   await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -28,7 +31,13 @@ test('documentation help stays contextual, accessible and sourced from the READM
     const menu = page.getByRole('button', { name: scope, exact: true });
     if (await menu.getAttribute('aria-expanded') !== 'true') await menu.click();
     await page.locator('.settings-drawer-links').getByRole('button', { name, exact: true }).click();
-    await expect(page.getByRole('heading', { name, exact: true }).first()).toBeVisible();
+    const heading = page.getByRole('heading', { name, exact: true }).first();
+    const background = page.getByRole('button', { name: 'Continue in background', exact: true });
+    // Contextual help can be inspected while first-open indexing continues.
+    // Use the offered user control instead of requiring preparation to finish.
+    await expect(heading.or(background).first()).toBeVisible();
+    if (await background.isVisible()) await background.click();
+    await expect(heading).toBeVisible();
   }
   async function content(topic) {
     const tip = page.locator('.help-hint-popover');

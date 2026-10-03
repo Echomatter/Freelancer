@@ -44,6 +44,7 @@ export function createJudgmentRecordEvidence(db) {
       const id=ref.memoryID, revision=ref.memoryRevision??ref.revision;
       if (typeof id!=='string'||!Number.isSafeInteger(revision)||revision<1) unavailable('claim memory source requires an exact stored revision.');
       if (ref.id!==undefined && ref.id!==`memory:${id}@${revision}`) unavailable('claim memory source ID does not match its stored revision.');
+      context.beforeMemory?.(id,revision);
       const source=rememberSource(context,stableEvidenceJSON(['memory',id,revision]),()=>memory(id,revision));
       if (ref.bodySha256!==undefined&&ref.bodySha256!==source.ref.bodySha256) unavailable('claim memory source body hash changed.');
       if (ref.recordSha256!==undefined&&ref.recordSha256!==source.ref.recordSha256) unavailable('claim memory source record changed.');
@@ -78,6 +79,7 @@ export function createJudgmentRecordEvidence(db) {
     return {kind:'recorded-provenance',record:ref};
   }
   function claim(claimID, ancestors=new Set(),context={sources:new Map(),bytes:0}) {
+    context.beforeClaim?.(claimID);
     if (ancestors.has(claimID)||ancestors.size>=4) unavailable('claim provenance is cyclic or exceeds the depth bound.');
     const row=claims.get(claimID);
     if (!row) unavailable('claim record is missing.');

@@ -12,6 +12,7 @@ import { createHistoryService } from '../server/history.mjs';
 import { createOpenCodeEventCoordinator } from '../server/opencode-event-coordinator.mjs';
 import { backupLocalData, restoreLocalData } from '../server/data/backup.mjs';
 import { FRESH_RUNTIME_ID } from '../server/runtime-config.mjs';
+import { LOCAL_DATA_SCHEMA_VERSION } from '../shared/data-contract.mjs';
 
 async function fixture(t) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-durable-warehouse-'));
@@ -300,6 +301,7 @@ test('an older derivation version remains inspectable but cannot publish or requ
   });
   assert.equal(f.store.searchChats('sapphire')[0].session, f.session.id);
   f.raw(db => {
+    db.prepare('UPDATE chat_search_state SET derivation_job_id=NULL WHERE derivation_job_id=?').run(current.id);
     db.prepare('DELETE FROM opencode_derivation_jobs WHERE job_id=?').run(current.id);
     db.prepare("UPDATE opencode_derivation_jobs SET status='pending',completed_at=NULL WHERE job_id=?").run(legacyID);
   });
@@ -318,12 +320,14 @@ test('schema20 retained captures migrate to blocked unknown work while their sea
   assert.equal(f.store.publishWarehouseDerivationJob(f.jobs()[0]).status, 'complete');
   const sourceRevision = f.raw(db => db.prepare('SELECT current_revision_sha256 FROM opencode_messages').get().current_revision_sha256);
   f.store.close();
-  f.raw(db => db.exec(`DROP TABLE opencode_derivation_jobs;
+  f.raw(db => db.exec(`ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
+    ALTER TABLE chat_search_state DROP COLUMN indexed_text_sha256;
+    DROP TABLE opencode_derivation_jobs;
     DROP TABLE opencode_refresh_needed;
     ALTER TABLE opencode_sessions DROP COLUMN current_snapshot_sha256;
     ALTER TABLE opencode_sessions DROP COLUMN publication_revision;
     DELETE FROM data_table_lifecycle WHERE table_name IN ('opencode_derivation_jobs','opencode_refresh_needed');
-    DELETE FROM schema_migrations WHERE version=21;
+    DELETE FROM schema_migrations WHERE version>=21;
     PRAGMA user_version=20;`));
   f.reopen();
   const initialized = f.jobs({ includeBlocked: true });
@@ -337,7 +341,7 @@ test('schema20 retained captures migrate to blocked unknown work while their sea
   assert.equal(f.store.publishWarehouseDerivationJob(initialized[0]).status, 'blocked');
   assert.equal(f.store.searchChats('pearl')[0].session, f.session.id);
   f.raw(db => {
-    assert.equal(db.prepare('PRAGMA user_version').get().user_version, 21);
+    assert.equal(db.prepare('PRAGMA user_version').get().user_version, LOCAL_DATA_SCHEMA_VERSION);
     assert.equal(db.prepare('SELECT current_revision_sha256 FROM opencode_messages').get().current_revision_sha256, sourceRevision);
     assert.equal(db.prepare('SELECT count(*) AS n FROM opencode_message_revisions').get().n, 1);
   });

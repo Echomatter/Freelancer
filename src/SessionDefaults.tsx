@@ -27,18 +27,11 @@ export function SessionDefaults({
     setError("");
   }, [data.project?.id, data.sessionDefaults?.revision]);
   useEffect(() => setSaved(false), [data.project?.id]);
-  if (!data.project)
-    return (
-      <Panel>
-        <h3>Choose a project</h3>
-      </Panel>
-    );
-  if (!draft)
-    return (
-      <Panel>
-        <h3>Loading session defaults…</h3>
-      </Panel>
-    );
+  if (!data.project || !draft)
+    return <div className="session-defaults">
+      <PageHeading title="Session defaults" icon={MessageSquare} help="session-defaults" actions={<PageCloseButton onClick={onClose} />} />
+      <Panel><p role="status">{data.project ? "Loading session defaults…" : "Choose a project"}</p></Panel>
+    </div>;
   const agent = data.settings.agents.find(
     (a) => a.id === draft.agentID,
   );

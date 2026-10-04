@@ -108,7 +108,7 @@ function Get-StartupDescendants([int]$RootPID) {
             if ($ordered.Count -ge 32) { break }
         }
     }
-    return ,$ordered.ToArray()
+    return $ordered.ToArray()
 }
 function Stop-OwnedStartupProcess {
     if (-not $started) { return }

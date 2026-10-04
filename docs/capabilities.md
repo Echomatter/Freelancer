@@ -74,6 +74,11 @@ describe the current inspection. Loaded means the tool is present, not that it
 has successfully run. Details and native permission explanations are in the
 Tools help bubble.
 
+The tool list covers native/plugin registry definitions. Connected MCP services
+remain usable, but this installed native inventory does not return their tool
+definitions. Empty service tool lists mean incomplete coverage, not no tools.
+See [Tool contracts](tools-library.md) for purpose and operation boundaries.
+
 The current chat supplies the observed agent/model context; the page does not
 hard-code Engineer or offer identity-based access selectors. Without a chat,
 model exposure remains unobserved. Tools and skills stay in the shared catalog.
@@ -93,36 +98,31 @@ ignored. This does not write a new native denial or erase an independently
 configured OpenCode capability. An externally registered tool is still part of
 the platform's ordinary native inventory, not an app-owned LSP feature.
 
-## Shared MCP skills
+## Shared skill guidance
 
-The shared `context7-mcp`, `fetch`, `playwright`, `typesafe-ai`, `reason-through`,
-`web-research`, `docs-research`, `remember`, and `bounded-judgment` skills guide
-capability use. `managed-git` describes the existing saved-agreement flow. `remember`
-uses Freelancer's internal memory; the other hints can describe connected MCP
-services. `browser-verify` covers UI verification and evidence boundaries.
-OpenCode supplies connected tools to eligible models. Skills are optional
-guidance: they never grant access, gate direct tool calls, or restrict a
-capability by agent, model, project or workflow. Memory MCP does not mirror or
-replace Freelancer persistence.
+Use the [canonical skill task map](skills-library.md#choose-guidance-by-the-result) to choose guidance for
+orientation, research, implementation, delegation, judgment or verification.
+That page also identifies official revisions and local adaptations. The
+[internal contract audit](skills-internal-audit.md) links detailed operation
+references to their runtime sources. Skills load on demand; models need not
+load a sequence of them or perform a tool call merely because a skill mentions it.
 
-The [skill library source report](skills-library.md) identifies official skill
-revisions, documentation-derived adaptations and API differences. The
-[internal skill audit](skills-internal-audit.md) maps authored workflow hints to
-their runtime sources.
+The captured execution contract supplies shared capability-use hints. These
+guide method and evidence selection; they are not routing rules, permission
+stages or tool access gates. Native OpenCode determines actual exposure and
+permissions. Missing guidance or an unavailable auxiliary service leaves other
+permitted methods available. Memory MCP remains separate from Freelancer's
+internal retained knowledge, graph and pins.
 
-The captured execution contract supplies shared capability-use hints, with short
-contextual advice in existing skills. Hints help select methods and suitable
-evidence; they are optional, not required tool calls, routing rules or workflow
-stages. Playwright observations, source/tests, documented expectations, retrieved
-web content, historical Memory and JEV advice establish different things. Models
-can combine them when useful and use other valid methods when a service fails.
-Structured Freelancer model outcomes retain authority over performance evidence;
-Memory may supplement qualitative history and JEV may advise an ambiguous
-comparison within existing eligibility and consent boundaries.
+Source reads, published documentation, retrieved web content, retained knowledge,
+typed Jev answers and browser observations support different claims. Combine
+them while preserving their limits. Recorded model outcomes remain authoritative
+for performance observations; remembered lessons and judgments may advise a
+decision, never replace execution evidence or grant consent.
 
 ## Browser verification and evidence
 
-The shared `browser-verify` skill uses an appropriate already-connected browser
+The shared `playwright` skill uses an appropriate already-connected browser
 MCP, such as Playwright, for model-driven interaction. It has no vendor, persona,
 model or project entitlement gate. It discovers the current project's own test
 runner; Freelancer's `npm run test:browser` is only a project-specific example.

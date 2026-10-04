@@ -9,13 +9,13 @@
 | Part | Implementation | Responsibility / placement |
 | --- | --- | --- |
 | Settings drawers and grouped destinations | [`SettingsNavigation.tsx`](../src/SettingsNavigation.tsx), settings catalog, `NavigationMenus.tsx` | Two existing scopes; subgroup labels, named icons, current-page marker, disclosure/dismissal behavior. |
-| Page shell, heading, close action | [`echoflex/Controls.tsx`](../src/echoflex/Controls.tsx), [`settings-ux.css`](../src/settings-ux.css) | Scope/purpose, h1, description, page actions; form vs collection maximum width. |
+| Page shell, heading, close action | [`echoflex/Controls.tsx`](../src/echoflex/Controls.tsx), [`settings-ux.css`](../src/settings-ux.css) | One h1 and page actions; purpose, scope and descriptions in lower-right page help; form vs collection maximum width. |
 | Panel / nested panel | `Panel`, `HelpScope` | Themed surface, accessible h2/h3 hierarchy, one task or collection, shared footer help. |
 | Field and fieldset | `Field`, native form controls, legends | Visible labels, input association, grouped choices, responsive columns. |
 | Buttons / badges / empty states | `Button`, `Badge`, `Empty` | Action hierarchy, named icon controls, textual status, recoverable empty states. |
 | Provider identity and model controls | `ProviderColors.tsx`, `ProviderColorPicker.tsx`, `ModelSetup.tsx` | Provider mark/color, model and reasoning selection; independent color persistence. |
 | Modal shell / confirmation | `echoflex/Dialog.tsx` | Focus management, dismissal, busy state, footer, consequential-action confirmation. |
-| Feedback and progress | local status/error regions, `ProgressStatus`, `IndexJobs`, model-rating progress | Keep loading, write success, refresh failure, and execution progress distinct. |
+| Feedback and progress | local status/error regions, `ProgressStatus`, `IndexJobs`, model-data source progress | Keep loading, write success, refresh failure, and execution progress distinct. |
 | Read-only collections | model cards, tool/skill rows, project/file/search/history lists | Filter before results; name/state/metadata/action ordering; source and scope visible. |
 | Theme sources | `domain/theme.mjs`, provider color modules, `echoflex/tokens.css`, `colors.css` | Existing palette derivation and contrast; no page-owned theme. |
 
@@ -35,7 +35,7 @@
 
 **Source:** [`Settings.tsx`](../src/Settings.tsx), [`ProviderColorPicker.tsx`](../src/ProviderColorPicker.tsx), [`ProviderConnection.tsx`](../src/ProviderConnection.tsx). **Scope:** shared provider configuration. **Width:** collection.
 
-**Anatomy:** four provider cards: OpenAI, GitHub Copilot, OpenCode Go, OpenCode Free. Each has identity and connection status; non-free-provider cards expose Connect/Reconnect, billing mode, and optional monthly subscription price. Each card's color fieldset has presets, custom color input, hex input, preview, Save color, Use default, validation and local status. The final Billing preferences panel owns currency and Save provider settings. The connection dialog contains native method selection, conditional provider fields, API-key or browser authorization, optional authorization code, error and busy states.
+**Anatomy:** cards for connected OpenCode providers and keyless OpenCode Free, plus Add provider to open native setup. Each has identity and connection status; connected provider cards expose Reconnect, billing mode, and optional monthly subscription price. Each card's color fieldset has presets, custom color input, hex input, preview, Save color, Use default, validation and local status. The final Billing preferences panel owns currency and Save provider settings. The setup editor contains native provider/method selection, conditional provider fields, API-key or browser authorization, optional authorization code, error and busy states.
 
 **Placement verdict:** correct, but three different save boundaries were visually ambiguous. **PR treatment:** explicit connection/billing/color independence, named billing fieldsets, a billing footer panel, pending-save guard, retained billing draft after failure, and preservation of dirty billing inputs across unrelated color/auth refreshes. Billing success is not reversed by a failed workspace refresh. Authentication remains the existing native flow; no credentials enter this catalog or guide.
 
@@ -43,39 +43,39 @@
 
 **Source:** [`App.tsx`](../src/App.tsx), [`ModelRatings.tsx`](../src/ModelRatings.tsx). **Type:** shared catalog with a current-chat selection action. **Width:** collection.
 
-**Anatomy:** heading with Update Model Ratings and Close; search, provider filter, sort control, All/Free access filter; empty-filter state; model cards with identity, observation/status, provider, access class, native context/output/tool-use/variant facts, and Use model. The ratings dialog chooses selected-model research or parallel free-model research, model and reasoning variant, then starts a task. Rating progress has hide/reveal, stop, retry, completion, questions and native permission surfaces.
+**Anatomy:** heading with Update model data and Close; search, provider filter, sort and All/Free access filter. One scrolling grid shows all matching models from connected providers and keyless OpenCode Free, using the same scope as chat and session defaults. Compact cards show native identity/status, provider, access, limits and known capabilities; matched published deployment prices; and separate Artificial Analysis tested configurations with Intelligence, Coding, Agentic, speed and time-to-first-token values. Units, source links and capture dates stay with the values. **—** marks unavailable data; help explains source-specific scales, dates and missingness. The update dialog explicitly selects published sources; source setup lives in Capabilities. Shared progress reports source outcomes with hide/reveal, Stop and terminal dismissal. Full source records and legacy estimates remain internal to the warehouse and model_catalog tool.
 
-**Placement verdict:** acceptable as an AI utility adjacent to Providers, not as an editable model-availability policy. **PR treatment:** shared description, card spacing, wrapping filters/actions and page bounds. No model selection, rating or execution logic changes. A ratings task remains distinct from merely opening this page.
+**Placement verdict:** model browsing and source metadata belong beside Providers; source setup belongs under Capabilities → Model data sources. Native availability and authentication stay authoritative; source prices do not replace account costs or Available Usage. Opening Models reads stored information. Downloading sources is an explicit action, and saving a source key is separate from updating data.
 
 ### application/usage — Available Usage
 
 **Source:** [`App.tsx`](../src/App.tsx), [`AvailableUsage.tsx`](../src/AvailableUsage.tsx). **Type:** overview with one visibility preference. **Width:** collection.
 
-**Anatomy:** one full-width availability hero with combined meter, estimate, next reset, Refresh, provider legend, stale/partial/error feedback, reconnect shortcut and Observation details. Model visibility is an advanced disclosure with the saved “Show exhausted models” choice. Supporting panels cover Your providers, Model contributions, optional Agent contributions, and Recent projects / Open project. Provider rows carry provider-specific remaining usage, reset and warning information.
+**Anatomy:** one full-width availability hero with combined meter, estimate, next reset, Refresh, provider legend, stale/partial/error feedback, reconnect shortcut and Observation details. The saved “Show exhausted models” checkbox is at the end of the page. Supporting panels cover Your providers, Model contributions, optional Agent contributions, and Recent projects / Open project. Provider rows carry provider-specific remaining usage, reset and warning information.
 
 **Placement verdict:** usage belongs beside provider/model utilities. Model visibility is related and remains discoverable here; Recent projects is convenience navigation, not a usage setting. **PR treatment:** common hierarchy, descriptive scope and panel gaps, preserving the single hero and provider-colored meter. This PR does not add dollar figures to normal usage UI or reinterpret estimates as verified quotas. Moving Recent projects into a general home view is a follow-up IA decision, not silently done here.
 
 ### application/capabilities — Capabilities
 
-**Source:** [`Capabilities.tsx`](../src/Capabilities.tsx), [`capability-presentation.mjs`](../src/capability-presentation.mjs), [`capabilities.css`](../src/capabilities.css); inventory contract in [`server/capabilities.mjs`](../server/capabilities.mjs).
+**Source:** [`Capabilities.tsx`](../src/Capabilities.tsx), [`ModelRatings.tsx`](../src/ModelRatings.tsx), [`capability-presentation.mjs`](../src/capability-presentation.mjs), [`capabilities.css`](../src/capabilities.css); inventory contract in [`server/capabilities.mjs`](../server/capabilities.mjs).
 
-**Anatomy:** title, refresh and close; locally collapsible Tools, Skills and Connected Services (MCP) panels with compact available/ready counts. Expanding reveals shared inventory, five generic service templates, native connection status, setup and diagnostics. Tools and Skills remain available without a selected project. Internal memory and pins require no Memory MCP. Collapse preferences affect presentation only.
+**Anatomy:** title, refresh and close; locally collapsible Tools, Skills and Connected Services (MCP) panels with compact available/ready counts. Expanding reveals shared inventory, five generic service templates, native connection status, setup and diagnostics. Model data sources has source status and the optional write-only Artificial Analysis key with storage provenance. Credential management is available on this computer; paired remote devices can update configured sources from Models using safe source status. Tools and Skills remain available without a selected project. Internal memory and pins require no Memory MCP. Collapse preferences affect presentation only.
 
-**Placement:** application-wide tools, skills and MCP connections. Project context is an inspection input, not an access setting. Connection setup retains native permissions and explicit approval.
+**Placement:** application-wide tools, skills, MCP connections and model data source setup. Model data sources uses its existing source-key storage, independently of MCP connection setup. Project context is an inspection input, not an access setting. Connection setup retains native permissions and explicit approval.
 
 ### application/schedules — Scheduled prompts
 
 **Source:** [`ScheduledPrompts.tsx`](../src/ScheduledPrompts.tsx). **Scope:** cross-project schedule management. **Width:** collection.
 
-**Anatomy:** heading/Close, New schedule toolbar, local success/load/scheduler/error feedback, optional inline editor, empty state, schedule cards. Editor fields: Name, Prompt, Project, Agent, Model, Repeat (once / every 24 hours / every 7 days), First run in local time, displayed timezone, enabled checkbox, Save and Cancel. Cards show prompt, execution identity, next run, last delivery outcome, Open run, Edit, Pause/Resume, and a two-step Delete/Keep confirmation.
+**Anatomy:** heading with New schedule and Close, local success/load/scheduler/error feedback, optional inline editor, empty state, schedule cards. Editor fields: Name, Prompt, Project, Agent, Model, Repeat (once / every 24 hours / every 7 days), First run in local time, displayed timezone, enabled checkbox, Save and Cancel. Cards show prompt, execution identity, next run, last delivery outcome, Open run, Edit, Pause/Resume, and a two-step Delete/Keep confirmation.
 
-**Placement verdict:** application-level is correct because the collection spans projects; the project field is essential. **PR treatment:** standard page description, fields/cards/action wrapping and spacing. Native schedule timing and delivery semantics remain unchanged; “Sent to chat” is not relabeled “Completed.”
+**Placement verdict:** application-level is correct because the collection spans projects; the project field is essential. **PR treatment:** page explanation in help, fields/cards/action wrapping and spacing. Native schedule timing and delivery semantics remain unchanged; “Sent to chat” is not relabeled “Completed.”
 
 ### application/search — Search all content
 
-**Source:** [`IndexedSearch.tsx`](../src/IndexedSearch.tsx). **Type:** knowledge utility with authored memory/fact actions. **Width:** collection.
+**Source:** [`IndexedSearch.tsx`](../src/IndexedSearch.tsx). **Type:** knowledge search with memory actions and retained claim corrections. **Width:** collection.
 
-**Anatomy:** heading/Close/Content & Storage action; search field and explicit All registered projects scope; All content, Files, Conversations, Memories, Facts and Pinned Memory tabs; blank pinned home; independent domain errors, coverage, truncation and Retry; project/model/source/phrase/history/archive filters; live-source actions and exact retained-evidence readers. Memories support note creation/revision, pinning, reversible archive/restore, confirmed forget, historical revisions and durable capture progress. Facts require provenance and selected retained evidence, default to user-stated/unverified, and retain correction history. Complete-no-results panels link to index maintenance.
+**Anatomy:** heading/Close; search field and explicit All registered projects scope; All content, Files, Conversations, Memories, Facts and Pinned tabs; blank pinned home combining conversation and retained memory pins; Conversations includes native history browsing, selection, pins, archive/restore, Undo and export; coverage lives in page help; independent domain errors, truncation and Retry; project/model/source/phrase/history/archive filters; live-source actions and exact retained-evidence readers. Memories support note creation/revision, pinning, reversible archive/restore, confirmed forget, historical revisions and durable capture progress. Facts show retained claims and provenance; there is no new-fact form. Corrections require selected retained evidence and preserve claim history. FTS5 provides search relevance, not claim verification. Complete-no-results guidance lives in help.
 
 **Placement verdict:** useful alongside history and indexed data; search inputs stay on their own page. Shared controls and responsive page geometry apply to search, evidence and edit dialogs. Each domain retains independent failure handling and provenance.
 
@@ -83,7 +83,7 @@
 
 **Source:** [`ContentStorage.tsx`](../src/ContentStorage.tsx). **Scope:** content indexes and application-local storage. **Width:** collection.
 
-**Anatomy after this PR:** heading with Search all content and Close; section-jump links; independent index/storage error-retry notices; restored-work warning and explicit recovery confirmation for the captured restore identity; index metrics; Projects; Local data; SQLite maintenance. File access has its own Application settings destination. Projects rows show name/path/archive state, file and chat coverage, archive/restore, and file/conversation index refresh actions. Local data shows ownership flow and nested location cards (owner, path, size/note, Open folder), native warning and Export conversations. Maintenance exposes database/WAL/free-page stats, refresh, Start clean, Optimize, Check and Compact, with reset/compaction confirmations. Project archiving has its own index-before-archive confirmation.
+**Anatomy after this PR:** heading and Close; section-jump links; independent index/storage error-retry notices; restored-work warning and explicit recovery confirmation for the captured restore identity; index metrics; Projects; Local data; SQLite maintenance. File access has its own Application settings destination. Projects rows show name/path/archive state, file and chat coverage, archive/restore, and file/conversation index refresh actions. Local data shows ownership flow and nested location cards (owner, path, size/note, Open folder), native warning. Maintenance exposes database/WAL/free-page stats, refresh, Start clean, Optimize, Check and Compact, with reset/compaction confirmations. Project archiving has its own index-before-archive confirmation.
 
 **Placement verdict:** shared file access was wrongly buried after database maintenance. **PR treatment:** a real React slot moves the single existing control panel ahead of maintenance, with an anchor; DOM, reading and keyboard order agree. Storage/index APIs, ownership, archive revisions, confirmations and data-retention behavior remain unchanged. No filesystem access policy is broadened or narrowed.
 
@@ -103,7 +103,7 @@
 
 **Anatomy:** heading/Close; Start a new chat form with Agent, fixed-model summary or editable parent model, reasoning/intelligence selection, validation/error and Save defaults / confirmed status. Context window is a second independently saved panel with Automatic compaction, loading, Retry, Save context settings and project-scoped status. A Manage agents shortcut opens the shared catalog.
 
-**Placement verdict:** correct, provided new-chat defaults and runtime context settings are not presented as one save operation. **PR treatment:** scope/save-boundary description, common panel hierarchy and form spacing. No change to model inheritance, stored defaults, current chat choices, or compaction behavior.
+**Placement verdict:** correct, provided new-chat defaults and runtime context settings are not presented as one save operation. **PR treatment:** scope/save-boundary guidance in help, common panel hierarchy and form spacing. No change to model inheritance, stored defaults, current chat choices, or compaction behavior.
 
 ### project/delegation — Delegation
 
@@ -117,7 +117,7 @@
 
 **Source:** [`Goals.tsx`](../src/Goals.tsx). **Scope:** selected project and each goal's linked chat. **Width:** collection.
 
-**Anatomy:** heading/New goal/Close; introductory save-vs-start text; Show archived toggle; goal rows with identity/status/reason, free-model event, Open chat, Start/Resume/Stop, remaining-work stop, Edit, Archive/Restore and latest checkpoint/evidence disclosure. Goal editor dialog contains title, objective, execution lock/steering explanation, execution identity fields, delegation preferences/worker count, free-rotation and ordinary-tool-approval choices, shared-folder caveat, objective-revision history, error and Save/Cancel.
+**Anatomy:** heading/New goal/Close and page help; Show archived toggle; goal rows with identity/status/reason, free-model event, Open chat, Start/Resume/Stop, remaining-work stop, Edit, Archive/Restore and latest checkpoint/evidence disclosure. Goal editor dialog contains title, objective, execution lock/steering state, execution identity fields, delegation preferences/worker count, free-rotation and ordinary-tool-approval choices, objective-revision history, error and Save/Cancel. Save-vs-start, free-rotation and shared-folder guidance lives in help; approval limits stay visible.
 
 **Placement verdict:** deliberately correct in Project settings per the product's goal-management design. **PR treatment:** consistent page context and card/actions geometry, preserving existing dialog shell. Goal chat headers, runtime transitions, durable checkpoints and approval boundaries are not changed.
 
@@ -127,7 +127,7 @@
 
 **Anatomy:** heading with Back where relevant, Search project content and Close; root-only current-chat changes surface; current path; error/Retry; folder rows; file preview panel with text/diff or binary explanation; loading and empty-folder states.
 
-**Placement verdict:** appropriate as a project utility, but it is not the place to edit shared file-access scope. **PR treatment:** explicit browse-vs-permissions description, common panels and contained code scrolling. No file editing, diff, path authorization or selected-chat behavior changes. The existing changes/diff subview retains its feature-owned presentation.
+**Placement verdict:** appropriate as a project utility, but it is not the place to edit shared file-access scope. **PR treatment:** browse-vs-permissions guidance in help, common panels and contained code scrolling. No file editing, diff, path authorization or selected-chat behavior changes. The existing changes/diff subview retains its feature-owned presentation.
 
 ### project/search — Search project content
 
@@ -135,7 +135,7 @@
 
 **Anatomy:** the same search controls, independently loaded result groups, provenance, retry and empty states as application search, but the selected project is passed explicitly and named beside the query. Open file results return to that project's Files; conversation results open their corresponding chat. Index maintenance remains a separate destination.
 
-**Placement verdict:** correct; preserving a separate scope avoids accidentally broadening a user's search. **PR treatment:** distinct registry entry/title/description and shared layout; endpoints and scope parameters are unchanged.
+**Placement verdict:** correct; preserving a separate scope avoids accidentally broadening a user's search. **PR treatment:** distinct registry entry/title/help description and shared layout; endpoints and scope parameters are unchanged.
 
 ### project/github — GitHub
 

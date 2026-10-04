@@ -100,19 +100,22 @@ try {
   }
   for (const name of retiredAgents) assert.ok(!agents.some(agent=>agent.name===name),`Retired profile remains selectable: ${name}`);
   const skills = await host.request('/skill',{directory});
-  for (const name of ['reorient','search-index','model-routing','record-outcome','pursue-goal','debug','verify','browser-verify','playwright','web-research','remember','reason-through','docs-research','bounded-judgment','typesafe-ai','review','handoff'])
+  const resources = JSON.parse(await readFile(path.join(config.backendRoot,'opencode','catalog.json'),'utf8'));
+  for (const name of resources.skills)
     assert.ok(skills.some(skill=>skill.name===name),`Missing app skill ${name}`);
   const tools = await host.request('/experimental/tool/ids',{directory});
   const nativeDriver=withUnifiedDatabase({dataHome:config.dataRoot,runtimeID:config.runtimeID},false,db=>
     db.prepare("SELECT data FROM operational_records WHERE collection='storage-drivers' AND id='bun:sqlite'").get());
   assert.ok(nativeDriver,'Native plugin must record its actual embedded Bun SQLite facilities.');
   console.log(JSON.stringify({storageDrivers:[nodeDriver,JSON.parse(nativeDriver.data)]}));
-  for (const name of ['delegate','content_index','git_project','knowledge','todowrite','goal_checkpoint'])
+  for (const name of [...resources.tools,'todowrite'])
     assert.ok(tools.includes(name),`Missing native tool ${name}`);
   const capabilities = await createCapabilities({host,backendRoot:config.backendRoot}).read({directory,projectID:'native-smoke',agent:'engineer'});
   assert.equal(capabilities.probes.ids.state,'observed');
   assert.equal(capabilities.probes.exposed.state,'not-run','smoke does not select or invoke a model');
   assert.ok(capabilities.tools.find(row=>row.id==='delegate').discovered);
+  assert.ok(capabilities.tools.find(row=>row.id==='model_catalog').discovered);
+  assert.ok(capabilities.tools.find(row=>row.id==='evidence_evaluation').discovered);
   assert.ok(capabilities.skills.find(row=>row.name==='verify').discovered);
   assert.ok(Array.isArray(capabilities.mcp),'native MCP inventory must be available');
   assert.ok(capabilities.mcp.every(service=>service.origin==='OpenCode native MCP'
@@ -137,6 +140,7 @@ try {
   await app?.indexJobs?.close();
   await app?.history?.close();
   try {await app?.store.flush();} catch {}
+  await app?.modelData?.close();
   await app?.modelRatings?.close();
   await app?.gitProjects?.close();
   app?.localData?.close();

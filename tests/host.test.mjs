@@ -82,7 +82,7 @@ test("native host overlays Freelancer plugins without replacing user OpenCode se
   assert.equal(JSON.parse(env.OPENCODE_CONFIG_CONTENT).model, native.model);
   assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).plugin.includes("native-plugin"));
   assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).plugin.some(value => value.endsWith("/delegation.ts")));
-  for (const name of ['content-index', 'knowledge'])
+  for (const name of ['content-index', 'knowledge', 'model-catalog', 'evidence-evaluation'])
     assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).plugin.some(value => value.endsWith(`/${name}.ts`)));
   assert.ok(JSON.parse(env.OPENCODE_CONFIG_CONTENT).instructions.some(value => value.endsWith("WORKSTYLE.md")));
   assert.equal(Object.hasOwn(env, "OPENCODE_CONFIG_DIR"), false);
@@ -295,7 +295,7 @@ test('startHost returns only after actual backend tool inventory while preservin
   assert.equal(childEnv.XDG_CONFIG_HOME, 'fixture-native-config');
   const actualConfig = JSON.parse(childEnv.OPENCODE_CONFIG_CONTENT);
   assert.equal(actualConfig.model, native.model); assert.deepEqual(actualConfig.mcp, native.mcp);
-  assert.equal(actualConfig.plugin.length, 5);
+  assert.equal(actualConfig.plugin.length, 7);
   assert.match(childEnv.OPENCODE_SERVER_PASSWORD, /^[0-9a-f]{64}$/);
   ready.resolve(json(['any-user-native-tool']));
   const host = await work;

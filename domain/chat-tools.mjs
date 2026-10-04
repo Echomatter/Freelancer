@@ -5,7 +5,11 @@ import { isInternalMessage } from './sender.mjs';
 export const isGoalMessage = message => isInternalMessage(message) && (message.parts ?? []).some(part => /^\[Freelancer Goal (?:handoff|activity) /.test(part.text ?? ''));
 
 export const isAgentTool = part => part.type === 'tool' && (['delegate', 'task'].includes(part.tool) || isHandoffPart(part));
-export const commandMessages = messages => messages.map(message => ({ ...message, parts: (message.parts ?? []).filter(part => !isAgentTool(part)) }));
+// Commands is a projection of actual tool receipts. Native recap messages and
+// response prose belong in the transcript, even when they share a tool turn.
+export const commandMessages = messages => messages.map(message => ({ ...message,
+  parts: (message.parts ?? []).filter(part => part.type === 'tool' && !isAgentTool(part)),
+})).filter(message => message.parts.length > 0);
 
 export function turnTools(request, activity = []) {
   const messages = request?.allMessages ?? [];

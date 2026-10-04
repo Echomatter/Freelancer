@@ -2,6 +2,7 @@ import { LOCAL_DATA_SCHEMA_VERSION } from '../../shared/data-contract.mjs';
 import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 import { createChatSearch } from './chat-search.mjs';
 import { createModelRatings } from './model-ratings.mjs';
+import { createModelDataStore } from './model-data.mjs';
 import { createImportedChats } from './imported-chats.mjs';
 import { createMemoryService } from './memory.mjs';
 import { createMemoryCaptureService } from './memory-capture.mjs';
@@ -52,6 +53,18 @@ export function conflict(
 const freshRuntimeHash = (runtimeID, sourcePath) =>
   createHash('sha256').update(JSON.stringify(['fresh-empty-runtime', runtimeID, sourcePath, APP_ID])).digest('hex');
 
+function onlyUnrefreshedModelDataSeeds(db) {
+  const exists = db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='model_data_sources'").get();
+  if (!exists) return true;
+  const rows = db.prepare(`SELECT source,generation,status,current_snapshot_id,current_job_id,last_refresh_at,last_attempt_at,
+    retry_at,record_count,version,error,quota_json,metadata_json FROM model_data_sources ORDER BY source`).all();
+  if (rows.length !== 2) return false;
+  return rows.every((row, index) => row.source === ['artificial-analysis','modelsdev'][index] &&
+    row.generation === 0 && row.status === 'never-refreshed' && row.current_snapshot_id === null && row.current_job_id === null &&
+    row.last_refresh_at === null && row.last_attempt_at === null && row.retry_at === null && row.record_count === 0 &&
+    row.version === null && row.error === null && row.quota_json === null && row.metadata_json === '{}');
+}
+
 /** Reject anything already in a fresh namespace before opening SQLite writable. */
 export function assertFreshRuntimeRoot(directory, runtimeID) {
   assertLocalStoragePath(directory);
@@ -75,6 +88,9 @@ export function assertFreshRuntimeRoot(directory, runtimeID) {
   catch { throw Error('Local data requires Node.js 24.10 or newer.'); }
   const db = new DatabaseSync(filename, { readOnly: true });
   try {
+    // Native launch helpers may inspect the runtime while its last writer finishes.
+    // Apply the same bounded wait used by the writable store before metadata reads.
+    db.exec('PRAGMA busy_timeout = 10000');
     const appID = db.prepare('PRAGMA application_id').get().application_id;
     const tables = new Set(db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all().map(row => row.name));
     const runtime = tables.has('runtime_instances')
@@ -92,7 +108,11 @@ export function assertFreshRuntimeRoot(directory, runtimeID) {
         AND name NOT GLOB 'memory_search_fts_*' AND name NOT GLOB 'claims_search_fts_*'`).all();
       if ((appID === 0 && tables.size === 0) || (appID === APP_ID && version > 0 && version <= SCHEMA)) {
         for (const { name } of ownedTables) {
-          if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name) || db.prepare(`SELECT 1 FROM "${name}" LIMIT 1`).get())
+          if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(name))
+            throw Error('Fresh Freelancer data root contains unregistered data; refusing to open or import prior data.');
+          const hasData = name === 'model_data_sources' ? !onlyUnrefreshedModelDataSeeds(db)
+            : !!db.prepare(`SELECT 1 FROM "${name}" LIMIT 1`).get();
+          if (hasData)
             throw Error('Fresh Freelancer data root contains unregistered data; refusing to open or import prior data.');
         }
         return; // interrupted clean schema initialization; no user data was committed
@@ -165,6 +185,9 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
   const db = new DatabaseSync(filename, {readOnly});
   let closed = false;
   try {
+    // Startup metadata reads also contend with transactional publication.
+    // Install the existing wait policy before the first database read.
+    db.exec("PRAGMA busy_timeout = 10000;");
     const version = db.prepare("PRAGMA user_version").get().user_version;
     const appID = db.prepare("PRAGMA application_id").get().application_id;
     if (readOnly && (version !== SCHEMA || appID !== APP_ID)) throw Error('Read-only queries require the current registered Freelancer schema. Start Freelancer to upgrade it explicitly.');
@@ -179,9 +202,7 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
       throw Error(
         "Unsupported local data database. Existing data was not changed.",
       );
-    // Match the separate index-publisher connection so short app writes wait
-    // through its transactional publication instead of surfacing SQLITE_BUSY.
-    db.exec("PRAGMA busy_timeout = 10000; PRAGMA foreign_keys = ON;");
+    db.exec("PRAGMA foreign_keys = ON;");
     if (!version) {
       db.exec("BEGIN IMMEDIATE");
       try {
@@ -244,6 +265,7 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
   const analytics = createAnalyticsService(filename);
   const warehouse = createOpenCodeWarehouse(db, tx);
   const chatSearch = createChatSearch(db, tx);
+  const modelData = createModelDataStore(db, tx);
   if (!readOnly) {
     try { warehouse.initializeWarehouseDerivations(); }
     catch(error) { analytics.close();db.close();throw error; }
@@ -396,6 +418,7 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
             AND name NOT GLOB 'memory_search_fts_*' AND name NOT GLOB 'claims_search_fts_*' ORDER BY name`).all();
         for (const { table_name: table } of ownedTables) {
           if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(table)) throw Error('Invalid owned-table metadata in Freelancer database.');
+          if (table === 'model_data_sources' && onlyUnrefreshedModelDataSeeds(db)) continue;
           if (db.prepare(`SELECT 1 FROM "${table}" LIMIT 1`).get())
             throw Error('Freelancer data root is not empty; refusing fresh activation or prior-data import.');
         }
@@ -423,6 +446,7 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
     },
     ...createImportedChats(db, tx),
     ...createModelRatings(db, tx),
+    ...modelData,
     info: () => ({
       schemaVersion: SCHEMA,
       filename,

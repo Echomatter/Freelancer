@@ -36,6 +36,29 @@ test("native auth methods retain conditional prompts and Go has a native key ent
   ]);
   assert.equal(methods["github-copilot"][0], method);
   assert.equal(methods["opencode-go"][0].type, "api");
+  const emptyMethods = [];
+  const pluginMethods = [{ type: 'api', label: 'Plugin API key' }];
+  const catalogMethods = connectionMethods({
+    openai: methods.openai,
+    'github-copilot': [method],
+    'empty-native': emptyMethods,
+    'plugin-native': pluginMethods,
+    'invalid-native': null,
+    'opencode-go': emptyMethods,
+  }, [
+    { id: 'anthropic' }, { id: 'custom-provider' }, { id: 'empty-native' },
+    { id: 'openai' }, { id: 'github-copilot' }, { id: 'plugin-native' },
+    { id: 'invalid-native' }, { id: '../unknown' }, { id: '' }, {},
+  ]);
+  assert.deepEqual(catalogMethods.anthropic, [{ type: 'api', label: 'API key' }]);
+  assert.deepEqual(catalogMethods['custom-provider'], [{ type: 'api', label: 'API key' }]);
+  assert.equal(catalogMethods.openai, methods.openai);
+  assert.equal(catalogMethods['github-copilot'][0], method);
+  assert.equal(catalogMethods['empty-native'], emptyMethods, 'An explicit empty native entry is not a missing method.');
+  assert.equal(catalogMethods['plugin-native'], pluginMethods);
+  assert.equal(catalogMethods['opencode-go'], emptyMethods, 'Go also preserves an explicit empty native entry.');
+  for (const id of ['missing-provider', '../unknown', '', 'invalid-native'])
+    assert.equal(Object.hasOwn(catalogMethods, id), false, `No generic key fallback for ${id || 'an empty ID'}.`);
 });
 test("auth forwards only visible declared fields and rejects invalid select values", () => {
   assert.deepEqual(initialInputs(method), { deployment: "public" });

@@ -7,17 +7,19 @@ import { ThemePicker } from "./ThemePicker";
 import { useEffect, useRef, useState } from "react";
 import { Check, Files, GitFork, Link2, Palette, Wallet } from "lucide-react";
 import { Button, Panel, Field, Badge, PageCloseButton, PageHeading } from "./echoflex/Controls";
+import { Dialog } from './echoflex/Dialog';
 import { api } from "./api";
 import { ProviderConnection } from "./ProviderConnection";
 import { SessionDefaults } from "./SessionDefaults";
 import { ScheduledPrompts } from "./ScheduledPrompts";
 import { RemoteAccess } from "./RemoteAccess";
 import { Capabilities } from './Capabilities';
+import type { useModelDataUpdate } from './ModelRatings';
 import { providerDefaults } from '../domain/provider-colors.mjs';
 import type { SettingsScope } from "./SettingsNavigation";
 
-export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSetting, onColorsSaved, onHistory, onOpenChat, onClose }: {
-  data: any; sessionID?: string; onHistory?: () => void;
+export function Settings({ data, modelData, sessionID, tab, run, refresh, onNavigate, onSetting, onColorsSaved, onOpenChat, onClose }: {
+  data: any; modelData: ReturnType<typeof useModelDataUpdate>; sessionID?: string;
   onOpenChat: (project: string, session: string) => Promise<void>;
   onClose: () => void; onColorsSaved: (patch: ColorPatch) => void;
   onNavigate: (view: string) => void; onSetting: (scope: SettingsScope, tab: string) => void;
@@ -25,6 +27,10 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
 }) {
   const [plans, setPlans] = useState<any>(data.settings.plans);
   const [auth, setAuth] = useState<any>(null), [methods, setMethods] = useState<any>({});
+  const [addingProvider, setAddingProvider] = useState(false), [providerQuery, setProviderQuery] = useState('');
+  const [providerChoice, setProviderChoice] = useState(''), [providerPending, setProviderPending] = useState(false), [providerError, setProviderError] = useState('');
+  const providerRequest = useRef<AbortController>();
+  useEffect(() => () => providerRequest.current?.abort(), []);
   const [billingSaving, setBillingSaving] = useState(false), [billingSaved, setBillingSaved] = useState(false);
   const [billingError, setBillingError] = useState(''), [billingNotice, setBillingNotice] = useState('');
   const billingDirty = useRef(false), billingFlight = useRef(false);
@@ -49,17 +55,46 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
     } catch (error) { setBillingError(error instanceof Error ? error.message : 'Could not save billing settings. Your edits are retained.'); }
     finally { billingFlight.current = false; setBillingSaving(false); }
   }
-  async function connect(id: string) {
-    const all = await api("auth"); setMethods(all); setAuth({ provider: id });
+  const nativeProviders = data.providers.all ?? [];
+  const connectedProviders = new Set<string>(data.providers.connected ?? []);
+  const currentProviders = nativeProviders.filter((provider: any) => connectedProviders.has(provider.id) ||
+    (provider.id === 'opencode' && Object.values(provider.models ?? {}).some((model: any) => model.cost?.input === 0 && model.cost?.output === 0)));
+  const currentProviderIDs = new Set(currentProviders.map((provider: any) => provider.id));
+  const additionalProviders = nativeProviders.filter((provider: any) => !currentProviderIDs.has(provider.id));
+  const matchingProviders = additionalProviders.filter((provider: any) =>
+    `${provider.name} ${provider.id}`.toLowerCase().includes(providerQuery.trim().toLowerCase()));
+  async function connect(id: string, signal?: AbortSignal) {
+    const all = await api("auth", undefined, 'GET', signal);
+    if (signal?.aborted) return false;
+    setMethods(all); setAuth({ provider: id }); return true;
+  }
+  const closeProviderPicker = () => {
+    providerRequest.current?.abort(); providerRequest.current = undefined;
+    setAddingProvider(false); setProviderPending(false);
+  };
+  async function chooseProvider() {
+    if (providerRequest.current || !additionalProviders.some((provider: any) => provider.id === providerChoice)) return;
+    const controller = new AbortController(); providerRequest.current = controller;
+    setProviderPending(true); setProviderError('');
+    try {
+      if (await connect(providerChoice, controller.signal)) setAddingProvider(false);
+    } catch (error) {
+      if (!controller.signal.aborted) setProviderError(error instanceof Error ? error.message : 'Could not load the provider connection. Try again.');
+    } finally {
+      if (providerRequest.current === controller) {
+        providerRequest.current = undefined;
+        if (!controller.signal.aborted) setProviderPending(false);
+      }
+    }
   }
   const closeAction = <PageCloseButton onClick={onClose} />;
   return <div className="settings-layout"><div className="settings-content">
     {tab === "remote-access" && <RemoteAccess onClose={onClose} />}
-    {tab === 'capabilities' && <Capabilities data={data} sessionID={sessionID} onClose={onClose} />}
+    {tab === 'capabilities' && <Capabilities data={data} modelData={modelData} sessionID={sessionID} onClose={onClose} />}
     {tab === "schedules" && <ScheduledPrompts data={data} onClose={onClose} onOpen={onOpenChat} />}
     {tab === "delegation" && <><PageHeading title="Delegation" icon={GitFork} help="delegation" actions={closeAction} />
       <DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
-    {tab === "content-storage" && <ContentStorage onHistory={() => onHistory?.()} onSearch={() => onSetting("application", "search")}
+    {tab === "content-storage" && <ContentStorage
       onClose={onClose} onChange={refresh} />}
     {tab === "file-access" && <><PageHeading title="File access" icon={Files} actions={closeAction} />
       <FileAccessSettings value={data.settings.fileAccessScope}
@@ -70,9 +105,13 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
           await refresh();
         }} /></>}
     {tab === "providers" && <>
-      <PageHeading title="Providers" icon={Wallet} help="providers" actions={closeAction} />
-      <p className="settings-page-description">Provider inventory and sign-in methods come from OpenCode. Credentials and shared MCP connections stay in OpenCode’s native configuration.</p>
-      <div className="provider-list">{(data.providers.all ?? []).map(({ id, name }: { id: string; name: string }) => {
+      <PageHeading title="Providers" icon={Wallet} help="providers" actions={<>
+        <Button type="button" variant="primary" onClick={() => {
+          setProviderQuery(''); setProviderChoice(''); setProviderError(''); setAddingProvider(true);
+        }}>Add provider</Button>{closeAction}
+      </>} />
+      {!currentProviders.length && <p>No providers are connected.</p>}
+      <div className="provider-list">{currentProviders.map(({ id, name }: { id: string; name: string }) => {
         const plan = plans.providers[id] ?? { mode: "unknown", monthlyPrice: null, enabled: true };
         return <Panel key={id} className="provider-card" aria-label={`${name} settings`} {...providerAttributes(id, data.settings.appearance ?? {})}>
         <div className="provider-top">
@@ -104,8 +143,7 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
         {Object.hasOwn(providerDefaults, id) && <ProviderColorPicker provider={id} name={name} onSaved={onColorsSaved} />}
       </Panel>;
       })}</div>
-      <Panel title="Billing preferences">
-        <p className="settings-page-description">This saves the billing fields above and the currency below. Provider colors and connections are saved separately.</p>
+      <Panel title="Billing preferences" help="billing-preferences">
         <div className="save-row settings-billing-actions">
           <Field label="Currency"><select disabled={billingSaving} value={plans.currency} onChange={e => editPlans({ ...plans, currency: e.target.value })}>
             {["USD", "EUR", "GBP", "CAD", "AUD"].map(c => <option key={c}>{c}</option>)}
@@ -122,6 +160,24 @@ export function Settings({ data, sessionID, tab, run, refresh, onNavigate, onSet
     {tab === "appearance" && <><PageHeading title="Appearance" icon={Palette} actions={closeAction} />
       <Panel><ThemePicker theme={data.settings.appearance?.theme} customThemes={data.settings.appearance?.customThemes} refresh={refresh} onSaved={onColorsSaved} /></Panel></>}
   </div>
+  {addingProvider && <Dialog title="Add provider" ariaLabel="Add provider" size="compact" initialFocus="first"
+    onClose={closeProviderPicker} onSubmit={event => { event.preventDefault(); void chooseProvider(); }}
+    footer={<>
+      <Button type="button" onClick={closeProviderPicker}>Cancel</Button>
+      <Button type="submit" variant="primary" disabled={providerPending || !additionalProviders.some((provider: any) => provider.id === providerChoice)}>
+        {providerPending ? 'Loading connection…' : 'Continue'}
+      </Button>
+    </>}>
+    <Field label="Search providers"><input type="search" value={providerQuery} disabled={providerPending}
+      onChange={event => { setProviderQuery(event.target.value); setProviderChoice(''); setProviderError(''); }} /></Field>
+    <Field label="Provider"><select value={providerChoice} disabled={providerPending || !matchingProviders.length}
+      onChange={event => { setProviderChoice(event.target.value); setProviderError(''); }}>
+      <option value="">Choose a provider</option>
+      {matchingProviders.map((provider: any) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
+    </select></Field>
+    {!matchingProviders.length && <p>{additionalProviders.length ? 'No providers match this search.' : 'No additional providers were returned by OpenCode.'}</p>}
+    {providerError && <p className="notice error" role="alert">{providerError}</p>}
+  </Dialog>}
   {auth && <ProviderConnection key={auth.provider} provider={auth.provider} name={data.providers.all.find((provider: any) => provider.id === auth.provider)?.name ?? auth.provider}
     methods={methods[auth.provider] ?? []} onClose={() => setAuth(null)} onConnected={async () => {
       await api('usage/refresh', {}).catch(() => {}); await refresh();

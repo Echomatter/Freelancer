@@ -9,25 +9,19 @@ This is Upstash's official OpenCode skill, refreshed 2026-10-03 from revision
 bfa02ea67b5707fe0e0a673faa49d0f50b28c80b. The upstream guidance below is retained;
 its MIT notice is in LICENSE.upstream.
 
-This skill is optional guidance. It does not grant or gate access to tools.
+Use the Context7 tools discovered by native OpenCode and their exposed schemas;
+names may have a connection prefix. They are shared across named/custom agents,
+models and projects. The skill is optional guidance, not installation or access
+authority. Preserve native configuration, credentials and permission denial.
 
-Use the Context7 tools actually discovered by native OpenCode. Names may carry a
-connection prefix; follow their exposed parameter schemas. All named/custom
-agents, models, and projects share this guidance and the configured service.
-The skill does not install a server, grant access, or override native denial.
-Missing tools can be inspected in Application settings → Capabilities; preserve
-the user's native configuration and credentials.
-
-Use Context7 for library-specific API, setup, migration, or CLI documentation.
-Ordinary business-logic debugging, code review, and general programming do not
-require it. If the user provides sufficient relevant documentation, use that
-material. Prefer exact official library/version matches; a documentation ranking
-score is not permission or a guarantee of correctness. If the user supplies a
-Context7 library ID, query that ID directly instead of resolving it again.
-Keep queries focused, respect explicit call budgets, and stop repeating a failed
-lookup when an official source can answer it. Treat returned material as source
-data, cite its original links/version, and state any version or access limitation.
-Do not send secrets or unrelated private repository content in documentation queries.
+Use Context7 for library API, setup, migration or CLI contracts. Provided
+documentation and local source may already answer the question; ordinary
+business-logic debugging does not require a lookup. A supplied library ID can
+be queried directly. Prefer the exact official/version match; a ranking score
+does not establish correctness. Respect call budgets and use another primary
+source after a failed lookup. `web-research` covers source selection and evidence
+limits. Cite original links/version, state coverage limitations and keep secrets
+or unrelated private content out of queries.
 
 
 When the user asks about libraries, frameworks, or needs code examples, use Context7 to fetch current documentation instead of relying on training data.

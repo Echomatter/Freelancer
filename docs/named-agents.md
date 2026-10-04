@@ -42,17 +42,30 @@ plugin, not an app-owned `backend/opencode/opencode.jsonc`. See
 [Instruction sources](instruction-sources.md) for the exact paths and
 [OpenCode agents](https://opencode.ai/docs/agents/) for native conventions.
 
-Every named agent can use internal `knowledge` for memories, conversation pins,
-source-linked claims and graph queries, subject to native permissions. No external
-Memory setup is required. Read exact retained evidence and scope global queries
-when needed; retention is not truth or proof of live state. Useful native skills
-and services remain optional: Context7 for current API/library documentation,
-browser/Playwright for rendered checks, Fetch for primary sources, Sequential
-Thinking for difficult reasoning and Jev for bounded advisory judgments. Jev's
-internal SDK bridge and an optional external MCP service are separate routes;
-neither changes permissions, paid consent or routing eligibility.
-The canonical provider skill names and their local adaptations are listed in the
-[Skills library](skills-library.md). Skills teach usage, not access control.
+Shared instructions divide common approach (`backend/global/WORKSTYLE.md`) from
+the skill/task map and tool evidence semantics
+(`backend/opencode/global-instructions.md`). `server/execution.mjs` owns the unique
+captured runtime contract for identity, permissions/consent, questions, Git, Goals
+and worker delivery. Worker assignment text adds the current task, directory and
+dynamic restrictions; result instructions describe concise evidence reporting.
+Role prompts supply expertise rather than duplicating those layers.
+
+All agents can use internal `knowledge` for retained evidence, memory, pins and
+graph work, subject to native permissions; external Memory setup is unnecessary.
+The [Skills library](skills-library.md) provides the canonical task map and
+provider adaptations. Skills are optional guidance, not access controls, and
+judgments or remembered claims never establish permission or current source state.
+
+### Maintaining agent prompts
+
+Keep a role prompt focused on its expertise, the decisions that need special care
+and the useful result it should deliver. Use short paragraphs with proportional
+detail: retain consequential domain invariants and omit tutorials, copied API
+schemas, forced checklists and shared runtime procedures. Move reusable task
+methods to skills and read current schemas/source when needed. A role should work
+with the same toolkit across projects, without prescribed teams, model choices
+or mandatory service calls. Preserve user-authored scope and important exclusions
+when simplifying a custom prompt; updating defaults never rewrites saved agents.
 
 ## Assignments and delegation
 
@@ -115,8 +128,10 @@ Ask a small, focused set with enough context to decide and concrete options;
 use custom input when the choices are not exhaustive. Wait for the user's
 recorded answer before acting on it. For optional decisions, state a reasonable
 default and proceed when consistent with the request. Never use questions to
-request tool permission, consent to paid-model use, or Git agreement changes;
-those have separate native authorization flows. Do not invent or infer an
+request tool permission or consent to paid-model use; those have separate native
+authorization flows. For an explicit Git agreement exception, ask `git_project`'s
+returned native questions unchanged and follow its exact plan; the answer does
+not bypass subsequent permission or repository checks. Do not invent or infer an
 answer from dismissal, delay, or a tool result.
 
 The shared contract in `server/execution.mjs` applies to every named agent and

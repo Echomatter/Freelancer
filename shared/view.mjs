@@ -36,6 +36,7 @@ export function modelRows(providers = [], snapshot = {}) {
       costClass: economicClass(surface), context, evidenceContext: number(evidence?.context?.input_tokens),
       output: number(model.limit?.output), variants: model.variants ?? [],
       tools: typeof model.capabilities?.toolcall === 'boolean' ? model.capabilities.toolcall : typeof model.toolcall === 'boolean' ? model.toolcall : null,
+      nativeCapabilities: model.capabilities ?? {},
       capabilities: evidence?.capabilities || {}, evidence: evidence || null,
       sources: (evidence?.source_keys || []).map(k => library.sources?.[k]).filter(Boolean),
       sourceCount: evidence?.source_keys?.length ?? null, researchedAt: evidence?.last_researched_at || null,

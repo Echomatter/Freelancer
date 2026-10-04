@@ -1,6 +1,6 @@
 # Local data, history and archives
 
-New-project setup offers an optional [one-time ChatGPT / Codex import](chatgpt-import.md) before indexing. Imported snapshots have their own tables, use the shared chat view, and can orient a new native chat without writing to OpenCode's database. They are an explicit exception to native conversation ownership described below; native conversations still belong to OpenCode. Cloud-only chats and a general backup-import UI are not supported. Stopped-runtime backup and restore are separate maintenance commands.
+New-project setup opens the folder and prepares its file and conversation indexes. ChatGPT / Codex import and new imported-history continuations have been removed. Previously saved snapshots, source provenance and existing continuation links remain in their tables, readable through `server/imported-history.mjs` and `server/data/imported-chats.mjs`. Their transcripts still support search, organization and export; no external conversation catalog is scanned and no new orientation is injected. Native conversations belong to OpenCode. Stopped-runtime backup and restore are separate maintenance commands.
 
 ## Start here
 
@@ -9,16 +9,17 @@ The UI/application contract is checked against the current
 [`domain/protocol.mjs`](../domain/protocol.mjs). A browser refresh alone cannot
 upgrade the local server. There is no new database server or installer to run.
 
-The current chat's actions offer **Archive, pin or export…**, preselecting that
-parent conversation. **Export conversations** in Content & Storage opens the same
-conversation-history organizer. It has Active, Archived and All views, pins,
-multiple selection, Undo, and progressive **Load more history** for one selected
-project. Archive and export selection remains limited to one project at a time.
+The current chat's actions offer **Archive, pin or export…**, opening **Search
+all content → Conversations** with that parent conversation selected. The same
+result rows provide Active, Archived and All views, pins, multiple selection,
+Undo, export and progressive **Load more history**. Choose a project to narrow
+the view; the application search can browse registered projects together.
 
 **Project settings → Search project content** scopes files, conversations,
 retained memories and facts to the selected project. **Application settings →
 Search all content** covers registered projects, including put-away projects.
-An empty search starts with **Pinned Memory**. Tabs select Files, Conversations,
+An empty search starts with **Pinned**, combining conversation and retained
+memory pins. Tabs select Files, Conversations,
 Memories or Facts; the memory archive filter includes retained archived items.
 Readers distinguish the current live source from an exact retained revision.
 Refresh the file and conversation search copies in **Application settings →
@@ -57,7 +58,8 @@ and source-status filters; path matching treats SQL wildcard characters as
 literal text. Conversation lookup also supports exact native session/message
 IDs. Scoped results and deterministic tie ordering are applied before limits.
 The search is lexical; it does not automatically call JEV to recover paraphrases.
-Each domain reports coverage and truncation independently.
+Each domain reports coverage and truncation independently. The page help shows
+coverage; actionable errors, Retry and truncation remain beside the results.
 
 Native knowledge judgments can reuse a successful single-question receipt when the caller pins a model ID that exactly matches the provider-reported model. The state, definition version, candidates, evidence revisions, and requested/reported provider and model identities must match. Moving aliases such as jev-latest are evaluated live. Batch requests reuse results only when every question has a complete matching successful receipt; a partial match reruns the whole batch. Cache hits return the original typed answer and receipt ID without counting historical token usage again.
 
@@ -145,7 +147,7 @@ The Freelancer SQLite store links by project/native session ID but has **no fore
 key into OpenCode's database**. Native IDs must be ownership-checked through the
 API before mutations or exports. Missing native sessions are not recreated.
 
-## SQLite schema 21
+## SQLite schema 23
 
 The executable schema is `server/data/schema.sql`; the shared version contract is
 `shared/data-contract.mjs`. Application history/draft access goes through
@@ -176,7 +178,10 @@ migration performance on a full user database.
 | `opencode_derivation_jobs` | Immutable bounded header/message membership manifest, derivation version, revision token, pending/due/blocked/completed/superseded state and retry receipts | Snapshot capture atomically queues work; retained-input publication checks the current manifest and commits FTS plus completion together. Unsafe/truncated/oversized manifests preserve the previous projection |
 | `opencode_refresh_needed` | Coalesced source/project/session dirty markers, reason, revision token, retry/backoff state and cleared receipts | Event failures, overflow and unaddressable scopes survive restart; compare-and-set acknowledgements prevent an older worker clearing a newer hint |
 | opencode_source_coverage | Per-source session, message and revision counts | Read-only capture coverage |
-| `model_catalog` | Public native model metadata and dated estimated ratings | Models-page catalog; not routing policy |
+| `model_catalog` | Public native model metadata and dated estimated ratings | Legacy native catalog and estimates; not routing policy |
+| `model_data_sources`, `model_data_refresh_jobs` | Per-source generation/current-snapshot state, quota metadata, and durable refresh receipts | Model-data refreshes are explicit; interrupted jobs are recorded, not automatically replayed |
+| `model_data_snapshots`, `model_data_records`, `model_data_facts` | Immutable source snapshots, source-qualified model/deployment/configuration records, and typed facts with source references and dates | Staged publication keeps readers on the last complete snapshot until the new snapshot commits |
+| `model_data_secrets` | Opaque Windows DPAPI CurrentUser ciphertext for the optional Artificial Analysis key | Credential status exposes configuration/storage metadata; restore under the same Windows user or enter the key again |
 | `entities`, `entity_aliases`, `claims`, `claim_evidence`, `entity_relations` | Provenance-aware shared knowledge graph | Claims retain origin, epistemic state, scope, time and evidence |
 | `entity_relation_revisions` | Immutable graph relation revisions, validity interval and recorded operation | Audited corrections and retractions; half-open `validFrom <= asOf < validTo` reads |
 | `memory_items`, `memory_item_revisions`, `memory_members`, `memory_pins`, `memory_changes` | Versioned notes, conversation snapshots, pin/archive state and audit records | Exact historical readers; unpin/archive preserve retained revisions; forget removes retained bodies |
@@ -189,12 +194,12 @@ migration performance on a full user database.
 | `model_rating_jobs` | Native configuration session, chosen model, state and summary | Background rating update recovery |
 | `knowledge_pinned_memories`, `knowledge_current_claims`, `knowledge_claim_evidence`, `knowledge_memory_evidence`, `knowledge_source_coverage` | Read-only warehouse views | Bounded native knowledge queries over pins, evidence and indexed-source coverage |
 | `knowledge_task_outcomes`, `knowledge_outcome_summary` | Safe normalized task/model/type records and aggregate counts | Execution completion and verified success remain separate; unknown/cancelled/skipped/unavailable are explicit |
-| `chatgpt_chats` / `chatgpt_messages` | Project-scoped imported headers, provenance and normalized messages | One-time source snapshots, separate from OpenCode |
-| `chatgpt_continuations` | Imported ID to native session link and creation state | Supported-API continuation; guards uncertain creation |
-| `project_onboarding` | Completed setup timestamp and import count | Prevents repeated imports or live sync |
+| `chatgpt_chats` / `chatgpt_messages` | Previously saved imported headers, provenance and normalized messages | Retained snapshots, separate from OpenCode; read compatibility only |
+| `chatgpt_continuations` | Existing imported ID to native session link and creation state | Historical links retained; new continuations are unavailable |
+| `project_onboarding` | Historical setup timestamp and import count | Retained receipt; no current importer or live sync |
 | `judgment_definitions`, `judgment_runs`, `judgment_results` | Immutable primitive/question/criteria versions, hashed bounded evidence packets, requested and reported provider/model metadata, typed answers, probabilities, confidence and optional usage | Preserves model judgments separately from underlying facts; provider failures and missing measurements remain explicit |
 
-Schema 21 treats source retention and search derivation as separate durable work.
+Schema 23 retains source capture and search derivation as separate durable work.
 Each captured snapshot atomically queues an immutable manifest job. The worker
 publishes only when that exact manifest is still current, and commits search
 publication with its completion receipt. `projectionSafe` means the bounded
@@ -203,6 +208,15 @@ completeness. Active windows remain `partial`, while only a matching complete
 archived snapshot can establish message absence. Malformed snapshots are
 rejected, and truncated/oversized snapshots cannot replace the prior safe search
 projection.
+
+The source-backed model catalog is also stored in this SQLite database. Models.dev
+is public and requires no key. Artificial Analysis uses its fixed Free endpoint
+only after an explicit refresh; its optional key is stored as current-user DPAPI
+ciphertext, never as plaintext. Catalog list/detail and evidence preparation use
+cached snapshots and do not fetch a source or call a model. The normal stopped-
+runtime database backup includes all six durable `model_data_*` tables. Its
+encrypted key value is Windows-user-bound and may need to be entered again after
+restoring under another account.
 
 Native event failures, overflow and unaddressable scopes create durable
 revisioned refresh markers. Compare-and-set acknowledgement protects newer

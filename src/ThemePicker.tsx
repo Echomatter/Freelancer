@@ -54,8 +54,18 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
     try {
       const candidate = draft && { ...draft, name: name.trim() || draft.name };
       const result = await api('appearance', removeCustomTheme ? { removeCustomTheme } : { customTheme: candidate, theme: candidate!.id }, 'PUT');
-      if (result?.saved !== true || !Array.isArray(result.customThemes) || typeof result.theme !== 'string')
+      if (result?.saved !== true || !Array.isArray(result.customThemes) || typeof result.theme !== 'string' ||
+          resolveTheme(result.theme, result.customThemes) !== result.theme)
         throw Error('Theme was not confirmed. Please try again.');
+      if (removeCustomTheme) {
+        if (result.customThemes.some((saved: CustomTheme) => saved?.id === removeCustomTheme) || result.theme === removeCustomTheme)
+          throw Error('Theme removal was not confirmed. Restart Freelancer and try again.');
+      } else if (candidate) {
+        const confirmed = result.customThemes.find((saved: CustomTheme) => saved?.id === candidate.id);
+        if (result.theme !== candidate.id || confirmed?.name !== candidate.name || confirmed?.mode !== candidate.mode ||
+            Object.entries(candidate.colors).some(([key, color]) => confirmed?.colors?.[key] !== color))
+          throw Error('Your custom theme was not confirmed. The preview is still available. Restart Freelancer and try again.');
+      }
       applyTheme(result.theme, document.documentElement, result.customThemes); setValue(result.theme);
       onSaved?.({ theme: result.theme, customThemes: result.customThemes });
       if (!removeCustomTheme) { setDraft(null); setName(''); setExpanded(current => ({ ...current, custom: true })); }
@@ -66,7 +76,7 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
   const groups = [{ mode: 'light', heading: 'Light themes', palettes: lightPalettes }, { mode: 'dark', heading: 'Dark themes', palettes: darkPalettes }] as const;
   return <section className="palette-picker" aria-labelledby="theme-picker-heading">
     <div className="palette-title"><h3 id="theme-picker-heading" aria-label="Theme">Theme</h3>
-      <button type="button" className="button" disabled={pending || customThemes.length >= 64} onClick={() => roll(true)}><Dices size={16} />Create a theme</button></div>
+      <button type="button" className="button primary" disabled={pending || customThemes.length >= 64} onClick={() => roll(true)}><Dices size={16} />Create a theme</button></div>
     <p className="palette-intro palette-current">Current theme: <strong>{themePalette(value, customThemes).name}</strong></p>
     <div className="palette-group theme-generator">
       <h4 className="palette-group-heading"><button type="button" className="palette-group-toggle" aria-expanded={expanded.generator} aria-controls={`${id}-generator`}
@@ -74,7 +84,6 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
         <span>Palette generator</span><ChevronDown size={16} aria-hidden="true" />
       </button></h4>
       {expanded.generator && <div id={`${id}-generator`}>
-        <p className="palette-intro">Roll something new. Keep a palette you love, with a name of your own.</p>
         <div className="theme-roll-controls">
           <label>Style<select aria-label="Generated theme style" value={mode} disabled={pending} onChange={event => setMode(event.target.value)}>
             <option value="any">Surprise me</option><option value="light">Light</option><option value="dark">Dark</option>
@@ -103,7 +112,7 @@ export function ThemePicker({ theme, customThemes = emptyThemes, refresh, onSave
         <span>Custom themes ({customThemes.length})</span><ChevronDown size={16} aria-hidden="true" />
       </button></h4>
       {expanded.custom && <div id={`${id}-custom`}>
-        {!customThemes.length && <p className="palette-intro">Your saved themes will appear here. Create one with the palette generator above.</p>}
+        {!customThemes.length && <p className="palette-intro">No saved custom themes.</p>}
         <div className="palette-options" role="group" aria-label="Custom themes">
           {customThemes.map(p => <div className="custom-theme-option" key={p.id}>
             <button type="button" className="palette-option" disabled={pending} aria-label={`Use ${p.name} palette`} aria-pressed={value === p.id} onClick={() => void save(p.id)}>

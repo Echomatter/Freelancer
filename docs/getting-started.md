@@ -53,7 +53,7 @@ The server prints a JSON line containing its loopback `url`. Open that URL. The 
 
 The **Available Usage** meter is an estimate from provider observations. A missing percentage is not proof of exhaustion. Its sidebar disclosure keeps you in the current chat. [Interpret the meter →](available-usage.md)
 
-The sidebar keeps the project picker, recent chats, and Available Usage meter visible. Expand **Project settings** for Files, Search project content, Goals, Session defaults, Delegation, and GitHub. Expand **Application settings** for Agents, Models, Available Usage, Providers, Appearance, Capabilities, Scheduled prompts, Search all content, Content & Storage, File access, and Remote access. Capabilities lists tools and skills, with one shared MCP connection section. Technical explanations are in each card’s help bubble. File access scope is under **Application settings → File access**. The text-only breadcrumb starts with the project folder, which opens Files. In delegated chats, parent titles return to their conversations; the current chat appears last. File browsing follows the folder path through to the current file. Settings use folder → current page without an extra settings-scope crumb. Narrow screens keep the folder and nearest parent above the current title. Connection state and controls such as Details remain beside the breadcrumb. Each icon opens its feature in the main pane; collapsing the drawers leaves more room for recent chats. Use **Manage chats** for conversation archive, restore, and export. **Content & Storage** shows project archives, local data locations, index coverage and database stats, and offers index refresh and SQLite maintenance.
+The sidebar keeps the project picker, recent chats, and Available Usage meter visible. Expand **Project settings** for Files, Search project content, Goals, Session defaults, Delegation, and GitHub. Expand **Application settings** for Agents, Models, Available Usage, Providers, Appearance, Capabilities, Scheduled prompts, Search all content, Content & Storage, File access, and Remote access. Capabilities lists tools and skills, with one shared MCP connection section. Technical explanations are in each card’s help bubble. File access scope is under **Application settings → File access**. The text-only breadcrumb starts with the project folder, which opens Files. In delegated chats, parent titles return to their conversations; the current chat appears last. File browsing follows the folder path through to the current file. Settings use folder → current page without an extra settings-scope crumb. Narrow screens keep the folder and nearest parent above the current title. Connection state and controls such as Details remain beside the breadcrumb. Each icon opens its feature in the main pane; collapsing the drawers leaves more room for recent chats. Use **Search all content → Conversations** for conversation browsing, archive, restore and export; **Pinned** combines conversation and retained memory pins. **Content & Storage** shows project archives, local data locations, index coverage and database stats, and offers index refresh and SQLite maintenance.
 
 GitHub is optional. **Project settings → GitHub** separately configures local checkpoints, account sign-in, the destination repository, and the working agreement. Connecting is not uploading. [Set up Git safely →](github-projects.md)
 
@@ -62,7 +62,7 @@ GitHub is optional. **Project settings → GitHub** separately configures local 
 Open **Application settings → Search all content** to search across registered
 projects, or **Project settings → Search project content** to stay within one
 project. An empty search opens your pinned memories. Choose **Files**,
-**Conversations**, **Memories**, **Facts**, or **Pinned Memory** to focus the list.
+**Conversations**, **Memories**, **Facts**, or **Pinned** to focus the list.
 Search matches the words you enter; **Exact phrase** also requires their order.
 It may miss paraphrases. Coverage messages describe which sources were indexed;
 **Show more** expands a limited result list.
@@ -79,12 +79,11 @@ It may miss paraphrases. Coverage messages describe which sources were indexed;
   source check; a failed check preserves earlier retained text.
 - **Notes:** Use **New memory** to save a title and text, choosing a project scope
   when needed. Open the note to edit it; older revisions remain readable.
-- **Facts:** Use **New fact** to record a statement and value. Explain how you
-  established it and add at least one exact retained memory revision or file
-  unit as evidence. New facts start as **User stated** and **Unverified**; choose
-  another origin or status only when your evidence supports it. **Correct fact**
-  records a replacement and reason while preserving the previous claim and its
-  evidence. Include historical facts to inspect earlier or disputed claims.
+- **Facts:** Search recorded claims and inspect their origin, status and retained
+  evidence. FTS5 provides text search; a matching passage does not establish a
+  verified fact. There is no separate **New fact** form. **Correct fact** records
+  an evidence-backed replacement and reason while preserving the previous claim
+  and its evidence. Include historical facts to inspect earlier or disputed claims.
 
 **Unpin** removes an item from pinned memory while keeping its retained content.
 **Archive memory** hides it from the ordinary memory list; include archived
@@ -92,7 +91,7 @@ memories to find it and choose **Restore memory**. Neither action archives the
 native conversation. **Forget memory** requires confirmation and removes the
 retained content, revisions and pins. Its native conversation remains in
 OpenCode, and existing backups may contain copies. Conversation and project
-archives have separate controls in Manage chats and Content & Storage.
+archives have separate controls in Search all content → Conversations and Content & Storage.
 
 ## Convenient Windows shortcut
 
@@ -134,7 +133,7 @@ npm.cmd start
 Use the new printed URL. A browser reload alone leaves old server code running. The client/server compatibility check can report **Restart needed** when their contracts differ.
 
 After an explicit backup restore, **Content & Storage** shows **Restored work is
-paused**. Review restored chats, queued messages, goals, schedules, model research and Git
+paused**. Review restored chats, queued messages, goals, schedules, retained research sessions and Git
 activity, then choose **Review automatic work → Allow automatic work** when
 ready. Cancelling leaves background continuation paused. If another restore
 superseded the one you reviewed, reload the storage status and review the current

@@ -219,11 +219,12 @@ function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
   }
   const heading = <PageHeading title="GitHub" icon={Github} actions={<>
     <Button
+      variant="primary"
       aria-label="Refresh Git status"
       disabled={!project || pending || refreshing}
       onClick={() => void refresh().catch(() => {})}
     >
-      <RefreshCw size={17} className={refreshing ? "spin" : ""} />
+      <RefreshCw size={17} className={refreshing ? "spin" : ""} />Refresh
     </Button>
     <PageCloseButton onClick={onClose} />
   </>} />;
@@ -355,7 +356,6 @@ function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
               setEditingIdentity(value => !value);
             }}>{editingIdentity ? "Cancel" : "Edit"}</Button>}
           </div>
-          <p className="git-card-description">Save checkpoints on this computer so you can return to earlier work.</p>
           {!data.tools.git ? (
             <>
               <p>Git needs to be installed once.</p>
@@ -497,7 +497,6 @@ function GitHubProjectPanel({ project, onClose, onAsk }: Props) {
             </Badge>
             {data.tools.gh && data.auth.connected && <Button variant="quiet" aria-label={editingCloud ? "Close cloud sync edit" : "Edit cloud sync"} aria-expanded={editingCloud} disabled={disabled} onClick={() => { setCloudEnabled(policy.github); setEditingCloud(value => !value); }}>{editingCloud ? "Cancel" : "Edit"}</Button>}
           </div>
-          <p className="git-card-description">Keep a copy on GitHub and share the checkpoints you choose.</p>
           {!data.tools.gh ? (
             <>
               <p>Install GitHub CLI to connect this computer securely.</p>

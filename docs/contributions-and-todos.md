@@ -41,17 +41,16 @@ uncertain until refreshed with the new `usageKnown` marker.
 
 ## Todo placement
 
-Docked above the composer is the default when no placement has been saved.
-Appearance no longer offers the retired placement control. Existing explicit
-`inline` choices remain honored for compatibility; new workspaces use the docked
-behavior by default.
+The Tasks card stays above the sticky composer. Appearance no longer offers the
+retired placement control. Legacy saved `inline` values remain stored, but tasks
+use the same composer card. Commands displays actual tool receipts only; native
+conversation recaps stay expandable in the transcript.
 
-In docked mode the task card stays with the sticky composer and is not duplicated
-in Details. It can collapse or dismiss, with Show tasks restoring it; changed
-tasks reappear. In inline mode the dock is hidden and the Details Tasks tab becomes
-available. Dismissing a card never changes native todo storage or execution permissions.
+The task card can collapse or dismiss, with Show tasks restoring it; changed
+tasks reappear. Dismissing a card never changes native todo storage or execution
+permissions.
 
-When a response ends with unfinished native tasks, both placements explain that
+When a response ends with unfinished native tasks, the Tasks card explains that
 a follow-up is needed. An idle `in_progress` item displays as **unfinished**
 without a spinner; the native record is preserved. Work summaries say **Response
 ended**, or flag unfinished tasks and failures, rather than claiming task success.
@@ -69,9 +68,10 @@ a newer interface whose settings or contribution projection it cannot supply.
 Run `npm test` and `npm run build`, then check browser/Chrome behavior:
 
 1. With no saved placement, a nonempty task list is docked above the composer.
-2. Switch to inline, reopen settings and restart the app. Inline remains selected;
-   tasks appear under Details > Tasks, not in both locations. Switch back to docked.
-3. Interrupt a settings save. The error is visible and the prior selection remains.
+2. Open a workspace with a legacy saved inline placement. Tasks still appear in
+   the composer card; opening Commands shows tool receipts without tasks or recaps.
+3. Collapse and dismiss Tasks, then restore it with Show tasks. Native task records
+   remain unchanged. Expand a conversation recap in the transcript.
 4. Open Details for a delegated chat. Shares appear above all detail tabs, include
    free helpers, and do not move when an unrelated chat runs or a plan price changes.
 5. Confirm app-owned monetary amounts remain only in provider-price setup;

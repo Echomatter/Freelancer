@@ -9,7 +9,6 @@ import {
   HardDriveDownload,
   MessagesSquare,
   RefreshCw,
-  Search,
   SearchCheck,
   ShieldCheck,
 } from "lucide-react";
@@ -70,13 +69,9 @@ const date = (value?: string | number) => value ? new Date(value).toLocaleString
 
 export function ContentStorage({
   onClose,
-  onSearch,
-  onHistory,
   onChange,
 }: {
   onClose: () => void;
-  onSearch: () => void;
-  onHistory: () => void;
   onChange: () => Promise<void>;
 }) {
   const jobs = useIndexJobContext();
@@ -173,7 +168,6 @@ export function ContentStorage({
 
   return <div className="content-storage-page">
     <PageHeading compact title="Content & Storage" icon={HardDrive} help="local-data" actions={<>
-      <Button type="button" onClick={onSearch}><Search size={16} />Search all content</Button>
       <PageCloseButton onClick={onClose} />
     </>} />
 
@@ -187,7 +181,7 @@ export function ContentStorage({
       <span>Index data: {indexError}</span><Button disabled={!!indexPending} onClick={() => void refreshIndex()}>Retry index data</Button>
     </div>}
     {storage?.recovery?.automaticWorkBlocked && <Panel title="Restored work is paused">
-      <p>Review restored chats, queued messages, goals, schedules, model research, and Git activity before allowing automatic work.</p>
+      <p>Review restored chats, queued messages, goals, schedules, retained research sessions, and Git activity before allowing automatic work.</p>
       <Button disabled={storagePending} onClick={()=>setConfirmRecovery(storage.recovery?.restore?.id ?? null)}>Review automatic work</Button>
     </Panel>}
     {storageError && <div className="notice error content-storage-notice" role="alert">
@@ -240,7 +234,7 @@ export function ContentStorage({
       </div>
     </Panel>
 
-    <Panel id="content-storage-locations" title="Local data" className="storage-story">
+    <Panel id="content-storage-locations" title="Local data" className="storage-story" help="local-data" helpDetails={storage?.notice}>
       <div className="storage-flow" aria-label="Project and application data ownership">
         <div className="storage-flow-step"><FolderOpen size={19} /><strong>Project folders</strong></div>
         <ArrowRight className="storage-flow-arrow" size={17} aria-hidden="true" />
@@ -249,22 +243,16 @@ export function ContentStorage({
         <div className="storage-flow-step"><MessagesSquare size={19} /><strong>OpenCode</strong></div>
       </div>
       {!storage && !storageError && <p role="status">Loading local data locations…</p>}
-      {storage && <div className="storage-locations">{storage.locations.map((location) => <Panel key={location.id} title={location.name} help={locationHelp[location.id]}>
+      {storage && <div className="storage-locations">{storage.locations.map((location) => <Panel key={location.id} title={location.name} help={locationHelp[location.id] ?? "local-data"} helpDetails={location.note}>
         <strong>{location.owner}</strong>
         <p className="data-location">{location.path ?? "Location unavailable"}</p>
         {location.bytes != null && <p>{(location.bytes / 1024 / 1024).toFixed(2)} MB · main file only</p>}
-        {location.note && <small>{location.note}</small>}
         <div className="action-row"><Button disabled={storagePending || !location.path}
           onClick={() => void runStorage(async () => { await api("storage/open", { location: location.id }); })}>
           <FolderOpen size={16} />Open folder
         </Button></div>
       </Panel>)}</div>}
       {storage?.nativeWarning && <p role="status">{storage.nativeWarning}</p>}
-      {storage?.notice && <p className="content-storage-note">{storage.notice}</p>}
-      <div className="content-storage-panel-actions">
-        <span className="content-storage-help-label">Conversation backup <HelpHint topic="local-backup" /></span>
-        <Button onClick={onHistory}>Export conversations</Button>
-      </div>
     </Panel>
 
     <Panel id="content-storage-maintenance" title="SQLite maintenance" help="index-maintenance">
@@ -290,7 +278,7 @@ export function ContentStorage({
     {confirmRecovery && <ConfirmDialog title="Allow automatic work?" ariaLabel="Confirm restored work recovery"
       onCancel={()=>setConfirmRecovery(null)} onConfirm={()=>void resumeRestoredWork()} busy={storagePending}
       confirmLabel="Allow automatic work" error={storageError}>
-      <p>Confirm that you have reviewed restored chats and delivery state. Queued messages, active goals, enabled schedules, and model research can continue. Uncertain deliveries and Git actions still require their normal review.</p>
+      <p>Confirm that you have reviewed restored chats and delivery state. Queued messages, active goals, and enabled schedules can continue. Uncertain deliveries and Git actions still require their normal review.</p>
     </ConfirmDialog>}
     {confirmReset && <ConfirmDialog title="Start search indexes clean?" ariaLabel="Confirm clean search indexes"
       onCancel={() => setConfirmReset(false)} onConfirm={() => void runIndex("reset")} busy={!!indexPending}

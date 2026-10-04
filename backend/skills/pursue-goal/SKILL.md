@@ -1,45 +1,48 @@
 ---
 name: pursue-goal
-description: Pursue a saved Freelancer goal within its persistent conversation and captured execution contract.
+description: Continue a saved Freelancer goal in its persistent conversation and report evidence-based lifecycle checkpoints.
 ---
 
-Follow the application-owned goal contract and shared execution instructions.
-This skill teaches procedure and fallbacks only. It grants no write, paid-model, publication, or integration authority. Native permissions, paid consent, and Git agreements remain authoritative. Delegation is optional and never required by this skill.
-Orient on initial execution, Resume, compaction recovery or model replacement:
-read the current objective revision, interpretation, native todos, decisions,
-checkpoint and outstanding workers. Preserve earlier constraints unless the user
-changed them. Internal goal activity and steering are part of the same assignment.
+# Pursue goal
 
-Perform useful work, verify results, reconcile the native plan, then report a
-goal_checkpoint. Include an interpretation, concrete checkpoint, specific reason,
-evidence and continue, waiting, pause or complete. Complete means the objective's
-interpretation and required checks are satisfied, not merely that a response ended.
-Workers retain their own tasks; the parent accepts results and updates its plan.
-Rediscover and reuse workers through delegate rather than creating duplicates.
-Inspect native worker transcripts and statuses yourself and reconcile stale
-assignments. Do not ask the user to confirm routine worker statuses. A verified
-stopped worker may receive a fresh bounded follow-up in its existing chat; never
-replay uncertain input. Ask only for missing user decisions or authorization.
-Checkpoint when the conversation grows long and before ending a turn. Independent
-side workers may keep running: choose continue for useful independent parent work,
-or waiting when the next step depends on their result.
+Use this inside an application-owned saved goal, including Resume, compaction
+recovery or model replacement. Ordinary chats do not call `goal_checkpoint`.
 
-Use shared knowledge only when prior evidence changes the goal's interpretation
-or implementation. Preserve source IDs, revisions and uncertainty in checkpoints
-and worker handoffs. A metadata-only pinned chat does not supply transcript
-content, and remembered status does not replace current native todos, receipts
-or source inspection.
+## Recover and work
 
-The server owns continuation, recovery and free-model replacement. Never schedule
-your own retry loop or change the executor. Ask native questions for missing user
-input. Report repeated failures or blocked capacity with the partial work intact.
-Native permissions, explicit denials, paid-model consent and Git agreements remain
-authoritative. A goal provides no filesystem isolation.
+Read the current objective revision, interpretation, decisions, latest checkpoint,
+native todos and outstanding workers. Preserve captured constraints and user
+steering; internal goal activity continues the same assignment. Work from current
+source and native receipts, retaining exact historical evidence where useful.
 
-At meaningful milestones, consider Memory for durable decisions, constraints,
-discoveries and rejected approaches with their reasons that future work may
-revisit; routine todo completion does not merit automatic storage. Sequential
-Thinking can help with complicated dependencies, contradictory evidence or several
-viable paths; JEV may compare a few explicit alternatives. These are optional
-capability-use hints, never Goal stages or checkpoint prerequisites. If unavailable,
-continue normal reasoning and the existing recovery/checkpoint contract.
+Perform useful work, `verify` the relevant results and reconcile the native plan.
+The parent accepts worker output; workers retain their assignments. Use
+`delegate-work` to rediscover, inspect and continue workers rather than duplicate
+them. Reconcile routine stale statuses yourself. A verified stopped worker can
+receive a fresh bounded follow-up in its existing chat; uncertain input is never
+replayed. Native questions resolve missing user decisions; tool permission and
+paid consent use their own native flows. Follow `git_project`'s returned
+questions unchanged for an explicit agreement exception.
+
+## Checkpoint
+
+At meaningful progress, before ending a turn, or when context needs compaction,
+report `goal_checkpoint` with `interpretation`, concrete `checkpoint`, specific
+`reason`, `evidence` and an `outcome`:
+
+| Outcome | Use when |
+| --- | --- |
+| `continue` | Useful work remains that the parent can perform |
+| `waiting` | The next step depends on a worker, answer or capacity |
+| `pause` | Inspection or explicit Resume is needed under the goal contract |
+| `complete` | The interpreted objective and required checks are satisfied, with the native plan reconciled |
+
+Independent workers may keep running while the parent checkpoints. A response
+ending is not completion. Preserve partial work, unresolved evidence and specific
+next actions; `handoff` provides the compact recovery shape.
+
+The server owns continuation, recovery and free-model replacement. Do not create
+a retry scheduler, switch the executor or auto-resume explicit Stop. A goal
+provides no extra permissions or filesystem isolation. `reason-through`,
+`bounded-judgment` and `remember` are optional aids when the task needs them,
+never checkpoint stages or prerequisites.

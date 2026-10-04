@@ -1,44 +1,34 @@
 ---
 name: handoff
-description: Write a durable recovery checkpoint with objective, state, checks, decisions, remaining work, risks, and exact next action.
+description: Preserve a compact recovery checkpoint when work pauses, changes hands or needs conversation compaction.
 ---
 
 # Handoff
 
-This skill teaches procedure and fallbacks only. It grants no write,
-paid-model, publication, or integration authority. Native permissions, paid
-consent, user constraints, and the saved Git agreement remain authoritative.
-A handoff never auto-commits, stashes, publishes, or starts new work. Delegation is optional and never required by this skill.
+Leave enough current evidence for the next turn or worker to continue without
+repeating completed work. A handoff records state; it never starts work, replays
+input or performs Git actions.
 
-## Procedure
+## Checkpoint
 
-Record a compact checkpoint containing:
+- **Objective:** the user's goal, current interpretation and preserved exclusions.
+- **State:** completed changes, relevant files, native todos and outstanding workers.
+  Use actual receipt `task_id` / `user_task_id` and child session IDs.
+- **Evidence:** checks performed and their outcomes; link exact source revisions,
+  receipts or logs rather than copying full transcripts.
+- **Decisions:** accepted choices, rejected approaches and constraints that matter
+  to the remaining work.
+- **Next:** remaining work, unresolved risks and one concrete next action.
 
-1. Objective and current interpretation.
-2. State: what changed, which files matter, and links to receipts or worker
-   task IDs (use the receipt's `task_id` / `user_task_id` values; do not
-   invent IDs).
-3. Checks: verification evidence classified as passed, failed,
-   skipped/not-run, unavailable, or unverified.
-4. Decisions and constraints that future work must preserve.
-5. Remaining work, risks, and the exact next action (one concrete command or
-   assignment).
+Label checks passed, failed, skipped, not-run, unavailable or unverified. Keep
+historical findings useful but distinguish them from current source or execution
+state. If a receipt, source or worker status is missing, retain partial findings
+and name the smallest recovery probe; never replay uncertain delivery.
 
-Keep it short enough to resume from; omit full logs and keep pointers to
-evidence instead.
+## Related work
 
-Consider Memory selectively for durable architectural decisions, persistent
-constraints, non-obvious verified lessons, deliberately rejected approaches and
-their reasons, or recurring environmental/integration facts. Keep temporary
-worker state, transient todos, routine progress, every test result and information
-obvious from source in the normal handoff, not automatic Memory writes. Remembered
-knowledge is historical context to recheck, not current execution state. Memory
-failure never prevents a recovery checkpoint or affects Freelancer persistence.
-
-## Required capabilities and fallbacks
-
-- Required: read access to current state (todos, receipts, changed files).
-- Fallback: if state is partially unavailable (missing receipt, uncertain
-  worker delivery), mark the gap explicitly, preserve partial output, and
-  state the recovery probe. Never discard useful findings solely for age and
-  never claim completion from an unfinished handoff.
+Use `reorient` to recover the next working context, `delegate-work` to inspect or
+continue workers, and `verify` to establish claims. A saved Freelancer goal uses
+`pursue-goal` and its native `goal_checkpoint` instead of another goal store.
+Use `remember` only for selectively retained durable knowledge; routine progress
+and temporary worker state belong in this checkpoint.

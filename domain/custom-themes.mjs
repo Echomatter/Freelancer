@@ -37,7 +37,30 @@ function hsl(h, s, l) {
   const rgb = h < 60 ? [c, x, 0] : h < 120 ? [x, c, 0] : h < 180 ? [0, c, x] : h < 240 ? [0, x, c] : h < 300 ? [x, 0, c] : [c, 0, x];
   return '#' + rgb.map(v => Math.round((v + m) * 255).toString(16).padStart(2, '0')).join('');
 }
-const freshRandom = () => globalThis.crypto.getRandomValues(new Uint32Array(1))[0] / 4294967296;
+function randomBytes(length) {
+  const values = new Uint8Array(length), crypto = globalThis.crypto;
+  if (typeof crypto?.getRandomValues === 'function') {
+    try { return crypto.getRandomValues(values); }
+    catch { /* Older browser implementations may expose an unavailable method. */ }
+  }
+  // These colors and IDs are appearance metadata, never secrets or authority.
+  for (let index = 0; index < values.length; index++) values[index] = Math.floor(Math.random() * 256);
+  return values;
+}
+const freshRandom = () => randomBytes(4).reduce((value, byte) => value * 256 + byte, 0) / 4294967296;
+function themeID() {
+  const crypto = globalThis.crypto;
+  if (typeof crypto?.randomUUID === 'function') {
+    try { return `custom-${crypto.randomUUID()}`; }
+    catch { /* Fall back to random bytes when this secure-context API is unavailable. */ }
+  }
+  // getRandomValues works on local-network HTTP, where randomUUID is absent.
+  const values = randomBytes(16);
+  values[6] = (values[6] & 0x0f) | 0x40;
+  values[8] = (values[8] & 0x3f) | 0x80;
+  const hex = Array.from(values, value => value.toString(16).padStart(2, '0')).join('');
+  return `custom-${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}
 /** @param {{ mode?: string, saved?: any[], avoid?: any[], random?: () => number }} options */
 export function generateCustomTheme({ mode = 'any', saved = [], avoid = [], random = freshRandom } = {}) {
   if (!['any', 'light', 'dark'].includes(mode)) throw Error('Choose Light, Dark, or Surprise me.');
@@ -46,6 +69,7 @@ export function generateCustomTheme({ mode = 'any', saved = [], avoid = [], rand
   const names = new Set([...palettes, ...saved].map(p => p.name.toLowerCase()));
   let number = 1;
   while (names.has(`My theme ${number}`.toLowerCase())) number++;
+  const id = themeID();
   for (let attempt = 0; attempt < 160; attempt++) {
     const dark = chosenMode === 'dark', hue = range(0, 360), saturation = range(.14, .62);
     const accentHue = (hue + range(45, 315)) % 360;
@@ -60,7 +84,7 @@ export function generateCustomTheme({ mode = 'any', saved = [], avoid = [], rand
       hover: hsl(hue, saturation * .7, dark ? .25 : .78),
     };
     try {
-      const candidate = validateNewTheme({ id: `custom-${globalThis.crypto.randomUUID()}`, name: `My theme ${number}`, mode: chosenMode, colors }, saved);
+      const candidate = validateNewTheme({ id, name: `My theme ${number}`, mode: chosenMode, colors }, saved);
       const p = customThemePalette(candidate);
       if (avoid.some(previous => previous.mode === p.mode && paletteDistance(p, customThemePalette(previous)) < .08)) continue;
       return candidate;

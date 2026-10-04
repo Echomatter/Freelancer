@@ -1,59 +1,39 @@
 ---
 name: verify
-description: Choose appropriate checks, run them, retain evidence, and classify each result honestly.
+description: Establish a specific claim with appropriate checks and report what the evidence proves and leaves unknown.
 ---
 
 # Verify
 
-This skill teaches procedure and fallbacks only. It grants no write,
-paid-model, publication, or integration authority. Native permissions, paid
-consent, user constraints, and the saved Git agreement remain authoritative.
-Delegation is optional and never required by this skill.
+Use this for acceptance checks and validation of changed behavior. Start with
+the claim to establish, not a habitual list of commands.
 
-## Procedure
+1. Read the current project's instructions and runner configuration. Choose the
+   smallest meaningful check set and its required regression scope within the
+   user's constraints. Use that project's commands, not Freelancer's defaults.
+2. Perform the permitted checks. Retain the method, relevant output or artifact,
+   expected result and observed result.
+3. Classify each as **passed**, **failed**, **skipped**, **not-run**,
+   **unavailable** or **unverified**. Keep task success separate from check
+   execution; a completed tool or model response proves neither correctness nor
+   a passing check.
+4. Investigate a failure with `debug`; do not repeat an unchanged failing check
+   or turn an unavailable check into a success.
 
-1. Identify the claim to establish, then choose the smallest check set covering
-   the change (focused contract or unit test, plus the nearest regression scope).
-   Read the current project's
-   instructions and configuration to select its real runner and required suite.
-   Use its focused checks during iteration and its required suite before completion;
-   do not assume a language or import Freelancer's own test commands.
-2. Run the checks and retain evidence (command, output excerpt, and outcome).
-3. Classify each check as passed, failed, skipped/not-run, unavailable, or
-   unverified. Never encode not-run as failed and never infer success from a
-   completed response.
-4. On failure, stop and diagnose (see the `debug` skill) instead of
-   re-recording or retrying unchanged.
+## Match evidence to the claim
 
-## Capability-use hints
+| Claim | Useful evidence |
+| --- | --- |
+| Current repository behavior | Exact source and local state |
+| Implementation invariant | Project-native tests, type checks or data assertions |
+| Rendered behavior or interaction | `playwright`, visible state and runtime errors |
+| Expected API/version behavior | `web-research` / `context7-mcp` |
+| Live service or provider operation | An actual permitted request and its response |
 
-Prefer evidence suited to the claim: direct source inspection for repository
-facts, project-native tests/checks for implementation invariants, Playwright for
-rendered behavior, interaction, visual state, runtime errors and user journeys,
-Context7 for documented library/API/version behavior, and Fetch for external
-resources, published information or current web content. Local evidence comes
-first for repository questions. A passing unit test does not prove correct UI
-rendering; a Playwright interaction does not prove all implementation invariants;
-documentation of expected behavior does not prove the app currently behaves that
-way. Choose the method that can establish the claim. If unavailable, use another
-appropriate method and state what remains unverified.
+A fixture does not prove provider authentication, a build does not prove a
+visible launch, and documentation does not prove the app's current behavior.
+Report those limits. If a required check is unavailable, state the reason and
+the next concrete way to establish it.
 
-## Delegation (optional)
-
-Work directly by default. When independent checking materially helps, use
-`delegate({agent, task, independentReview: true})` with a named agent from
-the supplied catalog for a report-only review. The public schema is
-`delegate({agent, task, model, freeOnly, inspectionOnly, independentReview,
- worker, fork, cancel, delivery, workers, from, limit})`. Use public field
-`agent`, not internal transport identifiers.
-
-## Required capabilities and fallbacks
-
-- Required: the current project's appropriate check set (tests, type checks,
-  data assertions, document validation, or browser journeys as applicable).
-- Fallback: if a check cannot run here (missing runner, browser, device, or
-  credentials), report it as skipped/unavailable with the reason and exact
-  next action. Fixture success does not prove provider authentication or a
-  visible launch; report only what was actually checked. Optional extras
-  (bake-off, simplification, polish, durable lessons, execution audit) are
-  task-triggered only.
+Use `review` for an independent critique rather than calling self-checking
+independent. Use `record-outcome` only after the actual task result is established.

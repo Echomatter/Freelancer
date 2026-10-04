@@ -374,7 +374,7 @@ export function UsageProviders({ view }: { view: View }) {
           <UsageProviderRow provider={p} key={p.id} view={view} />
         ))
       ) : (
-        <small>Connect a provider in Application settings to check availability.</small>
+        <small>No connected providers.</small>
       )}
     </div>
   );
@@ -388,7 +388,7 @@ export function UsagePreferences({ showDepletedModels = true, refresh }: {
     [pending, setPending] = useState(false),
     [error, setError] = useState(""),
     [saved, setSaved] = useState(false);
-  const saving = useRef(false), description = useId();
+  const saving = useRef(false);
   useEffect(() => { if (!saving.current) setValue(showDepletedModels); }, [showDepletedModels]);
   async function save(next: boolean) {
     if (saving.current) return;
@@ -404,19 +404,14 @@ export function UsagePreferences({ showDepletedModels = true, refresh }: {
     } catch (e) { setError(e instanceof Error ? e.message : "Model visibility could not be saved."); }
     finally { saving.current = false; setPending(false); }
   }
-  return <Panel className="usage usage-preferences">
-    <details>
-      <summary>Model visibility</summary>
-      <div className="usage-preferences-content">
-        <label className="check">
-          <input type="checkbox" checked={value} disabled={pending} aria-describedby={description}
-            onChange={event => void save(event.target.checked)} />
-          Show exhausted models in the workspace picker
-        </label>
-        <p id={description}>Keep models with exhausted usage visible in the workspace model picker. Availability checks still apply when choosing a model.</p>
-        {(pending || saved) && <small role="status">{pending ? "Saving…" : "Model visibility saved."}</small>}
-        {error && <p className="notice error" role="alert">{error}</p>}
-      </div>
-    </details>
-  </Panel>;
+  return <div className="usage usage-preferences usage-preferences-content" role="group" aria-label="Model visibility">
+    <label className="check">
+      <input type="checkbox" checked={value} disabled={pending}
+        onChange={event => void save(event.target.checked)} />
+      Show exhausted models
+    </label>
+    {(pending || saved) && <small role="status">{pending ? "Saving…" : "Model visibility saved."}</small>}
+    {error && <p className="notice error" role="alert">{error}</p>}
+    <div className="field-help"><HelpHint topic="model-visibility" /></div>
+  </div>;
 }

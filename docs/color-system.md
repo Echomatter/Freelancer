@@ -27,7 +27,7 @@ page background behind the transcript, sidebar beside it, and a distinct paper
 card/composer. Text strokes are opaque, so their colors match the rendered ink.
 The previous thumbnail used paper for the entire main area, hiding the page hue.
 
-Open **Application settings > Appearance**, expand Light themes or Dark themes, and choose a palette from its color-sorted preview grid. Either category can be collapsed independently. A checkmark and pressed state identify the selected palette independently of color. The grid adapts to two columns on medium screens and one column on narrow screens. Exhausted model visibility is under **Application settings > Available Usage > Model visibility** and retains the existing saved preference. Todo placement is retained from older preferences, but is no longer an Appearance setting; the current workspace behavior remains in effect.
+Open **Application settings > Appearance**, expand Light themes or Dark themes, and choose a palette from its color-sorted preview grid. Either category can be collapsed independently. A checkmark and pressed state identify the selected palette independently of color. The grid adapts to two columns on medium screens and one column on narrow screens. Exhausted model visibility is under the saved **Show exhausted models** checkbox at the end of **Application settings > Available Usage** and retains the existing saved preference. Todo placement is retained from older preferences, but is no longer an Appearance setting; the current workspace behavior remains in effect.
 
 Open **Application settings > Providers** to set each provider's color. Choose a named swatch, the system color picker, or a three/six-digit hex value. The sample previews the choice without changing the rest of the app. **Save color** persists it; **Use default** removes only that provider's override. Color changes do not save unsaved billing fields or require authentication.
 
@@ -50,7 +50,7 @@ Custom definitions live in `appearance.customThemes` (up to 64), alongside the
 selected ID in `appearance.theme`. Only UUID-based IDs, a short plain-text name,
 light/dark mode and nine canonical hex colors are accepted. The server derives
 every semantic token and validates the same contrast requirements as built-ins.
-Generation uses browser crypto randomness and bounded rejection sampling. It
+Generation prefers browser crypto randomness and uses bounded rejection sampling. A UUID-v4 fallback supports LAN HTTP pages where `crypto.randomUUID()` is unavailable. If browser crypto is unavailable, local pseudorandom values are used only for palette colors and appearance IDs, never credentials or permission decisions. It
 rejects exact decorative color reuse and weighted OKLab distance below 0.08 from
 same-mode built-ins, saved themes and recent rolls (recent-roll checks are local).
 Semantic status colors keep their established meaning. Saves recheck against

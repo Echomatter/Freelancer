@@ -5,6 +5,7 @@ const providerID = value => typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9
 const number = (value) =>
   typeof value === "number" && Number.isFinite(value) ? value : undefined;
 const string = (value) => (typeof value === "string" ? value : undefined);
+const boolean = (value) => (typeof value === "boolean" ? value : undefined);
 
 // OpenCode owns the provider inventory. Copy only public presentation fields;
 // never spread an upstream provider/model object or expose credential fields.
@@ -42,9 +43,12 @@ export function publicCatalog(value) {
                 output: number(model.cost?.output),
               },
               capabilities: {
-                toolcall:
-                  model.capabilities?.toolcall === true ||
-                  model.toolcall === true,
+                toolcall: boolean(model.capabilities?.toolcall) ?? boolean(model.toolcall) ?? boolean(model.tool_call),
+                reasoning: boolean(model.capabilities?.reasoning) ?? boolean(model.reasoning),
+                input: {
+                  image: boolean(model.capabilities?.input?.image) ??
+                    (Array.isArray(model.modalities?.input) ? model.modalities.input.includes('image') : undefined),
+                },
               },
             },
           ]),

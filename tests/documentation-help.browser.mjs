@@ -1,6 +1,7 @@
 import { readFile, mkdir, writeFile, copyFile } from 'node:fs/promises';
 import path from 'node:path';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
+import { modelDataUIRoutes } from './fixtures/model-data-ui.mjs';
 import { test, expect } from './support/browser-test.mjs';
 
 const readme = await readFile(new URL('../README.md', import.meta.url), 'utf8');
@@ -25,6 +26,7 @@ test('documentation help stays contextual, accessible and sourced from the READM
   await copyFile('shared/local-storage-path.mjs', path.join(f.root, 'shared', 'local-storage-path.mjs'));
   await f.store.update('settings', s => ({ ...s, appearance: { ...s.appearance, theme: 'light' } }));
   const page = await browser.newPage({ viewport: { width: 1440, height: 1000 }, hasTouch: true });
+  await modelDataUIRoutes(page);
   await page.emulateMedia({ reducedMotion: 'reduce' });
   await page.goto(f.url);
   async function setting(name, scope = 'Application settings') {
@@ -42,7 +44,8 @@ test('documentation help stays contextual, accessible and sourced from the READM
   async function content(topic) {
     const tip = page.locator('.help-hint-popover');
     await expect(tip).toBeVisible();
-    await expect(tip.locator('p')).toHaveText(documented(topic));
+    for (const [index, paragraph] of documented(topic).entries())
+      await expect(tip.locator('p').nth(index)).toHaveText(paragraph);
     await expect(tip).toContainText('README');
     return tip;
   }
@@ -115,7 +118,11 @@ test('documentation help stays contextual, accessible and sourced from the READM
     await content('local-backup');
     await page.keyboard.press('Escape');
     await page.screenshot({ path: path.join(artifactRoot, 'documentation-help/content-storage-desktop.png'), fullPage: true });
-    await page.getByRole('button', { name: 'Help: Index coverage', exact: true }).hover();
+    const coverageHelp = page.getByRole('button', { name: 'Help: Index coverage', exact: true });
+    await coverageHelp.hover();
+    // Pin the card while first-open progress can finish and leave the layout.
+    // The dedicated hover/leave contract above still checks transient hover help.
+    await coverageHelp.click();
     await content('index-coverage');
     await page.keyboard.press('Escape');
     await page.getByRole('button', { name: 'Start clean', exact: true }).click();
@@ -132,11 +139,11 @@ test('documentation help stays contextual, accessible and sourced from the READM
 
   await test.step('help works in a modal and Escape closes only the hint', async () => {
     await setting('Models');
-    await page.getByRole('button', { name: 'Update Model Ratings', exact: true }).click();
-    const dialog = page.getByRole('dialog', { name: 'Update Model Ratings', exact: true });
-    const hint = dialog.getByRole('button', { name: 'Help: Model rating updates', exact: true });
+    await page.getByRole('button', { name: 'Update model data', exact: true }).click();
+    const dialog = page.getByRole('dialog', { name: 'Update model data', exact: true });
+    const hint = dialog.getByRole('button', { name: 'Help: Model data sources and keys', exact: true });
     await hint.focus();
-    const tip = await content('model-ratings');
+    const tip = await content('model-data-sources');
     await insideViewport(tip);
     await page.keyboard.press('Escape');
     await expect(tip).toBeHidden();

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import path from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
+import { modelDataUIRoutes } from './fixtures/model-data-ui.mjs';
 import { createLocalDataStore } from '../server/data/store.mjs';
 import { test, expect } from './support/browser-test.mjs';
 
@@ -24,6 +25,7 @@ test('dialogs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
   };
 
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await modelDataUIRoutes(page);
   page.setDefaultTimeout(15000);
   const errors = [];
   page.on('pageerror', error => errors.push(error.message));
@@ -40,11 +42,11 @@ test('dialogs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await page.getByRole('button', { name: 'Models', exact: true }).click();
     await expect(page.getByRole('button', { name: 'Chats', exact: true })).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' })).toBeVisible();
-    await page.getByRole('button', { name: 'Update Model Ratings', exact: true }).click();
-    const picker = page.getByRole('dialog', { name: 'Update Model Ratings', exact: true });
+    await page.getByRole('button', { name: 'Update model data', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: 'Update model data', exact: true });
     await picker.waitFor();
-    assert.equal(await picker.getByRole('combobox', { name: 'Configuration model' }).evaluate(node => node === document.activeElement), true, 'initial focus goes to the model choice');
-    await picker.getByRole('combobox', { name: 'Configuration model' }).selectOption('opencode/free');
+    assert.equal(await picker.getByRole('checkbox', { name: 'models.dev', exact: true }).evaluate(node => node === document.activeElement), true, 'initial focus goes to the source choice');
+    await picker.getByRole('checkbox', { name: 'models.dev', exact: true }).uncheck();
     f.state.questions = [question('question_other', 'ses_other', 'Unrelated request must stay hidden'), question('question_worker', 'ses_worker', 'Worker clarification')];
     const worker = page.getByRole('dialog', { name: 'Subagent question', exact: true });
     await worker.waitFor();
@@ -58,9 +60,10 @@ test('dialogs', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     await screenshot('subagent-priority');
     await worker.getByRole('button', { name: 'Continue', exact: true }).click();
     await picker.waitFor();
-    assert.equal(await picker.getByRole('combobox', { name: 'Configuration model' }).inputValue(), 'opencode/free', 'covered content survives worker replies');
+    await expect(picker.getByRole('checkbox', { name: 'models.dev', exact: true })).not.toBeChecked();
+    await expect(picker.getByRole('button', { name: 'Update selected sources', exact: true })).toBeDisabled();
     await picker.getByRole('button', { name: 'Cancel', exact: true }).click();
-    assert.equal(await page.getByRole('button', { name: 'Update Model Ratings', exact: true }).evaluate(node => node === document.activeElement), true);
+    assert.equal(await page.getByRole('button', { name: 'Update model data', exact: true }).evaluate(node => node === document.activeElement), true);
 
     await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
     f.state.questions = [question('question_parent', 'ses_history', 'Parent answer')];

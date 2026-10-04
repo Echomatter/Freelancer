@@ -444,7 +444,8 @@ export function createMemoryService(db, tx) {
         if (normalizedEvidence.some(item => !['supports','contradicts','qualifies','supersedes'].includes(item.relation)))
           throw Error('Claim evidence relation is invalid.');
         const newID = randomUUID();
-        const duplicate = db.prepare(`SELECT claim_id AS id FROM claims WHERE claim_id<>? AND predicate=? AND origin=? AND method=? AND epistemic_state=?
+        const duplicate = db.prepare(`SELECT claim_id AS id FROM claims WHERE superseded_at IS NULL AND epistemic_state<>'superseded'
+          AND claim_id<>? AND predicate=? AND origin=? AND method=? AND epistemic_state=?
           AND COALESCE(subject_entity_id,'')=? AND COALESCE(object_entity_id,'')=? AND COALESCE(value_json,'')=? AND scope_json=?
           ORDER BY recorded_at,claim_id LIMIT 1`).get(prior.claim_id,next.predicate,next.origin,next.method,next.epistemicState,
             next.subjectEntityID ?? '',next.objectEntityID ?? '',next.valueJSON ?? '',next.scopeJSON);

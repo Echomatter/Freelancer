@@ -384,8 +384,7 @@ function CopyResponse({ messages }: { messages: any[] }) {
       (message.parts ?? [])
         .filter(
           (part: any) =>
-            (part.type === "text" || part.type === "reasoning") &&
-            !message.info?.summary,
+            part.type === "text" || part.type === "reasoning",
         )
         .map((part: any) => String(part.text ?? "").trim()),
     )
@@ -554,7 +553,7 @@ export function GroupBody({
   flat.forEach(({ msg, part }, index) => {
     if (part?.id && lastIndexByPartID.get(part.id) !== index) return;
     if (part.type === "tool" && !visibleTools.has(part)) return;
-    const isWork = part.type === "tool" || msg.info?.summary === true;
+    const isWork = part.type === "tool";
     if ((mode === "work" && !isWork) || (mode === "prose" && isWork)) return;
     const key = `${msg?.info?.id ?? index}/${part.id ?? index}`;
     if (part.type === "text" && msg.info?.summary === true) {
@@ -732,14 +731,13 @@ export const RequestTurn = memo(function RequestTurn({
         .filter((group) =>
           group.messages.some(
             (m) =>
-              m.info?.summary !== true &&
-              (m.info?.error ||
+              m.info?.error ||
                 m.parts?.some(
                   (p) =>
                     ((p.type === "text" || p.type === "reasoning") &&
                       p.text?.trim()) ||
                     p.type === "file",
-                )),
+                ),
           ),
         )
         .map((group) => (

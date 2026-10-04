@@ -31,6 +31,7 @@ export async function delegatedGitGroup({
     directory,
     child,
     childMessage,
+    () => request(`/session/${encodeURIComponent(own)}/message`),
   );
   if (
     !assignment?.taskID ||

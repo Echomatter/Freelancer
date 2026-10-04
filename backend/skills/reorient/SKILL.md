@@ -1,40 +1,29 @@
 ---
 name: reorient
-description: Establish current project instructions, entry points, constraints and validation paths without inventing implementation work.
+description: Orient to a project or resume interrupted work by finding its current instructions, relevant source, constraints and useful checks.
 ---
 
 # Reorient
 
-This skill teaches procedure and fallbacks only. It grants no write, paid-model, publication, or integration authority. Native permissions, paid consent, user constraints, and the saved Git agreement remain authoritative. Delegation is optional and never required by this skill.
+1. Establish the user's objective and scope, working project and current state.
+   Read its native-discovered instructions before deciding where to work.
+2. Find the relevant entry points and trace enough source to explain current
+   behavior, constraints and dependencies. Use native code search for symbols
+   and call paths; `search-index` helps locate mixed documents and chat text.
+3. Retrieve prior decisions through `knowledge` when they would change the
+   approach. `remember` covers retained evidence and capture limits. Verify
+   consequential remembered claims against current source or native receipts.
+4. Identify the smallest useful next action and available checks. Reuse valid
+   earlier orientation; recheck facts that may have changed. Use `web-research`
+   only for external information the repository cannot establish.
 
-Read the current project's instructions and relevant source entry points. Map
-only what the request needs: current behavior, important constraints, related
-files and useful validation commands. Use indexed documents when relevant and
-native source search when the index is missing or incomplete. Verify decisive
-facts in their originals. Reuse valid earlier orientation; recheck stale facts.
+Return a compact project map: relevant files, current behavior, constraints,
+next action and unresolved coverage. Include exact source or revision references
+when another agent will need them. Missing indexes or memory do not block
+ordinary source inspection.
 
-Consider relevant Memory for what has been learned about this project: durable
-decisions, constraints and non-obvious lessons. Current source and project state
-remain authoritative; verify consequential remembered implementation, dependency,
-status or behavior claims. Start with local index/search, then authoritative local
-source; consider Context7 or Fetch only when external documentation/evidence is
-needed. Missing Memory never blocks orientation with the repository.
-
-When delegation materially helps, use `delegate({agent, task})` with a named agent ID from the supplied catalog (`researcher` is a useful starting point).
-Give a bounded investigation and request supported
-findings, file locations and coverage gaps. Do not make another
-helper a separate mandatory stage. A no-subagents request means work directly.
-
-For an explicitly added implementation task, the main agent can implement it or
-assign it to an appropriate named agent, preserving the user's exact
-scope and the relevant findings. Bare Reorient does not invent an implementation
-task. Explicit inspection-only assignments cannot authorize source writes. Content
-index maintenance remains subject to native permissions and never grants
-source-write authority. Nested delegation is optional and shares depth and concurrency ceilings. No helper is required.
-
-When earlier cross-project decisions or evidence would change the work, use the
-shared `knowledge` tool's search/read operations. Inspect each item's origin,
-source references, capture boundary and epistemic state. For current behavior,
-read the live project source or native receipt; memory is context, not authority.
-For a handoff or goal checkpoint, carry stable evidence references and say when
-a source is missing or the retrieved coverage is partial.
+Delegate only when a bounded parallel investigation helps, using a named agent
+ID from the supplied catalog. No worker or skill chain is required. An
+orientation-only request ends with findings; implementation requires task
+scope that includes changes. Respect inspection-only and no-subagent requests,
+native permissions, cost/disclosure constraints and the saved Git agreement.

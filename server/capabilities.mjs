@@ -3,8 +3,7 @@ import path from 'node:path';
 import { describeCapability } from '../domain/capability-descriptions.mjs';
 
 const nativeTools = ['bash', 'read', 'glob', 'grep', 'edit', 'write', 'apply_patch',
-  'webfetch', 'websearch', 'skill', 'todowrite', 'question'];
-const freelancerTools = ['delegate', 'git_project', 'content_index', 'goal_checkpoint', 'knowledge'];
+  'webfetch', 'websearch', 'skill', 'todowrite', 'question', 'task', 'invalid', 'lsp'];
 const text = value => typeof value === 'string' ? value.slice(0, 300) : null;
 const summary = value => typeof value === 'string' && value.trim()
   ? value.replace(/\s+/g, ' ').trim().slice(0, 240) : null;
@@ -61,6 +60,7 @@ export function createCapabilities({ host, backendRoot }) {
       let manifest = {};
       try { manifest = JSON.parse(await readFile(path.join(backendRoot, 'opencode/catalog.json'), 'utf8')); }
       catch { diagnostics.push({ kind: 'manifest-unavailable', name: 'Freelancer catalog' }); }
+      const freelancerTools = names(manifest.tools);
       const tools = [...new Set([...nativeTools, ...freelancerTools, ...registered])].sort().map(id => {
         const permission = permissionFor(profile?.permission, id);
         const nativePermission = permission === 'unknown' ? permissionFor(effectiveConfig.permission, id) : permission;
@@ -113,6 +113,8 @@ export function createCapabilities({ host, backendRoot }) {
         return { name, origin: 'OpenCode native MCP', configured: Object.hasOwn(mcpConfig, name), status,
           tools: tools.filter(row => row.id.startsWith(`${name}_`)).map(row => row.id),
           toolAssociation: 'Native tool-name prefix; unverified association.',
+          toolInventoryState: 'not-observed',
+          toolInventoryNote: 'This native registry inspection does not return MCP tool definitions. An empty list does not mean the service has no tools.',
           unavailableReason: status === 'connected' ? null : status === 'disabled' ? 'Disabled by native configuration.'
             : status === 'needs_auth' ? 'Native MCP authentication is required.'
             : status === 'needs_client_registration' ? 'Native MCP client registration is required.'
@@ -125,6 +127,8 @@ export function createCapabilities({ host, backendRoot }) {
         boundaries: { inspectionOnly: boundaries.inspectionOnly ?? null, gitInspectOnly: boundaries.gitInspectOnly ?? null,
           fileAccessScope: ['project', 'projects', 'computer'].includes(boundaries.fileAccessScope) ? boundaries.fileAccessScope : 'computer' },
         evidence: 'Read-only native inventory; registration is not proof of successful use.',
+        toolInventoryCoverage: { registry: 'Native and plugin registry definitions.',
+          mcp: 'Connected MCP services remain usable through OpenCode, but their tool definitions are not returned by this inventory.' },
         tools, skills: skillRows, mcp: mcpRows,
         // Additive, stable summary for clients that need websearch status
         // without depending on the ordering or full shape of `tools`.
@@ -152,7 +156,6 @@ export function createCapabilities({ host, backendRoot }) {
             { id: 'mcp', origin: 'Native MCP server instructions', state: 'native-managed', note: 'Connection status is visible; server instruction bodies are not copied.' },
             { id: 'worker-result', origin: 'backend/tools/runtime/worker-result.mjs', state: instructionContext.worker ? 'worker-contract' : 'on-delegation', note: 'Completion remains distinct from verification.' },
             { id: 'sender', origin: 'server/sender.mjs + domain/sender.mjs', state: 'delivery-specific', note: 'Queued and steered text is attached to native delivery; not an editable master prompt.' },
-            { id: 'orientation', origin: 'server/chatgpt-import.mjs', state: instructionContext.orienting ? 'captured' : 'not-observed', note: 'Imported-history orientation is supplied when needed.' },
             { id: 'configuration', origin: 'server/model-ratings.mjs + domain/model-ratings.mjs', state: 'configuration-task-only', note: 'Background configuration prompts do not replace ordinary chat instructions.' },
           ],
         },

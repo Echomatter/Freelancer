@@ -1,61 +1,28 @@
 ---
 name: record-outcome
-description: Record or correct validated task results using actual execution receipts. Link reviews and consumption once; distinguish measured, estimated and unknown.
+description: Record or correct a task observation from real execution receipts and explicit validation results.
 ---
 
-# Record Outcome
+# Record outcome
 
-This skill teaches procedure and fallbacks only. It grants no write, paid-model, publication, or integration authority. Native permissions, paid consent, user constraints, and the saved Git agreement remain authoritative; delegation is optional and never required by this skill.
+Use this after establishing a task result, or to correct its existing observation.
+Do not rerun work merely to record it. Execution completion and task correctness
+are separate facts; `verify` establishes the latter.
 
-Do not infer successful implementation from a completed model response. Validate the requested behavior first. Do not rerun the task merely to record it.
+1. Read the actual execution receipt, observed model, task identity and validation
+   evidence. Missing identity or uncertain execution remains unknown; leave
+   correctness pending when its evidence cannot establish a result.
+2. Read [the recording contract](recording-contract.md) before invoking the
+   recorder under `FREELANCER_RUNTIME_ROOT` (the app's `backend/` directory).
+   Supply explicit `-Success` and `-VerificationStatus`; preserve failed, skipped,
+   cancelled, unavailable and unverified evidence rather than promoting it to pass.
+3. Update the same `TaskId` for corrections. Attach review defects to the original
+   attempt and link related work using receipt identities; never invent a new
+   success to conceal failure.
+4. Read the persisted observation before claiming it was recorded. Keep usage,
+   subscription availability and measured performance distinct.
 
-Resolve the runtime root from `FREELANCER_RUNTIME_ROOT` (the app's `backend/` directory). Call `scripts/record-task-outcome.ps1` there with the real task ID returned by `delegate`, actual model, repo, task types and observed test/result values. Pass task types as one comma-separated string when using PowerShell `-File`.
-
-Use the exact parameter names `-Model`, `-TaskType`, `-Success` and
-`-VerificationStatus` (or legacy explicit boolean `-TestsPassed`). The script has
-no `-ActualModel`, `-TaskTypes` or `-Observed` parameter. Explicitly pass the
-result values; prose describing passed tests does not set them. For example,
-after independently verifying success and tests:
-
-```powershell
-& "$root/scripts/record-task-outcome.ps1" -TaskId $taskId -Model $actualModel -Repo $repo -TaskType 'bounded_feature' -Success true -VerificationStatus passed
-```
-
-Verification states are `passed`, `failed`, `skipped`, `unavailable`, `not-run`
-and `unverified`. If no tests ran, pass `-VerificationStatus not-run`; if a missing
-dependency prevented them, use `unavailable`. Nonexecuted/unknown checks store
-`tests_passed: null`, not false. Legacy `-TestsPassed false` means an actual failed
-check; unknown boolean strings and contradictory boolean/state combinations are
-rejected before recording. Operational execution failures default to `not-run`
-verification and never imply failed tests. Read the persisted observation before
-claiming it was recorded.
-
-The recorder reads a matching runtime receipt, checks selected versus observed model, and imports child-specific usage. Same task ID updates one observation. A later review defect uses `-TaskId <id> -MarkReviewDefect` and remains attached to the original attempt. Do not create a new success to hide it.
-
-Use `-UserTaskId` on the outcome script to group related child/fallback work under one user task; read the grouping value from the returned receipt's `user_task_id` (or `parent_session` fallback). Grouping is recorder-only; delegate accepts the public `delegate({agent, task, model, freeOnly, inspectionOnly, independentReview, worker, fork, cancel, delivery, workers, from, limit})` schema. Each receipt retains its execution attempts; correcting a TaskId updates that observation and retains changed validation values in revisions. `-ReviewTaskId` links a defect report to the reviewing observation. Receipt usage belongs to the listed child session; earlier failed-attempt usage stays in execution_attempts and is not charged to the successful model.
-
-Parent/child costs are related, not separate charges to sum twice. A fallback leaves an honest attempt history. Legacy all-session CLI measurements remain estimates because same-model concurrency and rounded counters cannot establish exact task consumption.
-
-For an orchestration audit, inspect the actual parent/child native sessions and
-matching durable delegation receipts. Do not launch an old export-summary script
-or make a second usage ledger. Share of work and recorded usage remain separate
-from subscription availability. Without a comparable parent-only baseline, do
-not claim measured savings. Investigation is not implementation; retries and
-paid escalation remain distinct observations.
-
-Shared `knowledge` may help locate related prior outcomes or evidence, but it is
-not the operational outcome ledger. Verify each linked task against its native
-receipt and actual validation. Preserve failed, skipped, cancelled, unavailable
-and unknown results instead of promoting a memory or judgment to a pass.
-
-Binding, provider, quota and deployment failures are operational observations, not poor coding performance by the intended model. No fabricated model self-identification, measured zero balances, or subscription-dollar savings. Explicitly inspection-only assignments return findings for authorized recording; a review-flavored assignment alone is not a write restriction.
-
-Actual observations are stored locally in `.state/task-history.json`, never in the public seed. Failed execution is recorded automatically as operational evidence with its actual usage when available; do not mark it successful or treat it as a capability verdict. Correctness still requires explicit validation.
-
-Structured Freelancer model outcomes remain authoritative for performance evidence.
-Consider Memory for useful qualitative observations that do not fit those records,
-such as repeated strength on bounded UI work and unsupported-helper assumptions
-in broad refactors. Keep supporting context and uncertainty; no automatic writes
-or duplicate statistics ledger. Future recommendations may combine task needs,
-structured outcomes and relevant qualitative history, with optional JEV comparison
-only if eligible choices remain ambiguous. Memory/JEV failure never blocks recording.
+Provider, authentication, quota, binding and deployment failures are operational
+observations, not coding-quality verdicts. Matching native receipts and the local
+outcome ledger supply execution evidence; `knowledge`, remembered lessons and
+Jev judgments cannot replace them or create a second statistics ledger.

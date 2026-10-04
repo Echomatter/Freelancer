@@ -16,6 +16,7 @@ __pycache__/
 
 # Disposable browser screenshots and fixtures
 test-results/
+.playwright-mcp/
 
 # Freelancer: private state and generated files
 backend/.state/

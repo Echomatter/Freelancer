@@ -1,11 +1,93 @@
 # Shared skill library and source provenance
 
-Reviewed **2026-10-03**. Skills are discoverable guidance for the shared native
+Reviewed **2026-10-04**. Skills are discoverable guidance for the shared native
 OpenCode toolkit. They do not install services, prove connection health, grant
 permissions, restrict access by agent/model/project, or authorize paid use.
 Native configuration, current tool schemas, explicit denial, delegation limits,
 and saved Git agreements retain their existing authority. See
 [Capabilities](capabilities.md) for the connection and inventory UI.
+
+## Choose guidance by the result
+
+Load the smallest useful set through native `skill` discovery. A related skill
+is a transition when the task needs its result, not a required sequence. Direct
+tool use remains available.
+
+| Task | Canonical skill | Distinct result |
+| --- | --- | --- |
+| Recover working context | `reorient` | Current objective, instructions, source state and next action |
+| Find local files or chats | `search-index` | Bounded indexed hits checked against decisive originals |
+| Retain or correct knowledge | `remember` | Ordinary notes/snapshots, optional structured claims, graph relations and pin operations |
+| Investigate external evidence | `web-research` | A sourced answer with version, disagreement and uncertainty |
+| Confirm a library/API contract | `context7-mcp` | Version-specific documentation through the native Context7 tools |
+| Read a known URL | `fetch` | Retrieved source text with truncation and citation limits |
+| Interact with rendered pages | `playwright` | Observed browser state and focused interaction checks |
+| Diagnose an observed failure | `debug` | Supported cause and a scoped repair or proposal |
+| Work through a decision | `reason-through` | Explicit assumptions, dependencies, alternatives and conclusion |
+| Judge bounded evidence | `bounded-judgment` | Advisory typed answers with missingness and uncertainty retained |
+| Develop a TypeSafe integration | `typesafe-ai` | Official primitives, SDK/API contracts and integration guidance |
+| Build competing approaches | `compare-builds` | Two implementations compared under the same brief and criteria |
+| Assign or recover a worker | `delegate-work` | Named-agent dispatch, native receipt inspection and safe continuation |
+| Check a concrete claim | `verify` | Actual checks, results and remaining evidence limits |
+| Critique a bounded change | `review` | Grounded findings; the parent integrates authorized fixes |
+| Leave a durable checkpoint | `handoff` | Objective, state, decisions, checks, risks and next action |
+| Continue a saved goal | `pursue-goal` | Same-chat work and reconciled lifecycle checkpoints |
+| Record task evidence | `record-outcome` | Outcomes tied to actual task/verification receipts |
+| Act under a Git agreement | `managed-git` | Managed preview, approved execution and observed publication state |
+
+For example, a failing SQL aggregate starts with `debug` and the actual schema.
+A two-approach implementation starts with `compare-builds`. A consequential
+comparison may use `bounded-judgment` after gathering evidence; it does not need
+a durable memory definition. A paused or uncertain worker needs native receipt
+inspection through `delegate-work` before any new dispatch.
+
+The optional `remember` skill guides the shared `knowledge` tool. Its ordinary
+`remember` operation saves notes; retained notes/snapshots use query domain
+`memories`. Optional `claim` records add structured predicate/value, evidence
+and status in `facts`.
+Remembering repository locations or decisions defaults to a note. An incomplete
+call needs its missing arguments corrected, not a claim fallback; see the
+[tool naming and operation contract](tools-library.md#freelancer-tools).
+
+## Instruction ownership and detail
+
+Agent prompts describe expertise, priorities and the expected deliverable.
+They do not repeat tool manuals, universal safety rules or fixed multi-step
+protocols. The Engineer, Researcher and Designer defaults are deliberately brief;
+custom agents retain their authored identity and preferences. Detailed SQL
+correctness guidance belongs in the relevant task or reference, while its agent
+prompt keeps grain, keys, joins, missing values, lineage, transactions, security
+and measured optimization visible.
+
+- `backend/global/WORKSTYLE.md` supplies the common working approach.
+- `backend/opencode/global-instructions.md` supplies the task map and meanings
+  of shared tool evidence.
+- `server/execution.mjs` owns captured request identity, constraints, native
+  permission boundaries, worker delivery and saved-goal behavior.
+- `backend/tools/runtime/delegation.mjs` adds assignment-specific context and
+  restrictions; the result contract describes the actual child report.
+- Skill entries explain when to use a procedure and the useful next actions.
+  Their references hold detailed operations, schemas or receipts.
+
+Most local entries need only a few hundred words. This is a sizing guide rather
+than a hard limit: official vendor bodies remain intact, and operational detail
+is loaded when needed. Shared rules have one owner; a skill repeats a boundary
+only when it is necessary to use that specific procedure correctly.
+
+| Detailed reference | Read when |
+| --- | --- |
+| `remember/references/operations.md` | Performing retention, graph, pin or reusable judgment operations |
+| `fetch/references/setup.md` | Diagnosing native Fetch setup or Windows encoding |
+| `playwright/references/mcp-operations.md` | Choosing browser operations or checking version-specific parameters |
+| `reason-through/references/sequential-thinking.md` | Calling optional Sequential Thinking |
+| `bounded-judgment/references/contracts.md` | Preparing local evidence contracts, stages, composition or receipt pages |
+| `delegate-work/evidence-refresh.md` | Maintaining internal delegation evidence |
+| `record-outcome/recording-contract.md` | Writing outcome receipts with the exact script parameters |
+
+`delegate-work` is the renamed `model-routing` skill. `docs-research` was
+consolidated into `web-research`; `browser-verify` was consolidated into
+`playwright`. `compare-builds` is new. These changes organize guidance around
+distinct results without introducing another executor or capability gate.
 
 ## Official external sources
 
@@ -35,7 +117,7 @@ local integration notes:
 | --- | --- | --- |
 | Playwright MCP | Native tab selection/navigation, accessibility snapshots, click/type/fill/select, waiting for visible state, screenshots, discovered console/network diagnostics | Current Microsoft docs use `target` for references/selectors; older servers may expose `ref`. Follow the actual native schema. Optional server capabilities remain optional; the skill does not enable them. |
 | Context7 MCP | `resolve-library-id` with `libraryName`/`query`, then `query-docs` with `libraryId`/`query`; exact supplied library IDs can be queried directly | OpenCode may prefix tool names. Documentation ranking is advisory, and selected version/source must be reported. General code review and business-logic debugging do not require a remote lookup. |
-| TypeSafe | Official Choice, Noul, Score, current SDK/API documentation, uncertainty, batching, and source-grounded design | Existing `knowledge` maps `classify`→Choice, `check`→Noul, `score`→Score. Configured provider status is not inference proof. A separately configured community Jev MCP exposes its own schema and auth boundary. |
+| TypeSafe | Official Choice, Noul, Score, current SDK/API documentation, uncertainty, batching, and source-grounded design | Everyday `bounded-judgment` uses `evidence_evaluation`; explicitly reusable `knowledge` definitions remain available. The tool supplies a generic local evidence-contract workflow; its JSON is Freelancer-owned, not TypeSafe wire format. Configured provider status is not inference proof. A separately configured community Jev MCP exposes its own schema and auth boundary. |
 | Fetch MCP | `fetch` with `url`, `max_length`, `start_index`, and `raw`; continuation offset counts characters | A fetch is neither a search nor an authenticated browser session. Truncation and configured robots/permission refusals remain visible. Native commands/environment are not changed by this skill. |
 | Sequential Thinking MCP | `thought`, `thoughtNumber`, `totalThoughts`, `nextThoughtNeeded`, revision fields, and branch fields | At the checked revision, the README says `sequential_thinking` but registration uses `sequentialthinking`. Use the discovered name. Reasoning output is not source verification or permission. |
 
@@ -73,27 +155,66 @@ They describe observed capabilities; they are not another permission system.
 Native or user-installed skills outside that manifest retain their own sources
 and fall back to their source-provided summaries.
 
-| Guidance | Existing surface and equivalence |
-| --- | --- |
-| `remember` | Shared `knowledge` memories, facts/claims, relations, exact entity reads, opening nodes, graph pages, node search, and canonical pins. Freelancer internal memory needs no external Memory MCP; an independent custom Memory connection remains distinct. |
-| `search-index` | Shared `content_index` and knowledge queries for project files/chats, source freshness, and decisive evidence. It complements native code search. |
-| `model-routing`, `record-outcome` | Existing model evidence, execution receipts, and the public bounded `delegate` surface; typed advice never grants eligibility or task success. |
-| `reorient`, `debug`, `review`, `verify`, `browser-verify` | Project instructions, source/behavior inspection, focused verification, report-only review, and explicit evidence limits. Browser guidance applies across supported connected browser MCP tools. |
-| `pursue-goal`, `handoff` | Persistent same-chat goal continuation, inspectable durable checkpoints, explicit Stop/Resume, and uncertain-delivery safeguards. |
-| `managed-git` | Existing `git_project` actions, read/preview versus approved execution, saved agreements, and explicit permission exceptions. It adds guidance without creating another Git executor. |
-| `web-research`, `docs-research`, `bounded-judgment` | Task-oriented research/judgment hints, complementary to the provider-specific skills above. They do not duplicate service credentials or create mandatory stages. |
+The task map above is the canonical organization. Internal memory and canonical
+pins use `knowledge` in the per-user warehouse; no external Memory MCP is needed.
+`content_index` complements native source search. `model_catalog` and recorded
+outcomes provide evidence, while native eligibility and consent still govern
+delegation. The [evidence evaluation guide](evidence-evaluation.md) documents the
+local typed-judgment contract and its receipt limits.
 
-Named-agent/delegation contracts remain in [Named agents](named-agents.md),
-the native plugin, and existing skill guidance. Managed `git_project` keeps its
-own current actions and saved-agreement authority, with `managed-git` documenting
-the existing procedure. No duplicate delegation skill or second execution engine
-was introduced by this refresh.
+Named-agent and worker lifecycle contracts remain in [Named agents](named-agents.md)
+and the runtime. Skills describe use of those existing surfaces; they do not
+create another prompt store, dispatch engine or managed Git implementation.
+
+## Streamlining review: 2026-10-04
+
+The latest Alpha_Packer conversation exposed caller JSON and packet-size failures
+before a successful Jev evaluation. Its five-candidate comparison combined several
+dimensions in each score, used leading candidate descriptions, treated a later
+Choice confidence as a strong recommendation despite uncertain input scores, and
+mistook per-request bounds for a limit on a larger comparison. Those observations
+do not establish Jev accuracy on the project's actual coding tasks.
+
+`bounded-judgment` now owns generic everyday judgment guidance. It covers neutral
+criteria, exact evidence/configuration identity, small projected state, comparable
+batches for larger requested sets, and distinct missingness versus model uncertainty.
+Its reference holds a minimal local contract and advanced receipt/composition details.
+`typesafe-ai` retains the official body for integration development; durable
+`knowledge` definitions remain available for reusable questions.
+
+`debug` handles an observed failure; `reason-through` handles decisions and
+dependencies. Sequential Thinking records supplied steps/revisions and adds no
+independent observations. `playwright` now combines browser mechanics and focused
+verification; the redundant `browser-verify` skill was removed. Tools remain shared.
+
+Current TypeSafe primitives/state/confidence were checked through Context7 against
+official documentation. Its [coding-agent guide](https://docs.typesafe.ai/introduction/coding-agents)
+and [Jev 1.13 limitations](https://docs.typesafe.ai/model-jaggedness/jev-1.13)
+inform the distinction between typed decisions, explanations and observed results.
+Microsoft Playwright MCP and the official Sequential Thinking implementation were
+also checked through Context7. This review made no new paid inference calls.
+
+## Native global guidance
+
+The installed native discovery also loads five user-global entrypoints under
+`~/.config/opencode/skills`. The older global `model-routing` entry is now
+`model-advice`, focused on requested recommendations rather than worker dispatch.
+Global `reorient`, `search-index` and `record-outcome` fallbacks now inspect the
+active runtime and defer to Freelancer's app-managed guidance here. Global `sync`
+explicitly follows the saved Freelancer agreement and managed Git path.
+
+Their original toolkit instructions remain as scoped legacy references, with
+actual schema compatibility required before use. They cannot supply retired
+role/selectedModel arguments, compulsory handoffs or recorder assumptions to
+Freelancer. Native discovery must confirm that the app's matching names resolve
+to its installed skill files. These are guidance edits; native configuration,
+credentials and service commands are unchanged.
 
 ## Discovery and evidence limits
 
-The refresh edits repository-owned skill sources only. User-global skills,
-provider authentication, native MCP configuration, and connection commands remain
-unchanged. A source file or catalog entry does not prove runtime discovery:
+The refresh updates repository-owned guidance and the scoped global fallbacks
+above. Provider authentication, native MCP configuration and connection commands
+remain unchanged. A source file or catalog entry does not prove runtime discovery:
 after the normal application refresh/restart, the native `/skill` observation
 and Capabilities inventory must establish which skills loaded. Connection status
 and harmless tool-call receipts establish separate service-use evidence. This

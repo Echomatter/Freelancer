@@ -6,6 +6,7 @@ import path from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
 import { modelRows } from '../shared/view.mjs';
 import { createLocalDataStore } from '../server/data/store.mjs';
+import { seedImportedChats } from './fixtures/imported-history.mjs';
 
 test('modelRows indexed lookups preserve first-match evidence, roster, quota and outcomes', () => {
   const providers = [{ id: 'p', models: { a: { name: 'A', limit: { context: 10 } }, b: { name: 'B' } } }];
@@ -52,7 +53,7 @@ test('imported chat lookup reads the selected row instead of parsing every proje
   const root = await mkdtemp(path.join(os.tmpdir(), 'freelancer-lookup-'));
   const store = createLocalDataStore(root);
   t.after(async () => { store.close(); await rm(root, { recursive: true, force: true }); });
-  store.importChatGPT('p', [
+  seedImportedChats(store, 'p', [
     { id: 'wanted', sourceID: 's1', title: 'Wanted', directory: root, time: { created: 1, updated: 2 }, source: { ok: true }, messages: [
       { info: { role: 'user' }, parts: [{ type: 'text', text: 'hello' }] },
     ] },

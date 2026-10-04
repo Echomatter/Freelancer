@@ -168,7 +168,7 @@ export function ProjectProgress({
   step?: string;
   onStop?: () => void;
 }) {
-  const steps = [['project', 'Open project folder'], ['import', 'Import selected chats (optional)'], ['workspace', 'Load models, agents and settings'],
+  const steps = [['project', 'Open project folder'], ['workspace', 'Load models, agents and settings'],
     ['files', 'Build the project file index'], ['chats', 'Build the conversation index']];
   const current = Math.max(0, steps.findIndex(([key]) => key === step));
   return (

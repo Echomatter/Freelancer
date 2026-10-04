@@ -15,16 +15,12 @@ import {
   useRef,
   useState,
 } from "react";
-import { resolveTodoLayout } from "../domain/appearance.mjs";
 import {
   MAX_ATTACHMENTS,
   MAX_ATTACHMENT_BYTES,
   MAX_TOTAL_ATTACHMENT_BYTES,
 } from "../domain/attachments.mjs";
-import {
-  buildRequestGroups,
-  summarizeRequestWork,
-} from "../domain/chat-view.mjs";
+import { buildRequestGroups } from "../domain/chat-view.mjs";
 import {
   reportedContext,
   turnStatistics,
@@ -442,9 +438,6 @@ export function Chat({
   );
   const dockRequest = requestGroups[dockIndex];
   const isCurrentDock = dockKey === currentRequest?.key;
-  const dockTodos = isCurrentDock
-    ? todos
-    : (taskHistory.current.get(dockKey ?? "") ?? EMPTY_TODOS);
   const railTurns = useMemo(
     () =>
       requestGroups.map((request, index) => ({
@@ -463,9 +456,6 @@ export function Chat({
     () => reportedContext(messages, data.models),
     [messages, data.models],
   );
-  const dockSummary = dockRequest
-    ? summarizeRequestWork(dockRequest.allMessages, dockTodos)
-    : null;
   useLayoutEffect(() => {
     setInspectedWork(null);
     setExpandedWork(null);
@@ -494,7 +484,6 @@ export function Chat({
         toolSelection={toolSelection}
         toolSection={toolSection}
         turnEvents={turnEvents[dockIndex] ?? []}
-        dockSummary={dockSummary}
         toolbarData={toolbarData}
         messages={messages}
         busy={busy}
@@ -503,8 +492,6 @@ export function Chat({
         dockIndex={dockIndex}
         setInspectedWork={setInspectedWork}
         setExpandedWork={setExpandedWork}
-        data={data}
-        todos={todos}
         session={session}
         openChild={openChild}
       />
@@ -574,8 +561,7 @@ export function Chat({
         )}
         <div className="composer-wrap">
           <div className="composer-cards">
-            {resolveTodoLayout(data.settings.appearance) === "docked" &&
-              todos.length > 0 &&
+            {todos.length > 0 &&
               dismissedTasks === taskRevision && (
                 <button
                   type="button"
@@ -585,8 +571,7 @@ export function Chat({
                   Show tasks
                 </button>
               )}
-            {resolveTodoLayout(data.settings.appearance) === "docked" &&
-              todos.length > 0 &&
+            {todos.length > 0 &&
               dismissedTasks !== taskRevision && (
                 <WorkCard
                   title={`Tasks · ${todos.filter((todo) => todo.status === "completed").length}/${todos.length} complete`}

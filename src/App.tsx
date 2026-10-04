@@ -26,6 +26,7 @@ import { mergeProviderColors } from "../domain/provider-colors.mjs";
 import { senderState } from "../domain/sender.mjs";
 import { startingChoices } from "../domain/session-defaults.mjs";
 import { applyTheme } from "../domain/theme.mjs";
+import { workspaceModels } from "../domain/workspace.mjs";
 import { browseModels } from "../shared/view.mjs";
 import { api, query, subscribe } from "./api";
 import {
@@ -37,7 +38,6 @@ import {
 import { Chat } from "./Chat";
 import { ContributionRows } from "./Contributions";
 import {
-  Badge,
   Button,
   Empty,
   Field,
@@ -51,19 +51,18 @@ import { ContentSearch } from "./IndexedSearch";
 import { IndexJobProgress, IndexJobsContext, useIndexJobs } from "./IndexJobs";
 import { eventRefreshScope } from "./live-events.mjs";
 import {
-  ModelRatingDialog,
-  ModelRatingProgress,
-  useModelRatings,
+  ModelDataDialog,
+  ModelDataProgress,
+  useModelDataUpdate,
 } from "./ModelRatings";
+import { ModelCard } from "./ModelCard";
 import { ChatNavigation, ProjectNavigation } from "./NavigationMenus";
 import { PanelResize, usePanelLayout } from "./PanelResize";
 import { Permissions } from "./Permissions";
-import { FolderPicker, ProjectImport } from "./ProjectImport";
+import { FolderPicker } from "./FolderPicker";
 import {
   AppearanceContext,
   ProviderSelect,
-  ProviderText,
-  providerAttributes,
   type ColorPatch,
 } from "./ProviderColors";
 import { Questions } from "./Question";
@@ -76,9 +75,6 @@ import { useAvailability } from "./useAvailability";
 import { useDrafts } from "./useDrafts";
 import { useWorkspaceViewState } from "./useWorkspaceViewState";
 import { Files } from "./WorkspacePanels";
-const ChatManagement = lazy(() =>
-  import("./ChatManagement").then((module) => ({ default: module.ChatManagement })),
-);
 const GitHubProject = lazy(() =>
   import("./GitHubProject").then((module) => ({
     default: module.GitHubProject,
@@ -99,11 +95,6 @@ const parentDirectory = (path: string) => {
   const index = normalized.lastIndexOf("/");
   return index < 0 ? "" : normalized.slice(0, index);
 };
-const compactModelNumber = new Intl.NumberFormat("en-US", {
-  notation: "compact",
-  maximumFractionDigits: 1,
-});
-
 function modelStatus(availability: string, used = false) {
   if (availability === "deprecated")
     return { label: "Deprecated", tone: "error" };
@@ -111,10 +102,6 @@ function modelStatus(availability: string, used = false) {
     return { label: "Quota limited", tone: "warning" };
   if (used) return { label: "Used", tone: "success" };
   return { label: "Not tested", tone: "neutral" };
-}
-
-function modelQuantity(value: number) {
-  return compactModelNumber.format(value);
 }
 
 function ChatLoading({
@@ -180,20 +167,10 @@ export default function App() {
     : navigationCollapsed
       ? "Expand navigation"
       : "Collapse navigation";
-  const [folderPicker, setFolderPicker] = useState(false),
-    [importPreview, setImportPreview] = useState<any>(null);
-  const [importSourcePicker, setImportSourcePicker] = useState(false),
-    [importSourceDirectory, setImportSourceDirectory] = useState(""),
-    [importSelection, setImportSelection] = useState<string[]>([]),
-    [importExplicit, setImportExplicit] = useState(false),
-    [importSubmitting, setImportSubmitting] = useState(false);
-  const importRead = useRef<{ generation: number; controller: AbortController | null }>({ generation: 0, controller: null });
-  useEffect(() => () => { importRead.current.generation++; importRead.current.controller?.abort(); }, []);
+  const [folderPicker, setFolderPicker] = useState(false);
   const [indexedFilePath, setIndexedFilePath] = useState("");
   const [fileFolderPath, setFileFolderPath] = useState("");
   const [fileNavigation, setFileNavigation] = useState(0);
-  const [importBusy, setImportBusy] = useState(false),
-    [importError, setImportError] = useState("");
   const [data, setData] = useState<any>(null),
     [project, setProject] = useState(""),
     [session, setSession] = useState(""),
@@ -263,10 +240,9 @@ export default function App() {
   const warmRunning = useRef(0),
     otherProjectActivityAt = useRef(new Map<string, number>());
   const [choicesKey, setChoicesKey] = useState("");
-  const [chatSelection, setChatSelection] = useState<
-    string | undefined
+  const [conversationSelection, setConversationSelection] = useState<
+    { project: string; session: string } | undefined
   >();
-  const [manageChats, setManageChats] = useState(false);
   const compactNavigation = narrowViewport || navigationCollapsed;
   const collapseNavigation = () => {
     setExpandedNavigation(null);
@@ -314,29 +290,26 @@ export default function App() {
     dismissCompactNavigation();
     startTransition(() => setViewState(next));
   };
-  const openChatManagement = (id?: string) => {
-    setChatSelection(id);
+  const openConversationSearch = (id?: string) => {
+    setConversationSelection({ project, session: id ?? "" });
     setExpandedNavigation("application");
-    setManageChats(true);
     setSettingsScope("application");
     setTab("search");
     setView("search");
   };
   const closeSettings = () => {
     setExpandedNavigation(null);
-    setChatSelection(undefined);
-    setManageChats(false);
+    setConversationSelection(undefined);
     setIndexedFilePath("");
     setFileFolderPath("");
     setView("chat");
   };
   const openSettings = (scope: SettingsScope, item: string) => {
     if (item === "history") {
-      openChatManagement();
+      openConversationSearch();
       return;
     }
-    setManageChats(false);
-    setChatSelection(undefined);
+    setConversationSelection(undefined);
     if (item === "files") {
       setIndexedFilePath("");
       setFileFolderPath("");
@@ -705,16 +678,25 @@ export default function App() {
         );
       }
   };
-  const modelRatings = useModelRatings(() => refresh());
+  const modelData = useModelDataUpdate(() => refresh());
+  const configuredModels = useMemo(
+    () => workspaceModels(data?.models ?? [], data?.providers?.connected ?? []),
+    [data?.models, data?.providers?.connected],
+  );
+  const modelProviders = useMemo(() => {
+    const ids = new Set(configuredModels.map(model => model.provider));
+    return (data?.providers?.all ?? []).filter(provider => ids.has(provider.id));
+  }, [configuredModels, data?.providers?.all]);
+  const selectedModelProvider = modelProviders.some(provider => provider.id === modelProvider) ? modelProvider : "";
   const browsedModels = useMemo(
     () =>
-      browseModels(data?.models ?? [], {
+      browseModels(configuredModels, {
         query: modelQuery,
-        provider: modelProvider,
+        provider: selectedModelProvider,
         sort: modelSort,
         freeOnly,
       }),
-    [data?.models, modelQuery, modelProvider, modelSort, freeOnly],
+    [configuredModels, modelQuery, selectedModelProvider, modelSort, freeOnly],
   );
   const refreshCurrent = useRef<
     (scope: { chat: boolean; bootstrap: boolean }) => Promise<unknown>
@@ -1065,13 +1047,8 @@ export default function App() {
   }
   async function openProject(existing?: any) {
     if (projectTransition.current) return false;
-    invalidateImportPreview();
-    setImportBusy(false);
-    setImportExplicit(false);
-    setImportSourcePicker(false);
     setFolderOpen(false);
     setFolderPicker(false);
-    setImportPreview(null);
     let opened = false;
     projectTransition.current = true;
     bootstrapVersion.current++;
@@ -1180,88 +1157,9 @@ export default function App() {
     }
     selectSession(id);
   }
-  function invalidateImportPreview() {
-    importRead.current.generation++;
-    importRead.current.controller?.abort();
-    importRead.current.controller = null;
-  }
-  function closeImportSetup() {
-    if (importSubmitting) return;
-    invalidateImportPreview(); setImportBusy(false); setImportError("");
-    setFolderOpen(false); setFolderPicker(false); setImportSourcePicker(false);
-    setImportPreview(null); setImportSelection([]); setImportExplicit(false);
-  }
-  function backToProjectFolder() {
-    if (importSubmitting) return;
-    invalidateImportPreview(); setImportBusy(false); setImportError("");
-    setImportPreview(null); setImportSelection([]); setImportSourcePicker(false); setFolderOpen(true);
-  }
-  function changeImportSource(directory: string) {
-    invalidateImportPreview(); setImportBusy(false); setImportError("");
-    setImportSourceDirectory(directory); setImportSelection([]);
-  }
-  async function previewProject(directory = folder.trim(), forImport = importExplicit, sourceDirectory?: string) {
-    invalidateImportPreview();
-    const generation = importRead.current.generation, controller = new AbortController();
-    importRead.current.controller = controller;
-    const currentRequest = () => !controller.signal.aborted && importRead.current.generation === generation;
-    const timeout = setTimeout(() => controller.abort(), 30_000);
-    setImportBusy(true);
-    setImportError("");
-    try {
-      const preview = await api("projects/import-preview", {
-        directory, forImport, ...(sourceDirectory ? { sourceDirectory } : {}),
-      }, "POST", controller.signal);
-      if (!currentRequest()) return;
-      if (preview.existing) await openProject(preview.existing);
-      else {
-        setFolderOpen(false); setFolderPicker(false); setImportSourcePicker(false);
-        setImportPreview(preview); setImportSourceDirectory(preview.recordedDirectory);
-        setImportSelection([]);
-      }
-    } catch (error) {
-      if (importRead.current.generation === generation)
-        setImportError(controller.signal.aborted ? "Reading local history took too long. Preview the folder again or skip import." : (error as Error).message);
-    } finally {
-      clearTimeout(timeout);
-      if (importRead.current.generation === generation) { importRead.current.controller = null; setImportBusy(false); }
-    }
-  }
-  function reviewProjectImport(item: any) {
-    invalidateImportPreview(); setImportError(""); setImportPreview(null); setImportSelection([]);
-    setProjectEdit(null); setFolder(item.directory); setFolderOpen(true); setImportExplicit(true);
-    void previewProject(item.directory, true);
-  }
-  async function finishProjectSetup(selected: string[]) {
-    if (importBusy || !importPreview) return;
-    invalidateImportPreview();
-    setImportSubmitting(true);
-    setImportBusy(true);
-    setImportError("");
-    projectTransition.current = true;
-    setProjectLoading({
-      name: importPreview.directory,
-      phase: selected.length
-        ? `Importing ${selected.length} ChatGPT / Codex conversations…`
-        : "Finishing project setup…",
-      step: "import",
-    });
-    try {
-      const result = await api("projects/setup", {
-        token: importPreview.token,
-        selected,
-      });
-      setImportPreview(null);
-      projectTransition.current = false;
-      await openProject(result.project);
-    } catch (error) {
-      setImportError((error as Error).message);
-    } finally {
-      projectTransition.current = false;
-      setProjectLoading(null);
-      setImportBusy(false);
-      setImportSubmitting(false);
-    }
+  function closeProjectSetup() {
+    setFolderOpen(false);
+    setFolderPicker(false);
   }
   async function saveProjectName() {
     if (!projectEdit) return;
@@ -1466,8 +1364,6 @@ export default function App() {
               onAdd={() => {
                 dismissCompactNavigation();
                 setError("");
-                setImportError("");
-                setImportExplicit(false);
                 setFolderOpen(true);
               }}
               onManage={(p) => {
@@ -1587,7 +1483,7 @@ export default function App() {
               </div>
             </header>
             <div className="workspace-progress">
-              <ModelRatingProgress ratings={modelRatings} />
+              <ModelDataProgress update={modelData} />
               {!projectLoading && <IndexJobProgress jobs={indexJobs} />}
             </div>
             {workspaceView.error && (
@@ -1669,36 +1565,14 @@ export default function App() {
                   {chat.imported && (
                     <div className="imported-chat-notice">
                       <span>
-                        Imported from ChatGPT / Codex · one-time snapshot.
-                        Continue to orient a new chat from this history.
+                        Saved imported snapshot · read-only.
                       </span>
-                      <Button
-                        disabled={
-                          working ||
-                          current?.organization?.archived ||
-                          data.project?.organization?.archivedAt
-                        }
-                        onClick={() =>
-                          void run(async () => {
-                            const next = await api("chat/imported/continue", {
-                              project,
-                              session,
-                            });
-                            selectSession(next.id);
-                          })
-                        }
-                      >
-                        Continue in Freelancer
-                      </Button>
                     </div>
                   )}
                   {chat.continuation && (
                     <div className="imported-chat-notice" role="status">
                       <span>
-                        {(sending && !chat.receipts?.length) ||
-                        (busy && chat.receipts?.at(-1)?.orienting)
-                          ? "Orienting…"
-                          : "Continued from a ChatGPT / Codex snapshot. Saved history provides the starting context."}
+                        Saved history from an earlier imported snapshot.
                       </span>
                     </div>
                   )}
@@ -1714,10 +1588,10 @@ export default function App() {
                         onClick={() => {
                           if (data.project?.organization?.archivedAt)
                             openSettings("application", "content-storage");
-                          else openChatManagement(current?.parentID ?? current?.id);
+                          else openConversationSearch(current?.parentID ?? current?.id);
                         }}
                       >
-                        Manage archive
+                        View archived chats
                       </Button>
                     </div>
                   )}
@@ -1906,12 +1780,6 @@ export default function App() {
                       state={availableUsage.state}
                       onRefresh={availableUsage.refresh}
                     />
-                    <UsagePreferences
-                      showDepletedModels={
-                        data.settings.appearance?.showDepletedModels
-                      }
-                      refresh={refresh}
-                    />
                     <div className="overview-grid">
                       <Panel title="Your providers">
                         <UsageProviders view={availableUsage.view} />
@@ -1959,6 +1827,10 @@ export default function App() {
                         </button>
                       </div>
                     </Panel>
+                    <UsagePreferences
+                      showDepletedModels={data.settings.appearance?.showDepletedModels}
+                      refresh={refresh}
+                    />
                   </div>
                 )}
                 {view === "files" && project && (
@@ -1988,36 +1860,12 @@ export default function App() {
                     project={
                       settingsScope === "project" ? data.project : undefined
                     }
-                    managing={manageChats}
-                    onManage={() => setManageChats(true)}
-                    onChange={refresh}
-                    management={project ? (
-                  <ChatManagement
-                    key={chatSelection ?? "all"}
-                    data={data}
-                    project={project}
+                    currentProject={project}
                     activity={sessionActivity}
-                    initialSession={chatSelection}
-                    onClose={() => setManageChats(false)}
+                    initialConversation={conversationSelection}
                     onChange={refresh}
-                    onOpen={async (projectID, id) => {
-                      if (projectID !== project) {
-                        const selected = data.settings.projects.find(
-                          (p) => p.id === projectID,
-                        );
-                        if (!selected) return;
-                        await openProject(selected);
-                        if (navigation.current !== query(projectID)) return;
-                      }
-                      selectSession(id);
-                    }}
-                  />
-                    ) : null}
                     onOpenFile={openIndexedFile}
                     onOpenConversation={openIndexedConversation}
-                    onIndex={() =>
-                      openSettings("application", "content-storage")
-                    }
                     onClose={closeSettings}
                   />
                 )}
@@ -2057,7 +1905,6 @@ export default function App() {
                     ) : (
                       <Settings
                         sessionID={session}
-                        onHistory={() => openChatManagement()}
                         onOpenChat={async (projectID, id) => {
                           if (projectID !== project) {
                             const selected = data.settings.projects.find(
@@ -2074,6 +1921,7 @@ export default function App() {
                         }}
                         onClose={closeSettings}
                         data={data}
+                        modelData={modelData}
                         onColorsSaved={colorsSaved}
                         onNavigate={next => next === "agents" ? openSettings("application", "agents") : setView(next)}
                         onSetting={openSettings}
@@ -2089,46 +1937,46 @@ export default function App() {
                     <PageHeading
                       title="Models"
                       icon={BrainCircuit}
-                      help="model-ratings"
+                      help="model-data"
                       actions={
                         <>
                           <Button
-                            disabled={modelRatings.pending}
+                            variant="primary"
+                            disabled={modelData.pending || modelData.updateBlocked}
                             onClick={async () => {
                               if (
-                                ["starting", "running"].includes(
-                                  modelRatings.job?.status,
-                                )
+                                ["running", "cancelling"].includes(modelData.job?.status)
                               ) {
-                                modelRatings.reveal();
+                                modelData.reveal();
                                 return;
                               }
                               if (
-                                !modelRatings.job ||
-                                (await modelRatings.dismiss())
+                                !modelData.job ||
+                                (await modelData.dismiss())
                               )
                                 setRatingDialog(true);
                             }}
                           >
-                            Update Model Ratings
+                            Update model data
                           </Button>
                           <PageCloseButton onClick={closeSettings} />
                         </>
                       }
                     />
+                    {modelData.maintenance?.state === "cleaning" && <p role="status">Clearing interrupted model data… Stored records remain readable.</p>}
                     <div className="model-filters">
                       <FieldSearch
                         value={modelQuery}
                         onChange={setModelQuery}
                       />
                       <ProviderSelect
-                        provider={modelProvider}
+                        provider={selectedModelProvider}
                         aria-label="Provider filter"
-                        value={modelProvider}
+                        value={selectedModelProvider}
                         onChange={(e) => setModelProvider(e.target.value)}
                       >
                         <option value="">All providers</option>
-                        {data.providers.all.map((p) => (
+                        {modelProviders.map((p) => (
                           <option value={p.id} key={p.id}>
                             {p.name}
                           </option>
@@ -2142,8 +1990,8 @@ export default function App() {
                         {[
                           ["cost", "Access type"],
                           ["context", "Context"],
-                          ["coding", "Coding"],
-                          ["reasoning", "Reasoning"],
+                          ["name", "Name"],
+                          ["provider", "Provider"],
                           ["outcomes", "Checked outcomes"],
                           ["recent", "Recent use"],
                         ].map(([id, label]) => (
@@ -2174,97 +2022,14 @@ export default function App() {
                     {!browsedModels.length && (
                       <p role="status">No models match these filters.</p>
                     )}
-                    <div className="model-grid">
+                    <div className="model-grid native-model-grid">
                       {browsedModels.map((m) => {
-                        const used =
-                          !!m.recent ||
-                          m.outcomes?.total > 0 ||
-                          data.costs.contributions?.models?.rows?.some(
-                            (row: any) => row.id === m.id,
-                          );
-                        const status = modelStatus(m.availability, used);
-                        const facts = [
-                          m.context
-                            ? `Context ${modelQuantity(m.context)}`
-                            : null,
-                          m.output ? `Output ${modelQuantity(m.output)}` : null,
-                          m.tools === true
-                            ? "Tool use"
-                            : m.tools === false
-                              ? "No tool use"
-                              : null,
-                          ...(m.variants ?? []).map(
-                            (variant: string) => `Variant ${variant}`,
-                          ),
-                        ].filter(Boolean);
-                        return (
-                          <Panel
-                            key={m.id}
-                            {...providerAttributes(
-                              m.provider,
-                              data.settings.appearance ?? {},
-                            )}
-                            className="provider-model-card"
-                          >
-                            <div className="balance-row">
-                              <h3>
-                                <ProviderText provider={m.provider} mark>
-                                  {m.name}
-                                </ProviderText>
-                              </h3>
-                              <span
-                                className={`model-status ${status.tone}`}
-                                title={m.availability}
-                                aria-label={`Model status: ${status.label} (${m.availability})`}
-                              >
-                                <span
-                                  className="model-status-dot"
-                                  aria-hidden="true"
-                                />
-                                {status.label}
-                              </span>
-                            </div>
-                            <div className="model-provider-name">
-                              <ProviderText provider={m.provider}>
-                                {data.providers.all.find(
-                                  (p) => p.id === m.provider,
-                                )?.name ?? m.provider}
-                              </ProviderText>
-                            </div>
-                            <div
-                              className="model-facts"
-                              aria-label="Native model characteristics"
-                            >
-                              <Badge
-                                tone={
-                                  m.costClass === "free" ? "success" : "neutral"
-                                }
-                              >
-                                {m.costClass === "free"
-                                  ? "Free"
-                                  : m.costClass === "metered"
-                                    ? "Metered"
-                                    : m.costClass === "credits"
-                                      ? "Credits"
-                                      : "Plan"}
-                              </Badge>
-                              {facts.map((fact: string) => (
-                                <span className="model-fact" key={fact}>
-                                  {fact}
-                                </span>
-                              ))}
-                            </div>
-                            <Button
-                              onClick={() => {
-                                setModel(m.id);
-                                setView("chat");
-                              }}
-                            >
-                              Use model
-                              <ArrowUpRight size={14} />
-                            </Button>
-                          </Panel>
-                        );
+                        const used = !!m.recent || m.outcomes?.total > 0 ||
+                          data.costs.contributions?.models?.rows?.some((row: any) => row.id === m.id);
+                        return <ModelCard key={m.id} model={m}
+                          providerName={data.providers.all.find((provider) => provider.id === m.provider)?.name ?? m.provider}
+                          appearance={data.settings.appearance ?? {}} version={modelData.version}
+                          status={modelStatus(m.availability, used)} />;
                       })}
                     </div>
                   </div>
@@ -2274,23 +2039,22 @@ export default function App() {
           </main>
           {confirmation.ui}
           {ratingDialog && data && (
-            <ModelRatingDialog
-              models={data.models}
-              connected={data.providers.connected}
-              project={project}
-              pending={modelRatings.pending}
-              error={modelRatings.error}
+            <ModelDataDialog
+              update={modelData}
               onClose={() => setRatingDialog(false)}
-              onStart={modelRatings.start}
+              onSetup={() => {
+                setRatingDialog(false);
+                openSettings("application", "capabilities");
+              }}
             />
           )}
-          {folderOpen && !projectLoading && !folderPicker && !importSourcePicker && !importPreview && (
+          {folderOpen && !projectLoading && !folderPicker && (
             <Dialog
               title="Open project"
               ariaLabel="Open project"
               icon={<FolderOpen />}
-              onClose={closeImportSetup}
-              busy={!!projectLoading || importSubmitting}
+              onClose={closeProjectSetup}
+              busy={!!projectLoading}
               initialFocus="first"
               size="compact"
               layout="stack"
@@ -2298,23 +2062,23 @@ export default function App() {
                 <>
                   <Button
                     type="button"
-                    disabled={!!projectLoading || importSubmitting}
-                    onClick={closeImportSetup}
+                    disabled={!!projectLoading}
+                    onClick={closeProjectSetup}
                   >
                     Cancel
                   </Button>
                   <Button
                     variant="primary"
-                    disabled={!folder.trim() || working || importBusy}
+                    disabled={!folder.trim() || working}
                   >
-                    {importBusy ? "Checking for chats…" : "Next"}
+                    Open project
                     <ArrowUpRight size={16} />
                   </Button>
                 </>
               }
               onSubmit={(e) => {
                 e.preventDefault();
-                void previewProject();
+                void openProject();
               }}
             >
               <div className="ef-dialog-stack">
@@ -2324,23 +2088,18 @@ export default function App() {
                     autoFocus
                     placeholder="F:\MyProject"
                     value={folder}
-                    disabled={importBusy}
+                    disabled={!!projectLoading}
                     onChange={(e) => setFolder(e.target.value)}
                   />
                 </label>
                 <Button
                   type="button"
-                  disabled={importBusy || !!projectLoading}
+                  disabled={!!projectLoading}
                   onClick={() => setFolderPicker(true)}
                 >
                   <FolderOpen size={16} />
                   Browse folders…
                 </Button>
-                {importError && (
-                  <p role="alert" className="notice error">
-                    {importError}
-                  </p>
-                )}
                 {error && (
                   <p className="notice error" role="alert">
                     {error}
@@ -2357,32 +2116,6 @@ export default function App() {
                 setFolder(directory);
                 setFolderPicker(false);
               }}
-            />
-          )}
-          {importSourcePicker && importPreview && (
-            <FolderPicker
-              title="Choose recorded conversation folder"
-              initial={importSourceDirectory.trim()}
-              onClose={() => setImportSourcePicker(false)}
-              onPick={(directory) => { changeImportSource(directory); setImportSourcePicker(false); }}
-            />
-          )}
-          {importPreview && !importSourcePicker && !projectLoading && (
-            <ProjectImport
-              key={importPreview.token}
-              preview={importPreview}
-              sourceDirectory={importSourceDirectory}
-              selected={importSelection}
-              busy={importBusy}
-              submitting={importSubmitting}
-              error={importError}
-              onClose={closeImportSetup}
-              onBack={backToProjectFolder}
-              onSelect={setImportSelection}
-              onChooseSource={() => setImportSourcePicker(true)}
-              onSourceChange={changeImportSource}
-              onPreviewSource={() => void previewProject(importPreview.directory, true, importSourceDirectory.trim())}
-              onComplete={(selected) => void finishProjectSetup(selected)}
             />
           )}
           {projectEdit && (
@@ -2428,9 +2161,6 @@ export default function App() {
                 <span>Folder</span>
                 <input value={projectEdit.directory} readOnly />
               </label>
-              <Button type="button" disabled={working || importBusy} onClick={() => reviewProjectImport(projectEdit)}>
-                Import ChatGPT / Codex history
-              </Button>
               {error && (
                 <p className="notice error" role="alert">
                   {error}

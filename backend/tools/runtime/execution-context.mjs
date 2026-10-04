@@ -25,17 +25,60 @@ async function json(file) {
 // Resolve from native identity and durable application records, never from a
 // model-provided agent/context blob. Historical receipts are not edited.
 export function createExecutionContextReader(readRequests) {
-  return async (root, directory, session, message) => resolveExecutionContext(
-    root, directory, session, message, readRequests,
+  return async (root, directory, session, message, nativeMessages) => resolveExecutionContext(
+    root, directory, session, message, readRequests, nativeMessages,
   );
 }
 
-async function resolveExecutionContext(root, directory, session, message, readRequests) {
+// OpenCode 1.18.31 marks automatic followups with compaction_continue. Follow
+// only that native marker and a completed, adjacent compaction pair. Summary
+// prose, matching task text and unmarked user messages cannot grant authority.
+export function compactionRequestParent(session, parentID, messages) {
+  if (!Array.isArray(messages)) return null;
+  const seen = new Set();
+  let id = parentID;
+  for (let depth = 0; depth < 64; depth++) {
+    if (seen.has(id)) return null;
+    seen.add(id);
+    const index = messages.findIndex(row => row.info?.id === id);
+    const user = messages[index];
+    if (user?.info?.role !== 'user' || user.info.sessionID !== session?.id) return null;
+    const continuation = user.parts?.length > 0 && user.parts.every(part =>
+      part.type === 'text' && part.synthetic === true && part.metadata?.compaction_continue === true);
+    if (!continuation) return id === parentID ? null : id;
+    const summary = messages[index - 1], compact = messages[index - 2];
+    if (summary?.info?.role !== 'assistant' || summary.info.sessionID !== session.id ||
+      summary.info.summary !== true || summary.info.agent !== 'compaction' ||
+      !summary.info.finish || summary.info.finish === 'error' || summary.info.error ||
+      compact?.info?.role !== 'user' || compact.info.sessionID !== session.id ||
+      summary.info.parentID !== compact.info.id || compact.info.agent !== user.info.agent ||
+      !compact.parts?.some(part => part.type === 'compaction' && part.auto === true)) return null;
+    const original = messages.slice(0, index - 2).findLast(row => row.info?.role === 'user');
+    if (!original || original.info.sessionID !== session.id || original.info.agent !== user.info.agent ||
+      original.parts?.some(part => part.type === 'compaction')) return null;
+    id = original.info.id;
+  }
+  return null;
+}
+
+async function resolveExecutionContext(root, directory, session, message, readRequests, nativeMessages) {
   const info = message?.info ?? message;
   if (info?.role !== "assistant") return null;
+  if (info.sessionID && info.sessionID !== session?.id) return null;
   const records = readRequests ? await readRequests(root) : null;
   const lookup = id => readRequests ? records?.records?.[id] : readRuntimeRequest(root, id);
-  const request = await lookup(info.parentID);
+  let parentID = info.parentID;
+  let request = await lookup(parentID);
+  let binding = request ? null : await json(workerBindingFile(root, session?.id, parentID));
+  if (!request && !binding && nativeMessages) {
+    const rows = typeof nativeMessages === 'function' ? await nativeMessages() : nativeMessages;
+    const inheritedParent = compactionRequestParent(session, parentID, rows);
+    if (inheritedParent) {
+      parentID = inheritedParent;
+      request = await lookup(parentID);
+      binding = request ? null : await json(workerBindingFile(root, session?.id, parentID));
+    }
+  }
   if (
     request?.sessionID === session?.id &&
     same(request.directory, directory) &&
@@ -51,10 +94,9 @@ async function resolveExecutionContext(root, directory, session, message, readRe
         ? request.workflow?.mode !== "build"
         : request.readOnly === true,
       rootSessionID: request.rootSessionID ?? session.id,
-      rootRequestID: request.rootRequestID ?? request.id ?? info.parentID,
+      rootRequestID: request.rootRequestID ?? request.id ?? parentID,
     };
   }
-  const binding = await json(workerBindingFile(root, session?.id, info.parentID));
   const taskID = binding?.taskID ?? session?.metadata?.freelancer?.taskID;
   if (!/^[a-f0-9]{64}$/.test(taskID ?? "")) return null;
   const receipt = await json(
@@ -62,7 +104,7 @@ async function resolveExecutionContext(root, directory, session, message, readRe
   );
   const attempt = receipt?.attempts?.find(
     (a) =>
-      a.child_session === session.id && a.user_message_id === info.parentID,
+      a.child_session === session.id && a.user_message_id === parentID,
   );
   if (
     !attempt ||

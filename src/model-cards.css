@@ -1,0 +1,29 @@
+.native-model-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); align-items: start; }
+.model-card-anchor { min-width: 0; }
+.model-card { min-width: 0; overflow-wrap: anywhere; }
+.model-card-heading { display: flex; align-items: start; justify-content: space-between; gap: 12px; }
+.model-card-heading h2 { font-size: 16px; line-height: 1.4; margin: 0; min-width: 0; }
+.model-card .model-provider-name { margin: 4px 0 12px; }
+.model-card-capabilities { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+.model-card-capabilities > span:not(.badge) { padding-inline-start: 8px; border-inline-start: 1px solid var(--line); }
+.model-card-pairs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 10px 0 0; }
+.model-card :is(dt, .model-card-source-line, .model-card-configuration, .model-card-date, .model-card-empty, .model-card-more) { color: var(--muted); font-size: 12px; }
+.model-card :is(dd, dt) { margin: 0; }
+.model-card dd { font-variant-numeric: tabular-nums; font-size: 16px; font-weight: 600; }
+.model-card-limits { margin: 14px 0; }
+.model-card-limits dd { font-size: 20px; }
+.model-card :is(.model-card-prices, .model-card-ratings) { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 12px; }
+.model-card-source-line { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 6px 12px; }
+.model-card-source-line a { color: var(--text); font-weight: 500; }
+.model-card-rating { margin-top: 10px; }
+.model-card-configuration { line-height: 1.5; }
+.model-card-scores { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin: 6px 0 0; }
+.model-card-scores dt small { display: block; font-size: 10px; }
+.model-card-speed { display: flex; flex-wrap: wrap; gap: 6px 12px; margin-top: 6px; font-size: 12px; }
+.model-card :is(.model-card-date, .model-card-empty, .model-card-more) { display: block; margin-top: 12px; }
+.model-card-error { border-top: 1px solid var(--line); padding-top: 12px; }
+.model-card-error p { margin: 0 0 6px; font-size: 12px; color: var(--muted); }
+.help-hint-popover:has(.model-card-source-help) { max-height: min(480px, calc(100dvh - 20px)); }
+.model-card-source-help { overflow-wrap: anywhere; }
+.model-card-source-help > div + div { margin-top: 12px; }
+@media (max-width: 520px) { .native-model-grid { grid-template-columns: 1fr; } .model-card-heading { gap: 8px; } }

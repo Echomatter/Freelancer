@@ -70,7 +70,6 @@ export function RemoteAccess({ onClose }: { onClose: () => void }) {
       </Panel>
 
       <Panel title="Internet access" help="remote-web">
-        <p>Use Tailscale Funnel to provide an HTTPS address for this computer. The address is reachable from the internet; each browser must still be paired here before it can access project data or controls.</p>
         {!data.funnelAvailable && <p className="notice" role="status">Tailscale CLI is unavailable. <a href="https://tailscale.com/download/windows" target="_blank" rel="noreferrer">Install Tailscale for Windows</a>, sign in, and enable Funnel in your tailnet first.</p>}
         <form onSubmit={event => { event.preventDefault(); void run(async () => {
           const value = await api('remote-access/web', webDraft, 'PUT');

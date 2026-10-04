@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { openCodeSourceIdentity } from '../server/data/opencode-warehouse.mjs';
 import { createOpenCodeEventCoordinator } from '../server/opencode-event-coordinator.mjs';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
-import { codexHistoryFixture } from './fixtures/codex-history.mjs';
+import { importedHistoryFixture } from './fixtures/imported-history.mjs';
 
 const tick = () => new Promise(resolve => setTimeout(resolve, 5));
 function refreshStore(history = {}) {
@@ -447,15 +447,12 @@ test('source-wide dirty markers fan out to registered projects before bounded re
 test('indexing an imported Codex conversation preserves search without recording an OpenCode source', async t => {
   const fixture = await localDataFixture();
   t.after(() => fixture.close());
-  await codexHistoryFixture(fixture);
-  const preview = await fixture.app.chatgpt.preview(fixture.directory);
-  const setup = await fixture.app.chatgpt.complete(preview.token, ['codex-exact']);
-  const imported = fixture.app.chatgpt.list(setup.project.id)[0];
-  const chat = fixture.app.chatgpt.get(setup.project.id, imported.id);
-  await fixture.app.history.indexCurrent(setup.project.id, imported.id, chat.messages);
-  const search = await fixture.app.history.searchChats('turquoise', { project: setup.project.id });
+  const imported = importedHistoryFixture(fixture);
+  const chat = fixture.app.importedHistory.get(fixture.project.id, imported.id);
+  await fixture.app.history.indexCurrent(fixture.project.id, imported.id, chat.messages);
+  const search = await fixture.app.history.searchChats('turquoise', { project: fixture.project.id });
   assert.ok(search.results.some(row => row.session === imported.id));
-  assert.equal(fixture.app.localData.get().readOpenCodeSession({ projectID: setup.project.id, sessionID: imported.id }).status, 'missing');
+  assert.equal(fixture.app.localData.get().readOpenCodeSession({ projectID: fixture.project.id, sessionID: imported.id }).status, 'missing');
 });
 
 test('OpenCode identity failures retry, and closing history cancels in-flight indexes before late writes', async t => {

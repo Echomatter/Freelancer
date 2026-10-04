@@ -1,36 +1,26 @@
 ---
 name: reason-through
-description: Use native Sequential Thinking to structure difficult problems with revisable steps and branches, then verify conclusions against evidence.
+description: Compare choices, assumptions and dependencies when a decision or plan is uncertain.
 ---
 
 # Reason through
 
-Based on the official [Sequential Thinking server documentation](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/sequentialthinking/README.md)
-and [tool registration](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/sequentialthinking/index.ts),
-reviewed on 2026-10-03. No official `SKILL.md` was found in that repository;
-this is local guidance for its documented MCP tool.
+Use for design tradeoffs, conflicting evidence or a plan whose dependencies need
+revision. For an observed failure, `debug` supplies cause-testing guidance; when
+two implementations would resolve a choice, consider `compare-builds`.
 
-Consider Sequential Thinking for ambiguous problems, conflicting evidence,
-several plausible causes, or dependencies that need revision. Use ordinary
-reasoning when the task is straightforward. Discover the actual native tool name
-and schema: this source revision registers `sequentialthinking`, while its README
-calls it `sequential_thinking`. OpenCode may prefix either with the connection name.
+- Identify the actual decision, constraints and success criteria. Separate observed
+  facts, assumptions and unknowns.
+- Compare plausible choices using criteria that could change the decision. Expose
+  important dependencies and contradictory evidence; omit alternatives that add
+  no useful distinction.
+- Seek the smallest source read or permitted observation that resolves a consequential
+  uncertainty. Revise the choice when its assumptions change.
+- Give the conclusion, key reasons, remaining uncertainty and next action. Explain
+  proportionally; an exhaustive trace is unnecessary.
 
-## Use the tool
-
-- Supply `thought`, `thoughtNumber`, `totalThoughts`, and `nextThoughtNeeded`.
-  Keep each entry focused on a useful hypothesis, assumption, observation, or
-  next check. Number steps from 1; `totalThoughts` is an adjustable estimate.
-- Revise an earlier step with `isRevision: true` and `revisesThought`.
-- Explore an alternative with `branchFromThought` and a distinct `branchId`.
-- Adjust `totalThoughts` or `needsMoreThoughts` when the scope changes. Set
-  `nextThoughtNeeded: false` when the current exploration is complete.
-- Return to source inspection, observations, or authorized project checks to
-  verify material conclusions. Tool completion does not prove a hypothesis.
-
-Do not send secrets or unrelated private information as reasoning state. Native
-permissions, paid-use consent, delegation limits, and Git agreements remain in
-force. If unavailable or failing, continue ordinary reasoning and report the
-evidence you actually obtained; do not block the task on this optional service.
-
-This skill is optional guidance. It does not grant or gate access to Sequential Thinking or other tools.
+Ordinary reasoning is sufficient. Sequential Thinking optionally tracks supplied
+steps, branches and revisions; it adds no observations or independent verification.
+Read [references/sequential-thinking.md](references/sequential-thinking.md) when
+using its tool. `bounded-judgment` can advise a typed comparison over explicit
+evidence, while the agent retains responsibility for the conclusion.

@@ -1,8 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { agentTurnEntries, chatAgentDetails, goalEventsByTurn, turnTools, turnWorking } from '../domain/chat-tools.mjs';
+import { agentTurnEntries, chatAgentDetails, commandMessages, goalEventsByTurn, turnTools, turnWorking } from '../domain/chat-tools.mjs';
 import { isInternalMessage, queuePrompt, userInitiatedRequest } from '../domain/sender.mjs';
 import { nativeWorkerActivity } from '../server/worker-activity.mjs';
+
+test('Commands retains actual tool receipts and excludes native recaps and response prose', () => {
+  const command = { id: 'read', type: 'tool', tool: 'read', state: { status: 'completed', output: 'Retained file receipt' } };
+  const worker = { id: 'worker', type: 'tool', tool: 'delegate', state: { status: 'completed' } };
+  const recap = { info: { id: 'recap', role: 'assistant', summary: true }, parts: [{ type: 'text', text: '## Objective\nReview the Alpha Packer project.' }] };
+  const mixed = { info: { id: 'reply', role: 'assistant' }, parts: [{ type: 'reasoning', text: 'Thinking' }, command, { type: 'text', text: 'Review completed.' }, worker] };
+  const messages = [recap, mixed, { info: { id: 'text-only', role: 'assistant' }, parts: [{ type: 'text', text: 'Summary without commands.' }] }];
+  const before = structuredClone(messages);
+  assert.deepEqual(commandMessages(messages), [{ ...mixed, parts: [command] }]);
+  assert.deepEqual(messages, before, 'the transcript and native recap remain unchanged');
+  assert.deepEqual(turnTools({ allMessages: messages }).commands, [command]);
+});
 
 test('worker cards separate turn ownership and sort by latest summon rather than progress', () => {
   const old = { id: 'old', child: 'old-child', requestID: 'turn-1', updatedAt: '2026-10-01T10:00:00Z', raw: { created_at: '2026-10-01T01:00:00Z' } };

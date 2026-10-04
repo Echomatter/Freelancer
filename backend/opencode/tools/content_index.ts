@@ -43,36 +43,36 @@ function projectKey(root: string) {
 
 export default tool({
   description:
-    "Project retrieval for files and native conversation text. Search/index docs, data, and chats. Use results as locators; verify decisive claims against original files or OpenCode messages.",
+    "Locate indexed file passages and native chat text, inspect file coverage or maintain the current project's file index. Search/chats default to the current registered project; other operations always use the working project. Facts are extracted file values, not retained knowledge claims. Preserve returned source references and coverage; verify consequential findings in originals.",
   title: (args) => `Content index · ${args.operation}`,
   args: {
     operation: tool.schema
       .enum(["status", "search", "chats", "sources", "unit", "facts", "meta", "rebuild"])
-      .describe("Index operation"),
-    query: tool.schema.string().optional().describe("Search text for operation=search"),
-    model: tool.schema.string().optional().describe("Exact provider/model filter for operation=chats"),
-    projectID: tool.schema.string().optional().describe("Registered project ID for search/chats; defaults to the current project"),
-    global: tool.schema.boolean().optional().describe("Search all registered projects instead of the current project"),
-    phrase: tool.schema.boolean().optional().describe("Treat search query as an exact phrase"),
-    source: tool.schema.string().optional().describe("Substring source-path filter"),
-    role: tool.schema.string().optional().describe("Exact inferred source role filter"),
-    status: tool.schema.string().optional().describe("Exact inferred source status filter"),
-    unit: tool.schema.number().int().min(0).optional().describe("Unit number for operation=unit, including zero"),
-    family: tool.schema.string().optional().describe("Fact family filter"),
+      .describe("search/chats locate text; status checks file freshness; sources/meta inspect coverage; unit reads an extraction; facts reads derived values; rebuild refreshes file index with native edit permission."),
+    query: tool.schema.string().optional().describe("Required text for search/chats, at most 200 characters. Default matches up to 12 terms with AND; phrase requests exact wording."),
+    model: tool.schema.string().optional().describe("chats only: exact provider/model filter; unsupported for file search."),
+    projectID: tool.schema.string().optional().describe("search/chats only: another registered project; omitted uses the working project. Do not combine with global:true."),
+    global: tool.schema.boolean().optional().describe("search/chats only: true searches all registered projects and cannot select projectID."),
+    phrase: tool.schema.boolean().optional().describe("Exact phrase matching for search/chats; default false."),
+    source: tool.schema.string().optional().describe("Path substring for search/sources/unit/facts. For unit, use the returned path and inspect any matching sources."),
+    role: tool.schema.string().optional().describe("Exact inferred file role for search/sources; unsupported for chats."),
+    status: tool.schema.string().optional().describe("Exact inferred file status for search/sources; unsupported for chats."),
+    unit: tool.schema.number().int().min(0).optional().describe("unit operation requires source and its returned unit number, including zero."),
+    family: tool.schema.string().optional().describe("facts only: derived fact family filter."),
     kind: tool.schema
       .enum(["structured", "label_value", "markdown_table", "special_field", "special_label_value", "special_match"])
       .optional()
-      .describe("Fact kind filter"),
-    label: tool.schema.string().optional().describe("Fact label filter"),
-    stats: tool.schema.boolean().optional().describe("Return aggregate fact statistics"),
-    facts: tool.schema.enum(["none", "general", "special", "both"]).optional().describe("Fact mode for rebuild"),
+      .describe("facts only: extraction kind filter."),
+    label: tool.schema.string().optional().describe("facts only: normalized label substring."),
+    stats: tool.schema.boolean().optional().describe("facts only: aggregate stored extraction statistics; only family narrows this view."),
+    facts: tool.schema.enum(["none", "general", "special", "both"]).optional().describe("rebuild extraction mode; default none. These values do not create knowledge claims."),
     specialFacts: tool.schema
       .array(tool.schema.string())
       .optional()
-      .describe("Focused rebuild rules as FAMILY=REGEX"),
-    ocr: tool.schema.boolean().optional().describe("Use optional OCR fallback for nearly blank PDF pages"),
-    limit: tool.schema.number().int().min(1).max(200).optional().describe("Maximum returned rows"),
-    cursor: tool.schema.string().max(1024).optional().describe("nextCursor for search/chats; repeat the same query, filters, project scope and limit"),
+      .describe("rebuild rules as FAMILY=REGEX; special requires at least one, both applies them alongside general extraction."),
+    ocr: tool.schema.boolean().optional().describe("rebuild only: optional OCR for nearly blank PDF pages; requires configured OCR executables."),
+    limit: tool.schema.number().int().min(1).max(200).optional().describe("Rows for search/chats (default 20) or facts (default 100); other operations ignore this field."),
+    cursor: tool.schema.string().max(1024).optional().describe("search/chats only: returned nextCursor with the same query, filters, scope and limit. Moving pages can change after indexing; do not infer complete coverage from one page."),
   },
   async execute(args, context: Ctx) {
     if (args.cursor !== undefined && !['search', 'chats'].includes(args.operation))

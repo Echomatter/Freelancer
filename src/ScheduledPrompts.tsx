@@ -75,10 +75,10 @@ export function ScheduledPrompts({ data, onClose, onOpen }: {
   }
   const name = (items: any[], id: string) => items.find(item => item.id === id)?.name ?? id;
   return <div className="scheduled-prompts">
-    <PageHeading title="Scheduled prompts" icon={CalendarClock} help="schedules" actions={<PageCloseButton onClick={onClose} />} />
-    <div className="context-actions schedule-toolbar">
+    <PageHeading title="Scheduled prompts" icon={CalendarClock} help="schedules" actions={<>
       <Button variant="primary" disabled={!!busy || !!draft || !projects.length} onClick={() => edit()}><Plus size={16} /> New schedule</Button>
-    </div>
+      <PageCloseButton onClick={onClose} />
+    </>} />
     <div className="schedule-feedback" aria-live="polite">{notice && <span><Check size={15} aria-hidden="true" /> {notice}</span>}</div>
     {loadError && <p className="notice error" role="alert">Schedules could not be refreshed. {loadError} Retrying automatically.</p>}
     {schedulerError && <p className="notice error" role="alert">{schedulerError}</p>}

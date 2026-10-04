@@ -96,7 +96,10 @@ test('schema 17 archives the current indexed source and unit when upgrading sche
     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`).run('C:/fixture','notes.md','notes.md','notes.md','','.md','project_source','source',35,18,'2026-10-02T00:00:00Z','a'.repeat(64),1,'logical_unit','text-logical','ok',18,3,'','content-source:fixture','content-revision:fixture');
   db.prepare('INSERT INTO content_units(source_id,unit_no,locator,heading,text,word_count,char_count,sha256) VALUES(?,?,?,?,?,?,?,?)')
     .run(source.lastInsertRowid,1,'md:1','Fixture','Historic source sentence.',3,25,'b'.repeat(64));
-  db.exec(`DROP TRIGGER opencode_derivation_inputs_immutable;
+  db.exec(`DROP TABLE model_data_facts; DROP TABLE model_data_records; DROP TABLE model_data_sources;
+    DROP TABLE model_data_snapshots; DROP TABLE model_data_secrets; DROP TABLE model_data_refresh_jobs;
+    DELETE FROM data_table_lifecycle WHERE owner='model-data';
+    DROP TRIGGER opencode_derivation_inputs_immutable;
     ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
     ALTER TABLE chat_search_state DROP COLUMN indexed_text_sha256;
     DROP TABLE opencode_derivation_jobs; DROP TABLE opencode_refresh_needed;
@@ -409,7 +412,10 @@ test('schema 9 upgrade assigns legacy runtime identity without losing copied sta
   const filename = store.filename;
   store.close();
   const db = new DatabaseSync(filename);
-  db.exec(`DROP TRIGGER opencode_derivation_inputs_immutable;
+  db.exec(`DROP TABLE model_data_facts; DROP TABLE model_data_records; DROP TABLE model_data_sources;
+    DROP TABLE model_data_snapshots; DROP TABLE model_data_secrets; DROP TABLE model_data_refresh_jobs;
+    DELETE FROM data_table_lifecycle WHERE owner='model-data';
+    DROP TRIGGER opencode_derivation_inputs_immutable;
     ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
     ALTER TABLE chat_search_state DROP COLUMN indexed_text_sha256;
     DROP TABLE opencode_derivation_jobs; DROP TABLE opencode_refresh_needed;

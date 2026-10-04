@@ -11,9 +11,12 @@ import { ensureAgentProfiles } from "./agent-profiles.mjs";
 import { createHistoryService } from "./history.mjs";
 import { createKnowledgeQuery } from './data/knowledge-query.mjs';
 import { createModelRatingService } from "./model-ratings.mjs";
+import { createModelDataService } from "./model-data.mjs";
+import { createEvidenceEvaluationService } from './evidence-evaluation.mjs';
 import { rebuildContentIndex } from "./content-index.mjs";
 import { createIndexJobs } from './index-jobs.mjs';
-import { createChatGPTImport, importedChatID, orientationPart, listProjectFolders } from './chatgpt-import.mjs';
+import { createImportedHistory, importedChatID } from './imported-history.mjs';
+import { listProjectFolders } from './project-folders.mjs';
 import { createMcpConnections } from './mcp.mjs';
 import {
   mkdir,
@@ -44,6 +47,7 @@ import { randomUUID } from "node:crypto";
 import { authInputs, connectionMethods } from "../domain/auth.mjs";
 import {
   workspaceCatalog,
+  workspaceModels,
   normalizeAgent,
   modelAllowed,
   resolveChoices,
@@ -89,7 +93,7 @@ export function createApplication({
   backendFactory = createUiBackend,
   dataRoot,
   gitOptions = {},
-  importOptions = {},
+  modelDataOptions = {},
   automaticWorkAllowed = true,
 }) {
   const localData = createLocalDataService(dataRoot ?? path.join(backendRoot, ".state", "local-data"));
@@ -153,9 +157,9 @@ export function createApplication({
     process.platform === "win32"
       ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase()
       : path.resolve(a) === path.resolve(b);
-  async function ownSession(p, id) {
-    if (importedChatID(id)) throw Error('Continue this imported chat in Freelancer before using native chat actions.');
-    const value = await request(p, `/session/${part(sessionID(id))}`);
+  async function ownSession(p, id, options = {}) {
+    if (importedChatID(id)) throw Error('Saved imported snapshots are read-only.');
+    const value = await request(p, `/session/${part(sessionID(id))}`, options);
     if (!value.directory || !sameDirectory(value.directory, p.directory))
       throw Error("This chat belongs to another project");
     return value;
@@ -165,7 +169,7 @@ export function createApplication({
     const rows = await request(p, `/session/${part(sessionID(id))}/message`);
     await store.observe(
       rows.map((m) => usageRecord(m, p.directory, session.parentID)),
-      { session },
+      { session, messages: rows },
     );
     return rows;
   }
@@ -175,7 +179,24 @@ export function createApplication({
     if (display && providerSnapshot && performance.now() - providerSnapshot.at < 30_000)
       return providerSnapshot.value;
     providerFlight ??= host.request("/provider")
-      .then(publicCatalog)
+      .then(native => {
+        if (!native || !Array.isArray(native.all) || !Array.isArray(native.connected))
+          throw Error('OpenCode provider inventory is unavailable. Stored model data was preserved.');
+        const catalog = publicCatalog(native);
+        // Extract asserted IDs before presentation sanitization discards native
+        // request metadata. Only identity fields reach the private matcher.
+        modelData.setNativeModels(workspaceModels(catalog.all.flatMap(provider => {
+          const upstream = native.all?.find(row => row.id === provider.id);
+          return Object.keys(provider.models).map(modelID => {
+            const model = upstream?.models?.[modelID];
+            return { id: `${provider.id}/${modelID}`, provider: provider.id, modelID,
+              costClass: provider.id === 'opencode' ? 'free' : 'unknown',
+              api: typeof model?.api?.id === 'string' ? { id: model.api.id } : undefined,
+              sourceIdentities: model?.sourceIdentities, sourceAliases: model?.sourceAliases };
+          });
+        }), catalog.connected));
+        return catalog;
+      })
       .then(value => { providerSnapshot = { value, at: performance.now() }; return value; })
       .finally(() => { providerFlight = undefined; });
     return providerFlight;
@@ -229,6 +250,7 @@ export function createApplication({
   const modelRatings = createModelRatingService({ host, backendRoot, dataRoot, localData, project, store,
     canRun: () => automaticWork,
     getCatalog: async (id) => app.bootstrap(id) });
+  const modelData = createModelDataService({ localData, canRun: () => automaticWork, ...modelDataOptions });
   const app = {
     automaticWorkAllowed: () => automaticWork,
     setAutomaticWorkAllowed(allowed) {
@@ -246,7 +268,7 @@ export function createApplication({
         const nativeSession = await ownSession(p, options.sessionID);
         const rows = await request(p, `/session/${part(nativeSession.id)}/message`);
         const message = rows.findLast(row => row.info?.role === 'assistant');
-        const execution = await executionContext(backendRoot, p.directory, nativeSession, message);
+        const execution = await executionContext(backendRoot, p.directory, nativeSession, message, rows);
         inspectionOnly = execution ? execution.readOnly : null;
         observedAgent = execution?.agent?.id ?? message?.info?.agent;
         const nativeModel = rows.findLast(row => row.info?.role === 'user' && row.info?.model)?.info.model;
@@ -254,7 +276,7 @@ export function createApplication({
           ? `${message.info.providerID}/${message.info.modelID}`
           : nativeModel?.providerID && nativeModel?.modelID ? `${nativeModel.providerID}/${nativeModel.modelID}` : null;
         instructionContext = { requestID: execution?.id, policyVersion: execution?.policyVersion,
-          agentName: execution?.agent?.name, orienting: execution?.orienting === true, worker: !!nativeSession.parentID,
+          agentName: execution?.agent?.name, worker: !!nativeSession.parentID,
           loadedSkills: [...new Set(rows.flatMap(row => row.parts ?? []).filter(part => part.type === 'tool' && part.tool === 'skill'
             && part.state?.status === 'completed').map(part => part.state?.input?.name).filter(name => typeof name === 'string'))] };
       }
@@ -277,6 +299,63 @@ export function createApplication({
     gitProjects,
     judgmentProvider: createTypeSafeJudgmentProvider(),
     modelRatings,
+    modelData,
+    async refreshModelData(input) {
+      await providers();
+      return modelData.refresh(input);
+    },
+    async evidenceEvaluationAgentAction(input, { signal } = {}) {
+      signal?.throwIfAborted();
+      if (typeof input.directory !== 'string' || !input.directory.trim()) throw Error('A native project context is required.');
+      const settings = await store.read('settings');
+      const p = settings.projects.find(item => sameDirectory(item.directory, input.directory));
+      if (!p) throw Error('Open this project in Freelancer first.');
+      const session = await ownSession(p, input.actorSessionID, { signal });
+      if (session.id !== input.actorSessionID) throw Error('Native conversation identity does not match the caller.');
+      if (typeof input.messageID !== 'string' || !/^msg_[\w-]+$/.test(input.messageID)) throw Error('A native assistant message is required.');
+      const message = await request(p, '/session/' + part(session.id) + '/message/' + part(input.messageID), { signal });
+      if (message?.info?.role !== 'assistant' || message.info.id !== input.messageID || message.info.sessionID !== session.id)
+        throw Error('A native assistant context in this conversation is required.');
+      signal?.throwIfAborted();
+      const owner = { projectID: p.id, sessionID: session.id };
+      const service = app.evidenceEvaluation;
+      if (input.operation === 'describe') return service.describe();
+      if (input.operation === 'inspect') return service.inspect(input.receiptID, { owner });
+      if (input.operation === 'prepare') return service.prepare(input.contract, { owner, signal });
+      if (input.operation === 'evaluate') {
+        if (input.contract !== undefined && input.receiptID !== undefined) throw Error('Choose a contract or an existing receipt.');
+        const prepared = input.contract === undefined
+          ? await service.inspect(input.receiptID, { owner })
+          : await service.prepare(input.contract, { owner, signal });
+        if (prepared.requiresInference) {
+          const receipt = await executionContext(backendRoot, p.directory, session, message,
+            () => request(p, '/session/' + part(session.id) + '/message', { signal }));
+          if (receipt?.readOnly) throw Error('This assignment is inspection-only.');
+        }
+        signal?.throwIfAborted();
+        return service.evaluate({ receiptID: prepared.receiptID,
+          ...(input.composition === undefined ? {} : { composition: input.composition }) }, { owner, signal });
+      }
+      throw Error('Unknown evidence operation.');
+    },
+    async modelDataAgentAction(input) {
+      const settings = await store.read('settings');
+      const p = settings.projects.find(item => sameDirectory(item.directory, input.directory));
+      if (!p) throw Error('Open this project in Freelancer first.');
+      const session = await ownSession(p, input.sessionID);
+      const message = await request(p, '/session/' + part(session.id) + '/message/' + part(input.messageID));
+      if (message?.info?.role !== 'assistant' || message.info.id !== input.messageID || message.info.sessionID !== session.id)
+        throw Error('A native assistant context in this conversation is required.');
+      if (['schema', 'list', 'search', 'detail', 'status'].includes(input.operation)) return modelData.agentAction(input);
+      if (input.operation === 'refresh') {
+        const receipt = await executionContext(backendRoot, p.directory, session, message,
+          () => request(p, '/session/' + part(session.id) + '/message'));
+        if (receipt?.readOnly) throw Error('This assignment is inspection-only.');
+        await app.refreshModelData(input);
+        return modelData.agentAction({ operation: 'status' });
+      }
+      throw Error('Unknown model catalog operation.');
+    },
     listProjectFolders,
     async rebuildContentIndex({ projectID, includeArchivedProject = false, onProgress = () => {}, signal } = {}) {
       if (app.indexJobs?.isArchiving() && !includeArchivedProject)
@@ -290,7 +369,8 @@ export function createApplication({
           : projectID ? [await project(projectID)] : registered;
         if (app.indexJobs?.isArchiving() && !includeArchivedProject)
           throw Object.assign(Error('A project is being put away. General index refresh is paused.'), { status: 409 });
-        const summary = { projects: 0, sources: 0, units: 0, failures: [] };
+        const summary = { projects: 0, sources: 0, units: 0, skippedFiles: 0, failedProjects: 0, failureDiagnosticsOmitted: 0, failures: [] };
+        let failureDiagnosticCount = 0;
         for (const item of projects) {
           signal?.throwIfAborted();
           if (!includeArchivedProject && app.history?.isProjectArchived && await app.history.isProjectArchived(item.id)) continue;
@@ -300,12 +380,18 @@ export function createApplication({
             summary.projects++;
             summary.sources += result.physical_sources_indexed ?? 0;
             summary.units += result.units ?? 0;
+            summary.skippedFiles += result.extraction_skipped_files ?? result.extraction_failures?.length ?? 0;
+            failureDiagnosticCount += result.extraction_failure_count ?? result.extraction_failures?.length ?? 0;
             for (const failure of result.extraction_failures ?? [])
-              summary.failures.push({ project: item.name, source: failure.source, error: failure.error });
+              if (summary.failures.length < 128) summary.failures.push({ project: item.name, source: failure.source, error: failure.error });
           } catch (error) {
-            summary.failures.push({ project: item.name, error: error.message });
+            summary.failedProjects++;
+            failureDiagnosticCount++;
+            summary.failures.unshift({ project: item.name, error: error.message });
+            summary.failures.length = Math.min(summary.failures.length, 128);
           }
         }
+        summary.failureDiagnosticsOmitted = Math.max(0, failureDiagnosticCount - summary.failures.length);
         return summary;
       })().finally(() => { contentIndexRefresh.delete(key); });
       contentIndexRefresh.set(key, refresh);
@@ -317,7 +403,8 @@ export function createApplication({
       if (!p) throw Error('Unknown project.');
       const session = await ownSession(p, input.sessionID);
       const message = await request(p, `/session/${part(session.id)}/message/${part(input.messageID)}`);
-      const receipt = await executionContext(backendRoot, p.directory, session, message);
+      const receipt = await executionContext(backendRoot, p.directory, session, message,
+        () => request(p, '/session/' + part(session.id) + '/message'));
       if (!receipt?.goalID || session.parentID || receipt.sessionID !== session.id) throw Error('Only the recorded goal parent may report its outcome.');
       return { receipt, message, project: p.id };
     },
@@ -328,7 +415,8 @@ export function createApplication({
       if (!p) throw Error('Unknown project.');
       const parent = await ownSession(p, input.sessionID), child = await ownSession(p, input.worker);
       const message = await request(p, `/session/${part(parent.id)}/message/${part(input.messageID)}`);
-      const parentExecution = await executionContext(backendRoot, p.directory, parent, message);
+      const parentExecution = await executionContext(backendRoot, p.directory, parent, message,
+        () => request(p, '/session/' + part(parent.id) + '/message'));
       if (!parentExecution || child.parentID !== parent.id) throw Error('This worker does not belong to the recorded parent assignment.');
       const latest = JSON.parse(await readRuntimeText(path.join(backendRoot, '.state/delegation/workers', createHash('sha256').update(child.id).digest('hex') + '.json'), 'utf8'));
       if (!/^[a-f0-9]{64}$/.test(latest.taskID)) throw Error('Invalid worker record.');
@@ -392,7 +480,8 @@ export function createApplication({
       const session = await ownSession(p, input.sessionID);
       const message = await request(p, `/session/${part(session.id)}/message/${part(input.messageID)}`);
       if (message?.info?.role !== "assistant") throw Error("A native assistant context is required.");
-      const receipt = await executionContext(backendRoot, p.directory, session, message);
+      const receipt = await executionContext(backendRoot, p.directory, session, message,
+        () => request(p, '/session/' + part(session.id) + '/message'));
       if (input.action === "inspect") return gitProjects.inspect(p.id);
       if (receipt?.projectID !== p.id || receipt?.sessionID !== session.id)
         throw Error("Managed Git actions require a current Freelancer execution context for this project.");
@@ -462,7 +551,7 @@ export function createApplication({
         costClass: costClass(row.provider, settings.plans),
       }));
       let ratings = {}, localDataError;
-      try { ratings = modelRatings.catalog(catalogRows); }
+      try { ratings = modelRatings.catalog(workspaceModels(catalogRows, catalog.connected)); }
       catch (error) {
         if (!isLocalDataUnavailable(error)) throw error;
         localDataError = error.message;
@@ -635,7 +724,7 @@ export function createApplication({
       };
       const p = await project(id);
       if (importedChatID(session)) {
-        const imported = app.chatgpt.get(id, session);
+        const imported = app.importedHistory.get(id, session);
         if (!imported) throw Error('This imported chat belongs to another project or is unavailable.');
         return { title: imported.title, messages: imported.messages, imported: imported.source,
           receipts: [], status: {}, permissions: [], questions: [], activity: [], summary: sessionSummary(), todos: [], diff: [] };
@@ -741,7 +830,7 @@ export function createApplication({
         worker: row.sessionID !== session || !!nativeSession.parentID,
         sessionTitle: decisionOrigins.get(row.sessionID)?.title || 'Subagent',
       }));
-      const importedSource = app.chatgpt.source(id, session);
+      const importedSource = app.importedHistory.source(id, session);
       const workerInputs = new Map();
       if (app.sender) {
         for (const child of new Set(rows.flatMap(m => m.parts ?? []).filter(p => p.state?.metadata?.freelancer_delivery).map(p => p.state.metadata.sessionId))) {
@@ -790,7 +879,7 @@ export function createApplication({
     async chatTranscript(id, session, reason) {
       const p = await project(id);
       if (importedChatID(session)) {
-        const imported = app.chatgpt.get(id, session);
+        const imported = app.importedHistory.get(id, session);
         if (!imported) throw Error('This imported chat belongs to another project or is unavailable.');
         return { title: imported.title, messages: imported.messages, imported: imported.source,
           receipts: [], status: {}, permissions: [], questions: [], activity: [], summary: sessionSummary(),
@@ -814,7 +903,7 @@ export function createApplication({
     async chatPreview(id, session) {
       const p = await project(id);
       if (importedChatID(session)) {
-        const imported = app.chatgpt.get(id, session);
+        const imported = app.importedHistory.get(id, session);
         if (!imported) throw Error('This imported chat belongs to another project or is unavailable.');
         return { title: imported.title, session: { id: session, title: imported.title }, messages: imported.messages,
           receipts: [], status: {}, permissions: [], questions: [], activity: [], summary: sessionSummary(), todos: [], diff: [], preview: true };
@@ -1105,9 +1194,6 @@ export function createApplication({
         }));
         const messageID = `msg_${randomUUID().replaceAll("-", "")}`;
         await workerSlot?.bind(session, messageID);
-        const importedSource = app.chatgpt.source(id, session);
-        const orientation = importedSource && !(await request(p, `/session/${part(session)}/message`)).length
-          ? orientationPart(importedSource, Math.min(48000, catalog.all.find(p => p.id === model?.providerID)?.models[model?.modelID]?.limit?.context || 12000)) : null;
         const metadata = {
           policyVersion: execution.captured?.policyVersion ?? policyVersion,
           requestID: messageID,
@@ -1136,7 +1222,6 @@ export function createApplication({
           model: model ?? null,
           variant: variant || null,
           preferences,
-          orienting: !!orientation,
           rootRequestID: execution.captured?.rootRequestID ?? execution.captured?.id ?? messageID,
           rootSessionID: execution.captured?.rootSessionID ?? session,
           ...(execution.goal ? { goalID: execution.goal.id, goalRunID: execution.goal.runID, goalRevision: execution.goal.revision } : {}),
@@ -1161,7 +1246,7 @@ export function createApplication({
                   "\n\n" + delegationGuidance(preferences, allowedModels) +
                   (gitAgreement.tracking ? "\n\n" + gitExecutionContract(gitAgreement) : "") +
                   (execution.contract ? "\n\n" + execution.contract : ""),
-                parts: [...(orientation ? [orientation] : []), ...(text.trim() ? [{ type: "text", text }] : []), ...fileParts],
+                parts: [...(text.trim() ? [{ type: "text", text }] : []), ...fileParts],
               },
             },
           );
@@ -1388,7 +1473,7 @@ export function createApplication({
     },
     async authMethods() {
       const methods = await host.request("/provider/auth");
-      return connectionMethods(methods);
+      return connectionMethods(methods, (await providers()).all);
     },
     async auth(id, action, body) {
       if (
@@ -1396,10 +1481,12 @@ export function createApplication({
         !["authorize", "callback", "key", "disconnect"].includes(action)
       )
         throw Error("Unsupported provider");
-      const nativeMethods = connectionMethods(await host.request("/provider/auth"));
+      const nativeMethodsResponse = await host.request("/provider/auth");
+      const nativeProviders = (await providers()).all;
+      const nativeMethods = connectionMethods(nativeMethodsResponse, nativeProviders);
       const methods = nativeMethods[id] ?? [];
       const inCatalog = action === "disconnect"
-        ? (await providers()).all.some((provider) => provider.id === id)
+        ? nativeProviders.some((provider) => provider.id === id)
         : false;
       if (!inCatalog && !methods.length) throw Error("Unsupported provider");
       if (action === "key") {
@@ -1477,8 +1564,10 @@ export function createApplication({
   app.localData = localData;
   app.knowledgeQuery = createKnowledgeQuery({ data: () => localData.get(),
     getProjects: async () => (await store.read('settings')).projects });
+  app.evidenceEvaluation = createEvidenceEvaluationService({ data: () => localData.get(),
+    modelData: () => app.modelData, knowledgeQuery: app.knowledgeQuery, provider: () => app.judgmentProvider });
   app.history = createHistoryService({ app, host, backendRoot, dataRoot, localData });
-  app.chatgpt = createChatGPTImport({ app, backendRoot, dataRoot, localData, ...importOptions });
+  app.importedHistory = createImportedHistory(localData);
   app.indexJobs = createIndexJobs({ app, backendRoot, dataRoot, localData });
   app.history.setProjectArchiveIndexer((projectID, revision, commit) =>
     app.indexJobs.archiveProject(projectID, revision, commit));

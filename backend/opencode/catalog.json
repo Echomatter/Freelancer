@@ -2,20 +2,19 @@
   "skills": [
     "reorient",
     "search-index",
-    "model-routing",
+    "delegate-work",
     "record-outcome",
     "pursue-goal",
     "debug",
     "verify",
-    "browser-verify",
     "context7-mcp",
     "fetch",
     "playwright",
     "web-research",
     "remember",
     "reason-through",
-    "docs-research",
     "bounded-judgment",
+    "compare-builds",
     "typesafe-ai",
     "review",
     "handoff",
@@ -27,13 +26,17 @@
     "git_project",
     "content_index",
     "goal_checkpoint",
-    "knowledge"
+    "knowledge",
+    "model_catalog",
+    "evidence_evaluation"
   ],
   "plugins": [
     "delegation",
     "git-project",
     "goals",
     "content-index",
-    "knowledge"
+    "knowledge",
+    "model-catalog",
+    "evidence-evaluation"
   ]
 }

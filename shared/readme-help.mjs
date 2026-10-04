@@ -1,5 +1,6 @@
 // Shared by the build and browser types. The README is the authored copy source.
 export const helpTopicIDs = /** @type {const} */ ([
+  "settings-page", "billing-preferences", "model-visibility", "goals",
   "schedules", "schedule-timing", "schedule-execution", "file-search", "index-coverage",
   "index-maintenance", "index-reset", "index-optimize", "index-check", "index-compact",
   "local-data", "local-backup", "storage-freelancer", "storage-runtime", "storage-opencode",
@@ -7,8 +8,8 @@ export const helpTopicIDs = /** @type {const} */ ([
   "delegation", "delegation-scope", "worker-models", "delegation-limits", "delegation-changes",
   "git-history", "git-main", "git-identity", "git-connection", "git-agreement",
   "git-explicit-request", "git-sync", "git-first-upload", "git-receipts", "theme", "provider-color",
-  "usage-estimate", "contributions", "project-import", "project-indexes", "project-name",
-  "message-options", "message-delivery", "model-ratings", "agents", "providers", "project-files", "remote-access",
+  "usage-estimate", "contributions", "project-indexes", "project-name",
+  "message-options", "message-delivery", "model-ratings", "model-data", "model-data-sources", "agents", "providers", "project-files", "remote-access",
   "remote-address", "remote-pairing", "remote-devices", "remote-web",
   "turn-rail", "context-compaction", "capability-tools", "capability-skills", "mcp-connections", "file-access",
 ]);

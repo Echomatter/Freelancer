@@ -1,6 +1,46 @@
 import { test, expect } from './support/browser-test.mjs';
 import { localDataFixture } from './fixtures/local-data-app.mjs';
 
+test('Commands excludes native recap blocks and tasks while the transcript and composer retain them', { tag: ['@app', '@chat'] }, async ({ appBrowser, own }) => {
+  const f = await own(localDataFixture({ timers: false }));
+  await f.store.update('settings', value => ({ ...value, appearance: { ...value.appearance, todoLayout: 'inline' } }));
+  f.state.messages.ses_history = [
+    { info: { id: 'request', role: 'user' }, parts: [{ type: 'text', text: 'Review the Alpha Packer project.' }] },
+    { info: { id: 'recap', parentID: 'request', role: 'assistant', summary: true }, parts: [{ type: 'text', text: '## Objective\nKeep the full Alpha Packer review summary available.' }] },
+    { info: { id: 'reply', parentID: 'request', role: 'assistant' }, parts: [
+      { id: 'read', type: 'tool', tool: 'read', state: { status: 'completed', input: { filePath: 'project.py' }, output: 'Read the project source.' } },
+      { id: 'response', type: 'text', text: 'The review response stays in the transcript.' },
+    ] },
+  ];
+  f.state.todos.ses_history = [{ id: 'review-task', content: 'Review the packaging workflow', status: 'pending' }];
+  const page = await appBrowser.newPage({ viewport: { width: 1440, height: 960 } });
+  try {
+    await page.goto(f.url);
+    await page.getByRole('button', { name: 'Chats', exact: true }).click();
+    await page.locator('.nav-chat-select').filter({ hasText: 'Important conversation' }).click();
+    const recap = page.locator('.chat-transcript .reasoning').filter({ hasText: 'Conversation recap' });
+    await expect(recap).toHaveCount(1);
+    await recap.locator('summary').click();
+    await expect(recap).toContainText('Keep the full Alpha Packer review summary available.');
+    await expect(page.locator('.chat-transcript')).toContainText('The review response stays in the transcript.');
+    const tasks = page.locator('.composer-cards .work-card').filter({ hasText: 'Tasks' });
+    await expect(tasks).toHaveCount(1);
+    await tasks.locator('.work-card-toggle').click();
+    await expect(tasks).toContainText('Review the packaging workflow');
+    await page.getByRole('button', { name: /^Commands / }).click();
+    const commands = page.getByRole('region', { name: 'Commands view', exact: true });
+    await expect(commands.locator('.tool-card')).toHaveCount(1);
+    await expect(commands.locator('.reasoning, .todo')).toHaveCount(0);
+    await expect(commands).not.toContainText('Keep the full Alpha Packer review summary available.');
+    await expect(commands).not.toContainText('The review response stays in the transcript.');
+    await expect(commands).not.toContainText('Review the packaging workflow');
+    await expect(commands).not.toContainText('Response ended');
+    await commands.locator('.tool-card summary').click();
+    await expect(commands).toContainText('Read the project source.');
+    await page.screenshot({ path: 'artifacts/commands-only-transcript.png' });
+  } finally { await appBrowser.close(); }
+});
+
 test('one chat toolbar overlays commands, agents, models and goal handoffs at desktop and phone widths', { tag: ['@app', '@chat'] }, async ({ appBrowser, own }) => {
   const f = await own(localDataFixture({ timers: false }));
   const goal = await f.goals.create(f.project.id, { id: 'toolbar_goal_0001', title: 'Verify the workspace', objective: 'Keep the plan and inspect handoffs.', settings: { model: 'opencode/free' } });

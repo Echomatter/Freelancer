@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto';
 import { spawnSync } from 'node:child_process';
-import { readdir, readFile, stat, rm } from 'node:fs/promises';
+import { readdir, readFile, stat, lstat, realpath, open, mkdtemp, rm, rmdir } from 'node:fs/promises';
+import os from 'node:os';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -8,9 +9,13 @@ import { DatabaseSync } from 'node:sqlite';
 import { assertLocalStoragePath } from '../../shared/local-storage-path.mjs';
 import { contentMatch, contentFilters, contentSubstring } from '../../domain/content-query.mjs';
 
-const SCHEMA_VERSION = '3.1';
+const SCHEMA_VERSION = '3.2';
+const MAX_DISCOVERY_ENTRIES=100000, MAX_PROJECT_FILES=10000, MAX_PROJECT_INPUT_BYTES=512*1024*1024;
+const MAX_TEXT_FILE_BYTES=16*1024*1024, MAX_DOCUMENT_FILE_BYTES=64*1024*1024, MAX_SOURCE_UNITS=4096;
 const MAX_SOURCE_INDEX_CHARS=2*1024*1024, MAX_UNIT_INDEX_CHARS=256*1024, MAX_ZIP_MEMBERS=5000, MAX_ZIP_MEMBER_BYTES=64*1024*1024, MAX_ZIP_TOTAL_BYTES=512*1024*1024, MAX_ZIP_RATIO=250, MAX_FACTS_PER_UNIT=500, MAX_FACTS_PER_SOURCE=25000, MAX_FACTS_TOTAL=250000;
 const IGNORED_DIRS = new Set(['.git', '.state', '.content-index', '.cache', '.venv', 'venv', 'env', 'node_modules', '.qa', '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache', 'dist', 'build', 'coverage', '.next', '.runtime']);
+const GENERATED_DIRS = new Set([...IGNORED_DIRS, '.pytest_tmp', '.tox', '.nox', '.turbo', '.parcel-cache', '.nuxt', '.output', 'vendor', 'release', 'release-debug', 'target', 'site-packages']);
+const PRIVATE_DIRS = new Set(['.git', '.state', '.content-index', '.runtime']);
 const SOURCE_NAMES = new Set(['dockerfile', 'makefile', 'license', 'procfile', '.gitignore', '.gitattributes', '.editorconfig']);
 const PRIVATE_NAMES = new Set(['.npmrc', '.netrc', 'credentials.json', 'auth.json', 'id_rsa', 'id_ed25519']);
 const TEXT_EXTS = new Set(('.md .txt .rst .log .yaml .yml .py .pyi .js .jsx .mjs .cjs .ts .tsx .css .scss .less .html .htm .svg .sh .ps1 .psm1 .psd1 .bat .cmd .rs .go .c .h .cc .cpp .hpp .java .kt .swift .rb .php .sql .vue .svelte .lua .r .jl .ipynb').split(' '));
@@ -22,7 +27,7 @@ function normalize(text) {
   return text.replaceAll('\0', '').replaceAll('\u00ad', '').replaceAll('\ufffd', '').replace(/\r\n?/g, '\n')
     .split('\n').map(line => line.replace(/[ \t]+$/g, '')).join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
-function words(text) { return [...text.matchAll(/\b[\w'’.-]+\b/gu)].length; }
+function words(text) { let count=0;for(const _ of text.matchAll(/\b[\w'’.-]+\b/gu))count++;return count; }
 function sha(data) { return createHash('sha256').update(data).digest('hex'); }
 function routing(name) {
   const low = name.toLowerCase().replaceAll('\\', '/');
@@ -32,24 +37,119 @@ function routing(name) {
   if (['reference','references','rules','sources'].some(x => parts.has(x))) return ['reference_source','reference',50];
   return ['project_source','source',35];
 }
-async function discover(root) {
-  const found = [];
+function privateSource(file) {
+  const parts=file.replaceAll('\\','/').toLowerCase().split('/'), name=parts.at(-1);
+  return parts.some(part=>PRIVATE_DIRS.has(part)) || name.startsWith('.env') || PRIVATE_NAMES.has(name)
+    || name==='freelancer.json' && parts.includes('.opencode') || /\.sqlite(?:\.(?:building|wal|shm))?$/.test(name);
+}
+function generatedSource(file) {
+  return file.replaceAll('\\','/').toLowerCase().split('/').slice(0,-1)
+    .some(part=>GENERATED_DIRS.has(part) || part.endsWith('.egg-info'));
+}
+function discoveryLimit(message) {
+  throw Error(`${message} Existing indexes were preserved. Exclude generated/dependency folders with the repository's Git ignore rules before refreshing.`);
+}
+export async function projectSourceInventory(root) {
+  const found=[], failures=[], physicalRoot=await realpath(root); let visited=0, sourceBytes=0;
+  // Git supplies its own ignore semantics, including nested .gitignore files,
+  // global excludes and explicit tracked-file overrides. No shell is involved.
+  const probe=spawnSync('git',['-C',root,'rev-parse','--is-inside-work-tree'],{encoding:'utf8',windowsHide:true,timeout:10000,maxBuffer:8192});
+  const gitRepository=!probe.error && probe.status===0 && probe.stdout.trim()==='true';
+  const directories=new Map();
+  async function safeFile(full) {
+    const rp=relative(root,full);
+    if(!rp || rp==='..' || rp.startsWith('../') || path.isAbsolute(rp)) return false;
+    let dir=root;
+    for(const part of rp.split('/').slice(0,-1)) {
+      dir=path.join(dir,part);
+      if(!directories.has(dir)) {const entry=await lstat(dir);directories.set(dir,entry.isDirectory() && !entry.isSymbolicLink());}
+      if(!directories.get(dir)) return false;
+    }
+    const entry=await lstat(full); if(!entry.isFile() || entry.isSymbolicLink()) return false;
+    const physical=await realpath(full), delta=path.relative(physicalRoot,physical);
+    return delta && delta!=='..' && !delta.startsWith(`..${path.sep}`) && !path.isAbsolute(delta);
+  }
+  async function consider(full,tracked=false) {
+    const rp=relative(root,full), name=path.basename(full).toLowerCase(), ext=path.extname(name);
+    if(privateSource(rp) || !tracked && generatedSource(rp)) return;
+    try {
+      if(!await safeFile(full)) return;
+      const s=await stat(full), maximum=['.pdf','.docx','.xlsx','.zip'].includes(ext)?MAX_DOCUMENT_FILE_BYTES:MAX_TEXT_FILE_BYTES;
+      let supported=SUPPORTED_EXTS.has(ext) || SOURCE_NAMES.has(name);
+      if(!supported) {
+        const handle=await open(full,'r');
+        try {const sample=Buffer.alloc(Math.min(8192,s.size)); const {bytesRead}=await handle.read(sample,0,sample.length,0);const b=sample.subarray(0,bytesRead);supported=!b.includes(0) && !b.some(x=>x<32 && ![9,10,13].includes(x));}
+        finally {await handle.close();}
+      }
+      if(!supported) return;
+      if(s.size>maximum) {failures.push({source:rp,error:`File exceeds the ${maximum/1024/1024} MiB indexing limit; read the original file directly.`});return;}
+      if(found.length>=MAX_PROJECT_FILES) discoveryLimit(`The project exceeds ${MAX_PROJECT_FILES.toLocaleString('en-US')} eligible source files.`);
+      if(sourceBytes+s.size>MAX_PROJECT_INPUT_BYTES) discoveryLimit('Eligible project content exceeds the 512 MiB scan limit.');
+      sourceBytes+=s.size;found.push(full);
+    } catch(error) {
+      // Git's index still lists tracked paths deleted in the working tree.
+      // Their removal is an ordinary incremental change, not an extraction gap.
+      if(['ENOENT','ENOTDIR'].includes(error.code))return;
+      if(!['EACCES','EPERM','ENOENT','ENOTDIR','EBUSY'].includes(error.code)) throw error;
+      failures.push({source:rp,error:`File could not be inspected: ${error.code}.`});
+    }
+  }
+  if(gitRepository) {
+    const listed=spawnSync('git',['-C',root,'ls-files','--cached','--others','--exclude-standard','--stage','-z','--','.'],{encoding:'utf8',windowsHide:true,timeout:30000,maxBuffer:8*1024*1024});
+    if(listed.error || listed.status!==0) discoveryLimit('Git could not enumerate the project within its bounded scan.');
+    const entries=listed.stdout.split('\0').filter(Boolean).map(entry=>{
+      const tracked=/^\d{6} [a-f0-9]+ [0-3]\t/.test(entry);
+      return {tracked,file:tracked?entry.slice(entry.indexOf('\t')+1):entry};
+    }), seen=new Set(), explicitIncludes=new Set();
+    if(entries.length>MAX_DISCOVERY_ENTRIES) discoveryLimit('The repository file inventory exceeds its scan limit.');
+    const generated=entries.filter(entry=>!entry.tracked && !privateSource(entry.file) && generatedSource(entry.file)).map(entry=>entry.file);
+    if(generated.length) {
+      // An explicit Git negation also overrides default generated-folder
+      // exclusions. Keep native source selection; do not invent glob semantics.
+      const checked=spawnSync('git',['-C',root,'check-ignore','--verbose','--no-index','-z','--stdin'],
+        {input:`${generated.join('\0')}\0`,encoding:'utf8',windowsHide:true,timeout:30000,maxBuffer:8*1024*1024});
+      if(checked.error || ![0,1].includes(checked.status)) discoveryLimit('Git could not resolve explicit source include rules.');
+      const fields=checked.stdout.split('\0');for(let i=0;i+3<fields.length;i+=4)
+        if(fields[i+2].startsWith('!'))explicitIncludes.add(fields[i+3]);
+    }
+    for(const entry of entries) {
+      const {tracked,file}=entry;
+      if(seen.has(file))continue;seen.add(file);visited++;
+      await consider(path.resolve(root,file),tracked || explicitIncludes.has(file));
+    }
+  } else {
   async function walk(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
+      if(++visited>MAX_DISCOVERY_ENTRIES) discoveryLimit('The project directory exceeds its scan limit.');
       const full = path.join(dir, entry.name);
       if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) { if (!IGNORED_DIRS.has(entry.name.toLowerCase())) { try { await walk(full); } catch (error) { if (!['EACCES','EPERM','ENOENT'].includes(error.code)) throw error; } } continue; }
+      if (entry.isDirectory()) { if (!generatedSource(`${relative(root,full)}/file`)) { try { await walk(full); } catch (error) { if (!['EACCES','EPERM','ENOENT'].includes(error.code)) throw error; failures.push({source:relative(root,full),error:`Directory could not be read: ${error.code}.`}); } } continue; }
       if (!entry.isFile()) continue;
-      const name = entry.name.toLowerCase(), ext = path.extname(name);
-      if (name.startsWith('.env') || PRIVATE_NAMES.has(name) || name === 'freelancer.json' && full.toLowerCase().includes(`${path.sep}.opencode${path.sep}`) || name.endsWith('.sqlite') || name.endsWith('.sqlite.building')) continue;
-      if (SUPPORTED_EXTS.has(ext) || SOURCE_NAMES.has(name)) found.push(full);
-      else {
-        try { const s = await stat(full); if (s.size <= 16 * 1024 * 1024) { const b = await readFile(full); if (!b.subarray(0,8192).includes(0) && !b.subarray(0,8192).some(x => x < 32 && ![9,10,13].includes(x))) found.push(full); } } catch {}
-      }
+      await consider(full);
     }
   }
   await walk(root);
-  return found.sort((a,b) => relative(root,a).toLowerCase().localeCompare(relative(root,b).toLowerCase()));
+  }
+  return {files:found.sort((a,b) => relative(root,a).toLowerCase().localeCompare(relative(root,b).toLowerCase())),failures,
+    scan:{mode:gitRepository?'git-ignore-aware':'directory-defaults',entries:visited,eligibleFiles:found.length,inputBytes:sourceBytes}};
+}
+async function readSource(file,root) {
+  if(root) {
+    const [physicalRoot,physicalFile,entry]=await Promise.all([realpath(root),realpath(file),lstat(file)]),delta=path.relative(physicalRoot,physicalFile);
+    if(entry.isSymbolicLink() || !delta || delta==='..' || delta.startsWith(`..${path.sep}`) || path.isAbsolute(delta))
+      throw Error('Source is no longer contained in the selected project.');
+  }
+  const maximum=['.pdf','.docx','.xlsx','.zip'].includes(path.extname(file).toLowerCase())?MAX_DOCUMENT_FILE_BYTES:MAX_TEXT_FILE_BYTES;
+  const handle=await open(file,'r');
+  try {
+    const s=await handle.stat(); if(!s.isFile() || s.size>maximum) throw Error('Source is no longer an eligible bounded file.');
+    // A fixed allocation also bounds a file that grows between stat and read.
+    const data=Buffer.alloc(s.size);let used=0;
+    while(used<data.length) {const {bytesRead}=await handle.read(data,used,data.length-used,used);if(!bytesRead)break;used+=bytesRead;}
+    const after=await handle.stat();if(used!==s.size || after.size!==s.size || after.mtimeMs!==s.mtimeMs)
+      throw Error('File changed while being read; refresh again to capture a consistent source revision.');
+    return data.subarray(0,used);
+  } finally {await handle.close();}
 }
 function relative(root, file) { return path.relative(root,file).split(path.sep).join('/'); }
 function decode(data) {
@@ -67,7 +167,7 @@ function splitUnits(text, prefix, policy={mode:'none'}) {
   flush(); return units.length?units:[{locator:`${prefix}:1`,heading:'',text:normalized,fields:[]}];
 }
 function fieldsFromText(text){const out=[];for(const [i,line] of text.split(/\r?\n/).entries()){const m=line.trim().match(/^([A-Za-z][A-Za-z0-9 .&/()'’_+#%-]{1,80})\s*:\s*(.{1,2000})$/);if(m)out.push({label:m[1].trim(),value:m[2].trim(),path:`line:${i+1}`,confidence:.82});}return out;}
-function capUnits(units) { let remaining=MAX_SOURCE_INDEX_CHARS,out=[];for(const unit of units){if(remaining<=0)break;const text=String(unit.text||''),limit=Math.min(MAX_UNIT_INDEX_CHARS,remaining);out.push({...unit,text:text.length>limit?`${text.slice(0,limit)} … [truncated ${text.length-limit} chars for index safety]`:text});remaining-=Math.min(text.length,limit);}return out; }
+function capUnits(units) { let remaining=MAX_SOURCE_INDEX_CHARS,out=[],limited=false;for(const unit of units){if(remaining<=0 || out.length>=MAX_SOURCE_UNITS){limited=true;break;}const text=String(unit.text||''),limit=Math.min(MAX_UNIT_INDEX_CHARS,remaining);if(text.length>limit)limited=true;out.push({...unit,text:text.length>limit?`${text.slice(0,limit)} … [truncated ${text.length-limit} chars for index safety]`:text});remaining-=Math.min(text.length,limit);}if(limited)for(const unit of out)unit.captureNotes='Index capture is limited to 4,096 units, 2,097,152 source characters and 262,144 characters per unit. Read the original source for full content.';return out; }
 function extract(data, ext, policy={mode:'none',rules:[]}, ocr=false) {
   const text=decode(data);
   if (TEXT_EXTS.has(ext)) return [splitUnits(text, ext.slice(1)||'text',policy),'text-logical'];
@@ -120,7 +220,7 @@ function extractXlsx(data,policy) { const entries=zipEntries(data),map=new Map(e
   for(const s of workbook.matchAll(/<sheet\b([^>]+)\/?\s*>/g)){const name=s[1].match(/name="([^"]+)/)?.[1]||'Sheet',rid=s[1].match(/r:id="([^"]+)/)?.[1],target=rels.get(rid);if(!target)continue;const file=target.startsWith('/')?target.slice(1):target.startsWith('xl/')?target:`xl/${target.replace(/^\//,'')}`,xml=map.get(file);if(!xml)continue;const rows=[];for(const row of xml.matchAll(/<row\b([^>]*)>([\s\S]*?)<\/row>/g)){const rowNo=Number(row[1].match(/r="(\d+)/)?.[1]||rows.length+1),cells={};for(const c of row[2].matchAll(/<c\b([^>]*)>([\s\S]*?)<\/c>/g)){const ref=c[1].match(/r="([A-Z]+\d+)/i)?.[1]||'A1',col=excelColumn(ref),type=c[1].match(/t="([^"]+)/)?.[1],formula=c[2].match(/<f[^>]*>([\s\S]*?)<\/f>/)?.[1]||'',v=c[2].match(/<v[^>]*>([\s\S]*?)<\/v>/)?.[1]||'',inline=[...c[2].matchAll(/<t\b[^>]*>([\s\S]*?)<\/t>/g)].map(x=>xmlDecode(x[1])).join('');let value=type==='s'?shared[Number(v)]||'':type==='inlineStr'?inline:type==='b'?v==='1'?'TRUE':'FALSE':xmlDecode(v||inline);cells[col]={value,formula};}rows.push({rowNo,cells});}
     if(!rows.length)continue;const headers=Object.entries(rows[0].cells).map(([col,c])=>[Number(col),c.value]);const max=Math.max(...headers.map(x=>x[0]),1),headerArray=Array.from({length:Math.min(max,128)},(_,i)=>headers.find(x=>x[0]===i+1)?.[1]||`column_${i+1}`),units=[];for(let start=1;start<rows.length;start+=80){const group=rows.slice(start,start+80),fields=[],lines=group.map(({rowNo,cells})=>`R${rowNo}\t${Object.entries(cells).map(([col,c])=>{const label=headerArray[Number(col)-1]||`column_${col}`,value=c.value;if(policy.mode!=='none'&&value.length<=2000)fields.push({label,value,path:`sheet[${name}].row[${rowNo}].${label}`,confidence:.96});return `${label}=${value}${c.formula?` [formula: ${xmlDecode(c.formula)}]`:''}`}).join('\t')}`);units.push({locator:`sheet:${name}!R${group[0].rowNo}:R${group.at(-1).rowNo}`,heading:name,text:normalize(lines.join('\n')).slice(0,MAX_UNIT_INDEX_CHARS),fields});}if(rows.length===1)units.push({locator:`sheet:${name}!R${rows[0].rowNo}`,heading:name,text:headerArray.join('\t'),fields:[]});out.push(...units);}
   return out.length?out:[{locator:'workbook:empty',heading:'',text:'',fields:[]}]; }
-function extractPdf(data,ocr=false) { const native=process.env.PDFTOTEXT_PATH||'pdftotext',extracted=spawnSync(native,['-layout','-enc','UTF-8','-','-'],{input:data,maxBuffer:32*1024*1024,encoding:'buffer',windowsHide:true});let pages,method,warnings=[];if(!extracted.error&&extracted.status===0){pages=extracted.stdout.toString('utf8').split('\f');if(pages.at(-1)?.trim()==='')pages.pop();method='pdftotext-layout';}else{pages=pdfTextPages(data);method='pdf-text-layer';}const blank=pages.map((p,i)=>words(p)<5?i:-1).filter(i=>i>=0);if(ocr&&blank.length){const pdftoppm=process.env.PDFTOPPM_PATH||'pdftoppm',tesseract=process.env.TESSERACT_PATH||'tesseract';warnings.push('OCR fallback requires configured pdftoppm/tesseract executables.');for(const i of blank.slice(0,200)){const image=spawnSync(pdftoppm,['-f',String(i+1),'-l',String(i+1),'-singlefile','-png','-r','140','-','-'],{input:data,encoding:'buffer',maxBuffer:32*1024*1024,windowsHide:true});if(image.status!==0)continue;const o=spawnSync(tesseract,['stdin','stdout','--psm','3','-l','eng'],{input:image.stdout,encoding:'utf8',maxBuffer:4*1024*1024,windowsHide:true});if(o.status===0&&words(o.stdout)>=5)pages[i]=o.stdout;}if(pages.some((p,i)=>blank.includes(i)&&words(p)>=5)){method+='+ocr-fallback';warnings.length=0;}}const units=(pages.length?pages:['']).map((page,i)=>({locator:`page:${i+1}`,heading:page.split(/\r?\n/).find(x=>x.trim())?.trim().slice(0,140)||'',text:normalize(page).slice(0,MAX_UNIT_INDEX_CHARS),fields:[]}));units.warnings=warnings;units.method=method;return units; }
+function extractPdf(data,ocr=false) { const native=process.env.PDFTOTEXT_PATH||'pdftotext',extracted=spawnSync(native,['-layout','-enc','UTF-8','-','-'],{input:data,maxBuffer:32*1024*1024,encoding:'buffer',windowsHide:true,timeout:30000});let pages,method,warnings=[];if(!extracted.error&&extracted.status===0){pages=extracted.stdout.toString('utf8').split('\f');if(pages.at(-1)?.trim()==='')pages.pop();method='pdftotext-layout';}else{pages=pdfTextPages(data);method='pdf-text-layer';}const blank=pages.map((p,i)=>words(p)<5?i:-1).filter(i=>i>=0);if(ocr&&blank.length){const pdftoppm=process.env.PDFTOPPM_PATH||'pdftoppm',tesseract=process.env.TESSERACT_PATH||'tesseract';warnings.push('OCR fallback requires configured pdftoppm/tesseract executables.');for(const i of blank.slice(0,200)){const image=spawnSync(pdftoppm,['-f',String(i+1),'-l',String(i+1),'-singlefile','-png','-r','140','-','-'],{input:data,encoding:'buffer',maxBuffer:32*1024*1024,windowsHide:true,timeout:20000});if(image.status!==0)continue;const o=spawnSync(tesseract,['stdin','stdout','--psm','3','-l','eng'],{input:image.stdout,encoding:'utf8',maxBuffer:4*1024*1024,windowsHide:true,timeout:15000});if(o.status===0&&words(o.stdout)>=5)pages[i]=o.stdout;}if(pages.some((p,i)=>blank.includes(i)&&words(p)>=5)){method+='+ocr-fallback';warnings.length=0;}}const units=(pages.length?pages:['']).map((page,i)=>({locator:`page:${i+1}`,heading:page.split(/\r?\n/).find(x=>x.trim())?.trim().slice(0,140)||'',text:normalize(page).slice(0,MAX_UNIT_INDEX_CHARS),fields:[]}));units.warnings=warnings;units.method=method;return units; }
 function pdfTextPages(data){const text=data.toString('latin1');if(!text.startsWith('%PDF-'))throw Error('Invalid PDF header');const objects=[...text.matchAll(/(\d+)\s+\d+\s+obj\b([\s\S]*?)endobj/g)].map(m=>({id:Number(m[1]),body:m[2]})),streams=[];for(const object of objects){const m=object.body.match(/stream\r?\n([\s\S]*?)\r?\nendstream/);if(!m)continue;let bytes=Buffer.from(m[1],'latin1');if(/\/FlateDecode/.test(object.body)){try{bytes=createRequire(import.meta.url)('node:zlib').inflateSync(bytes,{maxOutputLength:16*1024*1024})}catch{continue;}}streams.push(bytes.toString('latin1'));}const cmap=new Map();for(const stream of streams){if(/begincmap/.test(stream)){for(const block of stream.matchAll(/beginbfchar([\s\S]*?)endbfchar/g))for(const pair of block[1].matchAll(/<([\da-f]+)>\s*<([\da-f]+)>/gi))cmap.set(pair[1].toUpperCase(),String.fromCodePoint(parseInt(pair[2],16)));for(const block of stream.matchAll(/beginbfrange([\s\S]*?)endbfrange/g))for(const range of block[1].matchAll(/<([\da-f]+)>\s*<([\da-f]+)>\s*<([\da-f]+)>/gi)){const start=parseInt(range[1],16),end=parseInt(range[2],16),base=parseInt(range[3],16),width=range[1].length;for(let n=start;n<=end&&n-start<4096;n++)cmap.set(n.toString(16).toUpperCase().padStart(width,'0'),String.fromCodePoint(base+n-start));}}}
   const pages=[];for(const stream of streams){if(!/(?:\bBT\b|\bTj\b|\bTJ\b)/.test(stream))continue;let output='';for(const textOp of stream.matchAll(/\[((?:[^\]]|\\\])*)\]\s*TJ|\((?:\\.|[^\\)])*\)\s*Tj|<([\da-f]+)>\s*Tj/gi)){const raw=textOp[0];let tokens=[];if(raw.includes('TJ'))tokens=[...raw.matchAll(/\((?:\\.|[^\\)])*\)|<[\da-f]+>/gi)].map(x=>x[0]);else tokens=[raw.match(/\((?:\\.|[^\\)])*\)|<[\da-f]+>/i)?.[0]||''];for(const token of tokens){let value='';if(token.startsWith('<')){const hex=token.slice(1,-1).toUpperCase();for(let i=0;i<hex.length;){let hit='';for(let n=Math.min(8,hex.length-i);n>=2;n-=2){const candidate=hex.slice(i,i+n);if(cmap.has(candidate)){hit=candidate;break;}}if(hit){value+=cmap.get(hit);i+=hit.length;}else{const ch=parseInt(hex.slice(i,i+2),16);if(ch>=32&&ch<127)value+=String.fromCharCode(ch);i+=2;}}}else value=token.slice(1,-2).replace(/\\([()\\])/g,'$1').replace(/\\n/g,'\n').replace(/\\r/g,'\n').replace(/\\t/g,'\t');output+=value;}output+=' ';}output=normalize(output.replace(/\s{2,}/g,'\n'));if(output)pages.push(output);}if(!pages.length)throw Error('This PDF contains no extractable text layer. Install pdftotext for broader PDF compatibility.');return pages; }
 function policyFor(a){const rules=[];for(const raw of a.specialFacts||[]){const at=raw.indexOf('=');if(at<1)throw Error(`special fact rule must be FAMILY=REGEX, got ${raw}`);const family=slug(raw.slice(0,at)),source=raw.slice(at+1);if(!source||source.length>500)throw Error('special fact regex must contain 1 to 500 characters');try{rules.push({family,source,re:new RegExp(source,'iu')})}catch(e){throw Error(`invalid special fact regex: ${e.message}`)}}if(a.facts==='special'&&!rules.length)throw Error('--facts special requires at least one --special-fact FAMILY=REGEX rule');return {mode:a.facts,rules,general:['general','both'].includes(a.facts),special:['special','both'].includes(a.facts)&&rules.length>0};}
@@ -177,24 +277,59 @@ function argsParse(argv) {
 }
 function openDb(file, readOnly=false) { assertLocalStoragePath(file); return new DatabaseSync(file,{readOnly}); }
 function print(value) { process.stdout.write(JSON.stringify(value,null,2)+'\n'); }
+async function removeOwnedStage(directory) {
+  const target=path.resolve(directory),scratchRoot=path.resolve(os.tmpdir());
+  if(path.dirname(target)!==scratchRoot || !/^freelancer-content-index-[A-Za-z0-9]{6}$/.test(path.basename(target)))
+    throw Error('Refusing to remove an unowned content-index staging directory.');
+  let entry;try{entry=await lstat(target);}catch(error){if(error.code==='ENOENT')return;throw error;}
+  if(!entry.isDirectory() || entry.isSymbolicLink())
+    throw Error('Content-index staging directory changed before cleanup.');
+  for(const suffix of ['','-journal','-wal','-shm'])await rm(path.join(target,`project.sqlite${suffix}`),{force:true});
+  // Do not recurse or delete unexpected files placed in the scratch directory.
+  await rmdir(target);
+}
+function boundedPreview(rows,maximum=128) {
+  const selected=[];let bytes=0;
+  for(const row of rows??[]) {
+    const value=typeof row==='object' && row?{...row,...(typeof row.error==='string'?{error:row.error.slice(0,2000)}:{})}:row;
+    const size=Buffer.byteLength(JSON.stringify(value),'utf8');
+    if(selected.length>=maximum || bytes+size>256*1024)break;
+    bytes+=size;selected.push(value);
+  }
+  return selected;
+}
+function printSummary(summary) {
+  const failures=summary.extraction_failures??[], preview=boundedPreview(failures),changes={},counts={};
+  for(const [kind,rows] of Object.entries(summary.changes??{})){changes[kind]=boundedPreview(rows);counts[kind]=rows.length;}
+  print({...summary,changes,changes_counts:counts,changes_truncated:Object.keys(counts).some(kind=>counts[kind]!==changes[kind].length),
+    extraction_failures:preview,extraction_failure_count:failures.length,extraction_skipped_files:new Set(failures.map(row=>row.source)).size,
+    extraction_failures_omitted:failures.length-preview.length});
+}
 async function rebuild(a, dbFile, root, key) {
   if(!['none','general','special','both'].includes(a.facts))throw Error('invalid --facts mode');
    const db=openDb(dbFile,true); ensureSchema(db); const old=previousManifest(db,key);
    let priorSummary; try { const row=db.prepare("SELECT value FROM content_meta WHERE project_key=? AND key='summary_json'").get(key); if(row)priorSummary=JSON.parse(row.value); } catch {}
    db.close();
-   const files=await discover(root), manifest=new Map(), failures=[];
-  for(const f of files) { try { manifest.set(relative(root,f),sha(await readFile(f))); } catch(e) { failures.push({source:relative(root,f),error:`file could not be read: ${e.message}`}); } }
+   process.stderr.write('Discovering eligible project files…\n');
+   const discovery=await projectSourceInventory(root),files=discovery.files, manifest=new Map(), failures=[...discovery.failures];
+  for(const f of files) { try { manifest.set(relative(root,f),sha(await readSource(f,root))); } catch(e) { failures.push({source:relative(root,f),error:`file could not be read: ${e.message}`}); } }
   const added=[...manifest.keys()].filter(x=>!old.has(x)).sort(), removed=[...old.keys()].filter(x=>!manifest.has(x)).sort(), changed=[...manifest.keys()].filter(x=>old.has(x)&&old.get(x)!==manifest.get(x)).sort(), unchanged=[...manifest.keys()].filter(x=>old.has(x)&&old.get(x)===manifest.get(x)).sort();
   const requestedPolicy=policyFor(a), previousSettings=(()=>{try{const db=openDb(dbFile,true),rows=db.prepare("SELECT key,value FROM content_meta WHERE project_key=? AND key IN ('schema_version','facts_mode','special_fact_rules_json')").all(key);db.close();const map=Object.fromEntries(rows.map(x=>[x.key,x.value]));return JSON.stringify([map.schema_version||'',map.facts_mode||'',map.special_fact_rules_json||'[]']);}catch{return ''}})(), currentSettings=JSON.stringify([SCHEMA_VERSION,a.facts,JSON.stringify(requestedPolicy.rules.map(r=>({family:r.family,regex:r.source})))]), settingsChanged=previousSettings!==currentSettings;
-   const incremental=old.size>0&&!settingsChanged, selected=incremental?new Set([...added,...changed]):new Set(manifest.keys()), stageFile=path.join(path.dirname(dbFile),`.content-stage-${process.pid}-${Date.now()}.sqlite`);
+   const incremental=old.size>0&&!settingsChanged, selected=incremental?new Set([...added,...changed]):new Set(manifest.keys());
+   if(incremental) for(const failure of priorSummary?.extraction_failures??[]) {
+     if(unchanged.includes(String(failure.source).split('!')[0])) failures.push(failure);
+   }
    if(incremental && selected.size===0 && removed.length===0) {
      const reader=openDb(dbFile,true);
      let counts;
      try { counts=reader.prepare("SELECT COUNT(*) AS sources,COALESCE(SUM(word_count),0) AS words FROM content_sources WHERE project_key=? AND extraction_status='ok'").get(key); counts.units=reader.prepare('SELECT COUNT(*) AS n FROM content_units u JOIN content_sources s ON s.source_id=u.source_id WHERE s.project_key=?').get(key).n; }
      finally { reader.close(); }
-     if(priorSummary) { const summary={...priorSummary,refresh_mode:'incremental',files_reindexed:0,files_reused:unchanged.length,files_removed:0,physical_sources_indexed:counts.sources,indexed_sources:counts.sources,units:counts.units,words:counts.words,changes:{added,removed,changed,unchanged}}; const writer=openDb(dbFile);try{writer.prepare("INSERT OR REPLACE INTO content_meta(project_key,key,value) VALUES(?,?,?)").run(key,'summary_json',JSON.stringify(summary));}finally{writer.close();}print(summary); return; }
+     if(priorSummary) { const summary={...priorSummary,refresh_mode:'incremental',files_reindexed:0,files_reused:unchanged.length,files_removed:0,physical_sources_indexed:counts.sources,indexed_sources:counts.sources,units:counts.units,words:counts.words,scan:discovery.scan,extraction_failures:failures,changes:{added,removed,changed,unchanged}}; const writer=openDb(dbFile);try{writer.prepare("INSERT OR REPLACE INTO content_meta(project_key,key,value) VALUES(?,?,?)").run(key,'summary_json',JSON.stringify(summary));}finally{writer.close();}printSummary(summary); return; }
    }
-   let stage;
+   // Staging is disposable derived data. Keeping it outside the registered
+   // warehouse prevents a killed indexer from poisoning fresh-runtime checks.
+   const stageDirectory=await mkdtemp(path.join(os.tmpdir(),'freelancer-content-index-'));
+   const stageFile=path.join(stageDirectory,'project.sqlite');let stage;
    try {
      stage=openDb(stageFile);
      stage.exec(await readFile(new URL('../../server/data/schema.sql',import.meta.url),'utf8'));
@@ -217,10 +352,10 @@ async function rebuild(a, dbFile, root, key) {
      } catch(error) { try{stage.exec('ROLLBACK')}catch{} throw error; }
      ensureSchema(stage);
      stage.exec('BEGIN IMMEDIATE');
-   } catch(error) { try{stage?.exec('ROLLBACK')}catch{}try{stage?.close()}catch{}await rm(stageFile,{force:true});throw error; }
+   } catch(error) { try{stage?.exec('ROLLBACK')}catch{}try{stage?.close()}catch{}await removeOwnedStage(stageDirectory);throw error; }
   try {
     if(incremental) {
-      for(const rp of [...changed,...removed]) { stage.prepare("DELETE FROM content_units_fts WHERE project_key=? AND (virtual_path=? OR virtual_path LIKE ?)").run(key,rp,`${rp}!%`); stage.prepare('DELETE FROM content_sources WHERE project_key=? AND container_path=?').run(key,rp); }
+      for(const rp of [...changed,...removed]) { const prefix=`${rp}!`;stage.prepare("DELETE FROM content_units_fts WHERE project_key=? AND (virtual_path=? OR substr(virtual_path,1,length(?))=?)").run(key,rp,prefix,prefix); stage.prepare('DELETE FROM content_sources WHERE project_key=? AND container_path=?').run(key,rp); }
     } else { stage.prepare('DELETE FROM content_units_fts WHERE project_key=?').run(key); stage.prepare('DELETE FROM content_sources WHERE project_key=?').run(key); }
     if(incremental) stage.prepare('DELETE FROM content_sources WHERE project_key=? AND container_path NOT IN (SELECT value FROM json_each(?))').run(key,JSON.stringify([...manifest.keys()]));
     stage.prepare('DELETE FROM content_fact_stats WHERE project_key=?').run(key); stage.prepare('DELETE FROM content_meta WHERE project_key=?').run(key);
@@ -240,11 +375,12 @@ async function rebuild(a, dbFile, root, key) {
      for(const f of files) { const rp=relative(root,f); if(!selected.has(rp))continue; const extension=path.extname(f).toLowerCase(), ext=SUPPORTED_EXTS.has(extension)?extension:'.txt';
        let st;
        try {
-         st=await stat(f); const data=await readFile(f),[role,status,rank]=routing(rp);let units=[],method='';
+         st=await stat(f); const data=await readSource(f,root),[role,status,rank]=routing(rp);let units=[],method='';
+         if(sha(data)!==manifest.get(rp))throw Error('File changed during indexing; refresh again to capture a consistent source revision.');
         if(ext==='.zip') {let members=zipEntries(data),memberFailures=[];for(const member of members){const memberExt=path.extname(member.name).toLowerCase();if(!SUPPORTED_EXTS.has(memberExt)||memberExt==='.zip'||member.name.startsWith('/')||member.name.split(/[\\/]/).includes('..'))continue;try{const [extracted,memberMethod,warnings]=extract(member.data,memberExt,policy,a.ocr);for(const u of capUnits(extracted)){const virtual=`${rp}!${member.name}`,entry={...u,virtual,filename:path.basename(member.name),extension:memberExt,memberPath:member.name,method:`zip-member+${memberMethod}`,bytes:member.data};units.push(entry);}for(const warning of warnings||[])failures.push({source:`${rp}!${member.name}`,error:warning});}catch(e){memberFailures.push({source:`${rp}!${member.name}`,error:e.message});}}failures.push(...memberFailures);if(!units.length){const [archiveRole,archiveStatus,archiveRank]=routing(rp);insertSource(key,path.basename(f),rp,rp,'','.zip',archiveRole,archiveStatus,archiveRank,st.size,new Date(st.mtimeMs).toISOString(),manifest.get(rp),0,'archive','zip-container','skipped',0,0,'ZIP did not contain a readable supported member');throw Error('no safe supported members found in ZIP');}
         } else {const [extracted,foundMethod,warnings]=extract(data,ext,policy,a.ocr);units=capUnits(extracted).map(u=>({...u,virtual:rp,filename:path.basename(f),extension:ext,memberPath:'',method:foundMethod,bytes:data}));for(const warning of warnings||[])failures.push({source:rp,error:warning});}
         const groups=new Map();for(const u of units){if(!groups.has(u.virtual))groups.set(u.virtual,[]);groups.get(u.virtual).push(u);}
-        for(const [virtual,group] of groups){const member=group[0],memberStat=member.memberPath?{size:member.bytes.length,mtimeMs:st.mtimeMs}:st,memberSha=sha(member.bytes),memberExt=member.extension,memberId=insertSource(key,member.filename,virtual,rp,member.memberPath,memberExt,...routing(virtual),memberStat.size,new Date(memberStat.mtimeMs).toISOString(),memberSha,group.length,memberExt==='.pdf'?'physical_page':memberExt==='.xlsx'?'sheet_rows':['.json','.jsonl','.ndjson','.xml','.toml','.ini','.cfg'].includes(memberExt)?'structured_record':['.csv','.tsv'].includes(memberExt)?'row_range':'logical_unit',member.method,'ok',group.reduce((n,u)=>n+u.text.length,0),group.reduce((n,u)=>n+words(u.text),0),member.memberPath?`archive member; container sha256=${manifest.get(rp)}`:'').lastInsertRowid;for(let i=0;i<group.length;i++){const u=group[i],text=normalize(u.text).slice(0,MAX_UNIT_INDEX_CHARS),n=words(text),no=i+1,unitId=unitInsert.run(memberId,no,u.locator,u.heading||'',text,n,text.length,sha(text)).lastInsertRowid;ftsInsert.run(unitId,key,member.filename,virtual,...routing(virtual).slice(0,2),u.heading||'',u.locator,text);totalWords+=n;totalUnits++;let facts=extractFacts({...u,text},policy);let cap=Math.min(MAX_FACTS_PER_SOURCE-(factSourceCounts[virtual]||0),MAX_FACTS_TOTAL-totalFacts);if(facts.length>cap){factsDropped+=facts.length-cap;facts=facts.slice(0,Math.max(0,cap));}for(const fact of facts)factInsert.run(memberId,no,u.locator,fact.kind,fact.family,fact.label,fact.label_norm,fact.value_text,fact.value_num,fact.value_unit,fact.path,fact.evidence,fact.confidence);factSourceCounts[virtual]=(factSourceCounts[virtual]||0)+facts.length;totalFacts+=facts.length;}indexed++;methodCounts[member.method]=(methodCounts[member.method]||0)+1;}
+        for(const [virtual,group] of groups){const member=group[0],memberStat=member.memberPath?{size:member.bytes.length,mtimeMs:st.mtimeMs}:st,memberSha=sha(member.bytes),memberExt=member.extension,memberId=insertSource(key,member.filename,virtual,rp,member.memberPath,memberExt,...routing(virtual),memberStat.size,new Date(memberStat.mtimeMs).toISOString(),memberSha,group.length,memberExt==='.pdf'?'physical_page':memberExt==='.xlsx'?'sheet_rows':['.json','.jsonl','.ndjson','.xml','.toml','.ini','.cfg'].includes(memberExt)?'structured_record':['.csv','.tsv'].includes(memberExt)?'row_range':'logical_unit',member.method,'ok',group.reduce((n,u)=>n+u.text.length,0),group.reduce((n,u)=>n+words(u.text),0),[member.memberPath?`archive member; container sha256=${manifest.get(rp)}`:'',member.captureNotes??''].filter(Boolean).join('; ')).lastInsertRowid;for(let i=0;i<group.length;i++){const u=group[i],text=normalize(u.text).slice(0,MAX_UNIT_INDEX_CHARS),n=words(text),no=i+1,unitId=unitInsert.run(memberId,no,u.locator,u.heading||'',text,n,text.length,sha(text)).lastInsertRowid;ftsInsert.run(unitId,key,member.filename,virtual,...routing(virtual).slice(0,2),u.heading||'',u.locator,text);totalWords+=n;totalUnits++;let facts=extractFacts({...u,text},policy);let cap=Math.min(MAX_FACTS_PER_SOURCE-(factSourceCounts[virtual]||0),MAX_FACTS_TOTAL-totalFacts);if(facts.length>cap){factsDropped+=facts.length-cap;facts=facts.slice(0,Math.max(0,cap));}for(const fact of facts)factInsert.run(memberId,no,u.locator,fact.kind,fact.family,fact.label,fact.label_norm,fact.value_text,fact.value_num,fact.value_unit,fact.path,fact.evidence,fact.confidence);factSourceCounts[virtual]=(factSourceCounts[virtual]||0)+facts.length;totalFacts+=facts.length;}indexed++;methodCounts[member.method]=(methodCounts[member.method]||0)+1;}
        } catch(e) { if(ext!=='.zip') { const [r,s,rank]=routing(rp);try{insertSource(key,path.basename(f),rp,rp,'',ext,r,s,rank,st?.size??0,st?new Date(st.mtimeMs).toISOString():new Date().toISOString(),manifest.get(rp),0,ext==='.pdf'?'physical_page':ext==='.xlsx'?'sheet_rows':ext==='.docx'?'logical_unit':ext==='.zip'?'archive':'logical_unit','failed','metadata_only',0,0,`Extraction failed: ${e.message}`);}catch{} } failures.push({source:rp,error:e.message}); }
        process.stderr.write(`[${++processed}/${selected.size}] ${rp}\n`);
     }
@@ -262,8 +398,9 @@ async function rebuild(a, dbFile, root, key) {
     stage.prepare('INSERT OR REPLACE INTO content_meta(project_key,key,value) VALUES(?,?,?)').run(key,'validation_json',JSON.stringify(validation));
 
     const factGroups=stage.prepare('SELECT COUNT(*) AS n FROM content_fact_stats WHERE project_key=?').get(key).n;
-     const summary={schema_version:SCHEMA_VERSION,built_at_utc:now,facts_mode:a.facts,special_fact_rules:policy.rules.map(r=>({family:r.family,regex:r.source})),refresh_mode:incremental?'incremental':'full',files_reindexed:selected.size,files_reused:incremental?unchanged.length:0,files_removed:removed.length,physical_sources_indexed:projectSources,archive_members_indexed:archiveMembers,indexed_sources:projectSources,units:projectUnits,words:projectWords,facts:projectFacts,fact_stat_groups:factGroups,facts_dropped_by_budget:factsDropped,fact_budget_sources:{},extraction_methods:methodCounts,extraction_failures:failures,extraction_warnings:[],changes:{added,removed,changed,unchanged},validation};
+     const summary={schema_version:SCHEMA_VERSION,built_at_utc:now,facts_mode:a.facts,special_fact_rules:policy.rules.map(r=>({family:r.family,regex:r.source})),refresh_mode:incremental?'incremental':'full',files_reindexed:selected.size,files_reused:incremental?unchanged.length:0,files_removed:removed.length,physical_sources_indexed:projectSources,archive_members_indexed:archiveMembers,indexed_sources:projectSources,units:projectUnits,words:projectWords,facts:projectFacts,fact_stat_groups:factGroups,facts_dropped_by_budget:factsDropped,fact_budget_sources:{},extraction_methods:methodCounts,extraction_failures:failures,extraction_warnings:[],scan:discovery.scan,changes:{added,removed,changed,unchanged},validation};
     stage.prepare('INSERT OR REPLACE INTO content_meta(project_key,key,value) VALUES(?,?,?)').run(key,'summary_json',JSON.stringify(summary)); stage.exec('COMMIT');
+    process.stderr.write('Publishing project index…\n');
     const publisher=new DatabaseSync(dbFile); try { publisher.exec('PRAGMA foreign_keys=ON;');publisher.prepare('ATTACH DATABASE ? AS staged').run(stageFile); publisher.exec('BEGIN IMMEDIATE'); publisher.prepare('DELETE FROM content_units_fts WHERE project_key=?').run(key);publisher.prepare('DELETE FROM content_sources WHERE project_key=?').run(key);publisher.prepare('DELETE FROM content_fact_stats WHERE project_key=?').run(key);publisher.prepare('DELETE FROM content_meta WHERE project_key=?').run(key);
     const cols='project_key,filename,virtual_path,container_path,member_path,extension,source_role,status,routing_rank,file_size_bytes,modified_utc,sha256,unit_count,locator_kind,extraction_method,extraction_status,text_chars,word_count,notes,source_identity,revision_identity';
       publisher.prepare(`INSERT INTO content_sources(${cols}) SELECT ${cols} FROM staged.content_sources WHERE project_key=?`).run(key);
@@ -275,8 +412,8 @@ async function rebuild(a, dbFile, root, key) {
         JOIN staged.content_source_revisions s USING(source_identity,revision_identity) WHERE s.project_key=?`).run(key);
       publisher.prepare('INSERT INTO content_fact_stats SELECT * FROM staged.content_fact_stats WHERE project_key=?').run(key);publisher.prepare('INSERT INTO content_meta SELECT * FROM staged.content_meta WHERE project_key=?').run(key);publisher.exec("INSERT INTO content_units_fts(content_units_fts) VALUES('integrity-check')"); publisher.exec('COMMIT');
     } catch(e) { try{publisher.exec('ROLLBACK')}catch{} throw e; } finally { publisher.close();stage.close(); }
-    await rm(stageFile,{force:true}); print(summary);
-  } catch(e) { try{stage.exec('ROLLBACK')}catch{} try{stage.close()}catch{} await rm(stageFile,{force:true}); throw e; }
+    await removeOwnedStage(stageDirectory); printSummary(summary);
+  } catch(e) { try{stage.exec('ROLLBACK')}catch{} try{stage.close()}catch{} await removeOwnedStage(stageDirectory); throw e; }
 }
 function query(a, dbFile, key) {
   const filters=contentFilters(a);
@@ -334,7 +471,14 @@ export async function main(argv=process.argv.slice(2)) {
   if(a.dbExplicit&&['rebuild','status'].includes(a.command)&&!path.isAbsolute(a.db))a.db=path.join(root,a.db);
   const resolvedDb=a.dbExplicit?path.resolve(a.db):dbFile;
   if(a.command==='rebuild') return rebuild(a,resolvedDb,root,key);
-  if(a.command==='status') { const db=openDb(resolvedDb,true);ensureSchema(db);const old=previousManifest(db,key);db.close();const current=new Map();for(const f of await discover(root))current.set(relative(root,f),sha(await readFile(f)));const changes={added:[...current.keys()].filter(x=>!old.has(x)).sort(),removed:[...old.keys()].filter(x=>!current.has(x)).sort(),changed:[...current.keys()].filter(x=>old.has(x)&&old.get(x)!==current.get(x)).sort(),unchanged:[...current.keys()].filter(x=>old.has(x)&&old.get(x)===current.get(x)).sort()};const exists=old.size>0;print({index_exists:exists,stale:!exists||!!(changes.added.length||changes.removed.length||changes.changed.length),source_count_now:current.size,changes});return; }
+  if(a.command==='status') {
+    const db=openDb(resolvedDb,true);ensureSchema(db);const old=previousManifest(db,key);
+    const exists=!!db.prepare("SELECT 1 FROM content_meta WHERE project_key=? AND key='schema_version'").get(key);db.close();
+    const discovery=await projectSourceInventory(root), current=new Map(), failures=[...discovery.failures];
+    for(const f of discovery.files)try{current.set(relative(root,f),sha(await readSource(f,root)));}catch(error){failures.push({source:relative(root,f),error:`File could not be read: ${error.message}`});}
+    const changes={added:[...current.keys()].filter(x=>!old.has(x)).sort(),removed:[...old.keys()].filter(x=>!current.has(x)).sort(),changed:[...current.keys()].filter(x=>old.has(x)&&old.get(x)!==current.get(x)).sort(),unchanged:[...current.keys()].filter(x=>old.has(x)&&old.get(x)===current.get(x)).sort()};
+    printSummary({index_exists:exists,stale:!exists||!!(changes.added.length||changes.removed.length||changes.changed.length),source_count_now:current.size,scan:discovery.scan,extraction_failures:failures,changes});return;
+  }
    return query(a,resolvedDb,key);
 }
 if(process.argv[1]&&import.meta.url===pathToFileURL(path.resolve(process.argv[1])).href) main().catch(e=>{console.error(JSON.stringify({error:e.message,type:e.name}));process.exitCode=1;});

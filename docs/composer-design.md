@@ -66,7 +66,10 @@ and does not switch turns when the transcript scrolls. Each turn has a slim,
 outlined marker that opens its tools in the dock without jumping the transcript.
 Earlier turns are labeled explicitly and provide **Back to current turn**.
 A new turn returns the dock to current work. Expanded tools scroll independently
-within the overlay. Compact agent and goal handoff cards also appear in the
+within the overlay. Commands contains actual tool calls only; native compaction
+recaps remain in the transcript as expandable Conversation recap disclosures.
+Task lists remain in the composer Tasks card.
+Compact agent and goal handoff cards also appear in the
 transcript; full command bodies remain in Commands. Agents provides worker
 navigation and a parent-chat action. Models shows observed model contributions.
 Goals includes lifecycle controls and handoff history for the current goal.

@@ -1,46 +1,36 @@
 ---
 name: review
-description: Report-only independent review focused on correctness, regressions, security and data boundaries, tests, and user-visible behavior.
+description: Critique a bounded change or proposal and return grounded findings without applying fixes.
 ---
 
 # Review
 
-This skill teaches procedure and fallbacks only. It grants no write,
-paid-model, publication, or integration authority. Native permissions, paid
-consent, user constraints, and the saved Git agreement remain authoritative.
-A review never approves publication and never mandates delegation.
+Use this for an explicit review or when an independent critique materially helps
+with a consequential change. Return findings; an inspection-only assignment
+stays read-only. The parent may integrate fixes within an already authorized
+implementation request without asking for the same authorization again.
 
-## Procedure
+1. Establish scope, acceptance criteria and relevant source state. Inspect the
+   actual change and its surrounding behavior rather than relying on a summary.
+2. Look for correctness defects, regressions, data/security boundary violations,
+   missing checks and user-visible failures. Prioritize concrete impact.
+3. For each actionable finding, report location, severity, triggering condition,
+   consequence and supporting evidence. Label unverified suspicions and missing
+   coverage; avoid speculative issues without a plausible failure path.
+4. Summarize reviewed scope and remaining gaps. No findings means no grounded
+   issue was found within that scope, not universal correctness.
 
-1. Request or perform review only when it is useful (risky change, unclear
-   correctness, or an explicit user request). Reviews are report-only: list
-   findings, file locations, and severity without applying fixes.
-2. Focus on correctness, regressions, security/data boundaries, tests, and
-   user-visible behavior. Distinguish measured findings from unverified
-   suspicions.
-3. For an independent model view, use
-   `delegate({agent, task, independentReview: true})` with a named agent
-   from the supplied catalog and a bounded review task. The public schema is
-    `delegate({agent, task, model, freeOnly, inspectionOnly,
-    independentReview, worker, fork, cancel, delivery, workers, from, limit})`.
-4. The parent integrates review output against repository evidence and
-   acceptance criteria. Review completion is not proof of correctness.
+## Independent view
 
-## Capability-use hints
+When useful and permitted, assign a named agent through
+`delegate({agent, task, inspectionOnly: true, independentReview: true})` with a
+bounded question, relevant files and acceptance criteria. `delegate-work` covers
+dispatch and worker recovery. Parent self-review is not independent, and a
+finished reviewer does not prove the findings correct; integrate them against
+the source and `verify` important claims.
 
-After collecting source and evidence, consider JEV for bounded triage: blocker /
-significant / minor / uncertain, likely regression, requirement violation versus
-not established, or which finding to investigate first. Its classification is
-not proof; the reviewer remains responsible for grounded findings and locations.
-Context7 can clarify current expected library/API behavior, while Playwright can
-check a suspected user-visible regression. If unavailable, review directly with
-the evidence at hand and report gaps; no auxiliary service is a review gate.
-
-## Required capabilities and fallbacks
-
-- Required: read access to the changed files and any cited evidence.
-- Fallback: if no independent reviewer is available or eligible, report the
-  review as skipped/unavailable with the reason and continue with direct
-  verification. Do not present parent self-review as independent. Optional
-  extras (bake-off, simplification, polish, durable lessons, execution
-  audit) are task-triggered only.
+Use `web-research` for uncertain API expectations and `playwright` for a
+suspected rendered regression. `bounded-judgment` can help prioritize an already
+grounded finding set; it supplies advisory judgments, never defect proof or
+permission to publish. If another reviewer or service is unavailable, perform
+the permitted direct review and clearly report the limitation.

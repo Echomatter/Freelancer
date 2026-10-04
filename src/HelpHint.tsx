@@ -21,10 +21,10 @@ export function HelpScope({ children, topic, details }: { children: ReactNode; t
   </CardHelp.Provider>;
 }
 
-export function HelpHint({ topic, label }: Topic) {
+export function HelpHint({ topic, label, details }: Topic) {
   const register = useContext(CardHelp), id = useId();
-  useEffect(() => register?.(id, { topic, label }), [register, id, topic, label]);
-  return register ? null : <HelpPopover topics={[{ topic, label }]} />;
+  useEffect(() => register?.(id, { topic, label, details }), [register, id, topic, label, details]);
+  return register ? null : <HelpPopover topics={[{ topic, label, details }]} />;
 }
 
 function HelpPopover({ topics }: { topics: Topic[] }) {

@@ -33,7 +33,7 @@ export function createStore(root) {
       return update('settings', s => ({ ...s, revision: s.revision + 1,
         plans, monthlyPlans: { ...s.monthlyPlans, [month]: plans } }));
     },
-    observe(input, { session } = {}) {
+    observe(input, { session, messages } = {}) {
       const rows = structuredClone(input).filter(Boolean);
       return enqueue(async () => {
         const receipts = await records.mutate('requests', rows.filter(row => row.parentMessageID).map(row => [row.parentMessageID, receipt => {
@@ -46,10 +46,10 @@ export function createStore(root) {
         const changes = [];
         for (const row of rows) {
           let receipt = receipts[row.parentMessageID];
-          if (!receipt && session?.id === row.sessionID && session?.metadata?.freelancer?.taskID)
+          if (!receipt && session?.id === row.sessionID && (messages || session?.metadata?.freelancer?.taskID))
             receipt = await executionContext(root, row.directory, session, { info: {
               role: 'assistant', agent: row.nativeAgent, parentID: row.parentMessageID,
-            } });
+            } }, messages);
           const attribution = receipt && receipt.sessionID === row.sessionID ? {
             agentID: receipt.agent.id, agentName: receipt.agent.name, requestID: receipt.id,
           } : {};

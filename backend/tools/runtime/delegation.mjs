@@ -323,7 +323,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
         }
       } catch { /* Native task text is not a managed model receipt. */ }
     }
-    const execution = await executionContext(toolkitRoot, ctx.directory || directory, parent, message);
+    const execution = await executionContext(toolkitRoot, ctx.directory || directory, parent, message, rows);
     if (!execution?.catalog) throw fault('PermissionError', 'A current Freelancer request with a named agent catalog is required. Start a new request in the app; historical conversations remain readable.');
     return { parent, parentModel: routeOf(message.info), config, assignment, previousReviewModels,
       userMessageID: user?.info?.id, execution, depth };
@@ -886,7 +886,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           await call('session', 'promptAsync', { ...sessionArgs(child.id, ctx.directory), body: {
             agent: agent.id, model, messageID: attempt.user_message_id, ...(variant ? { variant } : {}),
             system: executionPrompt(agent, { policyVersion, agentID: agent.id, mode: 'build', delegated: true }, catalog) + '\n\n' + workerResultInstruction,
-            parts: [{ type: 'text', text: `${forkContext ? forkTaskText(forkContext, args.task) : args.task}\n\nWorking directory: ${ctx.directory || directory}. Resolve assignment paths from this root; use glob to locate a missing path before retrying.\nWork directly unless an independent specialist materially helps. Nested delegation shares the configured depth and concurrency ceilings.\nUse content_index status/search for project documentation, plans and mixed data when useful; verify decisive hits against originals. Use grep/glob/read or native code search for code. Missing/stale index coverage never blocks source search.\n${readOnly ? 'READ-ONLY: do not change source files. content_index status/search/rebuild and git_project inspect/preview are permitted retrieval maintenance; use them when useful. Native shell checks are available subject to inherited OpenCode permissions: use inspection commands only, never writes, installs, redirects or tests that create artifacts. Return mutating validation and source writes to the main conversation. Direct edit tools remain unavailable. This is a task contract, not a shell sandbox.' : 'Preserve unrelated work. Validate changes; report unverified checks honestly.'}\nIf any tool is denied or unavailable, do not retry variants to bypass it. Continue with permitted tools and return the exact unresolved check. Prioritize targeted reads and concrete probes over whole-file surveys; stop with supported findings and explicit coverage gaps.` }],
+            parts: [{ type: 'text', text: `${forkContext ? forkTaskText(forkContext, args.task) : args.task}\n\nWorking directory: ${ctx.directory || directory}. Resolve assignment paths from this root; use glob to locate a missing path before retrying.\n${readOnly ? 'READ-ONLY: do not change source files. content_index status/search/rebuild and git_project inspect/preview are permitted retrieval maintenance; use them when useful. Native shell checks are available subject to inherited OpenCode permissions: use inspection commands only, never writes, installs, redirects or tests that create artifacts. Return mutating validation and source writes to the main conversation. Direct edit tools remain unavailable. This is a task contract, not a shell sandbox.' : 'Preserve unrelated work. Validate changes; report unverified checks honestly.'}\nIf any tool is denied or unavailable, do not retry variants to bypass it. Continue with permitted tools and return the exact unresolved check. Prioritize targeted reads and concrete probes over whole-file surveys; stop with supported findings and explicit coverage gaps.` }],
           } }, ctx.abort);
           acknowledged = true;
           attempt.dispatched_model = selected;
@@ -1158,7 +1158,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
       const rows = await call('session', 'messages', sessionArgs(input.sessionID, d));
       const message = rows.findLast(m => input.callID && m.parts?.some(p => p.callID === input.callID)) ??
         rows.findLast(m => m.info?.role === 'assistant');
-      const execution = await executionContext(toolkitRoot, d, session, message);
+      const execution = await executionContext(toolkitRoot, d, session, message, rows);
       if (execution?.goalID) {
         const goals = await readJson(path.join(toolkitRoot, '.state/webpage/goals.json'));
         const goal = goals?.records?.[execution.goalID];

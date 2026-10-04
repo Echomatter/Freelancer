@@ -320,7 +320,10 @@ test('schema20 retained captures migrate to blocked unknown work while their sea
   assert.equal(f.store.publishWarehouseDerivationJob(f.jobs()[0]).status, 'complete');
   const sourceRevision = f.raw(db => db.prepare('SELECT current_revision_sha256 FROM opencode_messages').get().current_revision_sha256);
   f.store.close();
-  f.raw(db => db.exec(`ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
+  f.raw(db => db.exec(`DROP TABLE model_data_facts; DROP TABLE model_data_records; DROP TABLE model_data_sources;
+    DROP TABLE model_data_snapshots; DROP TABLE model_data_secrets; DROP TABLE model_data_refresh_jobs;
+    DELETE FROM data_table_lifecycle WHERE owner='model-data';
+    ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
     ALTER TABLE chat_search_state DROP COLUMN indexed_text_sha256;
     DROP TABLE opencode_derivation_jobs;
     DROP TABLE opencode_refresh_needed;

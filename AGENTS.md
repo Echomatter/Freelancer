@@ -49,6 +49,11 @@ separate terminal product, hosted Freelancer service, or installer.
 - Preserve existing project data and unrelated working-tree changes. Inspect
   repository instructions and current state before editing; follow established
   boundaries across the browser UI, server, domain, and runtime.
+- Keep agent prompts focused on domain expertise, skills focused on distinct
+  task outcomes, and shared instructions focused on common behavior and runtime
+  contracts. Use `docs/skills-library.md` for the canonical skill map; move
+  detailed operation contracts into on-demand references instead of duplicating
+  them across prompts. Preserve saved custom-agent intent when editing it.
 - Use the browser/Chrome entry point for product behavior. Closing the browser
   does not stop the independent server or cancel its jobs.
 - Keep PowerShell scripts compatible with Windows PowerShell 5.1. Work from

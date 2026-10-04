@@ -449,28 +449,14 @@ test('knowledge memory snapshots, authored notes, and facts', { tag: ['@app'] },
     await expect(page.getByRole('button', { name: 'Read memory Fresh setup decision', exact: true })).toHaveCount(0);
 
     await page.getByRole('tab', { name: 'Facts', exact: true }).click();
-    await page.getByRole('button', { name: 'New fact', exact: true }).click();
-    const factEditor = page.getByRole('dialog', { name: 'New fact', exact: true });
-    await expect(factEditor.getByLabel('Claim origin', { exact: true })).toHaveValue('user-stated');
-    await expect(factEditor.getByLabel('Epistemic status', { exact: true })).toHaveValue('unverified');
-    await factEditor.getByLabel('Fact statement', { exact: true }).fill('Default configuration authority');
-    await factEditor.getByLabel('Fact value', { exact: true }).fill('Native OpenCode');
-    await factEditor.getByLabel('How this claim was established', { exact: true }).fill('Recorded user statement with captured conversation evidence.');
-    await factEditor.getByRole('button', { name: 'Save fact', exact: true }).click();
-    await expect(factEditor.getByRole('alert')).toContainText('Select at least one retained source revision');
+    await expect(page.getByRole('button', { name: 'New fact', exact: true })).toHaveCount(0);
     const evidenceLabel = `Important conversation · retained revision ${refreshed.revision}`;
-    await expect(factEditor.getByLabel('Retained source revision', { exact: true }).locator('option')).toContainText([evidenceLabel]);
-    await factEditor.getByLabel('Retained source revision', { exact: true }).selectOption({ label: evidenceLabel });
-    await factEditor.getByRole('button', { name: 'Add evidence', exact: true }).click();
-    await expect(factEditor.getByRole('alert')).toHaveCount(0);
-    await page.setViewportSize({ width: 390, height: 844 });
-    assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, 'Fact editor and retained source picker fit phone width');
-    assert.equal(await factEditor.locator('.ef-dialog-body').evaluate(element => element.scrollWidth <= element.clientWidth), true, 'Fact editor content does not overflow its dialog');
-    if (process.env.FREELANCER_QA_SHOTS) await page.screenshot({ path: path.join(process.env.FREELANCER_QA_SHOTS, 'knowledge-fact-editor-phone.png'), fullPage: true });
-    await factEditor.getByRole('button', { name: 'Add evidence', exact: true }).scrollIntoViewIfNeeded();
-    if (process.env.FREELANCER_QA_SHOTS) await page.screenshot({ path: path.join(process.env.FREELANCER_QA_SHOTS, 'knowledge-fact-evidence-phone.png'), fullPage: true });
-    await page.setViewportSize({ width: 1280, height: 900 });
-    await factEditor.getByRole('button', { name: 'Save fact', exact: true }).click();
+    f.app.localData.get().addClaim({ predicate: 'Default configuration authority', value: 'Native OpenCode',
+      origin: 'source-reported', epistemicState: 'unverified', method: 'Recorded user statement with captured conversation evidence.',
+      scope: { projectID: f.project.id }, evidence: [{ kind: 'memory-revision', memoryID, revision: refreshed.revision,
+        id: memoryID, relation: 'supports' }] });
+    await page.getByRole('tab', { name: 'Memories', exact: true }).click();
+    await page.getByRole('tab', { name: 'Facts', exact: true }).click();
     const authoredFact = page.getByLabel('Fact results').locator('.knowledge-claim').filter({ hasText: 'Default configuration authority' });
     await expect(authoredFact).toContainText('Native OpenCode');
     await expect(authoredFact).toContainText('unverified');

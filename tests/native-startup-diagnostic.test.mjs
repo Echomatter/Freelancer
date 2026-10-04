@@ -98,7 +98,7 @@ test('diagnostic control modes use exact native file URLs and fully disposable h
       assert.deepEqual(overlay.plugin, []);
       assert.deepEqual(overlay.instructions, []);
     } else {
-      assert.equal(overlay.plugin.length, 5);
+      assert.equal(overlay.plugin.length, 7);
       assert.ok(overlay.plugin.every(url => fileURLToPath(url).startsWith(baseConfig.backendRoot + path.sep)));
       assert.equal(overlay.instructions.length, 2);
     }

@@ -138,7 +138,7 @@ export function buildRequestGroups(messages = [], options = {}) {
     if (id && seen.has(id)) continue;
     if (id) seen.add(id);
     // Native compaction and auto-continue messages are runtime housekeeping,
-    // not new user requests. The recap remains available inside the work card.
+    // not new user requests. The recap remains available in the transcript.
     const housekeeping = m?.info?.role === "user" && (m.parts ?? []).length > 0 && (m.parts ?? []).every(p => p.type === "compaction" || p.synthetic === true);
     if (housekeeping) continue;
     const role = m?.info?.role ?? "assistant";

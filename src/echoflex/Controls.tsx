@@ -2,7 +2,7 @@
 // audio/module runtime; native HTML behavior and accessibility are preserved.
 import { X } from "lucide-react";
 import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from "react";
-import { cloneElement, createContext, isValidElement, useContext, useId, useState, type ReactElement } from "react";
+import { Children, Fragment, cloneElement, createContext, isValidElement, useContext, useEffect, useId, useState, type ReactElement } from "react";
 import type { LucideIcon } from "lucide-react";
 import { HelpHint, HelpScope } from "../HelpHint";
 import type { HelpTopic } from "../documentation-help";
@@ -45,22 +45,37 @@ export function Panel({ title, help, helpDetails, children, className = "", coll
     <summary>{title && <Heading id={headingID} className="panel-heading">{title}</Heading>}{summaryText && <small>{summaryText}</small>}</summary>{contents}
   </details>;
 }
-export function PageHeading({ title, actions, icon: Icon, help, description, compact }: {
-  title: string; actions?: ReactNode; icon?: LucideIcon; help?: HelpTopic; description?: string; compact?: boolean;
+function headingActions(actions: ReactNode): ReactNode[] {
+  return Children.toArray(actions).flatMap(action => isValidElement(action) && action.type === Fragment
+    ? headingActions((action.props as { children?: ReactNode }).children) : [action]);
+}
+export function PageHeading({ title, actions, icon: Icon, help, description, helpDetails }: {
+  title: string; actions?: ReactNode; icon?: LucideIcon; help?: HelpTopic; description?: string; helpDetails?: ReactNode; compact?: boolean;
 }) {
+  const [narrow, setNarrow] = useState(() => typeof window !== "undefined" && window.matchMedia("(max-width: 720px)").matches);
+  useEffect(() => {
+    const viewport = window.matchMedia("(max-width: 720px)");
+    const change = () => setNarrow(viewport.matches);
+    change(); viewport.addEventListener("change", change);
+    return () => viewport.removeEventListener("change", change);
+  }, []);
   const page = settingsPageForTitle(title);
   const detail = description ?? page?.description;
+  const helpTopic = help ?? (page || detail || helpDetails ? "settings-page" : undefined);
+  const items = headingActions(actions);
+  const close = items.filter(action => isValidElement(action) && action.type === PageCloseButton);
+  const primary = items.filter(action => !isValidElement(action) || action.type !== PageCloseButton);
+  const actionGroup = primary.length ? <div key="actions" className="page-title-actions">{primary}</div> : null;
+  const closeGroup = close.length ? <div key="close" className="page-title-close">{close}</div> : null;
   return <><header className="page-title" data-settings-page={page ? `${page.scope}/${page.id}` : undefined} data-settings-layout={page?.layout}>
-    <div className="page-title-leading">
+    <div key="title" className="page-title-leading">
       {Icon && <span className="page-title-icon"><Icon size={21} strokeWidth={1.8} aria-hidden="true" /></span>}
       <div className="page-title-main">
-        {page && !compact && <span className="settings-page-kind">{page.kind}</span>}
         <div className="page-title-name"><h1>{title}</h1></div>
-        {detail && !compact && <p className="settings-page-description">{detail}</p>}
       </div>
     </div>
-    {actions && <div className="page-title-actions">{actions}</div>}
-  </header>{help && <div className="page-help"><HelpHint topic={help} /></div>}</>;
+    {narrow ? [closeGroup, actionGroup] : [actionGroup, closeGroup]}
+  </header>{helpTopic && <div className="page-help"><HelpHint topic={helpTopic} label={help ? undefined : title} details={<>{detail && <p>{detail}</p>}{helpDetails}</>} /></div>}</>;
 }
 export function Field({ label, help, children }: { label: string; help?: HelpTopic; children: ReactNode }) {
   const labelID = useId();

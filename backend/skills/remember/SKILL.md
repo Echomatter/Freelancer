@@ -1,47 +1,59 @@
 ---
 name: remember
-description: Intentionally save or retrieve durable knowledge through Freelancer's shared native knowledge tool.
+description: Retrieve or intentionally retain durable notes, source-linked claims, graph knowledge and conversation snapshots through the shared knowledge tool.
 ---
 
 # Remember
 
-Consider the shared `knowledge` tool during project orientation, handoffs or meaningful
-Goal milestones for durable decisions, persistent constraints, verified lessons,
-rejected approaches and their reasons, or recurring environment facts. Retrieval
-helps answer what has been learned, not what is true in the repository now. Verify
-consequential remembered claims against current source and project state.
+`knowledge` is the tool. `remember` names both this optional skill and the
+operation that saves a note. Search domain `memories` contains notes/snapshots;
+`facts` contains structured claims. They share the warehouse with pins and
+graph knowledge. External Memory MCP is unnecessary and remains a separate,
+native-owned service.
 
-Use `query` with domain `memories` or `facts` to retrieve retained knowledge.
-Queries are global by default; an optional project filter narrows the search.
-Read the exact retained revision and its evidence before reusing a claim. Use
-`remember` and `revise` for intentional notes, or `claim` and `correct-claim` for
-source-linked claims. Keep origin, scope and unverified status explicit; a stored
-claim or pin does not establish verified truth.
+## Choose what to retain
 
-Store selectively when the knowledge will remain useful beyond this assignment;
-honor user/native restrictions. Keep entries concise and scoped. Never
-automatically mirror chat history, project files, private state, temporary worker
-state, transient todos, routine progress or every test result. Structured model
-outcomes remain authoritative; qualitative historical observations may supplement
-them without replacing statistics. If knowledge retrieval is unavailable,
-continue with repository evidence and normal handoffs. Report a failed save;
-do not claim the memory was retained.
+Use `operation: "remember"` by default for useful decisions, preferences,
+source locations, constraints, lessons and rejected approaches. Supply `title`
+and `body`, plus the real registered `projectID` for a project note. Use values
+from the task and current project:
 
-Every agent and model receives the same shared tools across projects. Native
-permissions and explicit user restrictions still control mutations. An optional
-connected Memory MCP service remains under OpenCode ownership; using Freelancer
-knowledge requires no separate Memory connection and does not import, disable or
-rewrite that service or its configuration.
+```javascript
+knowledge({operation: "remember", title: noteTitle, body: noteText,
+  projectID: registeredProjectID})
+```
 
-The graph is part of this same internal knowledge store. `entity` creates an
-entity; `entity-search` preserves exact name/alias lookup; `entity-read` reads a
-node by ID; `open-nodes` resolves exact names or IDs and returns a bounded
-one-hop neighborhood; and `search-nodes` searches entity names, types and
-current claim observations by substring. `read-graph` pages current entities,
-relations and observations independently (up to 100 rows per page); offsets
-follow the moving graph and are not a stable snapshot. Prefer targeted search
-or node reads when possible. Conversation pins also use this same internal
-store: Pin creates or finds the canonical conversation snapshot and pin record.
-No separate Memory setup is needed for graph access or pins.
+Use `claim` when structured predicate/value, origin, status, evidence and
+correction/graph semantics help. An ordinary note needs no claim, entity or
+judgment setup. Do not convert or duplicate notes automatically.
 
-This skill is optional guidance. It does not grant or gate access to knowledge or other tools.
+Every call requires `operation`; `query` also requires `domain`. Title/body
+alone is incomplete. Correct missing fields in the intended operation; a
+malformed note-save request does not establish unsupported notes or require
+a claim fallback.
+
+## Retrieve
+
+Use `query` with domain `memories` or `facts`. Queries default globally;
+`projectID`/`projectDirectory` narrows them. Continue `nextCursor` with unchanged
+query, filters, scope and limit. Read exact revisions/evidence before relying on
+consequential hits; retain source IDs, hashes, dates, capture limits and status.
+
+Partial, metadata-only, disputed or stale content stays explicit. Verify current
+behavior against source or native receipts. A pin retains content; it proves no
+truth or permission. Missing memory does not block repository work.
+
+## Retain deliberately
+
+Keep useful durable knowledge within user/native permissions, with scope,
+reason and actual sources. `revise` updates notes; `correct-claim` preserves
+correction history. Retain meaningful contradictions. Reuse successful receipt
+IDs and report failed saves honestly.
+
+Do not automatically mirror chats, files, secrets, private state, temporary
+worker state, todos or routine results. Structured model outcomes remain
+authoritative; qualitative memories do not replace them.
+
+Read [operation details](references/operations.md) for examples, graph, retention
+mutations, claims or judgments. `search-index` locates file/chat evidence;
+`bounded-judgment` guides optional evaluation. Skills grant no authority or tool gate.

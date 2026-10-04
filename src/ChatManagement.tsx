@@ -1,451 +1,254 @@
-import { HelpHint } from "./HelpHint";
-import { useEffect, useRef, useState } from "react";
-import {
-  Archive,
-  ArchiveRestore,
-  Download,
-  Pin,
-  LoaderCircle,
-  History as HistoryIcon,
-} from "lucide-react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import { Archive, ArchiveRestore, BookOpen, Download, LoaderCircle, MessageSquare, Pin } from "lucide-react";
 import { api } from "./api";
+import { HelpHint, HelpScope } from "./HelpHint";
 import { SessionActivity, useProjectActivity } from "./SessionActivity";
-import { Button, PageCloseButton, PageHeading } from "./echoflex/Controls";
-import { ConfirmDialog } from './echoflex/Dialog';
-import "./history.css";
+import { Button, Field } from "./echoflex/Controls";
+import { ConfirmDialog } from "./echoflex/Dialog";
 
-export async function saveConversationExport(value: {
-  filename: string;
-  content: string;
-  mime: string;
-}) {
-  const url = URL.createObjectURL(
-    new Blob([value.content], { type: value.mime }),
-  );
+export async function saveConversationExport(value: { filename: string; content: string; mime: string }) {
+  const url = URL.createObjectURL(new Blob([value.content], { type: value.mime }));
   const link = document.createElement("a");
-  link.href = url;
-  link.download = value.filename;
-  document.body.append(link);
-  link.click();
-  link.remove();
+  link.href = url; link.download = value.filename;
+  document.body.append(link); link.click(); link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 30000);
   return true;
 }
-export function ChatManagement({
-  data,
-  project,
-  initialSession,
-  activity,
-  onClose,
-  onOpen,
-  onChange,
-}: {
-  data: any;
-  project: string;
-  initialSession?: string;
-  activity?: any;
-  onClose: () => void;
-  onOpen: (project: string, session: string) => void;
-  onChange: () => Promise<void>;
+
+type Project = { id: string; name: string; organization?: { archivedAt?: number | null } };
+export type ConversationResult = {
+  project: string; projectName: string; session: string; title: string; excerpt?: string;
+  navigationSession?: string; navigationTitle?: string; evidence?: any; imported?: boolean;
+  cached?: boolean; updatedAt?: number; goal?: any;
+  organization?: { revision?: number; pinnedAt?: number | null; archived?: boolean;
+    nativeArchived?: boolean; projectArchived?: boolean; archiveScope?: string | null };
+};
+type UndoRow = ConversationResult & { previousArchived: boolean };
+const identity = (row: ConversationResult) => `${row.project}:${row.navigationSession ?? row.session}`;
+const target = (row: ConversationResult): ConversationResult => ({ ...row,
+  session: row.navigationSession ?? row.session, title: row.navigationTitle ?? row.title,
+  navigationSession: undefined, navigationTitle: undefined });
+const archived = (row: ConversationResult) => !!(row.organization?.archived || row.organization?.nativeArchived ||
+  row.organization?.projectArchived || row.organization?.archiveScope === "freelancer");
+
+// Native browsing and retained search share one result collection and the
+// existing history API. There is no independent management page or route.
+export function ConversationResults({ projects, project, results, searching, loading = false, pages,
+  pinnedOnly = false, currentProject, activity, initialConversation, revision, selectionScope,
+  onOpen, onReadEvidence, onChange }: {
+  projects: Project[]; project?: string; results: ConversationResult[]; searching: boolean;
+  loading?: boolean; pages?: ReactNode; pinnedOnly?: boolean; currentProject?: string;
+  activity?: Record<string, any>; initialConversation?: { project: string; session: string };
+  revision: number; selectionScope: string;
+  onOpen: (project: string, session: string) => Promise<void>;
+  onReadEvidence: (row: ConversationResult) => Promise<void>; onChange: () => Promise<void>;
 }) {
-  const [selectedProject, setProject] = useState(project);
-  const otherActivity = useProjectActivity(
-    selectedProject,
-    selectedProject !== project,
-  );
-  const sessionActivity =
-    selectedProject === project ? activity : otherActivity;
-  const [scope, setScope] = useState(initialSession ? "all" : "active"),
-    [limit, setLimit] = useState(1000);
-  const [result, setResult] = useState<any>(null),
-    [error, setError] = useState(""),
-    [loading, setLoading] = useState(true);
-  const [selected, setSelected] = useState(
-    new Set(initialSession ? [initialSession] : []),
-  );
-  const [confirmation, setConfirmation] = useState<boolean | null>(null),
-    [pending, setPending] = useState(false);
-  const [pinning, setPinning] = useState("");
-  const [format, setFormat] = useState("markdown"),
-    [includeWorkers, setWorkers] = useState(true);
-  const [notice, setNotice] = useState(""),
-    [undo, setUndo] = useState<any[]>([]);
-  const version = useRef(0),
-    alive = useRef(true);
-  const reload = async () => {
-    if (!selectedProject) { setResult(null); setLoading(false); return; }
-    const current = ++version.current;
-    setLoading(true);
-    try {
-      const next = await api(
-        "history?" +
-          new URLSearchParams({
-            project: selectedProject,
-            scope,
-            limit: String(limit),
-          }),
-      );
-      if (alive.current && current === version.current) {
-        setResult(next);
-        setError("");
+  const [scope, setScope] = useState("all"), [onlyPins, setOnlyPins] = useState(false);
+  const [limit, setLimit] = useState(100), [nativeRows, setNativeRows] = useState<ConversationResult[]>([]);
+  const [nativeLoading, setNativeLoading] = useState(false), [nativeMore, setNativeMore] = useState(false);
+  const [nativeCoverage, setNativeCoverage] = useState<string[]>([]), [nativeError, setNativeError] = useState("");
+  const [nativeArchive, setNativeArchive] = useState<boolean | null>(null), [epoch, setEpoch] = useState(0);
+  const [selected, setSelected] = useState(new Map<string, ConversationResult>());
+  const [pending, setPending] = useState(""), [error, setError] = useState(""), [notice, setNotice] = useState("");
+  const [undo, setUndo] = useState<UndoRow[]>([]);
+  const [confirmation, setConfirmation] = useState<{ archived: boolean; items: ConversationResult[] } | null>(null);
+  const [format, setFormat] = useState("markdown"), [includeWorkers, setIncludeWorkers] = useState(true);
+  const activeRead = useRef(0), mutation = useRef(false), alive = useRef(true);
+  const initialSelection = useRef("");
+  const otherActivity = useProjectActivity(project ?? "", !!project && project !== currentProject);
+  const effectiveActivity = project === currentProject ? activity : otherActivity;
+  const projectIDs = projects.filter(item => !project || item.id === project).map(item => item.id).join("\n");
+
+  useEffect(() => { alive.current = true; return () => { alive.current = false; activeRead.current++; }; }, []);
+  useEffect(() => { setSelected(new Map()); setConfirmation(null); setLimit(100); }, [project, searching, pinnedOnly]);
+  useEffect(() => { setSelected(new Map()); setConfirmation(null); }, [selectionScope]);
+  useEffect(() => {
+    if (searching) return;
+    const controller = new AbortController(), generation = ++activeRead.current;
+    const targets = projects.filter(item => !project || item.id === project);
+    setNativeLoading(true); setNativeError(""); setNativeRows([]); setNativeMore(false);
+    const rows: ConversationResult[] = [], failures: string[] = [], coverage: string[] = [];
+    let next = 0, more = false, archiveSupport: boolean | null = null;
+    const read = async () => {
+      while (!controller.signal.aborted && next < targets.length) {
+        const item = targets[next++];
+        try {
+          const value = await api(`history?${new URLSearchParams({ project: item.id, scope: "all", limit: String(limit) })}`,
+            undefined, undefined, controller.signal);
+          if (!Array.isArray(value.sessions)) throw Error("Conversation history could not be read.");
+          more ||= value.hasMore === true;
+          if (typeof value.archive?.native === "boolean") archiveSupport = archiveSupport === false ? false : value.archive.native;
+          if (typeof value.coverage === "string" && !coverage.includes(value.coverage)) coverage.push(value.coverage);
+          for (const row of value.sessions) rows.push({ ...row, project: row.project ?? item.id,
+            projectName: item.name, session: row.id, updatedAt: row.time?.updated ?? row.updatedAt });
+        } catch (caught) { if (!controller.signal.aborted) failures.push(`${item.name}: ${(caught as Error).message}`); }
       }
-    } catch (e) {
-      if (alive.current && current === version.current)
-        setError((e as Error).message);
-    } finally {
-      if (alive.current && current === version.current) setLoading(false);
-    }
-  };
-  useEffect(() => {
-    alive.current = true;
-    return () => {
-      alive.current = false;
-      version.current++;
     };
-  }, []);
+    void Promise.all(Array.from({ length: Math.min(4, targets.length) }, read)).then(() => {
+      if (controller.signal.aborted || generation !== activeRead.current) return;
+      rows.sort((a, b) => (b.updatedAt ?? 0) - (a.updatedAt ?? 0) || a.title.localeCompare(b.title));
+      setNativeRows(rows); setNativeMore(more); setNativeCoverage(coverage); setNativeArchive(archiveSupport);
+      setNativeError(failures.join("\n")); setNativeLoading(false);
+    });
+    return () => { controller.abort(); activeRead.current++; };
+  }, [projectIDs, project, searching, limit, epoch, revision]);
+
+  const sourceRows = searching ? results : nativeRows;
+  const rows = sourceRows.filter(row => (scope === "all" || (scope === "archived") === archived(row)) &&
+    (!(pinnedOnly || onlyPins) || !!row.organization?.pinnedAt));
+  const targets = [...new Map(rows.map(row => [identity(row), target(row)])).values()];
+  const busy = !!pending, reading = searching ? loading : nativeLoading;
+  const selectedRows = [...selected.values()].map(row => target(sourceRows.find(item => identity(item) === identity(row)) ?? row));
+  const projectArchived = (row: ConversationResult) => !!row.organization?.projectArchived ||
+    !!projects.find(item => item.id === row.project)?.organization?.archivedAt;
+  const archiveBlocked = (row: ConversationResult) => projectArchived(row) || !!row.goal;
+  const evidenceAvailable = (row: ConversationResult) => row.evidence?.kind === "opencode-snapshot" &&
+    !!row.evidence?.sourceSystemID && !!row.evidence?.snapshotRevisionSha256;
+
+  // A reload can remove an unpinned row or change the loaded native window.
+  // Keep native Load more selections only while their conversations stay visible.
   useEffect(() => {
-    void reload();
-    return () => {
-      version.current++;
-    };
-  }, [selectedProject, scope, limit]);
-  const rows = result?.sessions ?? [];
-  const selectedRow = rows.find((row) => selected.has(row.id));
-  const selectedGoal = rows.some((row) => row.goal && selected.has(row.id));
-  const actionProject = selectedRow?.project ?? selectedProject;
-  const projectArchived = !!data.settings.projects.find(
-    (p) => p.id === actionProject,
-  )?.organization?.archivedAt;
-  async function archive(
-    value: boolean,
-    items = rows.filter((s) => selected.has(s.id)),
-  ) {
-    setPending(true);
-    setError("");
-    const reversed: any[] = [],
-      failures: string[] = [];
-    try {
+    if (reading) return;
+    const visible = new Set(rows.map(identity));
+    setSelected(current => {
+      const next = new Map([...current].filter(([key]) => visible.has(key)));
+      return next.size === current.size ? current : next;
+    });
+  }, [sourceRows, reading, scope, pinnedOnly, onlyPins]);
+
+  useEffect(() => {
+    if (!initialConversation?.session) return;
+    const token = `${initialConversation.project}:${initialConversation.session}`;
+    if (initialSelection.current === token) return;
+    const row = sourceRows.find(item => item.project === initialConversation.project &&
+      (item.navigationSession ?? item.session) === initialConversation.session);
+    if (row) { initialSelection.current = token; setSelected(new Map([[identity(row), target(row)]])); }
+  }, [initialConversation, sourceRows]);
+
+  async function refresh() { setEpoch(value => value + 1); await onChange(); }
+  async function perform(key: string, action: () => Promise<void>) {
+    if (mutation.current) return;
+    mutation.current = true; setPending(key); setError(""); setNotice("");
+    try { await action(); }
+    catch (caught) { if (alive.current) setError((caught as Error).message); }
+    finally { mutation.current = false; if (alive.current) setPending(""); }
+  }
+  async function pin(row: ConversationResult) {
+    let saved = false;
+    await perform(`pin:${identity(row)}`, async () => {
+      try {
+        await api("history/pin", { project: row.project, session: row.session,
+          pinned: !row.organization?.pinnedAt, revision: row.organization?.revision ?? 0 }, "PUT");
+        saved = true; setNotice(`${row.organization?.pinnedAt ? "Unpinned" : "Pinned"} ${row.title}.`);
+        await refresh();
+      } catch (caught) { throw Error(saved ? `Pin changed, but refresh failed: ${(caught as Error).message}` : (caught as Error).message); }
+    });
+  }
+  async function archive(value: boolean, items: ConversationResult[]) {
+    await perform("archive", async () => {
+      const reversed: UndoRow[] = [], failures: string[] = [];
       for (const row of items) {
         try {
-          const saved = await api(
-            "history/archive",
-            {
-              project: actionProject,
-              session: row.id,
-              archived: value,
-              revision: row.organization?.revision ?? 0,
-            },
-            "PUT",
-          );
-          reversed.push({
-            ...row,
-            organization: saved.annotation,
-            previous: !!row.organization?.archived,
-          });
-        } catch (e) {
-          failures.push(`${row.title}: ${(e as Error).message}`);
-        }
+          const saved = await api("history/archive", { project: row.project, session: row.session,
+            archived: value, revision: row.organization?.revision ?? 0 }, "PUT");
+          reversed.push({ ...row, organization: saved.annotation, previousArchived: archived(row) });
+        } catch (caught) { failures.push(`${row.title}: ${(caught as Error).message}`); }
       }
-      setUndo(reversed);
-      setNotice(
-        `${reversed.length} conversation${reversed.length === 1 ? "" : "s"} ${value ? "put away" : "restored"}.`,
-      );
-      setConfirmation(null);
-      setSelected(new Set());
-      await reload();
-      await onChange();
+      setUndo(reversed); setConfirmation(null); setSelected(new Map());
+      setNotice(`${reversed.length} conversation${reversed.length === 1 ? "" : "s"} ${value ? "archived" : "restored"}.`);
+      try { await refresh(); } catch (caught) { failures.push(`Changes saved, but refresh failed: ${(caught as Error).message}`); }
       if (failures.length) setError(failures.join("\n"));
-    } catch (e) {
-      setError(`History changed, but refresh failed: ${(e as Error).message}`);
-    } finally {
-      setPending(false);
-    }
+    });
   }
   async function undoArchive() {
-    setPending(true);
-    setError("");
-    try {
-      const failures: string[] = [];
-      for (const row of undo)
-        try {
-          await api(
-            "history/archive",
-            {
-              project: row.project ?? selectedProject,
-              session: row.id,
-              archived: row.previous,
-              revision: row.organization.revision,
-            },
-            "PUT",
-          );
-        } catch (e) {
-          failures.push(`${row.title}: ${(e as Error).message}`);
-        }
-      setUndo([]);
-      setNotice("Undo finished.");
-      await reload();
-      await onChange();
+    await perform("undo", async () => {
+      const failures: string[] = [], remaining: UndoRow[] = [];
+      for (const row of undo) try {
+        await api("history/archive", { project: row.project, session: row.session,
+          archived: row.previousArchived, revision: row.organization?.revision ?? 0 }, "PUT");
+      } catch (caught) { remaining.push(row); failures.push(`${row.title}: ${(caught as Error).message}`); }
+      setUndo(remaining); setNotice(remaining.length ? "Some changes could not be undone." : "Archive changes undone.");
+      try { await refresh(); } catch (caught) { failures.push(`Undo saved, but refresh failed: ${(caught as Error).message}`); }
       if (failures.length) setError(failures.join("\n"));
-    } catch (e) {
-      setError(`Undo finished, but refresh failed: ${(e as Error).message}`);
-    } finally {
-      setPending(false);
-    }
+    });
   }
-  async function pin(row) {
-    const pinned = !row.organization?.pinnedAt;
-    const previous = row.organization;
-    const targetProject = row.project ?? selectedProject;
-    setPending(true);
-    setPinning(row.id);
-    setError("");
-    setResult((current) => current ? ({ ...current, sessions: current.sessions.map((item) => item.id === row.id ? { ...item, organization: { ...item.organization, pinnedAt: pinned ? Date.now() : null } } : item) }) : current);
-    let saved = false;
-    try {
-      const annotation = await api(
-        "history/pin",
-        {
-          project: targetProject,
-          session: row.id,
-          pinned,
-          revision: row.organization?.revision ?? 0,
-        },
-        "PUT",
-      );
-      saved = true;
-      setResult((current) => current ? ({ ...current, sessions: current.sessions.map((item) => item.id === row.id ? { ...item, organization: { ...item.organization, ...annotation } } : item) }) : current);
-      await Promise.all([reload(), onChange()]);
-    } catch (e) {
-      if (!saved) {
-        setResult((current) => current ? ({ ...current, sessions: current.sessions.map((item) => item.id === row.id ? { ...item, organization: previous } : item) }) : current);
+  async function exportRows(items: ConversationResult[]) {
+    await perform("export", async () => {
+      const batches = new Map<string, string[]>();
+      for (const row of items) batches.set(row.project, [...(batches.get(row.project) ?? []), row.session]);
+      let files = 0;
+      for (const [projectID, sessions] of batches) {
+        for (let offset = 0; offset < sessions.length; offset += 20) try {
+          const exported = await api("history/export", { project: projectID, sessions: sessions.slice(offset, offset + 20), format, includeWorkers });
+          await saveConversationExport(exported); files++;
+          setNotice(`${files} conversation export${files === 1 ? "" : "s"} sent to your browser’s downloads…`);
+        } catch (caught) { throw Error(`${files ? `${files} export${files === 1 ? "" : "s"} sent to downloads; ` : ""}${(caught as Error).message}`); }
       }
-      setError(saved ? `Pin changed, but refresh failed: ${(e as Error).message}` : (e as Error).message);
-    } finally {
-      setPinning("");
-      setPending(false);
-    }
+      setNotice(`${files} conversation export${files === 1 ? "" : "s"} sent to your browser’s downloads.`);
+    });
   }
-  async function exportSelected() {
-    setPending(true);
-    setError("");
-    try {
-      const saved = await api("history/export", {
-        project: actionProject,
-        sessions: [...selected],
-        format,
-        includeWorkers,
-      });
-      const accepted = await saveConversationExport(saved);
-      setNotice(
-        accepted
-          ? "Conversation export sent to your browser’s downloads."
-          : "Export cancelled.",
-      );
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setPending(false);
-    }
-  }
-  const reset = () => {
-    setSelected(new Set());
-    setUndo([]);
-    setConfirmation(null);
-    setNotice("");
-    setResult(null);
-  };
-  const busy = loading;
-  return (
-    <div
-      className="page history-page"
-    >
-      <PageHeading title="Manage chats" icon={HistoryIcon} actions={<PageCloseButton label="Back to search" disabled={pending} onClick={onClose} />} />
-      <section className="chat-search-panel history-project-filter" aria-label="Conversation history controls">
-        <label>Project<select aria-label="History project" value={selectedProject} disabled={pending} onChange={(e) => {
-          reset(); setProject(e.target.value); setLimit(1000);
-        }}>
-          {data.settings.projects.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
-        </select></label>
-        <HelpHint topic="history-search" />
-      </section>
-      <div className="history-tabs" role="group" aria-label="History filter">
-        {["active", "archived", "all"].map((value) => (
-          <Button
-            key={value}
-            disabled={pending}
-            aria-pressed={scope === value}
-            onClick={() => {
-              reset();
-              setScope(value);
-            }}
-          >
-            {value[0].toUpperCase() + value.slice(1)}
-          </Button>
-        ))}
-      </div>
-      {notice && (
-        <p role="status">
-          {notice}{" "}
-          {!!undo.length && (
-            <Button disabled={pending} onClick={() => void undoArchive()}>
-              Undo
-            </Button>
-          )}
-        </p>
-      )}
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-        </p>
-      )}
-      <section
-        className="history-results"
-        aria-label="Conversations"
-        aria-busy={busy}
-      >
-        {busy && (
-          <p role="status">
-            <LoaderCircle size={16} className="spin" /> Loading history…
-          </p>
-        )}
-        {!busy && !rows.length && <p>No conversations in this view.</p>}
-        {!busy && rows.map((row) => (
-          <div className="history-row" key={`${row.project ?? selectedProject}:${row.id}`}>
-            <input
-              type="checkbox"
-              aria-label={`Select ${row.title}`}
-              disabled={pending || busy}
-              checked={selected.has(row.id)}
-              onChange={(e) =>
-                setSelected((old) => {
-                  const next = new Set(old);
-                  if (e.target.checked) {
-                    if (selectedRow && selectedRow.project !== row.project) next.clear();
-                    next.add(row.id);
-                  } else next.delete(row.id);
-                  return next;
-                })
-              }
-            />
-            <button
-              className="history-open"
-              disabled={pending}
-              onClick={() => onOpen(row.project ?? selectedProject, row.id)}
-            >
-              <strong>
-                {!row.imported && <SessionActivity activity={sessionActivity?.[row.id]} goal={row.goal} />}
-                {row.title}
-              </strong>
-              <small>
-                {row.imported ? 'Imported from ChatGPT / Codex · ' : ''}
-                {row.organization?.archiveScope === "freelancer"
-                  ? "Hidden in Freelancer · "
-                  : row.organization?.nativeArchived
-                    ? "Archived in OpenCode · "
-                    : row.organization?.projectArchived
-                      ? "Archived project · "
-                      : ""}
-                {row.cached ? "Previously seen · " : ""}
-                {(row.time?.updated || row.updatedAt)
-                  ? new Date(row.time?.updated || row.updatedAt).toLocaleDateString()
-                  : "Date unavailable"}
-              </small>
-            </button>
-            <Button
-              disabled={pending || busy}
-              aria-label={`${row.organization?.pinnedAt ? "Unpin" : "Pin"} ${row.title}`}
-              aria-pressed={!!row.organization?.pinnedAt}
-              onClick={() => void pin(row)}
-            >
-              {pinning === row.id ? <LoaderCircle size={16} className="spin" /> : <Pin size={16} />}
-            </Button>
-          </div>
-        ))}
-      </section>
-      {result?.hasMore && (
-        <Button
-          disabled={pending || loading}
-          onClick={() => setLimit(Math.min(10000, limit * 2))}
-        >
-          Load more history
-        </Button>
-      )}
-      {projectArchived && (
-        <p>
-          Restore this project in Application settings → Content &amp; Storage before changing
-          its conversation archives.
-        </p>
-      )}
-      {selectedGoal && <p>Goal chats can be exported here. Archive or restore them in Project settings → Goals.</p>}
-      {confirmation !== null ? (
-        <ConfirmDialog ariaLabel="Confirm archive change"
-          title={confirmation ? 'Put selected conversations away?' : 'Restore selected conversations?'}
-          onCancel={() => setConfirmation(null)} onConfirm={() => void archive(confirmation)}
-          busy={pending} confirmLabel={pending ? 'Applying…' : 'Confirm'} error={error}>
-          <p>
-            {result?.archive.native
-              ? "This uses OpenCode’s archive. Related worker history stays linked."
-              : "Hidden in Freelancer only. This engine does not expose a verified archive/restore contract. Other OpenCode clients are unchanged."}
-          </p>
-          <p>
-            No files, messages, drafts, Git history or usage records are
-            deleted. Running or queued work must be resolved first.
-          </p>
-        </ConfirmDialog>
-      ) : (
-        <footer>
-          <div className="history-actions">
-            <span>{selected.size} selected</span>
-            <Button
-              disabled={!selected.size || pending || busy || projectArchived || selectedGoal}
-              onClick={() => setConfirmation(true)}
-            >
-              <Archive size={16} />
-              Archive
-            </Button>
-            <Button
-              disabled={!selected.size || pending || busy || projectArchived || selectedGoal}
-              onClick={() => setConfirmation(false)}
-            >
-              <ArchiveRestore size={16} />
-              Restore
-            </Button>
-          </div>
-          <div className="history-export">
-            <label>
-              Export format
-              <select
-                aria-label="Export format"
-                value={format}
-                disabled={pending}
-                onChange={(e) => setFormat(e.target.value)}
-              >
-                <option value="markdown">Readable conversation (.md)</option>
-                <option value="json">Conversation data (.json)</option>
-              </select>
-            </label>
-            <label className="history-workers">
-              <input
-                type="checkbox"
-                checked={includeWorkers}
-                disabled={pending}
-                onChange={(e) => setWorkers(e.target.checked)}
-              />{" "}
-              Include workers
-            </label>
-            <Button
-              disabled={
-                !selected.size || selected.size > 20 || pending || busy
-              }
-              onClick={() => void exportSelected()}
-            >
-              <Download size={16} />
-              Export selected
-            </Button><HelpHint topic="history-export" />
-          </div>
 
-        </footer>
-      )}
-    </div>
-  );
+  return <section className="content-search-group conversation-search-group" aria-label="Conversation results" aria-busy={reading}>
+    <HelpScope topic="history-search" details={<>{!searching && nativeCoverage.map(value => <p key={value}>{value}</p>)}
+      <p>Archive and pin filters apply to loaded conversations or the current retained-search page. Load more or continue search pages for older matches. Export all results exports the displayed conversations, deduplicated to their parent. Each download contains up to 20 parents from one project. Older pages are not included until loaded. Goal chats retain their archive controls in Project settings → Goals. Native permission and delivery safeguards remain authoritative.</p></>}>
+      <h2><MessageSquare size={17} />{pinnedOnly ? "Pinned conversations" : "Conversations"}<span>{rows.length}</span></h2>
+      <div className="conversation-search-controls">
+        <Field label="Conversation status"><select value={scope} disabled={busy} onChange={event => { setScope(event.target.value); setSelected(new Map()); }}>
+          <option value="all">Any status</option><option value="active">Active</option><option value="archived">Archived</option>
+        </select></Field>
+        {!pinnedOnly && <label className="content-search-phrase"><input type="checkbox" checked={onlyPins} disabled={busy}
+          onChange={event => { setOnlyPins(event.target.checked); setSelected(new Map()); }} />Pinned conversations only</label>}
+        <Button disabled={busy || reading || !targets.length} onClick={() => void exportRows(targets)}><Download size={16} />Export all results</Button>
+      </div>
+      {(notice || !!undo.length) && <div className="conversation-search-notice" role="status">{notice}{!!undo.length && <Button disabled={busy} aria-label="Undo last conversation archive change" onClick={() => void undoArchive()}>Undo</Button>}</div>}
+      {error && <p className="notice error conversation-search-error" role="alert">{error}</p>}
+      {nativeError && !searching && <div className="notice error content-search-error" role="alert"><span>{nativeError}</span><Button disabled={busy || reading} onClick={() => setEpoch(value => value + 1)}>Retry conversations</Button></div>}
+      {reading && <span role="status"><LoaderCircle size={16} className="spin" />Loading conversations…</span>}
+      {!reading && !rows.length && (!nativeError || searching) && <span className="conversation-search-empty">{pinnedOnly || onlyPins ? "No pinned conversations in this view." : "No conversations in this view."}</span>}
+      <div className="indexed-search-results">{rows.map(hit => {
+        const row = target(hit), key = identity(hit), parent = !!hit.navigationSession && hit.navigationSession !== hit.session;
+        const activityRow = row.project === currentProject ? activity?.[row.session] : row.project === project ? effectiveActivity?.[row.session] : undefined;
+        const archiveReason = row.goal ? "Manage this goal’s archive in Project settings → Goals." : projectArchived(row) ? "Restore the project before changing its conversation archives." : undefined;
+        return <div className="content-search-conversation" key={`${hit.project}:${hit.session}`}>
+          <input type="checkbox" className="conversation-search-select" aria-label={`Select ${row.title}`} checked={selected.has(key)} disabled={busy || reading}
+            onChange={event => setSelected(current => { const value = new Map(current); if (event.target.checked) value.set(key, row); else value.delete(key); return value; })} />
+          <button type="button" className="indexed-search-result" aria-label={`Open conversation ${hit.title} in ${hit.projectName}`} disabled={busy}
+            onClick={() => void perform(`open:${key}`, () => onOpen(row.project, row.session))}>
+            <span className="indexed-result-heading"><strong>{!hit.imported && <SessionActivity activity={activityRow} goal={row.goal} />}{hit.title}</strong><small>{row.organization?.pinnedAt ? "Pinned" : "Conversation"}</small></span>
+            <span className="indexed-result-path"><span>{hit.projectName}</span><span>{hit.imported ? "Retained import · read only" : row.organization?.projectArchived ? "Archived project" : row.organization?.archiveScope === "freelancer" ? "Hidden in Freelancer" : row.organization?.nativeArchived ? "Archived in OpenCode" : "OpenCode conversation"}</span>
+              {hit.cached && <span>Previously seen</span>}{Number.isFinite(hit.updatedAt) && <time dateTime={new Date(hit.updatedAt!).toISOString()}>{new Date(hit.updatedAt!).toLocaleDateString()}</time>}</span>
+            {hit.excerpt && <span className="indexed-result-excerpt">{hit.excerpt}</span>}
+            <span className="indexed-result-open"><MessageSquare size={15} />{parent ? `Open parent: ${row.title}` : "Open conversation"}</span>
+          </button>
+          <div className="conversation-result-actions">
+            <Button aria-label={`${row.organization?.pinnedAt ? "Unpin" : "Pin"}${parent ? " parent conversation" : ""} ${row.title}`} aria-pressed={!!row.organization?.pinnedAt} disabled={busy || reading} onClick={() => void pin(row)}><Pin size={16} />{row.organization?.pinnedAt ? "Unpin" : "Pin"}{parent ? " parent" : ""}</Button>
+            <Button disabled={busy || reading || archiveBlocked(row)} title={archiveReason} aria-label={`${archived(row) ? "Restore" : "Archive"} conversation ${row.title}`}
+              onClick={() => setConfirmation({ archived: !archived(row), items: [row] })}>{archived(row) ? <ArchiveRestore size={16} /> : <Archive size={16} />}{archived(row) ? "Restore" : "Archive"}</Button>
+            <Button aria-label={`Export conversation ${row.title}`} disabled={busy || reading} onClick={() => void exportRows([row])}><Download size={16} />Export</Button>
+            {evidenceAvailable(hit) && <Button disabled={busy} aria-label={`Read retained evidence ${hit.title}`} onClick={() => void perform("evidence", () => onReadEvidence(hit))}><BookOpen size={16} />Read evidence</Button>}
+          </div>
+        </div>;
+      })}</div>
+      {!searching && nativeMore && <Button disabled={busy || reading} onClick={() => setLimit(value => Math.min(10000, value * 2))}>Load more conversations</Button>}
+      {searching && pages}
+      <div className="conversation-export-controls">
+        <Field label="Export format"><select aria-label="Export format" value={format} disabled={busy} onChange={event => setFormat(event.target.value)}>
+          <option value="markdown">Readable conversation (.md)</option><option value="json">Conversation data (.json)</option>
+        </select></Field>
+        <label className="content-search-phrase"><input type="checkbox" checked={includeWorkers} disabled={busy} onChange={event => setIncludeWorkers(event.target.checked)} />Include workers</label>
+        {!!selectedRows.length && <div className="knowledge-actions" role="group" aria-label="Selected conversation actions"><span>{selectedRows.length} selected</span>
+          <Button disabled={busy || reading || selectedRows.some(archiveBlocked)} onClick={() => setConfirmation({ archived: true, items: selectedRows })}><Archive size={16} />Archive selected</Button>
+          <Button disabled={busy || reading || selectedRows.some(archiveBlocked)} onClick={() => setConfirmation({ archived: false, items: selectedRows })}><ArchiveRestore size={16} />Restore selected</Button>
+          <Button disabled={busy || reading} onClick={() => void exportRows(selectedRows)}><Download size={16} />Export selected</Button>
+          <Button disabled={busy} onClick={() => setSelected(new Map())}>Clear selection</Button>
+        </div>}
+        <HelpHint topic="history-export" />
+      </div>
+      {confirmation && <ConfirmDialog ariaLabel="Confirm archive change" title={confirmation.archived ? "Archive selected conversations?" : "Restore selected conversations?"}
+        onCancel={() => setConfirmation(null)} onConfirm={() => void archive(confirmation.archived, confirmation.items)} busy={busy} confirmLabel={busy ? "Applying…" : "Confirm"} error={error}>
+        <p>{nativeArchive === true ? "This uses OpenCode’s archive. Related worker history stays linked." : "Freelancer uses the supported native archive when available, or hides the conversation in Freelancer. Retained imports are hidden locally."}</p>
+        <p>No messages, files, drafts, Git history or usage records are deleted. Running, queued or uncertain work must be resolved first.</p>
+      </ConfirmDialog>}
+    </HelpScope>
+  </section>;
 }

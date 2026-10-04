@@ -14,12 +14,12 @@ import { checkedCatalog } from '../backend/tools/runtime/agent-catalog.mjs';
 
 const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 
-test('actual restored rating job stays readable without native calls and resumes only after its matching recovery review',async t=>{
+test('restored legacy research stays readable while blocked and retires after its matching recovery review without replay',async t=>{
   const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-restored-ratings-http-'));
   let runtime,app,store,sourceStore;
   t.after(async()=>{
     await runtime?.close();
-    if(!runtime){app?.modelRatings?.close();await app?.history?.close();app?.localData?.close();}
+    if(!runtime){await app?.modelData?.close();await app?.modelRatings?.close();await app?.history?.close();app?.localData?.close();}
     sourceStore?.close();await store?.flush();await rm(root,{recursive:true,force:true,maxRetries:8,retryDelay:100});
   });
   const backendRoot=path.join(root,'backend'),directory=path.join(root,'project'),source=path.join(root,'source'),bundle=path.join(root,'backup'),restored=path.join(root,'restored');
@@ -34,7 +34,9 @@ test('actual restored rating job stays readable without native calls and resumes
   sourceStore.close();await backupLocalData(source,bundle,{quiesced:true});
   const result=await restoreLocalData(bundle,restored,{quiesced:true}),calls=[];
   const host={async request(route,options){calls.push({route,options});
-    if(route==='/session/status')return {ses_restored_rating:{type:'busy'}};
+    if(route==='/session/status')return {ses_restored_rating:{type:'idle'}};
+    if(route==='/session/ses_restored_rating')return {id:'ses_restored_rating',directory};
+    if(route.endsWith('/abort'))return true;
     if(route==='/permission'||route==='/question'||route.endsWith('/message'))return [];
     if(route.endsWith('/prompt_async'))return {};
     throw Error(route);
@@ -48,7 +50,7 @@ test('actual restored rating job stays readable without native calls and resumes
   };
   const original=JSON.stringify(app.localData.get().currentRatingJob());
   assert.equal((await api('models/ratings')).body.job.id,'restored-rating-job');
-  assert.equal((await api(`models/ratings?project=${project.id}`,{model:'opencode/fixture'})).status,409);
+  assert.equal((await api(`models/ratings?project=${project.id}`,{model:'opencode/fixture'})).status,410);
   assert.equal((await api('data/recovery',{confirm:true,restoreID:'explicit-restore:stale'})).status,409);
   await delay(100);assert.deepEqual(calls,[]);assert.equal(JSON.stringify(app.localData.get().currentRatingJob()),original);
   assert.equal(app.automaticWorkAllowed(),false);
@@ -56,10 +58,12 @@ test('actual restored rating job stays readable without native calls and resumes
   assert.equal(app.automaticWorkAllowed(),true);
   assert.equal((await api('data/recovery',{confirm:true,restoreID:result.restore.id})).body.reviewed,true);
   const deadline=Date.now()+5000;
-  while(!calls.some(call=>call.route.endsWith('/prompt_async'))&&Date.now()<deadline)await delay(20);
-  assert.equal(calls.filter(call=>call.route.endsWith('/prompt_async')).length,1);
+  while(app.modelRatings.status().status!=='retired'&&Date.now()<deadline)await delay(20);
+  assert.equal(app.modelRatings.status().status,'retired');
+  assert.equal(calls.filter(call=>call.route.endsWith('/abort')).length,1);
+  assert.equal(calls.filter(call=>call.route.endsWith('/prompt_async')).length,0);
   await api('models/ratings');await delay(100);
-  assert.equal(calls.filter(call=>call.route.endsWith('/prompt_async')).length,1,'Repeated review and status reads release only one retained batch.');
+  assert.equal(calls.filter(call=>call.route.endsWith('/prompt_async')).length,0,'Repeated review and status reads never replay legacy research.');
 });
 
 test('restore blocks automatic delivery until matching review, releases once, and closes timers',async t=>{

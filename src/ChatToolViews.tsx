@@ -8,12 +8,6 @@ import {
 import { useState } from "react";
 import { buildRequestGroups } from "../domain/chat-view.mjs";
 import { AgentTurnView } from "./AgentTurnView";
-import { resolveTodoLayout } from "../domain/appearance.mjs";
-import {
-  summarizeRequestWork,
-  requestWorkLabel,
-} from "../domain/chat-view.mjs";
-import { hasUnfinishedTodos, todoStatusLabel } from "../domain/todos.mjs";
 import { ChatToolbar } from "./ChatToolbar";
 import { GroupBody } from "./ChatMessages";
 import { GoalOverview } from "./GoalOverview";
@@ -27,7 +21,6 @@ export function ChatToolViews({
   toolSelection,
   toolSection,
   turnEvents,
-  dockSummary,
   toolbarData,
   messages,
   busy,
@@ -36,8 +29,6 @@ export function ChatToolViews({
   dockIndex,
   setInspectedWork,
   setExpandedWork,
-  data,
-  todos,
   session,
   openChild,
 }: any) {
@@ -49,7 +40,6 @@ export function ChatToolViews({
   const commands = commandMessages(dockRequest?.responseMessages ?? [])
     .reverse()
     .map((message) => ({ ...message, parts: [...(message.parts ?? [])].reverse() }));
-  const commandSummary = summarizeRequestWork(commands, todos);
   const context = (
     <div className="chat-turn-context">
       <span>
@@ -92,25 +82,6 @@ export function ChatToolViews({
       commands={
         <>
           {context}
-          {dockSummary && (
-            <p>{requestWorkLabel(commandSummary, isCurrentDock && busy)}</p>
-          )}
-          {resolveTodoLayout(data.settings.appearance) === "inline" && (
-            <>
-              {!busy && hasUnfinishedTodos(todos) && (
-                <p>
-                  Response ended with unfinished tasks. Send a follow-up to
-                  continue.
-                </p>
-              )}
-              {todos.map((todo, i) => (
-                <div className="todo" key={i}>
-                  <span>{todo.content}</span>
-                  <small>{todoStatusLabel(todo, busy)}</small>
-                </div>
-              ))}
-            </>
-          )}
           {dockRequest && !details.commands.length && (
             <p>No tools recorded for this turn.</p>
           )}

@@ -9,6 +9,7 @@ import { createStore } from "../server/store.mjs";
 import { parse } from 'jsonc-parser';
 import { defaults } from "../shared/strategy.mjs";
 import { startServer } from "../server/http.mjs";
+import { normalizeModelsDev } from '../domain/model-data.mjs';
 
 import {
   loadPreferences,
@@ -123,7 +124,8 @@ async function fixture(t, realPreferences = false) {
   t.after(async () => {
     await app.indexJobs.close();
     app.history.close();
-    app.modelRatings.close();
+    await app.modelData.close();
+    await app.modelRatings.close();
     await app.gitProjects.close();
     app.localData.close();
     await store.flush();
@@ -189,6 +191,59 @@ test("worker transcripts carry verified navigation identity outside the sidebar 
   await assert.rejects(f.app.chat(project.id, "ses_foreign"), /another project/);
 });
 
+test('shared catalog agent operations verify native identity and preserve inspection-only refresh denial', async t => {
+  const f = await fixture(t), project = await f.app.addProject(f.directory);
+  const assistant = { info: { id: 'msg_catalog', sessionID: 'ses_owned', parentID: 'msg_catalog_user', role: 'assistant', agent: 'engineer' }, parts: [] };
+  f.messages = [{ info: { id: 'msg_catalog_user', role: 'user', model: { providerID: 'opencode', modelID: 'free' } }, parts: [] }, assistant];
+  const original = f.host.request;
+  f.host.request = async (route, options) => route === '/session/ses_owned/message/msg_catalog' ? assistant : original(route, options);
+  await f.store.recordRequest({ id: 'msg_catalog_user', sessionID: 'ses_owned', projectID: project.id, directory: f.directory, status: 'accepted',
+    mode: 'build', policyVersion: 6, agent: { id: 'engineer', name: 'Engineer' },
+    model: { providerID: 'opencode', modelID: 'free' }, variant: '', preferences: {}, readOnly: true });
+  const input = { directory: f.directory, sessionID: 'ses_owned', messageID: 'msg_catalog' };
+  assert.deepEqual(await f.app.modelDataAgentAction({ ...input, operation: 'list' }), f.app.modelData.agentAction({ operation: 'list' }));
+  assert.deepEqual(await f.app.modelDataAgentAction({ ...input, operation: 'status' }), f.app.modelData.agentAction({ operation: 'status' }));
+  assert.equal((await f.app.modelDataAgentAction({ ...input, operation: 'schema' })).schema.id, 'freelancer.model-observations');
+  f.app.modelData.refresh = () => { throw Error('Unexpected refresh dispatch.'); };
+  await assert.rejects(f.app.modelDataAgentAction({ ...input, operation: 'refresh', sources: ['modelsdev'] }), /inspection-only/);
+  await f.store.recordRequest({ id: 'msg_catalog_user', sessionID: 'ses_owned', projectID: project.id, directory: f.directory, status: 'accepted',
+    mode: 'build', policyVersion: 6, agent: { id: 'engineer', name: 'Engineer' },
+    model: { providerID: 'opencode', modelID: 'free' }, variant: '', preferences: {}, readOnly: false });
+  let refreshInput;
+  f.app.refreshModelData = async value => { refreshInput = value; return { repeatedSourceMetadata: 'omitted from native output' }; };
+  assert.deepEqual(await f.app.modelDataAgentAction({ ...input, operation: 'refresh', sources: ['modelsdev'] }), f.app.modelData.agentAction({ operation: 'status' }));
+  assert.deepEqual(refreshInput, { ...input, operation: 'refresh', sources: ['modelsdev'] });
+  await assert.rejects(f.app.modelDataAgentAction({ ...input, sessionID: 'ses_foreign', operation: 'status' }), /belong|directory|project/i);
+  assistant.info.role = 'user';
+  await assert.rejects(f.app.modelDataAgentAction({ ...input, operation: 'list' }), /assistant context/);
+});
+
+test('model data refresh captures current configured native inventory and refuses unavailable discovery', async t => {
+  const f = await fixture(t);
+  const native = f.host.request.bind(f.host);
+  let discovery = 'ready', observed, refreshes = 0;
+  f.host.request = async (route, options) => {
+    if (route !== '/provider') return native(route, options);
+    if (discovery === 'failed') throw Error('Native inventory unavailable');
+    if (discovery === 'malformed') return {};
+    return { connected: ['custom-provider'], all: [
+      { id: 'custom-provider', models: { model: { api: { id: 'upstream-model' } } } },
+      { id: 'disconnected', models: { other: {} } },
+      { id: 'opencode', models: { free: { cost: { input: 0, output: 0 } }, paid: { cost: { input: 1, output: 1 } } } },
+    ] };
+  };
+  f.app.modelData.setNativeModels = rows => { observed = rows; };
+  f.app.modelData.refresh = input => { refreshes++; return { sources: input.sources }; };
+  assert.deepEqual(await f.app.refreshModelData({ sources: ['modelsdev'] }), { sources: ['modelsdev'] });
+  assert.deepEqual(observed.map(row => row.id), ['custom-provider/model', 'opencode/free']);
+  assert.equal(observed[0].api.id, 'upstream-model');
+  discovery = 'failed';
+  await assert.rejects(f.app.refreshModelData({ sources: ['modelsdev'] }), /Native inventory unavailable/);
+  discovery = 'malformed';
+  await assert.rejects(f.app.refreshModelData({ sources: ['modelsdev'] }), /provider inventory is unavailable/);
+  assert.equal(refreshes, 1, 'Unknown inventory must not create a refresh or publish an empty scope.');
+});
+
 test('chat display reuses model metadata while bootstrap, send and connection changes stay fresh', async t => {
   const f = await fixture(t);
   const p = await f.app.addProject(f.directory);
@@ -206,7 +261,7 @@ test('chat display reuses model metadata while bootstrap, send and connection ch
   assert.equal(reads(), initial + 2, 'dispatch checks current native models');
   await f.app.auth('opencode-go', 'key', { key: 'fake-test-key' });
   await f.app.chat(p.id, 'ses_owned');
-  assert.equal(reads(), initial + 3, 'native auth methods validate the provider and credential lifecycle refreshes displayed metadata');
+  assert.equal(reads(), initial + 4, 'auth validation refreshes native provider inventory and credential disposal refreshes displayed metadata');
 });
 
 test("opening a folder installs project defaults and preserves project source", async (t) => {
@@ -293,24 +348,49 @@ test("native provider inventory does not require a Freelancer billing catalog en
 test('native provider models and API-key methods work without a Freelancer catalog entry', async t => {
   const f = await fixture(t), p = await f.app.addProject(f.directory);
   const native = f.host.request.bind(f.host);
-  f.host.request = async (route, options = {}) => route === '/provider'
+  let failDiscovery = false;
+  f.host.request = async (route, options = {}) => {
+    if (route === '/provider/auth' && failDiscovery) throw Error('Native auth discovery denied');
+    return route === '/provider'
     ? { connected: ['custom-provider'], all: [{ id: 'custom-provider', name: 'Custom provider', models: {
       model: { cost: { input: 1, output: 2 } },
-    } }] }
+    } }, { id: 'empty-native', name: 'No native method', models: {} },
+    { id: 'oauth-only', name: 'Native OAuth provider', models: {} }] }
     : native(route, options);
+  };
   f.authMethods = { 'custom-provider': [{ type: 'api', label: 'Provider API key' }] };
   const boot = await f.app.bootstrap(p.id);
   assert.equal(boot.providers.all[0].id, 'custom-provider');
   assert.equal(boot.models.find(model => model.id === 'custom-provider/model').costClass, 'unknown');
   await f.app.auth('custom-provider', 'key', { key: 'fixture-only-key' });
   assert(f.calls.some(call => call.route === '/auth/custom-provider' && call.options.body.type === 'api'));
+  assert.deepEqual((await f.app.authMethods())['custom-provider'], [{ type: 'api', label: 'Provider API key' }]);
+  f.authMethods = {};
+  assert.deepEqual((await f.app.authMethods())['custom-provider'], [{ type: 'api', label: 'API key' }]);
+  await f.app.auth('custom-provider', 'key', { key: 'fixture-generic-key' });
+  assert.deepEqual(f.calls.filter(call => call.route === '/auth/custom-provider').at(-1).options, {
+    method: 'PUT', body: { type: 'api', key: 'fixture-generic-key' },
+  });
+  assert.doesNotMatch(JSON.stringify(await f.store.read('settings')), /fixture-(only|generic)-key/);
   await f.app.saveSessionDefaults(p.id, {
     revision: 0, agentID: 'engineer', parentModel: 'custom-provider/model', reasoningVariant: '',
   });
   assert.equal(parse(await readFile(path.join(f.directory, 'opencode.jsonc'), 'utf8')).model, 'custom-provider/model');
-  f.authMethods = { 'oauth-only': [{ type: 'oauth', label: 'Browser sign-in' }] };
+  const explicitEmpty = [], explicitOAuth = [{ type: 'oauth', label: 'Browser sign-in' }];
+  f.authMethods = { 'empty-native': explicitEmpty, 'oauth-only': explicitOAuth };
+  const discovered = await f.app.authMethods();
+  assert.deepEqual(discovered['empty-native'], explicitEmpty);
+  assert.deepEqual(discovered['oauth-only'], explicitOAuth);
+  assert.equal(discovered['missing-provider'], undefined);
+  const writesBeforeRefusals = f.calls.filter(call => call.route.startsWith('/auth/')).length;
+  await assert.rejects(f.app.auth('empty-native', 'key', { key: 'fixture-only-key' }), /Unsupported provider|does not offer API-key/);
   await assert.rejects(f.app.auth('oauth-only', 'key', { key: 'fixture-only-key' }), /does not offer API-key/);
   await assert.rejects(f.app.auth('missing-provider', 'key', { key: 'fixture-only-key' }), /Unsupported provider/);
+  failDiscovery = true;
+  await assert.rejects(f.app.authMethods(), /Native auth discovery denied/);
+  await assert.rejects(f.app.auth('custom-provider', 'key', { key: 'fixture-only-key' }), /Native auth discovery denied/);
+  assert.equal(f.calls.filter(call => call.route.startsWith('/auth/')).length, writesBeforeRefusals,
+    'Explicit native refusals and discovery errors must not create key writes.');
 });
 test("file previews cannot escape a registered project", async (t) => {
   const f = await fixture(t),
@@ -1248,4 +1328,28 @@ test('file-access scope saves through appearance settings and appears in bootstr
   const appearance = await f.app.saveAppearance({ nativeLspToolEnabled: true });
   assert.equal(appearance.nativeLspToolEnabled, undefined, 'retired setting cannot re-enable LSP');
   assert.equal((await f.store.read('settings')).nativeLspToolEnabled, undefined);
+});
+
+test('bootstrap preserves native upstream API aliases privately for shared source-catalog identity matching', async t => {
+  const f = await fixture(t), p = await f.app.addProject(f.directory);
+  f.extraModels = { custom: { api: { id: 'upstream-aliased', url: 'https://example.com/private-endpoint' },
+    headers: { Authorization: 'SYNTHETIC-PRIVATE-MODEL-HEADER' }, cost: { input: 0, output: 0 } } };
+  const model = { id: 'upstream-aliased', name: 'Synthetic published model', description: 'Synthetic public source record.', attachment: false, reasoning: false,
+    tool_call: true, open_weights: true, release_date: '2026-10-01', last_updated: '2026-10-03',
+    modalities: { input: ['text'], output: ['text'] }, limit: { context: 1000, output: 200 }, cost: { input: 0, output: 0 } };
+  const source = normalizeModelsDev({ providers: { opencode: { id: 'opencode', name: 'OpenCode', env: ['EXAMPLE_API_KEY'],
+    npm: '@ai-sdk/openai-compatible', doc: 'https://example.com/public-docs', models: { 'upstream-aliased': model } } },
+    models: { 'upstream-aliased': model } });
+  const db = f.app.localData.get(), job = db.beginModelDataRefresh({ sources: ['modelsdev'] });
+  db.publishModelDataSource(source, { jobID: job.id }); db.finishModelDataRefresh(job.id, { status: 'completed' });
+  const bootstrap = await f.app.bootstrap(p.id);
+  const nativeView = bootstrap.models.find(row => row.id === 'opencode/custom');
+  assert.ok(nativeView); assert.equal(nativeView.native, undefined); assert.equal(nativeView.api, undefined);
+  assert.doesNotMatch(JSON.stringify(bootstrap), /SYNTHETIC-PRIVATE-MODEL-HEADER|private-endpoint/);
+  const detail = f.app.modelData.detail({ id: 'opencode/custom' });
+  assert.equal(detail.matches.length, 2, 'Canonical and deployment evidence remain separate.');
+  assert.ok(detail.matches.every(row => row.identityMatch.status === 'alias'));
+  assert.ok(detail.matches.every(row => row.identityMatch.nativeIDs.includes('opencode/custom')));
+  assert.ok(f.app.modelData.list({}).records.every(row => row.identityMatch.status === 'alias'));
+  assert.equal(f.calls.some(call => String(call.route).includes('prompt_async')), false);
 });

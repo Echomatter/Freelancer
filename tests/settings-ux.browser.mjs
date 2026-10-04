@@ -29,8 +29,7 @@ for (const mode of ['light', 'dark', 'custom']) for (const width of [360, 1440])
         await expect(heading).toBeVisible();
         const header = page.locator(`[data-settings-page="${entry.scope}/${entry.id}"]`);
         await expect(header).toHaveAttribute('data-settings-layout', entry.layout);
-        if (['capabilities', 'content-storage'].includes(entry.id)) await expect(header.locator('.settings-page-description')).toHaveCount(0);
-        else await expect(header.locator('.settings-page-description')).toHaveText(entry.description);
+        await expect(header.locator('.settings-page-description, .settings-page-kind')).toHaveCount(0);
         await expect(page.locator(`#${entry.scope}-settings-links button[aria-label="${entry.title}"]`)).toHaveAttribute('aria-current', 'page');
         assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 2), `${entry.title}: document overflow`);
         const overflow = await header.evaluate(element => {

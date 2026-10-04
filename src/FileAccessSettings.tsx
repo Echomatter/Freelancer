@@ -13,12 +13,6 @@ function normalize(value: unknown): FileAccessScope {
     : "computer";
 }
 
-const descriptions: Record<FileAccessScope, string> = {
-  project: "Only the current project folder.",
-  projects: "Every registered project folder.",
-  computer: "Project folders plus other locations (current behavior).",
-};
-
 export function FileAccessSettings({
   value,
   projectCount = 0,
@@ -71,7 +65,7 @@ export function FileAccessSettings({
               />
               <span>
                 <strong>{fileAccessScopeText(scope)}</strong>
-                <small>{descriptions[scope]}{scope === "projects" && projectCount > 0 ? ` (${projectCount} registered)` : ""}</small>
+                {scope === "projects" && projectCount > 0 && <small>{projectCount} registered</small>}
               </span>
             </label>
           ))}

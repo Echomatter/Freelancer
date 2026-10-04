@@ -21,23 +21,22 @@ Refreshed 2026-10-03 from revision 65a39f393687675ce170e6094757de20370365b9.
 
 This skill is optional guidance. It does not grant or gate access to tools.
 
-Freelancer already exposes bounded judgments through the shared native `knowledge`
-tool. Discover its actual schema. Read `judgment-provider-status` for configuration;
-configured status is not a connection or inference proof. For stored memory/fact
-candidates, `judgment-evidence` (also `query-evidence`) returns bounded state,
-candidateIDs, and exact evidenceRefs. Reuse those values without inventing source
-identities or hashes. `judgment-definition` records a versioned question;
-`judgment-evaluate` and `judgment-evaluate-batch` evaluate selected definitions.
-The adapter maps `check` to Noul, `classify` to Choice, and `score` to Score.
-Use `judgment-history` or `judgment-cache` to inspect retained results. A changed
-or forgotten source can invalidate reuse; a stale historical receipt is not a
-current verified result.
+For everyday one-off judgments in Freelancer, `bounded-judgment` explains the
+generic `evidence_evaluation` contract: select stored or supplied evidence and
+ask a small, explicit question. This vendor skill covers designing and building
+TypeSafe integrations; use its live references for actual API/SDK semantics.
 
-These operations keep native permission requests and explicit paid-use consent.
-A judgment cannot grant permissions, authorize Git/GitHub actions, alter a project
-agreement, permit delegation, override an explicit model choice, or establish task
-success. Ordinary search, memory, and pins work without TypeSafe. If the optional
-provider fails, continue the task with the evidence available.
+Explicitly reusable memory/fact questions can use `knowledge` judgment definitions.
+Discover its current schema: `judgment-evidence`/`query-evidence` returns exact
+candidateIDs/evidenceRefs; `judgment-definition` versions a question;
+`judgment-evaluate`/`judgment-evaluate-batch` evaluates it; history/cache inspects
+retained results. Reuse source identities unchanged and check freshness. Creating
+a durable definition is optional and unnecessary for ordinary one-off work.
+Both adapters map `check` to Noul, `classify` to Choice and `score` to Score.
+
+Native permission and paid-use/disclosure consent remain authoritative. Judgments
+do not grant permissions, change routing eligibility, override model choice or
+prove task success. Ordinary search, memory and pins work without TypeSafe.
 
 A separately configured Jev MCP connection remains available through OpenCode's
 observed tools. Read that connection's current schema rather than assuming its

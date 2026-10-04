@@ -5,6 +5,7 @@ import { clientID } from './browser-capabilities.mjs';
 import { delegationOptions } from '../shared/strategy.mjs';
 import { Button, PageHeading, PageCloseButton, Panel, Field } from './echoflex/Controls';
 import { Dialog } from './echoflex/Dialog';
+import { HelpHint } from './HelpHint';
 import './goals.css';
 
 export function useGoals(project: string) {
@@ -72,8 +73,7 @@ export function Goals({ data, goals, refresh, error: loadError, onOpen, onClose 
   const preferences = (patch: any) => settings({ preferences: { ...draft.settings.preferences, ...patch } });
   const executionLocked = draft?.status === 'running' || !!draft?.transition;
   return <>
-    <PageHeading title="Goals" icon={Target} actions={<><Button variant="primary" onClick={() => begin()}><Plus size={16} aria-hidden="true" />New goal</Button><PageCloseButton onClick={onClose} /></>} />
-    <p className="goals-intro">Save a goal, then start when you’re ready. Each goal has its own chat; one goal can run at a time.</p>
+    <PageHeading title="Goals" icon={Target} help="goals" actions={<><Button variant="primary" onClick={() => begin()}><Plus size={16} aria-hidden="true" />New goal</Button><PageCloseButton onClick={onClose} /></>} />
     {(error || loadError) && <p role="alert">{error || loadError}</p>}
     <label className="goal-archive-toggle"><input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)} />Show archived goals</label>
     <div className="goal-list">
@@ -92,7 +92,7 @@ export function Goals({ data, goals, refresh, error: loadError, onOpen, onClose 
       </Panel>)}
       {!goals.length && <p>No saved goals in this project.</p>}
     </div>
-    {draft && <Dialog className="goal-dialog" size="wide" icon={<Target />} title={draft.revision ? 'Edit goal' : 'New goal'} description={draft.revision ? 'Update the objective in this goal’s existing chat.' : 'Describe the outcome. Saving creates a chat; Start begins the work.'} onClose={() => setDraft(null)} busy={!!pending} footer={<><Button disabled={!!pending} onClick={() => setDraft(null)}>Cancel</Button><Button variant="primary" disabled={!!pending || !draft.objective.trim() || (!!draft.revision && !draft.title.trim())} onClick={async () => {
+    {draft && <Dialog className="goal-dialog" size="wide" icon={<Target />} title={draft.revision ? 'Edit goal' : 'New goal'} onClose={() => setDraft(null)} busy={!!pending} footer={<><Button disabled={!!pending} onClick={() => setDraft(null)}>Cancel</Button><Button variant="primary" disabled={!!pending || !draft.objective.trim() || (!!draft.revision && !draft.title.trim())} onClick={async () => {
       if (flight.current) return; flight.current = true; setPending(draft.id); setError('');
       try {
         await api('goals', { project, id: draft.id, objective: draft.objective, ...(draft.title.trim() ? { title: draft.title } : {}), ...(draft.revision ? { revision: draft.revision } : {}), ...(executionLocked ? {} : { settings: draft.settings }) }, draft.revision ? 'PUT' : 'POST');
@@ -115,10 +115,10 @@ export function Goals({ data, goals, refresh, error: loadError, onOpen, onClose 
         <Field label="Maximum workers"><input type="number" min={1} max={6} value={draft.settings.preferences.maxParallel ?? 3} onChange={e => preferences({ maxParallel: Number(e.target.value) })} /></Field>
       </div></fieldset>
       <fieldset className="goal-settings" disabled={executionLocked || !!pending}><legend>While running</legend><div className="goal-options">
-        <label className="goal-option"><input type="checkbox" checked={draft.settings.freeRotation} onChange={e => settings({ freeRotation: e.target.checked })} /><span><strong>Switch free models if unavailable</strong><small>Try another eligible free model when the parent model has an availability failure.</small></span></label>
+        <label className="goal-option"><input type="checkbox" checked={draft.settings.freeRotation} onChange={e => settings({ freeRotation: e.target.checked })} /><span><strong>Switch free models if unavailable</strong></span></label>
         <label className="goal-option"><input type="checkbox" checked={draft.settings.autoApprove} onChange={e => settings({ autoApprove: e.target.checked })} /><span><strong>Approve ordinary tool requests</strong><small>Only while this goal runs. Explicit denials, paid-model consent and your Git agreement still apply.</small></span></label>
       </div></fieldset>
-      <p className="goal-scope-note">This goal shares the project folder with other chats. It does not create a separate worktree.</p>
+      <div className="card-help"><HelpHint topic="goals" /></div>
       {!!draft.revisions?.length && <details className="goal-history"><summary>Previous objective revisions</summary><div className="goal-long-text" tabIndex={0} role="region" aria-label="Previous objective revisions">{draft.revisions.map(r => <p key={r.revision}>Revision {r.revision}: {r.objective}</p>)}</div></details>}
       {error && <p role="alert">{error}</p>}
     </Dialog>}

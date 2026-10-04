@@ -4,7 +4,8 @@ The top row combines navigation, Commands, Agents, Models, optional Goals,
 connection status and refresh. Each tool tab opens an overlay below it. Working
 icons animate only for current activity; selecting another turn shows its history.
 
-Commands contains command activity. **Project settings → Files** contains the
+Commands contains actual tool calls and their receipts. Conversation recaps stay
+in the transcript, and task lists stay in the composer Tasks card. **Project settings → Files** contains the
 selected chat's recorded diffs and current working tree previews. Each change is
 labeled **Chat record** or **Working tree**; the latter can include other chats'
 work. The file browser and indexed-search links remain on this page.

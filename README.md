@@ -83,9 +83,11 @@ See [Architecture](docs/ARCHITECTURE.md) for the separation between guidance, ca
 
 Freelancer exposes the model layer instead of hiding it behind one generic selector.
 
-**Application settings → Models** provides a browsable model catalog with provider, availability and model information. You can search and sort the catalog, filter to free models, inspect models by provider, and use the catalog when configuring agents. Model-rating jobs can collect dated comparative information without turning those ratings into automatic routing policy.
+**Application settings → Models** shows models from your connected OpenCode providers plus keyless OpenCode Free, using the same provider scope as the chat and session-default selectors. Search and filters narrow one scrolling grid of compact cards. Cards show native limits, capabilities and access, matched published deployment prices, and separate Artificial Analysis tested configurations with their benchmarks and performance. **—** marks unavailable values. Source labels, links, units and capture dates stay with the data; the help icon explains their meaning. Choose models in chat or Session defaults.
 
-**Application settings → Providers** currently supports setup for OpenAI, GitHub Copilot, OpenCode Go and OpenCode Free. Depending on the provider, you can:
+**Update model data** explicitly downloads selected sources and stores records with asserted matches to your configured models. Browsing cards reads stored data. Published prices are separate from account billing and Available Usage. Configure sources in **Application settings → Capabilities → Model data sources**. Full source records and historical estimates remain available internally through the warehouse and shared tools.
+
+**Application settings → Providers** shows your connected OpenCode providers and keyless OpenCode Free. Choose **Add provider** to connect another provider through OpenCode's native setup. Depending on the provider, you can:
 
 - connect or reconnect supported authentication;
 - describe the plan as a monthly subscription or pay-as-you-go;
@@ -97,9 +99,9 @@ Credentials remain with the native/provider authentication systems; Freelancer d
 
 **Application settings → Available Usage** turns provider/model telemetry into a practical view of remaining availability. It is designed around usable capacity rather than presenting token or dollar estimates as if they were provider billing records. Unknown, estimated and unavailable information stays distinguishable.
 
-**Application settings → Capabilities** shows tools, skills and shared MCP connections. Use each card’s help bubble for status explanations and technical details. Manage agent definitions under **Application settings → Agents**. File access is under **Application settings → File access**. See [Capabilities](docs/capabilities.md) and [File access scope](docs/file-access.md).
+**Application settings → Capabilities** shows tools, skills, shared MCP connections and **Model data sources**. Manage the optional Artificial Analysis source key on this computer; paired remote devices can update configured sources from Models. Use each card’s help bubble for status explanations and technical details. Manage agent definitions under **Application settings → Agents**. File access is under **Application settings → File access**. See [Capabilities](docs/capabilities.md) and [File access scope](docs/file-access.md).
 
-The workspace model picker can optionally hide exhausted models. That preference lives under **Available Usage → Model visibility** and retains its saved value from Appearance.
+The workspace model picker can optionally hide exhausted models. **Show exhausted models** is a saved checkbox at the end of **Available Usage** and retains its value from Appearance.
 
 ### Appearance and layout
 
@@ -129,9 +131,9 @@ Freelancer also maintains a local content index so project knowledge can be sear
 
 The conversation index covers registered projects and can search titles plus user/assistant text, including archived chats and workers. It does not replace OpenCode as conversation authority and does not copy tool output, reasoning, attachments or drafts into the search index.
 
-### History, imports and local data
+### History and local data
 
-**Search all content** finds files and conversations across projects and lets you pin chats. Its **Manage chats** action provides archive, restore, and export; **Archive, pin or export…** in a chat and **Export conversations** in Content & Storage open that same management area.
+**Search all content** finds files and conversations across projects. Its **Conversations** tab includes browsing, pins, archive, restore, Undo and export. **Pinned** brings conversation pins and retained memory pins together. **Archive, pin or export…** in a chat opens this search page with that parent conversation selected.
 
 It supports:
 
@@ -143,7 +145,7 @@ It supports:
 - progressive loading of larger histories;
 - selected-conversation export.
 
-New-project setup can optionally perform a **one-time ChatGPT / Codex import** before indexing. Imported snapshots remain separate from OpenCode's native database, use the shared transcript view, and can orient a new native conversation without modifying the source history.
+New-project setup opens the folder and prepares its file and conversation indexes. Previously saved imported snapshots remain readable and exportable; new conversation imports and imported-history continuation are unavailable.
 
 The same **Content & Storage** page shows where Freelancer and OpenCode data live, provides backup guidance, and exposes project organization such as **Put project away** / **Restore project**. Putting a project away refreshes its search indexes, then hides it from active navigation; it does not delete the folder or rewrite its Git history. Global index refreshes skip put-away projects until you restore them.
 
@@ -181,12 +183,12 @@ Freelancer deliberately separates project-specific choices from application-wide
 |  | **Session defaults** | Starting agent, model and reasoning choices for new chats in this project |
 |  | **Goals** | Named objectives, linked goal chats, execution settings, Start, Resume and Stop |
 |  | **Delegation** | Project worker/delegation behavior and orchestration limits |
-| **Application** | **Models** | Searchable model catalog, provider/model information and rating activity |
+| **Application** | **Models** | Compact cards for connected models and OpenCode Free, published prices and tested configurations, and explicit source updates |
 |  | **Search all content** | Indexed files and conversations across registered projects |
 |  | **Available Usage** | Remaining provider/model availability, usage observations and exhausted-model visibility |
-|  | **Providers** | Authentication, plan type, optional subscription cost, currency and provider colors |
+|  | **Providers** | Connected providers, Add provider setup, plan type, optional subscription cost, currency and provider colors |
 |  | **Appearance** | Palette generator, saved custom themes and 300 built-in palettes |
-|  | **Capabilities** | Shared MCP connections and authentication; honest tool/skill status and read-only instruction sources |
+|  | **Capabilities** | Shared MCP connections and authentication, tool/skill status, instruction sources and model data source setup |
 |  | **Content & Storage** | Data locations, backup guidance, project archive/restore, index refresh and SQLite maintenance |
 |  | **Remote access** | Remembered-device access on a private network or through an optional HTTPS tunnel |
 
@@ -287,8 +289,35 @@ corner; headings stay clear, and the conversation rail has help below its contex
 percentage. Bubbles show these excerpts on hover, keyboard focus, or tap. Press
 Escape or tap elsewhere to close one. The application reads the marked sections
 from this README at build time; edit the documentation here to update the in-app
-guidance. Page titles and menus stay concise. Errors, progress and action
-confirmations remain visible.
+guidance. Page titles and menus stay concise. Page descriptions, setup explanations
+and usage hints belong in these bubbles. Errors, progress, observed metadata,
+permission warnings and action confirmations remain visible.
+
+<!-- help:settings-page -->
+### Settings
+
+Application settings apply across projects. Project settings apply to the selected project. Each task keeps its own save action; page explanations and usage guidance live in help. Errors, observed state, permission warnings and confirmation previews stay beside the controls they affect.
+<!-- /help -->
+
+<!-- help:billing-preferences -->
+### Billing preferences
+
+Save provider settings stores the billing fields on the provider cards and the selected currency. Provider colors and connections save separately. These are billing references for display; OpenCode owns authentication and actual provider usage.
+<!-- /help -->
+
+<!-- help:model-visibility -->
+### Model visibility
+
+Show exhausted models in the workspace picker keeps models with exhausted usage visible. The choice saves immediately. Availability checks still apply when choosing a model.
+<!-- /help -->
+
+<!-- help:goals -->
+### Goals
+
+Save a goal, then choose Start when ready. Each goal keeps its objective in its own chat; one goal can run at a time. Editing an objective continues that same chat. The goal shares the project folder with other chats.
+
+Switch free models if unavailable tries another eligible free model after an availability failure of the parent model. Approve ordinary tool requests applies only while the goal runs; explicit denials, paid-model consent and the project Git agreement still apply. Stop the goal before changing its execution settings.
+<!-- /help -->
 
 <!-- help:schedules -->
 ### Scheduled prompts
@@ -305,7 +334,9 @@ An agent is a reusable specialist with its own working instructions and optional
 <!-- help:providers -->
 ### Providers
 
-Connect or reconnect a provider through its supported sign-in flow. Billing estimates, provider colors and availability are display preferences; they do not change native authentication, model permissions or usage limits.
+Review your connected OpenCode providers and keyless OpenCode Free. Choose Add provider for native setup, or reconnect an existing provider through its supported sign-in flow. Billing estimates, provider colors and availability are display preferences; they do not change native authentication, model permissions or usage limits.
+
+Provider inventory and sign-in methods come from OpenCode. Credentials and shared MCP connections stay in OpenCode's native configuration.
 <!-- /help -->
 
 <!-- help:project-files -->
@@ -330,6 +361,10 @@ Each run uses the selected model and the current agent instructions. Normal prov
 ### Search indexed content
 
 Search project content looks for your words in indexed files and conversations for the selected project. Search all content uses the same search across every registered project, including archived content. File results open the original in Project settings → Files; conversation results open the parent conversation. Refresh indexes in Content & Storage to include older or recent changes. Generated folders, credentials, tool output, reasoning, attachments, drafts and unsupported binary files are excluded.
+
+Retained memories and recorded claims also appear in knowledge search with their origins, status and exact evidence. Facts are recorded claims from knowledge tools; the search page reviews their sources and can correct an existing claim. FTS5 indexes text and finds matching passages. A matching passage is not proof that a claim is true or current.
+
+Pin a conversation or retained note to keep it in Pinned. Archiving a memory is reversible, and unpinning preserves the retained memory. Show more results expands the first page of each result group; Next opens the next page within a group. If nothing matches, try different words or refresh the indexes in Content & Storage.
 <!-- /help -->
 
 <!-- help:index-coverage -->
@@ -405,9 +440,9 @@ Putting a project away hides it from active navigation. Its folder, Git agreemen
 <!-- /help -->
 
 <!-- help:history-search -->
-### Managing chats
+### Conversations in search
 
-Search content → Manage chats lists the loaded OpenCode window, imported snapshots and previously seen references for one selected project. It manages pins, archive state and exports; cached entries are checked when opened. Use Search project content or Search all content to search indexed conversation titles, user/assistant text, project documents and source files. Refresh older content in Application settings → Content & Storage.
+Open Search all content → Conversations to browse native history or search retained conversation text. Choose a project or browse registered projects; use Active, Archived or All, select conversations, and pin, archive, restore or export. Cached entries are checked when opened. Pinned combines conversation and retained memory pins. Search coverage and indexing guidance are in the page help. Refresh older content in Application settings → Content & Storage.
 <!-- /help -->
 
 <!-- help:history-export -->
@@ -539,12 +574,6 @@ Each connected finite plan contributes an equal share to the combined estimate. 
 Shares summarize observed activity by model or agent. They are estimates, not quality scores or subscription usage. Missing observations and unresolved delegation links make the breakdown partial. Monthly activity covers the current month.
 <!-- /help -->
 
-<!-- help:project-import -->
-### Importing conversations
-
-The optional one-time import copies local user/assistant messages and recorded tool output before indexing. Credentials, hidden reasoning, system instructions and external attachment files are excluded. Continuing an imported chat uses its history to orient a new native conversation. The original app and database stay unchanged.
-<!-- /help -->
-
 <!-- help:project-indexes -->
 ### Project preparation
 
@@ -570,9 +599,27 @@ Delegate asks the current parent to assign an additional concern to a worker. St
 <!-- /help -->
 
 <!-- help:model-ratings -->
-### Model rating updates
+### Legacy model estimates
 
-The selected configuration model researches missing model details in the background using its normal provider allowance. Ratings are dated comparison guidance, not proof of availability or permission to use a model.
+Previously saved model ratings are legacy estimates, not benchmark measurements. They remain in internal catalog records and historical receipts, and do not establish model availability or permission. Models cards present native specifications and matched published data.
+<!-- /help -->
+
+<!-- help:model-data -->
+### Published model data
+
+OpenCode supplies native limits, capabilities and account access. Prices come from matched models.dev deployments and may differ from account billing. Artificial Analysis scores retain their published index scales and tested configurations. Speed is tokens per second; first-token time is seconds.
+
+— means unavailable, not zero or unsupported. Captured dates show when data was retrieved, not when Freelancer tested the model. Source links and additional configurations appear in card help.
+
+Update model data downloads the selected sources without model inference or changing your chat model. Stop cancels unfinished requests and preserves published data. Choose a model in the chat composer or Session defaults.
+<!-- /help -->
+
+<!-- help:model-data-sources -->
+### Model data sources and keys
+
+models.dev supplies published model specifications and prices without a key. Artificial Analysis supplies source evaluation and performance data and needs its own API key. Source records keep their original identity and configuration; unknown fields and unmatched native IDs remain explicit.
+
+Open Application settings → Capabilities → Model data sources. Source-key management is available on this computer. The Artificial Analysis key is write-only and stored on the server with Windows protected storage, or supplied by the server environment. The browser clears the key field after submission. Paired remote devices can update configured sources from Models using source status; they do not need to read the key. This key is separate from OpenCode provider credentials, saving it does not refresh sources, and removing a saved key does not remove an environment key.
 <!-- /help -->
 
 <!-- help:remote-access -->
@@ -611,6 +658,8 @@ Freelancer uses Tailscale Funnel to provide an HTTPS address without opening a r
 Loaded means OpenCode provides this tool. Its use still depends on the model and native permissions; the label does not claim a successful call. Available means the current inspection also confirmed model support, permission and dependencies. Needs permission means OpenCode will ask before use. Restricted and Unavailable indicate a permission or dependency limit. Unknown means inspection could not confirm the state.
 
 Tools are shared across agents and projects. Refresh checks the current runtime. The technical details below include tool origins, inspection errors and captured instruction sources; these are read-only and are not the complete provider prompt.
+
+The tool list covers native and plugin registry definitions. Connected MCP services remain usable through OpenCode, but this inspection does not return their tool definitions. An empty service tool list is incomplete coverage, not proof that the service has no tools.
 <!-- /help -->
 
 <!-- help:capability-skills -->
@@ -625,6 +674,8 @@ Skills provide instructions that agents can load when useful. Found means OpenCo
 MCP connects additional services to the shared toolkit. Connections apply to every agent and project. OpenCode manages configuration and sign-in. Connected reports the connection state; model support and native permission still determine whether a tool can be used.
 
 Add a remote service URL or a local command, approve the connection, then sign in when required. Local commands run on this computer. Test / retry checks a connection. Disable keeps its saved configuration. Use native {env:VARIABLE_NAME} references for secrets in headers or environment fields. Configuration is saved by OpenCode.
+
+Service templates show their cost and dependencies. Set referenced environment variables on the host, restart OpenCode and Freelancer, then test the connection. Secrets stay out of Freelancer settings. Shared connections are available to every agent, model and project under native permissions.
 <!-- /help -->
 
 <!-- help:file-access -->

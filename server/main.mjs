@@ -59,10 +59,12 @@ try {
   }
   host.remainingStartupMs();
 } catch (e) {
+  await app?.modelData?.close();
+  await app?.modelRatings?.close();
   const cleanup = [
     () => app?.history?.close(), () => app?.indexJobs?.close(),
     () => app?.gitProjects?.close(), () => app?.store?.flush(),
-    () => app?.modelRatings?.close(), () => app?.localData?.close(),
+    () => app?.modelData?.close(), () => app?.modelRatings?.close(), () => app?.localData?.close(),
     () => remoteAccess?.close(),
   ];
   await Promise.allSettled(cleanup.map(close => Promise.resolve().then(close)));
@@ -114,10 +116,12 @@ try {
   });
 } catch (e) {
   clearInterval(usageTimer);
+  await app.modelData?.close();
+  await app.modelRatings?.close();
   const cleanup = [
     () => warehouseEvents.stop(), () => app.history?.close(),
     () => app.indexJobs?.close(), () => app.gitProjects?.close(),
-    () => app.store.flush(), () => app.modelRatings?.close(),
+    () => app.store.flush(), () => app.modelData?.close(), () => app.modelRatings?.close(),
     () => app.localData?.close(), () => observer.stop(),
   ];
   await Promise.allSettled(cleanup.map(close => Promise.resolve().then(close)));

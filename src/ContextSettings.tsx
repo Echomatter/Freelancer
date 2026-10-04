@@ -33,7 +33,7 @@ export function ContextSettings({ project }: { project: string }) {
     </label>}
     {error && <p className="notice error" role="alert">{error}</p>}
     <div className="session-defaults-save">
-      {automatic !== null && <Button type="button" disabled={saving || loading} onClick={() => void save()}>{saving ? 'Saving…' : 'Save context settings'}<Check size={16} /></Button>}
+      {automatic !== null && <Button type="button" variant="primary" disabled={saving || loading} onClick={() => void save()}>{saving ? 'Saving…' : 'Save context settings'}<Check size={16} /></Button>}
       {!loading && automatic === null && <Button type="button" onClick={() => reload(v => v + 1)}>Retry</Button>}
       <span role="status">{saved ? 'Saved for this project' : ''}</span>
     </div>

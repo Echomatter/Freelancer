@@ -9,28 +9,39 @@ export function runProcess(file, args, { cwd, signal, timeoutMs = 15000, errorOu
   return new Promise((resolve, reject) => {
     if (signal?.aborted) { reject(new Error('Cancelled before process start')); return; }
     const child = spawn(file, args, { cwd, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-    let output = '', diagnostics = '', length = 0, settled = false;
-    const fail = error => { if (!settled) { settled = true; cleanup(); child.kill(); reject(error); } };
+    child.stdout.setEncoding('utf8');child.stderr.setEncoding('utf8');
+    let output = '', diagnostics = '', length = 0, settled = false, pendingError=null;
+    const fail = error => { if (!settled && !pendingError) { pendingError=error;clearTimeout(timer);child.kill(); } };
     const abort = () => fail(new Error('Process cancelled'));
     const timer = setTimeout(() => fail(new Error('Auxiliary process timed out')), timeoutMs);
     function cleanup() { clearTimeout(timer); signal?.removeEventListener('abort', abort); }
     child.stdout.on('data', chunk => {
-      if (settled) return;
-      length += chunk.length;
+      if (settled || pendingError) return;
+      length += Buffer.byteLength(chunk,'utf8');
       if (length > 4 * 1024 * 1024) fail(new Error('Auxiliary output limit reached'));
-      else output += chunk.toString();
+      else output += chunk;
     });
     // Account/config helpers suppress stderr; local indexer diagnostics are opt-in
     // and bounded even when a rebuild prints progress for thousands of sources.
     if (errorOutput) child.stderr.on('data', chunk => {
-      if (!settled) diagnostics = (diagnostics + chunk.toString()).slice(-16384);
+      if (!settled) diagnostics = (diagnostics + chunk).slice(-16384);
     });
     else child.stderr.resume();
-    child.on('error', fail);
+    child.on('error', error=>{
+      if(!child.pid && !settled) {settled=true;cleanup();reject(error);}else fail(error);
+    });
     child.on('close', code => {
       if (settled) return;
       settled = true; cleanup();
-      if (code !== 0) reject(new Error(diagnostics.trim() || `Auxiliary process exited ${code}`)); else resolve(output.trim());
+      if(pendingError)reject(pendingError);
+      else if (code !== 0) {
+        let message='';
+        for(const line of diagnostics.split(/\r?\n/).reverse()) {
+          try{const item=JSON.parse(line);if(typeof item.error==='string'){message=item.error.slice(0,2000);break;}}catch{}
+        }
+        if(!message)message=diagnostics.split(/\r?\n/).filter(line=>line.trim()&&!/^\[\d+\/\d+\]/.test(line)).join('\n').slice(-2000);
+        reject(new Error(message || `Auxiliary process exited ${code}`));
+      } else resolve(output.trim());
     });
     signal?.addEventListener('abort', abort, { once: true });
   });

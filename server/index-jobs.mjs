@@ -5,6 +5,26 @@ import { createIndexJobState } from './data/index-job-state.mjs';
 
 const runID = randomUUID();
 
+function publicDiagnostic(value) {
+  const text=String(value??'');
+  if(text.length<=2000)return text;
+  // Old execFile receipts may contain megabytes of ordinary per-file progress.
+  // Preserve the durable receipt, but keep it out of polling/UI responses.
+  if(text.startsWith('Content index rebuild failed:') && /\[\d+\/\d+\]/.test(text))
+    return 'Content indexing stopped while processing an oversized file inventory. Generated and dependency folders are now excluded; refresh the project file index to try again.';
+  return `${text.slice(0,1900)} … [diagnostic shortened]`;
+}
+function publicJob(value) {
+  if(!value)return null;
+  const failures=rows=>(rows??[]).slice(0,128).map(row=>({...row,error:publicDiagnostic(row.error)}));
+  return {...value,label:publicDiagnostic(value.label),
+    ...(value.failure?{failure:{...value.failure,message:publicDiagnostic(value.failure.message)}}:{}),
+    ...(value.failures?{failures:failures(value.failures),failuresOmitted:(value.failureDiagnosticsOmitted??0)+Math.max(0,value.failures.length-128)}:{}),
+    ...(value.checkpoints?{checkpoints:value.checkpoints.map(checkpoint=>({...checkpoint,
+      ...(checkpoint.result?{result:{...checkpoint.result,failures:failures(checkpoint.result.failures),
+        failuresOmitted:(checkpoint.result.failureDiagnosticsOmitted??0)+Math.max(0,(checkpoint.result.failures??[]).length-128)}}:{})}))}:{})};
+}
+
 const labels = { files: 'Refreshing file indexes', chats: 'Refreshing conversation indexes',
   prepare: 'Preparing project indexes', archive: 'Indexing project before putting it away',
   optimize: 'Optimizing SQLite search', check: 'Checking SQLite integrity', compact: 'Compacting SQLite database', reset: 'Resetting local search indexes' };
@@ -48,8 +68,11 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       const results = checkpoints.filter(item=>item.complete).map(item=>item.result);
       const completed = step=>checkpoints.some(item=>item.step===step && item.complete);
       const recordStep = (step,result) => {
-        const retained = {sources:result.sources ?? 0,conversations:result.conversations ?? 0,failures:result.failures ?? []};
-        checkpoints.push({step,complete:!retained.failures.some(failure=>!failure.source),completedAt:Date.now(),result:retained});
+        const retained = {sources:result.sources ?? 0,conversations:result.conversations ?? 0,failures:result.failures ?? [],
+          ...(Number.isSafeInteger(result.skippedFiles) && result.skippedFiles>=0?{skippedFiles:result.skippedFiles}:{}),
+          ...(Number.isSafeInteger(result.failedProjects) && result.failedProjects>=0?{failedProjects:result.failedProjects}:{}),
+          ...(Number.isSafeInteger(result.failureDiagnosticsOmitted) && result.failureDiagnosticsOmitted>=0?{failureDiagnosticsOmitted:result.failureDiagnosticsOmitted}:{})};
+        checkpoints.push({step,complete:!(retained.failedProjects>0)&&!retained.failures.some(failure=>!failure.source),completedAt:Date.now(),result:retained});
         results.push(retained);
         publish({...job,checkpoints:[...checkpoints]});
       };
@@ -74,17 +97,18 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       // A source-level extraction gap is an indexed, searchable fact about
       // that file: the rest of the published index remains usable. Only an
       // operation-level failure leaves a job partial and offers Retry.
-      const skipped = failures.filter(failure => failure.source);
-      const operational = failures.filter(failure => !failure.source);
-      if (['prepare', 'archive'].includes(current.kind) && operational.length === 0)
+      const skippedFiles=results.reduce((sum,result)=>sum+(result.skippedFiles ?? new Set((result.failures??[]).filter(failure=>failure.source).map(failure=>failure.source)).size),0);
+      const operationalCount=results.reduce((sum,result)=>sum+(result.failedProjects ?? (result.failures??[]).filter(failure=>!failure.source).length),0);
+      const failureDiagnosticsOmitted=results.reduce((sum,result)=>sum+(result.failureDiagnosticsOmitted??0),0);
+      if (['prepare', 'archive'].includes(current.kind) && operationalCount === 0)
         withData(db => db.markProjectIndexesReady(current.project));
       const sources = results.reduce((sum, result) => sum + (result.sources ?? 0), 0);
       const conversations = results.reduce((sum, result) => sum + (result.conversations ?? 0), 0);
       const counts = current.kind === 'files' ? `${sources} files indexed` : current.kind === 'chats'
         ? `${conversations} conversations indexed` : `${sources} files and ${conversations} conversations indexed`;
-      publish({ ...job, status: operational.length ? 'partial' : 'completed', failures, finishedAt:Date.now(),
-        skipped: skipped.length,
-        label: `${counts}${operational.length ? ` · ${operational.length} operation ${operational.length === 1 ? 'failed' : 'failures'}` : skipped.length ? ` · ${skipped.length} file${skipped.length === 1 ? '' : 's'} skipped` : ' · Done'}` });
+      publish({ ...job, status: operationalCount ? 'partial' : 'completed', failures, finishedAt:Date.now(),
+        skipped: skippedFiles,failureDiagnosticsOmitted,
+        label: `${counts}${operationalCount ? ` · ${operationalCount} operation ${operationalCount === 1 ? 'failed' : 'failures'}` : skippedFiles ? ` · ${skippedFiles} file${skippedFiles === 1 ? '' : 's'} skipped` : ' · Done'}` });
     } catch (error) {
       const failed = { ...job, status:signal.aborted ? 'stopped' : 'failed', finishedAt:Date.now(),
         failure:{message:String(error.message),step:job?.step},
@@ -95,7 +119,7 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
   }
   const archiveLocks = new Set();
   return {
-    status: () => {load();return job;},
+    status: () => {load();return publicJob(job);},
     isArchiving: projectID => projectID ? archiveLocks.has(projectID) : archiveLocks.size > 0,
     async start(kind, projectID = '', retryID = '', internal = false) {
       load();
@@ -109,7 +133,7 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       if (projectID && app.history?.isProjectArchived && await app.history.isProjectArchived(projectID))
         throw Error('Restore this project before refreshing its search indexes.');
       if (job?.status === 'running') {
-        if (job.kind === kind && job.project === projectID) return job;
+        if (job.kind === kind && job.project === projectID) return publicJob(job);
         throw Object.assign(Error('Another index or SQLite job is running. Let it finish or stop it first.'), { status: 409 });
       }
       if (retryID && (job?.id !== retryID || job.kind !== kind || job.project !== projectID))
@@ -124,7 +148,7 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       const current = job;
       // Send the initial status before potentially synchronous SQLite work.
       work = new Promise(resolve => setImmediate(resolve)).then(() => execute(current));
-      return current;
+      return publicJob(current);
     },
     async archiveProject(projectID, revision, commit) {
       if (!Number.isInteger(revision) || typeof commit !== 'function')
@@ -149,11 +173,11 @@ export function createIndexJobs({ app, backendRoot, dataRoot,
       if (job?.id !== id || job.status !== 'running' || !job.stoppable || !controller) throw Error('This job cannot be stopped.');
       controller.abort();
       publish({ ...job, label:'Stopping after the current operation…', stoppable:false });
-      return job;
+      return publicJob(job);
     },
     dismiss(id) {
       load();
-      if (job?.id !== id) return job;
+      if (job?.id !== id) return publicJob(job);
       if (job.status === 'running') throw Error('The job is still running.');
       publish(null);
       return null;

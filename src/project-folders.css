@@ -1,0 +1,4 @@
+.project-folder-list { display: grid; gap: 6px; max-height: 38vh; overflow-y: auto; }
+.project-folder-list > button { display: flex; align-items: center; gap: 8px; padding: 9px; text-align: left; overflow-wrap: anywhere; }
+.imported-chat-notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 10px 16px; font-size: 13px; border-bottom: 1px solid var(--line); background: var(--paper); }
+.imported-chat-notice > span { flex: 1; }

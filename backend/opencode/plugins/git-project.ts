@@ -33,18 +33,18 @@ const GitProject: Plugin = async ({ client, directory }) => {
     tool: {
       git_project: tool({
         description:
-          "Managed Git/GitHub for every named agent. Use inspect, preview and execute for ordinary work. Call prepare before implementation to prepare the agreed task branch; chats themselves never switch branches. To merge a local branch into the agreed main branch, call merge with branch for an exact preview, then merge with planID; the latter asks native git_project permission. Do not ask a question or use request for this ordinary merge. For an explicit request outside the saved agreement, use request with a reason and either agreement changes (tracking, github, preset, mainBranch), or tool git/gh and exact args. Ask the native question tool with the returned questions unchanged, wait for the recorded answer, then call request with planID after approval. Native permission and repository/content checks still apply. Never publish through shell.",
+          "Manage project Git/GitHub through its saved agreement. Inspect state; prepare the agreed working branch when needed; preview an ordinary checkpoint, sync or download, then execute its exact returned id as planID. Merge previews a local branch into agreed main and executes with planID; it uses native permission without a separate question. Request handles an explicit exception: present returned questions unchanged through native question, wait for the recorded approval, then request with planID. Revalidate stale or uncertain operations rather than replaying them. Preserve unrelated work, native permission and content checks; never bypass this service through shell.",
         args: {
-          action: tool.schema.enum(["inspect", "preview", "execute", "merge", "request", "prepare"]),
-          reason: tool.schema.string().max(2000).optional(),
-          tool: tool.schema.enum(["git", "gh"]).optional(),
-          args: tool.schema.array(tool.schema.string()).max(50).optional(),
-          agreement: tool.schema.object({ tracking: tool.schema.boolean().optional(), github: tool.schema.boolean().optional(), preset: tool.schema.enum(["main", "branch", "review", "confirm", "inspect"]).optional(), mainBranch: tool.schema.string().optional() }).optional(),
-          kind: tool.schema.enum(["checkpoint", "sync", "download"]).optional(),
-          files: tool.schema.array(tool.schema.string()).max(500).optional(),
-          message: tool.schema.string().max(4000).optional(),
-          planID: tool.schema.string().optional(),
-          branch: tool.schema.string().optional(),
+          action: tool.schema.enum(["inspect", "preview", "execute", "merge", "request", "prepare"]).describe("inspect reads agreement/state; prepare prepares its working branch. preview requires kind; execute requires planID. merge/request preview without planID and execute with it."),
+          reason: tool.schema.string().max(2000).optional().describe("Initial request only: explain the explicit user request and its exception to the agreement."),
+          tool: tool.schema.enum(["git", "gh"]).optional().describe("Initial request command, instead of agreement changes. Managed Git history operations or gh repo edit --visibility public|private; account setup stays in the panel."),
+          args: tool.schema.array(tool.schema.string()).max(50).optional().describe("Initial request: exact arguments without the executable name, credentials or shell syntax. Supported command/options are validated by the service."),
+          agreement: tool.schema.object({ tracking: tool.schema.boolean().optional().describe("Enable local project history."), github: tool.schema.boolean().optional().describe("Enable GitHub sync for the linked project."), preset: tool.schema.enum(["main", "branch", "review", "confirm", "inspect"]).optional().describe("Working agreement: direct main, separate task, prepare review, confirm uploads, or inspect only."), mainBranch: tool.schema.string().optional().describe("Designated local main branch.") }).optional().describe("Initial request: proposed saved agreement changes, instead of tool/args. A one-time command request does not change defaults."),
+          kind: tool.schema.enum(["checkpoint", "sync", "download"]).optional().describe("preview only: checkpoint saves selected files locally; sync saves/uploads per agreement; download gets compatible updates on a clean tree."),
+          files: tool.schema.array(tool.schema.string()).max(500).optional().describe("preview only: selected project-relative changed paths. checkpoint requires at least one; download uses none. Unrelated staging is preserved."),
+          message: tool.schema.string().max(4000).optional().describe("preview only: checkpoint message; defaults to Save project work."),
+          planID: tool.schema.string().optional().describe("Exact returned preview id for execute, merge or approved request. Never invent it or substitute a branch name."),
+          branch: tool.schema.string().optional().describe("Initial merge only: exact existing local source branch; target comes from the saved mainBranch agreement."),
         },
         async execute(args, context) {
           if (["execute", "prepare"].includes(args.action) || (["merge", "request"].includes(args.action) && args.planID)) {

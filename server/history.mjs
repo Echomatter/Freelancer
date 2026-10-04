@@ -4,7 +4,7 @@ import { stat } from "node:fs/promises";
 import { createLocalDataService, isLocalDataUnavailable } from "./data/store.mjs";
 import { maintainLocalData } from './data/maintenance.mjs';
 import { openDataFolder } from "./native-data.mjs";
-import { importedChatID } from './chatgpt-import.mjs';
+import { importedChatID } from './imported-history.mjs';
 import { openCodeSourceIdentity, openCodeSnapshotProof } from './data/opencode-warehouse.mjs';
 import { createKnowledgeQuery } from './data/knowledge-query.mjs';
 import { createMemoryCaptureRunner } from './memory-capture.mjs';
@@ -168,7 +168,7 @@ export function createHistoryService({
     let session, native;
     try {
       session = await own(project,job.sessionID,{signal});
-      native = session.imported ? app.chatgpt.get(job.projectID,job.sessionID)?.messages
+      native = session.imported ? app.importedHistory.get(job.projectID,job.sessionID)?.messages
         : await request(project,`/session/${encodeURIComponent(job.sessionID)}/message`,{signal});
       if (!Array.isArray(native)) throw Error('Conversation messages are unavailable.');
     } catch (error) {
@@ -312,7 +312,7 @@ export function createHistoryService({
     signal?.throwIfAborted();
     if (!idPattern.test(id || "")) throw Error("Choose a chat.");
     if (importedChatID(id)) {
-      const chat = app.chatgpt.get(project.id, id);
+      const chat = app.importedHistory.get(project.id, id);
       if (!chat) throw Error('This imported chat belongs to another project.');
       const { messages, ...header } = chat;
       return header;
@@ -399,7 +399,7 @@ export function createHistoryService({
   }
   async function enrich(projectID, rows) {
     const project = await app.project(projectID);
-    const valid = [...rows, ...(app.chatgpt?.list(projectID) ?? [])].filter(
+    const valid = [...rows, ...(app.importedHistory?.list(projectID) ?? [])].filter(
       (s) =>
         idPattern.test(s.id || "") &&
         sameDirectory(s.directory, project.directory),
@@ -846,7 +846,7 @@ export function createHistoryService({
             const systemSessions = data().systemSessions(project.id);
             const valid = rows.filter((session) =>
               idPattern.test(session.id || "") && sameDirectory(session.directory, project.directory) && !systemSessions.has(session.id));
-            const imported = app.chatgpt?.list(project.id) ?? [];
+            const imported = app.importedHistory?.list(project.id) ?? [];
             let current = 0;
             for (const session of valid) {
               current++;
@@ -877,7 +877,7 @@ export function createHistoryService({
             }
             for (const session of imported) {
               signal?.throwIfAborted();
-              const chat = app.chatgpt.get(project.id, session.id);
+              const chat = app.importedHistory.get(project.id, session.id);
               data().indexChat(project.id, session, chat.messages);
               summary.conversations++; summary.messages += chat.messages.length;
             }
@@ -903,6 +903,15 @@ export function createHistoryService({
         model: options.model || undefined, phrase: options.phrase === true, limit, cursor: options.cursor });
       const hits = found.results;
       const matchingProjects = new Set(hits.map((row) => row.project));
+      // Search locates retained source messages, but management actions target
+      // the same parent conversation as native history. Read its current saved
+      // goal metadata, without repeating objectives or execution captures per hit.
+      const goals = new Map(await Promise.all([...matchingProjects].map(async projectID => [projectID,
+        new Map((await app.goals?.list(projectID) ?? []).filter(goal => typeof goal.session === 'string').map(goal => [goal.session,
+          Object.fromEntries(['id', 'project', 'session', 'title', 'status', 'archived', 'runID', 'revision']
+            .filter(key => goal[key] !== undefined).map(key => [key, goal[key]])),
+        ])),
+      ])));
       const archivedProjects = data().projects();
       const headers = new Map(projects.filter((project) => matchingProjects.has(project.id)).map((project) => {
         const sessions = data().headers(project.id).map((s) => ({
@@ -923,7 +932,8 @@ export function createHistoryService({
           }
           const navigation = root && !root.parentID ? root : null;
           return { ...row, navigationSession: navigation?.id ?? row.session, navigationTitle: navigation?.title ?? row.title,
-            projectName: allowed.get(row.project), organization: navigation?.organization ?? sessions?.get(row.session)?.organization };
+            projectName: allowed.get(row.project), organization: navigation?.organization ?? sessions?.get(row.session)?.organization,
+            goal: goals.get(row.project)?.get(navigation?.id ?? row.session) };
         });
       return { ...found, results, coverage: `${found.coverage} Worker hits retain their source identity; live navigation can open the parent conversation. Retained evidence reads the exact indexed source window.` };
     },
@@ -969,6 +979,7 @@ export function createHistoryService({
         // The maintenance worker repairs derived indexes in place. Pause the
         // process-wide connection so services wait for the repair to finish.
         await app.modelRatings?.quiesceForLocalDataMaintenance();
+        if (app.modelData?.isRunning()) throw Error('Wait for model-data refresh to finish before local data maintenance.');
         release = localData.beginMaintenance();
       }
       let result;
@@ -1266,7 +1277,7 @@ export function createHistoryService({
       const sessions = [];
       let bytes = 0;
       for (const id of selected.keys()) {
-        const imported = importedChatID(id) ? app.chatgpt.get(projectID, id) : null;
+        const imported = importedChatID(id) ? app.importedHistory.get(projectID, id) : null;
         const exported = imported ? { info: selected.get(id), messages: imported.messages, source: imported.source }
           : await host.exportSession(id, project.directory);
         if (

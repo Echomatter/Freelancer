@@ -13,6 +13,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { privateIPv4 } from "./lan.mjs";
 import { createRemoteAccess } from "./remote-access.mjs";
 import { readRestoreRecoveryState, acknowledgeRestoreRecovery } from './data/recovery.mjs';
+import { requireKnowledgeSelectors } from '../domain/knowledge-input.mjs';
 
 const types = {
   ".html": "text/html",
@@ -40,7 +41,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
   const sender = createSender(app, { beforeSend: history?.ensureWritable, executionFor: (p, s) => goals?.executionFor(p, s) });
   app.sender = sender;
   await sender.ready;
-  if (app.goalTree) { goals = createGoals(app, { sender }); await goals.ready; }
+  if (app.goalTree) { goals = createGoals(app, { sender }); await goals.ready; app.goals = goals; }
   const schedules = createSchedules(app, { sender, readActivity });
   await schedules.ready;
   await app.gitProjects?.recover();
@@ -99,7 +100,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         const lanApi = publicWeb || requestOrigin !== origin || !loopback;
         const pairingRequest = lanApi && route === '/api/access/pair' && req.method === 'POST';
         const lanTokenOk = !lanApi || pairingRequest || remote.authenticate(req, res, publicWeb ? 'web' : 'lan');
-        const agentBridge = loopback && !lanApi && ["/api/git/agent", "/api/goals/checkpoint", "/api/delegates/handoff", "/api/knowledge/agent"].includes(route) && !!expected && safeEqual(supplied, expected);
+        const agentBridge = loopback && !lanApi && ["/api/git/agent", "/api/goals/checkpoint", "/api/delegates/handoff", "/api/knowledge/agent", "/api/models/data/agent", "/api/evidence/evaluate/agent"].includes(route) && !!expected && safeEqual(supplied, expected);
         if (
           (!agentBridge && req.headers["x-freelancer-client"] !== "webpage") ||
           (req.headers.origin && req.headers.origin !== requestOrigin) ||
@@ -179,6 +180,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         }
         if (route === '/api/knowledge/agent' || route === '/api/knowledge') {
           if (req.method !== 'POST' || route.endsWith('/agent') && !agentBridge) return send(403, { error: 'Native knowledge tool only' });
+          requireKnowledgeSelectors(body);
           if (body.cursor !== undefined && !['query','search','claims'].includes(body.operation))
             return send(400,{error:'Query continuation is supported only for query, search or claims.'});
           if (route==='/api/knowledge' && !['query','search','read','status','claims','read-claim','opencode-read','pin','archive','refresh','evidence','remember','revise','forget','entity','entity-search','entity-read','open-nodes','read-graph','search-nodes','claim','correct-claim','relate','revise-relation','relation-history','relations','delete-relation','delete-entity'].includes(body.operation))
@@ -380,7 +382,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
               if(body.projectID&&!settings.projects.some(item=>item.id===body.projectID)) throw Error('Choose a registered project.');
               return send(200,await app.history.backfillOpenCode({projectID:body.projectID,resume:body.resume!==false,pageSize:body.pageSize,signal:requestAbort.signal}));
             }
-            default: throw Error('Unknown knowledge operation.');
+            default: throw Error('Unknown knowledge operation. Save an ordinary note with operation: "remember" and title/body; retrieve notes with operation: "query" and domain: "memories". Use the current schema for other operations; claim creates a different structured record.');
           }
         }
         if (route === "/api/git" && req.method === "GET") return send(200, await app.gitProjects.inspect(project));
@@ -415,6 +417,42 @@ export async function startServer({ application: app, assets, port = 0, readActi
               return history ? history.decorateBootstrap(result) : result;
             })(),
           );
+        if (route === '/api/evidence/evaluate/agent') {
+          if (!agentBridge || req.method !== 'POST') return send(403, { error: 'Native evidence evaluation tool only' });
+          for (const [field, label] of [['contract', 'Evidence contract'], ['composition', 'Evidence composition']]) {
+            if (body[field] !== undefined && Buffer.byteLength(JSON.stringify(body[field]), 'utf8') > 120_000)
+              return send(400, { error: label + ' exceeds 120 KB.' });
+          }
+          return send(200, await app.evidenceEvaluationAgentAction(body, { signal: requestAbort.signal }));
+        }
+        if (route === '/api/models/data/agent') {
+          if (!agentBridge || req.method !== 'POST') return send(403, { error: 'Native model catalog tool only' });
+          return send(200, await app.modelDataAgentAction(body));
+        }
+        if (route === '/api/models/data/credentials') {
+          if (lanApi || publicWeb || agentBridge) return send(403, { error: 'Manage model-data credentials on this computer.' });
+          if (req.method === 'GET') return send(200, app.modelData.credentials());
+          if (req.method === 'PUT') return send(200, await app.modelData.saveCredentials(body));
+          if (req.method === 'DELETE') return send(200, app.modelData.removeCredentials());
+          return send(405, { error: 'Unsupported credential operation.' });
+        }
+        if (route === '/api/models/data') {
+          const operation = req.method === 'GET' ? url.searchParams.get('operation') ?? 'list' : body.operation;
+          if (req.method === 'GET') {
+            const input = Object.fromEntries(url.searchParams);
+            if (input.limit !== undefined) input.limit = Number(input.limit);
+            if (operation === 'list' || operation === 'search') return send(200, app.modelData.list(input));
+            if (operation === 'detail') return send(200, app.modelData.detail(input));
+            if (operation === 'card') return send(200, app.modelData.card(input));
+            if (operation === 'status') return send(200, { ...app.modelData.status(), legacy: app.modelRatings.status() });
+          }
+          if (req.method === 'POST') {
+            if (operation === 'refresh') return send(202, await app.refreshModelData(body));
+            if (operation === 'cancel') return send(200, app.modelData.cancel(body.id));
+            if (operation === 'dismiss') return send(200, app.modelData.dismiss(body.id));
+          }
+          return send(400, { error: 'Unknown model catalog operation.' });
+        }
         if (req.method === "GET" && route === "/api/models/ratings")
           return send(200, { job: app.modelRatings.status() });
         if (req.method === "POST" && route === "/api/models/ratings")
@@ -435,22 +473,6 @@ export async function startServer({ application: app, assets, port = 0, readActi
           return send(200, await app.addProject(body.directory, { signal: requestAbort.signal }));
         if (req.method === 'GET' && route === '/api/projects/folders')
           return send(200, await app.listProjectFolders(url.searchParams.get('directory') ?? ''));
-        if (req.method === 'POST' && route === '/api/projects/import-preview') {
-          if (body.forImport !== undefined && typeof body.forImport !== 'boolean') throw Error('Choose whether to review history import.');
-          // Existing projects need no catalog scan; let the client reopen them
-          // immediately through the ordinary project path.
-          const settings = await app.store.read('settings');
-          const directory = await import('node:fs/promises').then(fs => fs.realpath(body.directory));
-          const existing = settings.projects.find(row => (process.platform === 'win32'
-            ? row.directory.replace(/^\\\\\?\\/, '').toLowerCase() === directory.replace(/^\\\\\?\\/, '').toLowerCase()
-            : row.directory === directory));
-          if (existing && !body.sourceDirectory && !body.forImport) return send(200, { existing, directory, chats: [], notice: 'This project is already set up. Use Manage project to review its history import.' });
-          return send(200, await app.chatgpt.preview(body.directory, body.sourceDirectory, { forImport: body.forImport === true }));
-        }
-        if (req.method === 'POST' && route === '/api/projects/setup')
-          return send(200, await app.chatgpt.complete(body.token, body.selected));
-        if (req.method === 'POST' && route === '/api/chat/imported/continue')
-          return send(200, await sender.organize(project, () => app.chatgpt.resume(project, body.session)));
         if (req.method === "POST" && route === "/api/content-index/rebuild")
           return send(200, await app.rebuildContentIndex());
         if (req.method === "PATCH" && route === "/api/projects")
@@ -727,7 +749,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
     await sender.close();
     await app.indexJobs?.close();
     await history?.close();
-    app.modelRatings?.close();
+    await app.evidenceEvaluation?.close();
+    await app.modelData?.close();
+    await app.modelRatings?.close();
     await app.gitProjects?.close();
     app.localData?.close();
   })();

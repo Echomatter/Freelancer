@@ -563,6 +563,6 @@
                            "automatic_session_switch":  false,
                            "automatic_chunk_delegation":  "Use Researcher/Explore/web retrieval first; Architect only when the task warrants it",
                            "end_of_task":  "recommend only when the next phase is clear and another model has a material advantage",
-                           "explicit_skill":  "model-routing"
+                           "explicit_skill":  "delegate-work"
                        }
 }

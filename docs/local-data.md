@@ -27,6 +27,14 @@ Content & Storage**. Putting a project away first refreshes its indexes; later
 global refreshes skip it until restored. See the [user guide](getting-started.md#search-and-memories)
 for editing, evidence, revision history and memory organization.
 
+**Content & Storage → Searchable content** shows current memory-search coverage
+and indexed skill/instruction files. Memories can be archived one at a time
+from search; system instructions and skills remain in their source folders
+and are not put away as a collection. Refresh the file index after changing
+authored guidance. Project `AGENTS.md`, shared workstyle/runtime instructions,
+and skill files/references are included even when a Git ignore rule hides
+them; ordinary ignored files remain excluded.
+
 A memory holds a title, text, an arbitrary structured data object, optional
 evidence and provenance, retained relationships and source boundaries. Origin,
 status, scope and dates can be recorded inside its data without selecting a

@@ -60,6 +60,7 @@ export async function projectSourceInventory(root) {
   // Git ignore rules may be used by a developer to hide local files, but must
   // not make the agent's own instruction catalog invisible to content search.
   const internalGuidance = new Set([
+    'AGENTS.md',
     'backend/global/WORKSTYLE.md',
     'backend/opencode/global-instructions.md',
   ]);

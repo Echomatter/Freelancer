@@ -95,7 +95,7 @@ export function Settings({ data, modelData, sessionID, tab, run, refresh, onNavi
     {tab === "delegation" && <><PageHeading title="Delegation" icon={GitFork} help="delegation" actions={closeAction} />
       <DelegationSettings key={data.project?.id} project={data.project?.id ?? ""} sessionID={sessionID} refresh={refresh} /></>}
     {tab === "content-storage" && <ContentStorage
-      onClose={onClose} onChange={refresh} />}
+      onClose={onClose} onChange={refresh} onSearch={() => onSetting("application", "search")} />}
     {tab === "file-access" && <><PageHeading title="File access" icon={Files} actions={closeAction} />
       <FileAccessSettings value={data.settings.fileAccessScope}
         projectCount={data.settings.projects?.length ?? 0} onSave={async scope => {

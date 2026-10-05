@@ -29,6 +29,8 @@ type ProjectStats = {
 type IndexStats = {
   projects: ProjectStats[];
   chatMessages: { messages: number; models: number };
+  memories: { records: number; searchable: number; archived: number };
+  guidance: { files: number; skills: number; references: number; instructions: number; builtAt: string | null };
   databaseBytes: number;
   reclaimableBytes: number;
   walBytes: number;
@@ -65,14 +67,16 @@ const size = (bytes: number) =>
   bytes < 1024 ? `${bytes} B`
     : bytes < 1024 * 1024 ? `${(bytes / 1024).toFixed(1)} KB`
       : `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-const date = (value?: string | number) => value ? new Date(value).toLocaleString() : "Not indexed";
+const date = (value?: string | number | null) => value ? new Date(value).toLocaleString() : "Not indexed";
 
 export function ContentStorage({
   onClose,
   onChange,
+  onSearch,
 }: {
   onClose: () => void;
   onChange: () => Promise<void>;
+  onSearch: () => void;
 }) {
   const jobs = useIndexJobContext();
   const [stats, setStats] = useState<IndexStats | null>(null);
@@ -173,6 +177,7 @@ export function ContentStorage({
 
     <nav className="content-storage-jumps" aria-label="Content and storage sections">
       <a href="#content-storage-projects">Projects</a>
+      <a href="#content-storage-searchable">Searchable content</a>
       <a href="#content-storage-locations">Data locations</a>
       <a href="#content-storage-maintenance">Maintenance</a>
     </nav>
@@ -232,6 +237,26 @@ export function ContentStorage({
           <SearchCheck size={16} />{indexPending === "chats" ? "Refreshing conversations…" : "Refresh Conversation Index"}
         </Button>
       </div>
+    </Panel>
+
+    <Panel id="content-storage-searchable" title="Searchable content" help="index-coverage">
+      <div className="content-storage-source-cards">
+        <section className="content-storage-source-card" aria-label="Memory search index">
+          <div><strong>Memories</strong><Badge tone={stats?.memories.searchable ? "success" : "neutral"}>
+            {stats ? `${count(stats.memories.searchable)} searchable` : "Loading coverage…"}
+          </Badge></div>
+          <p>{stats ? `${count(stats.memories.records)} retained memories · ${count(stats.memories.archived)} archived` : "Retained memories use the local memory search index."}</p>
+          <Button type="button" onClick={onSearch}>Search all content</Button>
+        </section>
+        <section className="content-storage-source-card" aria-label="Agent instruction and skill search index">
+          <div><strong>Skills &amp; instructions</strong><Badge tone={stats?.guidance.files ? "success" : "neutral"}>
+            {stats ? `${count(stats.guidance.files)} indexed files` : "Loading coverage…"}
+          </Badge></div>
+          <p>{stats ? `${count(stats.guidance.skills)} skills · ${count(stats.guidance.references)} references · ${count(stats.guidance.instructions)} instruction files · ${date(stats.guidance.builtAt)}` : "Shared skills and internal instructions are searchable with project files."}</p>
+          <Button type="button" onClick={onSearch}>Search all content</Button>
+        </section>
+      </div>
+      <p className="content-storage-note">Memories can be archived one record at a time in search. Instructions and skills stay active in their source folders; refresh the file index after changing them.</p>
     </Panel>
 
     <Panel id="content-storage-locations" title="Local data" className="storage-story" help="local-data" helpDetails={storage?.notice}>

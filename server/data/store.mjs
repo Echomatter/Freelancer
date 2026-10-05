@@ -696,9 +696,31 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
       const pageSize = db.prepare("PRAGMA page_size").get().page_size;
       const pageCount = db.prepare("PRAGMA page_count").get().page_count;
       const freePages = db.prepare("PRAGMA freelist_count").get().freelist_count;
+      const memoryCoverage = db.prepare(`WITH current AS (
+        SELECT m.status,r.revision_id FROM memory_items m JOIN memory_item_revisions r USING(memory_id)
+        WHERE m.deleted_at IS NULL AND m.status<>'forgotten'
+          AND r.revision=(SELECT max(x.revision) FROM memory_item_revisions x WHERE x.memory_id=m.memory_id)
+        ) SELECT count(*) AS records,
+          sum(CASE WHEN status='archived' THEN 1 ELSE 0 END) AS archived,
+          sum(CASE WHEN EXISTS(SELECT 1 FROM memory_search_fts f WHERE f.revision_id=current.revision_id) THEN 1 ELSE 0 END) AS searchable
+          FROM current`).get();
+      const guidanceCoverage = db.prepare(`SELECT count(*) AS files,
+        sum(CASE WHEN lower(virtual_path) LIKE 'backend/skills/%/skill.md' THEN 1 ELSE 0 END) AS skills,
+        sum(CASE WHEN lower(virtual_path) LIKE 'backend/skills/%/references/%.md' THEN 1 ELSE 0 END) AS reference_files,
+        sum(CASE WHEN lower(virtual_path) IN ('agents.md','backend/global/workstyle.md','backend/opencode/global-instructions.md') THEN 1 ELSE 0 END) AS instructions
+        FROM content_sources WHERE lower(virtual_path) LIKE 'backend/skills/%/skill.md'
+          OR lower(virtual_path) LIKE 'backend/skills/%/references/%.md'
+          OR lower(virtual_path) IN ('agents.md','backend/global/workstyle.md','backend/opencode/global-instructions.md')`).get();
+      const guidanceBuiltAt = db.prepare(`SELECT max(m.value) AS builtAt FROM content_meta m WHERE m.key='built_at_utc'
+        AND EXISTS(SELECT 1 FROM content_sources s WHERE s.project_key=m.project_key AND (
+          lower(s.virtual_path) LIKE 'backend/skills/%/skill.md' OR lower(s.virtual_path) LIKE 'backend/skills/%/references/%.md'
+          OR lower(s.virtual_path) IN ('agents.md','backend/global/workstyle.md','backend/opencode/global-instructions.md')))`).get().builtAt;
       let walBytes = 0;
       try { walBytes = statSync(`${filename}-wal`).size; } catch { /* no WAL sidecar */ }
       return { fileProjects, chatProjects, chatMessages: plain(chatMessages),
+        memories: { records:memoryCoverage.records, searchable:memoryCoverage.searchable ?? 0, archived:memoryCoverage.archived ?? 0 },
+        guidance: { files:guidanceCoverage.files ?? 0, skills:guidanceCoverage.skills ?? 0,
+          references:guidanceCoverage.reference_files ?? 0, instructions:guidanceCoverage.instructions ?? 0, builtAt:guidanceBuiltAt ?? null },
         databaseBytes: pageSize * pageCount, reclaimableBytes: pageSize * freePages,
         walBytes };
     },

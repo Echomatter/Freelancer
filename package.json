@@ -15,6 +15,8 @@
     "test:browser": "node scripts/test-browser.mjs",
     "start": "node server/main.mjs",
     "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "smoke:computer-use": "node scripts/smoke-computer-use.mjs",
+    "smoke:cua-driver": "node scripts/smoke-cua-driver.mjs",
     "smoke:runtime": "node scripts/smoke-runtime.mjs",
     "test:contracts": "node scripts/test-contracts.mjs --suite all",
     "test:ui": "npm run build && node scripts/test-browser.mjs --ui",
@@ -22,15 +24,16 @@
     "test:themes": "node scripts/test-browser.mjs --all-palettes colors.browser usage.browser"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
     "@opencode-ai/plugin": "1.18.31",
     "@typesafe-ai/sdk": "0.6.0",
+    "jsonc-parser": "^3.3.1",
     "lucide-react": "^0.468.0",
     "qrcode": "1.5.4",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",
     "react-markdown": "^9.0.0",
-    "remark-gfm": "^4.0.0",
-    "jsonc-parser": "^3.3.1"
+    "remark-gfm": "^4.0.0"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

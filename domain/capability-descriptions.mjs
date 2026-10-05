@@ -31,6 +31,7 @@ const tools = Object.freeze({
   apply_patch: { name: 'Apply patch', description: 'Apply a patch to source files.' },
   bash: { name: 'Shell', description: 'Run a command with the active native permissions.' },
   content_index: { name: 'Content index', description: 'Find indexed file passages, chat text and extracted data.' },
+  computer: { name: 'Computer use', description: 'Observe and interact with browser pages and desktop applications through available providers.' },
   delegate: { name: 'Delegate', description: 'Assign and manage bounded work for named agents.' },
   edit: { name: 'Edit', description: 'Edit an existing file.' },
   evidence_evaluation: { name: 'Evidence evaluation', description: 'Judge selected evidence and inspect its source coverage.' },

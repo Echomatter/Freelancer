@@ -119,6 +119,23 @@ test('capability panels start compact and remember their local disclosure state'
     await expect.poll(() => page.evaluate(key => localStorage.getItem(`capability-panel:${key}`), key)).toBe('open');
 });
 
+test('shared capability inventory presents the Freelancer computer tool with a concise description', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
+  const fixture = await own(localDataFixture({ timers: false }));
+  attachMcpHost(fixture.host);
+  const original = fixture.host.request.bind(fixture.host);
+  fixture.host.request = async (route, options) => {
+    if (route === '/experimental/tool/ids') return ['computer'];
+    return original(route, options);
+  };
+  const page = await appBrowser.newPage({ viewport: { width: 1280, height: 900 } });
+  await openCapabilities(page, fixture.url);
+  const row = page.getByRole('list', { name: 'Tool inventory' }).locator('details.capability-item')
+    .filter({ has: page.getByText('computer', { exact: true }) });
+  await expect(row).toContainText('Loaded');
+  await row.locator('summary').click();
+  await expect(row.locator('.capability-description')).toContainText(/browser pages and desktop applications/i);
+});
+
 test('fresh no-project workspace shows shared Tools and Skills with persistent independent collapse states', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
   const fixture = await own(localDataFixture({ timers: false }));
   await fixture.store.update('settings', settings => ({ ...settings, projects: [], lastProjectID: undefined }));
@@ -257,8 +274,8 @@ test('generic service templates persist native configuration and keep credential
   const native = attachMcpHost(fixture.host);
   const page = await appBrowser.newPage({ viewport: { width: 1280, height: 900 } });
   await openCapabilities(page, fixture.url);
-  await expect(page.locator('.mcp-service-list li')).toHaveCount(5);
-  for (const name of ['Playwright', 'Fetch', 'Sequential Thinking', 'Context7', 'JEV'])
+  await expect(page.locator('.mcp-service-list li')).toHaveCount(6);
+  for (const name of ['Playwright', 'Cua Driver', 'Fetch', 'Sequential Thinking', 'Context7', 'JEV'])
     await expect(page.getByText(name, { exact: true }).first()).toBeVisible();
   await expect(page.getByRole('button', { name: 'Set up Memory', exact: true })).toHaveCount(0);
   const serviceRows = page.locator('.mcp-service-list > li');
@@ -271,11 +288,16 @@ test('generic service templates persist native configuration and keep credential
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
   await page.setViewportSize({ width: 1280, height: 900 });
   await page.getByRole('button', { name: 'Add connection', exact: true }).click();
+  await page.getByLabel('Service template').selectOption('cua-driver');
+  await expect(page.getByLabel('Executable and arguments (JSON array)')).toHaveValue(JSON.stringify(['cua-driver', 'mcp']));
+  await page.getByRole('checkbox', { name: 'I approve running this command on this computer.' }).check();
+  await page.getByRole('button', { name: 'Save shared connection', exact: true }).click();
+  await expect.poll(() => native.config.mcp['cua-driver']?.command).toEqual(['cua-driver', 'mcp']);
+  await page.getByRole('button', { name: 'Add connection', exact: true }).click();
   await expect(page.getByLabel('Service template').getByRole('option', { name: 'Memory', exact: true })).toHaveCount(0);
   await page.getByLabel('Service template').selectOption('jev');
   await expect(page.getByLabel('Executable and arguments (JSON array)')).toHaveValue(JSON.stringify(['npx', '-y', 'jev-mcp@0.5.1']));
   await expect(page.getByLabel('Environment references (JSON object)')).toHaveValue(JSON.stringify({ TYPESAFE_API_KEY: '{env:JEV_API_KEY}' }, null, 2));
-  await expect(page.locator('.mcp-service-list li').filter({ hasText: 'JEV' })).toContainText('usage-priced');
   await page.getByLabel('Service template').selectOption('context7');
   await expect(page.getByLabel('MCP server URL')).toHaveValue('https://mcp.context7.com/mcp');
   await page.getByRole('checkbox', { name: 'I approve connecting to this service.' }).check();

@@ -18,6 +18,7 @@ export function assertSafeEvaluationData(value) {
   const visit=(item,depth)=>{
     if(++nodes>20000||depth>24) fail('Evaluation data is too deeply nested or large.');
     if(typeof item==='number'&&!Number.isFinite(item)) fail('Evaluation values must be finite JSON numbers.');
+    if(item===undefined) fail('Evaluation values must be JSON data.');
     if(typeof item==='string'&&(/Bearer\s+\S+/i.test(item)||/-----BEGIN [A-Z ]*PRIVATE KEY-----/.test(item)||/\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,}|xox[baprs]-[A-Za-z0-9-]{20,}|AKIA[A-Z0-9]{16})\b/.test(item))) fail('Secret material cannot enter an evaluation packet.');
     if(item===null||['string','boolean','number'].includes(typeof item)) return;
     if(Array.isArray(item)) { for(const child of item) visit(child,depth+1);return; }

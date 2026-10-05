@@ -22,6 +22,7 @@ application source; the production journeys deliberately use `dist/`.
 | List selected contracts without running | `npm run test:contracts -- --list store` |
 | All JavaScript contracts, including real Git | `npm run test:contracts` |
 | Real Git fixtures only | `npm run test:git` |
+| Live Cua Driver / Calculator adapter smoke (Windows; provider required) | `npm run smoke:cua-driver` |
 
 Install Chromium once with `npx playwright install chromium`. All commands work
 in PowerShell; use `npm.cmd`/`npx.cmd` if your execution policy blocks `.ps1` shims.
@@ -35,6 +36,14 @@ selected batch runs even if an earlier batch fails, and any failed batch makes
 the command fail. Explicit concurrency can lower the isolated limits. Run full
 browser journeys separately from the process-heavy Git fixtures when collecting
 responsiveness evidence.
+
+`smoke:cua-driver` connects to the installed local Cua Driver, inspects its
+advertised capabilities, and uses Calculator when available. If no Calculator
+window exists, CUA launches it without activating it; the smoke leaves that app
+open. This checks the adapter directly with an allowed test authorization
+callback. It does not exercise the native OpenCode permission UI or model
+inference. If the provider asks for user approval, stop and ask the user to
+accept before retrying.
 
 ## What belongs where
 

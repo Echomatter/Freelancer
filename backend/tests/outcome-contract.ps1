@@ -4,13 +4,14 @@ $root=Join-Path $env:TEMP ('toolkit-outcome-' + [guid]::NewGuid().ToString('N'))
 function Check($c,[string]$s){if(-not $c){throw $s};Write-Output "PASS: $s"}
 function Save([string]$p,$o){[IO.File]::WriteAllText($p,($o|ConvertTo-Json -Depth 12),(New-Object Text.UTF8Encoding($false)))}
 try {
- New-Item -ItemType Directory -Path (Join-Path $root 'routing'),(Join-Path $root '.state\delegation') -Force|Out-Null
- $history=Join-Path $root '.state\task-history.json'
+ $runtimeRoot=Join-Path $root 'backend'
+ New-Item -ItemType Directory -Path (Join-Path $runtimeRoot 'routing'),(Join-Path $runtimeRoot '.state\delegation') -Force|Out-Null
+ $history=Join-Path $runtimeRoot '.state\task-history.json'
  Save $history @{generated=$true;entries=@()}
- $roster=Join-Path $root 'routing\model-roster.json';Save $roster @{generated_at='2020-01-01T00:00:00Z';eligible_models=@()}
+ $roster=Join-Path $runtimeRoot 'routing\model-roster.json';Save $roster @{generated_at='2020-01-01T00:00:00Z';eligible_models=@()}
  $before=(Get-FileHash $roster).Hash
  $id='a'*64
- Save (Join-Path $root ('.state\delegation\'+$id+'.json')) @{
+ Save (Join-Path $runtimeRoot ('.state\delegation\'+$id+'.json')) @{
    task_id=$id;parent_model='opencode/free-parent';role='worker';status='completed';attempts=@(@{
      status='completed';selected_model='opencode-go/b';observed_model='opencode-go/b';surface='opencode-go';elapsed_ms=1000;
      usage=@{input=30;output=20;cache_read=10;cache_write=0;provider_dollars=.01}
@@ -18,12 +19,12 @@ try {
  }
  $script=Join-Path $repo 'scripts\record-task-outcome.ps1'
  $prior=(Get-FileHash -LiteralPath $history).Hash;$rejected=$false
- try { & $script -ToolkitRoot $root -TaskId $id -Repo fixture -TaskType bounded_feature | Out-Null } catch { $rejected=$true }
+ try { & $script -ToolkitRoot $runtimeRoot -TaskId $id -Repo fixture -TaskType bounded_feature | Out-Null } catch { $rejected=$true }
  Check ($rejected -and (Get-FileHash -LiteralPath $history).Hash -eq $prior) 'missing validation flags cannot silently become a failed outcome'
  $rejected=$false
- try { & $script -ToolkitRoot $root -TaskId $id -TaskType bounded_feature -ActualModel 'opencode-go/b' -Success true -TestsPassed true | Out-Null } catch { $rejected=$true }
+ try { & $script -ToolkitRoot $runtimeRoot -TaskId $id -TaskType bounded_feature -ActualModel 'opencode-go/b' -Success true -TestsPassed true | Out-Null } catch { $rejected=$true }
  Check ($rejected -and (Get-FileHash -LiteralPath $history).Hash -eq $prior) 'unknown recorder parameters are rejected before mutation'
- $params=@{ToolkitRoot=$root;Repo='fixture';TaskType='bounded_feature';Model='opencode-go/b';Access='opencode-go';Success=$true;TestsPassed=$true;Attempts=1;Escalated=$false;ElapsedBand='short';TaskId=$id}
+ $params=@{ToolkitRoot=$runtimeRoot;Repo='fixture';TaskType='bounded_feature';Model='opencode-go/b';Access='opencode-go';Success=$true;TestsPassed=$true;Attempts=1;Escalated=$false;ElapsedBand='short';TaskId=$id}
  & $script @params|Out-Null
  & $script @params|Out-Null
  $h=Get-Content $history -Raw|ConvertFrom-Json
@@ -53,20 +54,20 @@ try {
  $prior=(Get-FileHash $history).Hash
  $params.TaskId='b'*64;$params.Model='opencode/free';$params.Success=$true;$params.Role='review'
  foreach($status in @('no_qualified_route','paid_permission_declined')) {
-   Save (Join-Path $root ('.state\delegation\'+$params.TaskId+'.json')) @{task_id=$params.TaskId;role='review';status=$status;attempts=@()}
+ Save (Join-Path $runtimeRoot ('.state\delegation\'+$params.TaskId+'.json')) @{task_id=$params.TaskId;role='review';status=$status;attempts=@()}
    $rejected=$false
    try { & $script @params|Out-Null } catch { $rejected=$true }
    Check ($rejected-and(Get-FileHash $history).Hash-eq$prior) "unexecuted $status review cannot be recorded as success"
  }
  $params.TaskId='c'*64;$params.Model='';$params.Success=$false;$params.TestsPassed=$false;$params.Operational=$true
- Save (Join-Path $root ('.state\delegation\'+$params.TaskId+'.json')) @{task_id=$params.TaskId;role='worker';status='failed';attempts=@(@{status='failed';failure='timeout';selected_model='opencode/free';observed_model='opencode/free';surface='opencode-free';usage=@{input=25;output=2}})}
+ Save (Join-Path $runtimeRoot ('.state\delegation\'+$params.TaskId+'.json')) @{task_id=$params.TaskId;role='worker';status='failed';attempts=@(@{status='failed';failure='timeout';selected_model='opencode/free';observed_model='opencode/free';surface='opencode-free';usage=@{input=25;output=2}})}
  & $script @params|Out-Null
  & $script @params|Out-Null
  $operational=@((Get-Content $history -Raw|ConvertFrom-Json).entries|Where-Object {$_.task_id-eq$params.TaskId})
  Check ($operational.Count-eq 1-and$operational[0].observation_kind-eq'operational'-and$operational[0].failure_kind-eq'timeout'-and-not$operational[0].success) 'timeout usage is recorded once as operational, never capability success'
  # New receipts attribute named agents and use workflow mode, not persona name.
  $params.TaskId='d'*64;$params.Model='opencode/free';$params.Success=$true;$params.TestsPassed=$true;$params.Remove('Operational');$params.Remove('Role')
- Save (Join-Path $root ('.state\delegation\'+$params.TaskId+'.json')) @{task_id=$params.TaskId;agent=@{id='accessibility';name='Accessibility specialist'};workflow=@{id='review';mode='review'};status='completed';attempts=@(@{status='completed';selected_model='opencode/free';dispatched_model='opencode/free';observed_model='opencode/free';surface='opencode-free'})}
+ Save (Join-Path $runtimeRoot ('.state\delegation\'+$params.TaskId+'.json')) @{task_id=$params.TaskId;agent=@{id='accessibility';name='Accessibility specialist'};workflow=@{id='review';mode='review'};status='completed';attempts=@(@{status='completed';selected_model='opencode/free';dispatched_model='opencode/free';observed_model='opencode/free';surface='opencode-free'})}
  & $script @params|Out-Null
  $named=@((Get-Content $history -Raw|ConvertFrom-Json).entries|Where-Object {$_.task_id-eq$params.TaskId})[0]
  Check ($named.agent_id-eq'accessibility'-and$named.agent_name-eq'Accessibility specialist'-and$named.workflow_id-eq'review'-and$named.observation_kind-eq'review') 'named custom agent retains attribution and read-only review classification'

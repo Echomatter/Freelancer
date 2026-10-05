@@ -1083,6 +1083,16 @@ legend {
 }
 .tool-card summary > svg, .tool-card .tool-symbol, .tool-card summary > .badge { flex-shrink: 0; }
 .tool-card > p { overflow-wrap: anywhere; }
+.computer-evidence {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0 15px 12px;
+  color: var(--muted);
+  font-size: 11px;
+}
+.computer-evidence strong { color: var(--text); }
+.computer-evidence b { color: var(--text); font-weight: 600; }
 .tool-card > p,
 .tool-card > pre,
 .tool-card > .button {

@@ -33,7 +33,7 @@ function CardSources({ summary }: { summary: any }) {
       <strong>{record.testedName ?? record.name}</strong>
       <p>Retrieved {date(record.retrievedAt)}</p>
       {record.testedName && <p>{['intelligence', 'coding', 'agentic'].map(name =>
-        `${name === 'intelligence' ? 'Intelligence' : name === 'coding' ? 'Coding' : 'Agentic'} ${value(record.metrics[`ratings.artificial-analysis.${name}`])}${record.metrics[`ratings.artificial-analysis.${name}`]?.scale?.version ? ` (${record.metrics[`ratings.artificial-analysis.${name}`].scale.version})` : ''}`
+        `${name === 'intelligence' ? 'Intelligence' : name === 'coding' ? 'Coding' : 'Agentic'} ${value(record.metrics[`ratings.artificial-analysis.${name}`])}`
       ).join(' · ')}</p>}
       {record.testedName && (known(record.metrics['performance.output_tokens_per_second']?.value) || known(record.metrics['performance.time_to_first_token']?.value)) && <p>
         {known(record.metrics['performance.output_tokens_per_second']?.value) && <span>{value(record.metrics['performance.output_tokens_per_second'])} tokens/s </span>}
@@ -70,8 +70,7 @@ function PublishedFacts({ summary }: { summary: any }) {
         <dl className="model-card-scores">
           {['intelligence', 'coding', 'agentic'].map(name => {
             const cell = record.metrics[`ratings.artificial-analysis.${name}`];
-            return <div key={name}><dt>{name === 'intelligence' ? 'Intelligence' : name === 'coding' ? 'Coding' : 'Agentic'}
-              {cell?.scale?.version && <small>{cell.scale.version}</small>}</dt><dd title={metricTitle(cell)}>{value(cell)}</dd></div>;
+            return <div key={name}><dt>{name === 'intelligence' ? 'Intelligence' : name === 'coding' ? 'Coding' : 'Agentic'}</dt><dd title={metricTitle(cell)}>{value(cell)}</dd></div>;
           })}
         </dl>
         {(known(record.metrics['performance.output_tokens_per_second']?.value) || known(record.metrics['performance.time_to_first_token']?.value)) &&

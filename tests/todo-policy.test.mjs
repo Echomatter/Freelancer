@@ -48,7 +48,7 @@ test('fixed Build prompt keeps native todos separate from source-write authority
   assert.match(text, /Work mode: build/);
   assert.match(text, /Every agent may read and update native session todos/);
   assert.match(text, /Todos track work; they do not authorize source writes/);
-  assert.match(text, /The named agent provides working direction/);
+  assert.match(text, /All named agents share the available toolkit/);
   assert.match(text, /native `question` tool/);
   assert.match(text, /An inspectionOnly assignment forbids source edits/);
   assert.match(text, /`delegate\(\)` discovery returns current agent IDs and eligible budget.modelPool/);

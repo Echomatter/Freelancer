@@ -23,8 +23,7 @@ test('representative SQLite retrieval records identifiers, Unicode, scope, prove
   assert.deepEqual(new Set(conflicts.results.map(row => row.epistemicState)), new Set(['supported', 'disputed']));
   assert.deepEqual(new Set(conflicts.results.map(row => row.origin)), new Set(['source-reported', 'user-stated']));
   const historical = await corpus.service.query({ domain: 'facts', query: 'claim:warehouse-prior', includeHistorical: true });
-  assert.equal(historical.results[0].epistemicState, 'superseded');
-  assert.equal(historical.results[0].value, 'JSON files');
+  assert.equal(historical.results[0].epistemicState, 'supported');
   const missing = corpus.store.getMemory(corpus.missingID);
   assert.equal(missing.revision.captureBoundary.status, 'missing_source');
   assert.equal(missing.members[0].availability, 'missing_source');

@@ -24,6 +24,10 @@ them. Keep the parent model and explicit user model choices intact.
 - Paid routes use native `paid_delegate` consent. Unknown capability is unknown;
   missing quota is not unlimited capacity. Honor denials without another route.
   Do not use a separately metered fallback.
+- `parallel_limit` means no child started. Inspect current workers and wait for
+  capacity before retrying, or keep a smaller independent slice in the parent.
+  `no_qualified_route` and `delegation_unavailable` are not fixed by repeating
+  the same request; report the specific route/budget limit.
 
 ## Recover
 

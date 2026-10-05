@@ -12,6 +12,12 @@ Known public-source text may only need `fetch`; library contracts may need
 
 ## Focused browser work
 
+When the Freelancer `computer` tool is available, use its `observe`, `execute`,
+`capture`, and `wait` operations for the browser session; it chooses the
+connected provider. Use a direct Playwright MCP service only when the unified
+tool does not expose the operation or provider needed. This skill is guidance,
+not a prerequisite for capability access.
+
 1. Identify the relevant page/tab and affected interactions. Preserve existing
    profiles, sessions and unrelated tabs.
 2. Read a current accessibility snapshot before interacting. Use observed element

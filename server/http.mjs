@@ -100,7 +100,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
         const lanApi = publicWeb || requestOrigin !== origin || !loopback;
         const pairingRequest = lanApi && route === '/api/access/pair' && req.method === 'POST';
         const lanTokenOk = !lanApi || pairingRequest || remote.authenticate(req, res, publicWeb ? 'web' : 'lan');
-        const agentBridge = loopback && !lanApi && ["/api/git/agent", "/api/goals/checkpoint", "/api/delegates/handoff", "/api/knowledge/agent", "/api/models/data/agent", "/api/evidence/evaluate/agent"].includes(route) && !!expected && safeEqual(supplied, expected);
+        const agentBridge = loopback && !lanApi && ["/api/git/agent", "/api/goals/checkpoint", "/api/delegates/handoff", "/api/memory/agent", "/api/knowledge/agent", "/api/models/data/agent", "/api/evidence/evaluate/agent"].includes(route) && !!expected && safeEqual(supplied, expected);
         if (
           (!agentBridge && req.headers["x-freelancer-client"] !== "webpage") ||
           (req.headers.origin && req.headers.origin !== requestOrigin) ||

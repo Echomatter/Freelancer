@@ -1,15 +1,15 @@
 -- One retained memory aggregate. This migration runs inside the store's
 -- transaction with foreign keys enabled; existing IDs and evidence survive.
-DROP TRIGGER memory_search_insert;
-DROP TRIGGER memory_search_delete;
-DROP TRIGGER memory_search_update;
-DROP TRIGGER memory_title_update;
-DROP TRIGGER claims_search_insert;
-DROP TRIGGER claims_search_update;
-DROP TRIGGER claims_search_delete;
-DROP TRIGGER claims_search_evidence_insert;
-DROP TRIGGER claims_search_evidence_delete;
-DROP TRIGGER claims_search_evidence_update;
+DROP TRIGGER IF EXISTS memory_search_insert;
+DROP TRIGGER IF EXISTS memory_search_delete;
+DROP TRIGGER IF EXISTS memory_search_update;
+DROP TRIGGER IF EXISTS memory_title_update;
+DROP TRIGGER IF EXISTS claims_search_insert;
+DROP TRIGGER IF EXISTS claims_search_update;
+DROP TRIGGER IF EXISTS claims_search_delete;
+DROP TRIGGER IF EXISTS claims_search_evidence_insert;
+DROP TRIGGER IF EXISTS claims_search_evidence_delete;
+DROP TRIGGER IF EXISTS claims_search_evidence_update;
 
 ALTER TABLE memory_item_revisions ADD COLUMN title TEXT NOT NULL DEFAULT '';
 ALTER TABLE memory_item_revisions ADD COLUMN data_json TEXT NOT NULL DEFAULT '{}'

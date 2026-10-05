@@ -5,7 +5,7 @@ import { describeCapability } from '../domain/capability-descriptions.mjs';
 const nativeTools = ['bash', 'read', 'glob', 'grep', 'edit', 'write', 'apply_patch',
   'webfetch', 'websearch', 'skill', 'todowrite', 'question', 'task', 'invalid', 'lsp'];
 const freelancerKnownTools = ['delegate', 'git_project', 'content_index', 'goal_checkpoint',
-  'memory', 'model_catalog', 'evidence_evaluation', 'knowledge'];
+  'memory', 'model_catalog', 'evidence_evaluation', 'knowledge', 'computer'];
 const text = value => typeof value === 'string' ? value.slice(0, 300) : null;
 const summary = value => typeof value === 'string' && value.trim()
   ? value.replace(/\s+/g, ' ').trim().slice(0, 240) : null;
@@ -75,7 +75,7 @@ export function createCapabilities({ host, backendRoot }) {
         const sourceWriteBlocked = ['edit', 'write', 'apply_patch'].includes(id)
           && boundaries.inspectionOnly === true;
         const applicationAccess = id === 'task' || sourceWriteBlocked ? 'blocked'
-          : ['delegate', 'git_project', 'lsp', 'content_index', 'bash', 'memory', 'model_catalog', 'evidence_evaluation'].includes(id) ? 'operation-dependent' : 'shared';
+          : ['delegate', 'git_project', 'lsp', 'content_index', 'bash', 'memory', 'model_catalog', 'evidence_evaluation', 'computer'].includes(id) ? 'operation-dependent' : 'shared';
         const reason = id === 'task' ? 'Use delegate({agent, task}); native task is not a second worker dispatch path.'
           : sourceWriteBlocked ? 'Source writes are disabled by the captured inspection-only assignment.'
           : disabled ? 'Explicit native tool configuration disables this tool for this provider/model/configuration.'

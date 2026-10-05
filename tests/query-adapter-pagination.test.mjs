@@ -63,9 +63,10 @@ test('UI adapters, legacy knowledge operations and CLI execute the common contin
       assert.equal(legacy.nextCursor,second.nextCursor);
       if(domain==='memories') assert.deepEqual(legacy.items,legacy.results);
     }
-    const third=await f.app.knowledgeQuery.query({...input,cursor:second.nextCursor});
-    assert.equal(third.nextCursor,null,domain);
-    assert.equal(third.truncated,false,domain);
+    let page=second;
+    while(page.nextCursor) page=await f.app.knowledgeQuery.query({...input,cursor:page.nextCursor});
+    assert.equal(page.truncated,false,domain);
+    assert.notEqual(identity(domain,first.results[0]),identity(domain,page.results[0]),domain);
   }
 });
 

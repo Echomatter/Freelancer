@@ -220,10 +220,10 @@ test('saved Git inspect agreement does not block unrelated source-writing tools'
 
 test('tools with operation-specific access are not presented as universally shared', async t => {
   const backendRoot = await tempBackend(t);
-  const host = fakeHost({ '/experimental/tool/ids': { value: ['memory', 'model_catalog', 'evidence_evaluation'] } });
+  const host = fakeHost({ '/experimental/tool/ids': { value: ['memory', 'model_catalog', 'evidence_evaluation', 'computer'] } });
   const result = await createCapabilities({ host, backendRoot }).read({ directory: dir(), projectID: 'p',
     boundaries: { inspectionOnly: true, gitInspectOnly: false, fileAccessScope: 'computer' } });
-  for (const id of ['memory', 'model_catalog', 'evidence_evaluation'])
+  for (const id of ['memory', 'model_catalog', 'evidence_evaluation', 'computer'])
     assert.equal(toolById(result, id).applicationAccess, 'operation-dependent', `${id} includes both read and mutating operations`);
 });
 

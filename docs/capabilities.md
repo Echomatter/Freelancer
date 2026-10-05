@@ -81,6 +81,17 @@ remain usable, but this installed native inventory does not return their tool
 definitions. Empty service tool lists mean incomplete coverage, not no tools.
 See [Tool contracts](tools-library.md) for purpose and operation boundaries.
 
+The Freelancer-owned `computer` tool is available to shared named agents and
+workers. It inspects configured local Browser Harness, Playwright or Cua Driver
+MCP services and chooses a provider internally from operations observed at
+runtime. The generic connection editor and OpenCode remain the configuration
+owners; the adapter launches its own local stdio session. Provider status and
+advertised operations do not prove that a model used the provider or completed
+a task. `computer` asks through OpenCode's native `computer` permission before
+observation or interaction, then preserves the selected provider tool's native
+permission check. See [Computer use](computer-use.md) for setup and evidence
+limits.
+
 The current chat supplies the observed agent/model context; the page does not
 hard-code Engineer or offer identity-based access selectors. Without a chat,
 model exposure remains unobserved. Tools and skills stay in the shared catalog.

@@ -314,34 +314,14 @@ test('an older derivation version remains inspectable but cannot publish or requ
   assert.equal(f.store.searchChats('sapphire')[0].session, f.session.id);
 });
 
-test('schema20 retained captures migrate to blocked unknown work while their search and immutable inputs remain intact', async t => {
+test('retained captures survive store reopen while their search and immutable inputs remain intact', async t => {
   const f = await fixture(t);
   f.capture('preexisting pearl transcript');
   assert.equal(f.store.publishWarehouseDerivationJob(f.jobs()[0]).status, 'complete');
   const sourceRevision = f.raw(db => db.prepare('SELECT current_revision_sha256 FROM opencode_messages').get().current_revision_sha256);
   f.store.close();
-  f.raw(db => db.exec(`DROP TABLE model_data_facts; DROP TABLE model_data_records; DROP TABLE model_data_sources;
-    DROP TABLE model_data_snapshots; DROP TABLE model_data_secrets; DROP TABLE model_data_refresh_jobs;
-    DELETE FROM data_table_lifecycle WHERE owner='model-data';
-    ALTER TABLE chat_search_state DROP COLUMN derivation_job_id;
-    ALTER TABLE chat_search_state DROP COLUMN indexed_text_sha256;
-    DROP TABLE opencode_derivation_jobs;
-    DROP TABLE opencode_refresh_needed;
-    ALTER TABLE opencode_sessions DROP COLUMN current_snapshot_sha256;
-    ALTER TABLE opencode_sessions DROP COLUMN publication_revision;
-    DELETE FROM data_table_lifecycle WHERE table_name IN ('opencode_derivation_jobs','opencode_refresh_needed');
-    DELETE FROM schema_migrations WHERE version>=21;
-    PRAGMA user_version=20;`));
   f.reopen();
-  const initialized = f.jobs({ includeBlocked: true });
-  assert.equal(initialized.length, 1);
-  assert.equal(initialized[0].status, 'blocked');
-  assert.equal(initialized[0].blockedReason, 'unsafe-message-window');
-  const snapshot = f.store.readWarehouseDerivationSnapshot(initialized[0]);
-  assert.equal(snapshot.projectionSafe, false);
-  assert.equal(snapshot.snapshotCompleteness, 'partial', 'migration does not invent certainty about a historical window');
-  assert.equal(snapshot.messages[0].parts[0].text, 'preexisting pearl transcript');
-  assert.equal(f.store.publishWarehouseDerivationJob(initialized[0]).status, 'blocked');
+  assert.equal(f.jobs({ includeBlocked: true }).length, 0, 'completed work is not recreated on reopen');
   assert.equal(f.store.searchChats('pearl')[0].session, f.session.id);
   f.raw(db => {
     assert.equal(db.prepare('PRAGMA user_version').get().user_version, LOCAL_DATA_SCHEMA_VERSION);

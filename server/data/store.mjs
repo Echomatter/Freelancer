@@ -207,8 +207,6 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
       db.exec("BEGIN IMMEDIATE");
       try {
         db.exec(readFileSync(new URL("./schema.sql", import.meta.url), "utf8"));
-        if (!db.prepare("SELECT 1 FROM schema_migrations WHERE version=?").get(SCHEMA))
-          db.exec(readFileSync(new URL(`./migration-${SCHEMA}.sql`, import.meta.url), "utf8"));
         db.exec("COMMIT");
       } catch (e) {
         db.exec("ROLLBACK");

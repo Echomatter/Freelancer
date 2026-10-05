@@ -118,6 +118,7 @@ function Tool({
   const [open, setOpen] = useState(false);
   const state = part.state ?? {},
     meta = state.metadata ?? {},
+    computerEvidence = meta.freelancer_computer,
     saved =
       meta.freelancer_delegate_display ?? meta.ai_toolkit_delegate_display;
   const input = saved?.original_input ?? state.input ?? {};
@@ -272,6 +273,23 @@ function Tool({
       <summary>{heading}</summary>
       {open && (
         <>
+          {computerEvidence && (
+            <div className="computer-evidence" aria-label="Computer evidence">
+              <strong>Evidence</strong>
+              {computerEvidence.provider && <span><b>Provider</b> {computerProviderLabel(computerEvidence.provider)}</span>}
+              {computerEvidence.evidence?.action?.status === "completed" && (
+                <span><b>Action</b> {computerEvidence.evidence.action.name} completed</span>
+              )}
+              {computerEvidence.evidence?.state?.status === "observed" && (
+                <span><b>State</b> observed{computerEvidence.evidence.state.kind ? ` · ${computerEvidence.evidence.state.kind.replaceAll("_", " ")}` : ""}</span>
+              )}
+              {computerEvidence.evidence?.state?.status === "not_observed" && <span><b>State</b> not observed</span>}
+              {computerEvidence.evidence?.outcome?.status && (
+                <span><b>Outcome</b> {computerEvidence.evidence.outcome.status === "verified" ? "verified" : "not verified"}</span>
+              )}
+              {computerEvidence.failureClass && <span><b>Failure</b> {computerEvidence.failureClass.replaceAll("_", " ")}</span>}
+            </div>
+          )}
           {input.filePath && (
             <p>
               <FileText size={14} /> {input.filePath}
@@ -294,6 +312,9 @@ function Tool({
       )}
     </details>
   );
+}
+function computerProviderLabel(provider: string): string {
+  return ({ "browser-harness": "Browser Harness", playwright: "Playwright", "cua-driver": "Cua Driver" } as Record<string, string>)[provider] ?? provider;
 }
 function toolTitle(part: any): string {
   const state = part.state ?? {};
@@ -384,7 +405,7 @@ function CopyResponse({ messages }: { messages: any[] }) {
       (message.parts ?? [])
         .filter(
           (part: any) =>
-            part.type === "text" || part.type === "reasoning",
+            part.type === "text",
         )
         .map((part: any) => String(part.text ?? "").trim()),
     )
@@ -552,6 +573,9 @@ export function GroupBody({
   });
   flat.forEach(({ msg, part }, index) => {
     if (part?.id && lastIndexByPartID.get(part.id) !== index) return;
+    // OpenCode reasoning parts are private model deliberation, not transcript
+    // content. Keep them out of the rendered chat and response copy action.
+    if (part.type === "reasoning") return;
     if (part.type === "tool" && !visibleTools.has(part)) return;
     const isWork = part.type === "tool";
     if ((mode === "work" && !isWork) || (mode === "prose" && isWork)) return;
@@ -630,10 +654,6 @@ export function GroupBody({
         );
         return;
       }
-      textBuffer.push({ key, text });
-    } else if (part.type === "reasoning") {
-      const text = typeof part.text === "string" ? part.text : "";
-      if (!text.trim()) return;
       textBuffer.push({ key, text });
     } else if (part.type === "tool") {
       flush();
@@ -734,7 +754,7 @@ export const RequestTurn = memo(function RequestTurn({
               m.info?.error ||
                 m.parts?.some(
                   (p) =>
-                    ((p.type === "text" || p.type === "reasoning") &&
+                    (p.type === "text" &&
                       p.text?.trim()) ||
                     p.type === "file",
                 ),

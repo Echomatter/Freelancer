@@ -73,16 +73,14 @@ async function fixture(t) {
     refreshQuota: async () => {},
   }) });
   const settingsBefore = await store.read('settings');
-  const registry = () => {
-    const db = new DatabaseSync(path.join(dataRoot, 'freelancer.sqlite'), { readOnly: true });
-    try { return db.prepare('SELECT project_id,data FROM project_registrations WHERE runtime_id=? ORDER BY project_id').all(runtimeID); }
-    finally { db.close(); }
-  };
+  const registry = () => store.read('settings').then(settings => settings.projects.map(project => ({
+    project_id: project.id, data: JSON.stringify(project),
+  })).sort((a, b) => a.project_id.localeCompare(b.project_id)));
   return { root, directory, app, host, store, nativeRequests, saves, settingsBefore, registry,
     marker: path.join(directory, '.opencode', 'freelancer.json'),
     async untouched() {
       assert.deepEqual(await store.read('settings'), settingsBefore);
-      assert.deepEqual(registry(), []); assert.deepEqual(saves, []);
+      assert.deepEqual(await registry(), []); assert.deepEqual(saves, []);
       await assert.rejects(readFile(path.join(directory, '.opencode', 'freelancer.json')), { code: 'ENOENT' });
       assert.equal(await readFile(path.join(directory, 'opencode.json'), 'utf8'), nativeConfig);
       assert.equal(await readFile(path.join(directory, 'AGENTS.md'), 'utf8'), 'User-authored instructions remain here.\n');
@@ -108,7 +106,8 @@ test('project registration waits for native readiness before acknowledging or wr
   const project = await pending;
   assert.equal(project.directory, options.directory);
   assert.equal(f.saves.length, 1); assert.equal(f.saves[0].directory, options.directory);
-  assert.equal(f.registry().length, 1); assert.equal(f.registry()[0].project_id, project.id);
+  const registrations = await f.registry();
+  assert.equal(registrations.length, 1); assert.equal(registrations[0].project_id, project.id);
   assert.equal(JSON.parse(await readFile(f.marker, 'utf8')).projectID, project.id);
 });
 
@@ -165,7 +164,7 @@ test('successful native readiness uses exact canonical project URLs and repeated
     assert.equal(url.origin, 'http://127.0.0.1:4096');
     assert.equal(url.searchParams.has('model'), false);
   }
-  assert.equal(f.registry().length, 1); assert.equal(f.saves.length, 1);
+  assert.equal((await f.registry()).length, 1); assert.equal(f.saves.length, 1);
   const bootstrap = await f.app.bootstrap(first.id);
   assert.equal(bootstrap.project.id, first.id); assert.equal(bootstrap.nativeModels.engineer, 'opencode/free');
   assert.equal((await f.store.read('settings')).projects.length, 1);

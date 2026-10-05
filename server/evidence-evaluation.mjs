@@ -9,7 +9,7 @@ import { modelObservationSchema, toModelObservation, modelObservationCoverage } 
 const hash = value => createHash('sha256').update(stableEvidenceJSON(value)).digest('hex');
 const bytes = value => Buffer.byteLength(JSON.stringify(value),'utf8');
 const copy = value => structuredClone(value);
-const project = (value,fields) => fields ? Object.fromEntries(fields.map(field=>[field,readPath(value,field)])) : copy(value);
+const project = (value,fields) => fields ? Object.fromEntries(fields.map(field=>[field,readPath(value,field)??null])) : copy(value);
 const safeFailure = error => String(error?.message??'Evaluation failed.').replace(/Bearer\s+\S+/gi,'[redacted]').slice(0,400);
 const aborted = signal => { if(signal?.aborted) throw Object.assign(Error('Evaluation cancelled.'),{name:'AbortError'}); };
 const ownerKey = owner => {
@@ -65,30 +65,17 @@ export function createEvidenceEvaluationService({data,modelData,knowledgeQuery,p
       dates={retrievedAt:detail.record.retrievedAt??null,sourceDates:detail.record.sourceDates??null};
       if(detail.factsTruncated||missing.length)status='partial';
     } else if(selector.source==='memory') {
-      let packet;try{packet=store.queryJudgmentEvidence({domain:selector.domain,id:selector.recordID,revision:selector.revision});}
+      let packet;try{packet=store.queryJudgmentEvidence({domain:'memories',id:selector.recordID,revision:selector.revision});}
       catch{return {id:selector.id,kind:'stored',value:null,status:'missing',missing:['Retained memory evidence is missing, forgotten or unavailable.'],provenance:{source:'memory',domain:'memories',recordID:selector.recordID},dates};}
-      const retained=store.getMemory(selector.recordID,selector.revision),data=retained?.revision?.data??{};
-      const record=retained?{...retained,data,evidence:retained.revision?.evidence??[]}:null;
-      const boundary=retained?.revision?.captureBoundary??{};
-      const characterValue=value=>typeof value==='string'&&value.length<=200?value:null;
-      value=project(record,selector.fields);
-      provenance={source:'memory',domain:'memories',recordID:selector.recordID,name:record?.revision?.title??record?.title??selector.recordID,
-        candidateIDs:packet.candidateIDs,evidenceRefs:packet.evidenceRefs,contentHash:hash(value),
-        character:{origin:characterValue(data.origin),epistemicState:characterValue(data.epistemicState),status:record?.status??null},
-        captureBoundary:{status:typeof boundary.status==='string'?boundary.status.slice(0,200):null,
-          capturedAt:boundary.capturedAt??null,truncated:boundary.truncated===true,bodyEdited:boundary.bodyEdited===true}};
-      if(['metadata_only','not_captured','missing_source','unknown_source','incomplete'].includes(boundary.status)||boundary.truncated===true) {
-        status='partial';missing.push(`Retained memory metadata is available; source capture is ${boundary.status??'truncated'}${boundary.truncated?' and truncated':''}.`);
-      }
-      if(['origin','epistemicState'].some(key=>data[key]!=null&&characterValue(data[key])===null)) {
-        status='partial';missing.push('Optional memory character metadata is outside the bounded text summary; read the retained data for its exact value.');
-      }
-      dates={recordedAt:data.recordedAt??record?.revision?.created_at??record?.time?.created??null,observedAt:data.observedAt??null,
-        validFrom:data.validFrom??null,validTo:data.validTo??null,revision:packet.evidenceRefs[0]?.revision??null};
+      const retained=store.getMemory(selector.recordID,selector.revision);
+      value=project(retained?{...retained,...retained.revision,data:retained.revision?.data??{},evidence:retained.revision?.evidence??[]}:null,selector.fields);
+      provenance={source:'memory',domain:'memories',recordID:selector.recordID,
+        candidateIDs:packet.candidateIDs,evidenceRefs:packet.evidenceRefs,contentHash:hash(value)};
+      dates={revision:packet.evidenceRefs[0]?.revision??null};
     } else {
       const result=await knowledgeQuery.query({domain:selector.domain,query:selector.query,...selector.filters,limit:selector.limit??25});
       value=result.results.map(row=>project(row,selector.fields));
-      provenance={source:'query',domain:result.domain,query:selector.query,filters:result.filters,coverage:result.coverage,
+      provenance={source:'query',domain:result.domain??selector.domain,query:selector.query,filters:result.filters??{},coverage:result.coverage??null,
         sourceRefs:result.results.map(row=>({id:row.resultID??row.id??null,sourceRef:row.originalSourceRef??null,sourceRevision:row.sourceRevision??null,
           sourceRefs:row.sourceRefs??null,dates:row.dates??{observedAt:row.observedAt??null,capturedAt:row.capturedAt??null,indexedAt:row.indexedAt??null}})),contentHash:hash(value),truncated:result.truncated===true,nextCursor:result.nextCursor??null};
       provenance.metadataCoverage=result.results.map(row=>({id:row.resultID??row.id??null,

@@ -204,7 +204,7 @@ function extract(data, ext, policy={mode:'none',rules:[]}, ocr=false) {
     catch { return [splitUnits(text,'json-fallback'),'json-invalid-text-fallback']; }
   }
   if (ext==='.jsonl'||ext==='.ndjson') { const lines=text.split(/\r?\n/).filter(x=>x.trim()).slice(0,500000); return [lines.length?lines.flatMap((line,i)=>{try{return structuredUnits(JSON.parse(line),'jsonl',`$line[${i+1}]`,policy)}catch{return splitUnits(line,`jsonl:line:${i+1}`)}}):[{locator:'jsonl:empty',heading:'',text:'',fields:[]}],'jsonl-structured']; }
-  if (ext==='.csv'||ext==='.tsv') return [tableUnits(text,ext,policy), 'delimited-rows'];
+  if (ext==='.csv'||ext==='.tsv') return tableUnits(text,ext,policy);
   if (ext==='.xml'||ext==='.backup') { try { const xml=parseXml(text);return [structuredUnits(xml,'xml','$',policy),'xml-structured']; } catch { return [splitUnits(text,'xml-fallback'),'xml-invalid-text-fallback']; } }
   if (ext==='.ini'||ext==='.cfg') return [structuredUnits(parseIniObject(text),'ini','$',policy),'ini-structured'];
   if (ext==='.toml') return [splitUnits(text,'toml'),'toml-text-fallback'];

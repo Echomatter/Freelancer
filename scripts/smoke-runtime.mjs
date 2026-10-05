@@ -116,6 +116,7 @@ try {
   assert.ok(capabilities.tools.find(row=>row.id==='delegate').discovered);
   assert.ok(capabilities.tools.find(row=>row.id==='model_catalog').discovered);
   assert.ok(capabilities.tools.find(row=>row.id==='evidence_evaluation').discovered);
+  assert.ok(capabilities.tools.find(row=>row.id==='computer').discovered);
   assert.ok(capabilities.skills.find(row=>row.name==='verify').discovered);
   assert.ok(Array.isArray(capabilities.mcp),'native MCP inventory must be available');
   assert.ok(capabilities.mcp.every(service=>service.origin==='OpenCode native MCP'

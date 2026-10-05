@@ -28,7 +28,8 @@
     "goal_checkpoint",
     "memory",
     "model_catalog",
-    "evidence_evaluation"
+    "evidence_evaluation",
+    "computer"
   ],
   "plugins": [
     "delegation",
@@ -37,6 +38,7 @@
     "content-index",
     "knowledge",
     "model-catalog",
-    "evidence-evaluation"
+    "evidence-evaluation",
+    "computer"
   ]
 }

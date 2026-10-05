@@ -2,6 +2,7 @@
 // these are generic setup defaults, not identity-specific tool assignments.
 export const mcpCatalog = [
   { id: 'playwright', name: 'Playwright', kind: 'local', cost: 'Free · runs locally', dependency: 'Node.js/npm; browser runtime may need setup', command: ['npx', '-y', '@playwright/mcp@latest'] },
+  { id: 'cua-driver', name: 'Cua Driver', kind: 'local', cost: 'Free · runs locally', dependency: 'Cua Driver installed; interactive Windows session required', command: ['cua-driver', 'mcp'] },
   { id: 'fetch', name: 'Fetch', kind: 'local', cost: 'Free · runs locally', dependency: 'Python and uvx (uv)', command: ['uvx', 'mcp-server-fetch'] },
   { id: 'sequential-thinking', name: 'Sequential Thinking', kind: 'local', cost: 'Free · runs locally', dependency: 'Node.js/npm', command: ['npx', '-y', '@modelcontextprotocol/server-sequential-thinking'] },
   { id: 'context7', name: 'Context7', kind: 'remote', cost: 'External service · free use; optional API key for higher limits', dependency: 'HTTPS connection; optional Context7 API key', url: 'https://mcp.context7.com/mcp', header: 'Authorization', value: 'Bearer {env:CONTEXT7_API_KEY}' },

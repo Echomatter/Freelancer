@@ -194,6 +194,22 @@ test('content search indexes retained memory, agent skills, and shared internal 
   finally { reader.close(); }
 });
 
+test('content index rebuild indexes a real project CSV without SQLite binding failures', async t => {
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-csv-index-'));t.after(()=>rm(root,{recursive:true,force:true}));
+  const project=path.join(root,'project'),data=path.join(root,'data');await mkdir(project);
+  await writeFile(path.join(project,'runs.csv'),'model,skill,issue\nSpace Bunny Free,search-index,SQLite parameter binding regression\n');
+  const store=createRegisteredStore(data,project);store.close();
+  const indexer=path.resolve('backend/tools/project-content-indexer.mjs'),db=path.join(data,'freelancer.sqlite');
+  const invoke=(...args)=>spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,...args],{cwd:project,encoding:'utf8'});
+  const build=invoke('rebuild','--root',project,'--facts','none');
+  assert.equal(build.status,0,build.stderr);
+  assert.deepEqual(JSON.parse(build.stdout).extraction_failures,[]);
+  const search=invoke('search','SQLite parameter binding');
+  assert.equal(search.status,0,search.stderr);
+  assert.match(search.stdout,/runs\.csv/);
+  assert.match(search.stdout,/Space Bunny Free/);
+});
+
 test('Node indexer skips an unreadable extraction and keeps searchable sources', async t => {
   const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-node-index-skip-'));t.after(()=>rm(root,{recursive:true,force:true}));
   const project=path.join(root,'project');await mkdir(project);const data=path.join(root,'data');const store=createRegisteredStore(data,project);store.close();

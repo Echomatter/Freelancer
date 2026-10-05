@@ -3,25 +3,34 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import os from 'node:os';
 import path from 'node:path';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
-import { readState, writeState } from '../tools/runtime/state-database.mjs';
+import { DatabaseSync } from 'node:sqlite';
+import { createLocalDataStore } from '../../server/data/store.mjs';
+import { FRESH_RUNTIME_ID } from '../../server/runtime-config.mjs';
 
 const recorder = path.join(path.dirname(fileURLToPath(import.meta.url)), '../scripts/record-task-outcome.ps1');
-const historyFile = (root) => path.join(root, '.state', 'task-history.json');
+const runtimeRoot = (root) => path.join(root, 'backend');
+const dataHome = (root) => path.join(root, 'workspace-v2');
 
 function record(root, args) {
-  const result = spawnSync('powershell.exe', ['-NoProfile', '-File', recorder, '-ToolkitRoot', root, ...args], { encoding: 'utf8', timeout: 30000 });
+  const env = { ...process.env, FREELANCER_DATA_HOME: dataHome(root) };
+  for (const name of ['FREELANCER_RUNTIME_ROOT','FREELANCER_RUNTIME_ID','FREELANCER_RUNTIME_DATA_MODE','FREELANCER_APP_ROOT']) delete env[name];
+  const result = spawnSync('powershell.exe', ['-NoProfile', '-File', recorder, '-ToolkitRoot', runtimeRoot(root), ...args], { encoding: 'utf8', timeout: 30000, env });
   assert.ifError(result.error);
   return result;
 }
 
 function seedHistory(root) {
-  writeState(historyFile(root), { generated: true, generated_at: '', entries: [] });
+  const db = new DatabaseSync(path.join(dataHome(root), 'freelancer.sqlite'));
+  try { db.prepare('INSERT INTO application_documents(runtime_id,document_key,data) VALUES(?,?,?)').run(FRESH_RUNTIME_ID, 'task-history.json', JSON.stringify({ generated: true, generated_at: '', entries: [] })); }
+  finally { db.close(); }
 }
 
 function history(root) {
-  return readState(historyFile(root), null);
+  const db = new DatabaseSync(path.join(dataHome(root), 'freelancer.sqlite'), { readOnly: true });
+  try { const row = db.prepare('SELECT data FROM application_documents WHERE runtime_id=? AND document_key=?').get(FRESH_RUNTIME_ID, 'task-history.json'); return row ? JSON.parse(row.data) : null; }
+  finally { db.close(); }
 }
 
 function entries(root) {
@@ -34,7 +43,12 @@ function snapshot(root) {
 
 async function withRoot(fn) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'outcome-verify-'));
-  try { await fn(root); } finally { await rm(root, { recursive: true, force: true }); }
+  try {
+    await mkdir(runtimeRoot(root), { recursive: true });
+    const store = createLocalDataStore(dataHome(root));
+    try { store.initializeFreshRuntime(FRESH_RUNTIME_ID); } finally { store.close(); }
+    await fn(root);
+  } finally { await rm(root, { recursive: true, force: true }); }
 }
 
 test('six VerificationStatus states map to tests_passed', { skip: process.platform !== 'win32' && 'Windows PowerShell 5.1 recorder' }, async () => {
@@ -109,10 +123,14 @@ test('failed operational receipt records not-run with null tests', { skip: proce
   await withRoot(async (root) => {
     seedHistory(root);
     const id = 'f'.repeat(64);
-    writeState(path.join(root, '.state', 'delegation', `${id}.json`), {
+    const db = new DatabaseSync(path.join(dataHome(root), 'freelancer.sqlite'));
+    try {
+      db.prepare('INSERT INTO application_documents(runtime_id,document_key,data) VALUES(?,?,?)').run(FRESH_RUNTIME_ID, `delegation/${id}.json`, JSON.stringify({
       task_id: id, role: 'worker', status: 'failed',
       attempts: [{ status: 'failed', failure: 'timeout', selected_model: 'opencode/free', observed_model: 'opencode/free', surface: 'opencode-free', usage: { input: 25, output: 2 } }],
-    });
+      }));
+      db.prepare('INSERT INTO runtime_collection_markers(runtime_id,collection_name) VALUES(?,?)').run(FRESH_RUNTIME_ID, `document:delegation/${id}.json`);
+    } finally { db.close(); }
     const done = record(root, ['-TaskId', id, '-Repo', 'fixture', '-TaskType', 'bounded_feature', '-Model', 'opencode/free', '-Success', 'false', '-TestsPassed', 'false', '-Operational']);
     assert.equal(done.status, 0, `operational failure records (stderr: ${done.stderr})`);
     const entry = entries(root).find((row) => row.task_id === id);

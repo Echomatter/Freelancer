@@ -108,6 +108,11 @@ See [Evidence evaluation](evidence-evaluation.md) for the local schema and limit
 Connection health, typed answers and confidence remain distinct from verified
 task success. Native approval and user cost/disclosure constraints apply.
 
+The `computer` tool adapts locally configured MCP browser/desktop providers.
+Its capability and evidence contract is documented in
+[Computer use](computer-use.md). Native `computer` permission still governs
+observations and actions; provider tool success is not task verification.
+
 ## Effective instruction diagnostics
 
 Native automatic compaction followups inherit the original captured request only

@@ -1,7 +1,7 @@
 # Tool contracts and overlap
 
-Reviewed **2026-10-04**. OpenCode owns native tools, MCP schemas, execution and
-permissions. Freelancer adapts seven shared tools through its existing plugins;
+Reviewed **2026-10-05**. OpenCode owns native tools, MCP schemas, execution and
+permissions. Freelancer adapts eight shared tools through its existing plugins;
 the [manifest](../backend/opencode/catalog.json) is their inventory, not an access
 gate. Short card descriptions live in
 [capability-descriptions.mjs](../domain/capability-descriptions.mjs).
@@ -12,6 +12,7 @@ task methods; models do not need a skill before calling a tool.
 
 | Tool | Distinct result | Consequential input and evidence boundaries |
 | --- | --- | --- |
+| `computer` | Observe and operate browser pages or desktop applications through a capability-selected provider | Observe first and pass its returned computer `sessionID`; sessions are scoped to the calling OpenCode conversation. `execute` takes one normalized action and optional `parametersJson`; browser JavaScript executes in-page only. Provider support is observed from registered MCP methods; missing or unsupported capability remains unavailable. Computer actions use native permission. Observe or verify postconditions before claiming success. |
 | `content_index` | Locate extracted file passages, native chat text and derived source attributes | Search/chats require `query` and default to the current project; `projectID` and `global` are alternatives. `observations` reads extracted attributes; rebuild uses `extraction` and `specialRules` when requested. Filters and limits are operation-specific. Repeat cursor inputs; check originals and coverage. Extracted attributes are derived index data, not retained memories. |
 | `memory` | Query or intentionally retain memories with text, structured data, evidence, provenance and relationships | Query domains are files, conversations and memories. Exact revisions retain their own title/content/data/evidence. Pin and archive are properties of the same record. Mutations retain native permission. `analyze` runs bounded read-only SQL in Freelancer's warehouse, not arbitrary project databases. |
 | `model_catalog` | Read sourced model, deployment and benchmark-configuration observations | `schema` supplies canonical keys; list/search find source IDs; detail preserves separate records and unknowns. Follow byte-bounded pages with unchanged inputs. Requested source downloads differ from model inference, availability, account costs and consent. |
@@ -44,12 +45,14 @@ Source registrations:
 - [Evidence evaluation](../backend/opencode/plugins/evidence-evaluation.ts)
 - [Delegation](../backend/opencode/plugins/delegation.ts)
 - [Managed Git](../backend/opencode/plugins/git-project.ts)
+- [Computer use](../backend/opencode/plugins/computer.ts)
 - [Goal checkpoint](../backend/opencode/plugins/goals.ts)
 
 ## Native and MCP routes
 
 | Need | Appropriate route and distinction |
 | --- | --- |
+| Browser or desktop interaction | Freelancer `computer` selects a connected local provider from observed operations and requires conversation-scoped observations; direct provider services remain native MCP integrations |
 | Current source or symbols | Native read/glob/grep/LSP; indexed text complements source inspection |
 | Source changes | Native edit/write/apply_patch; captured restrictions and permissions still apply |
 | Commands and local inspection | Native shell; inspect actual results and honor project/history restrictions |

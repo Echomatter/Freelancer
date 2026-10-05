@@ -60,7 +60,7 @@ export function hostEnvironment(config, env = process.env) {
     if (!nativeContent || typeof nativeContent !== 'object' || Array.isArray(nativeContent))
       throw Error('OpenCode OPENCODE_CONFIG_CONTENT must contain a JSON object.');
   }
-  const pluginNames = config.opencodePlugins ?? ['delegation', 'git-project', 'goals', 'content-index', 'knowledge', 'model-catalog', 'evidence-evaluation'];
+  const pluginNames = config.opencodePlugins ?? ['delegation', 'git-project', 'goals', 'content-index', 'knowledge', 'model-catalog', 'evidence-evaluation', 'computer'];
   const plugins = pluginNames.map(name => pathToFileURL(path.join(config.backendRoot, 'opencode', 'plugins', `${name}.ts`)).href);
   const instructions = config.instructions ?? [
     path.join(config.backendRoot, 'global', 'WORKSTYLE.md'),

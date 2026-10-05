@@ -78,13 +78,12 @@ test('conditional request overlays recompute downstream derivations and retain s
   const staged=result.scenarios.find(item=>item.id==='scenario');assert.equal(staged.entries.cost.value,3);assert.equal(staged.entries.cost.kind,'preference');assert.equal(staged.entries.doubled.value,6);assert.equal(result.derived[0].value,10);assert.equal(staged.overlays[0].applied,true);
 });
 
-test('exact generic stored memory/claim evidence retains provenance and changed sources block before inference',async t=>{
+test('exact retained memory evidence preserves revision provenance and changed sources block before inference',async t=>{
   const {service,store,calls}=await fixture(t);
-  store.createMemory({id:'delivery-note',title:'Delivery',kind:'note',body:'The parcel arrived Tuesday.'});
-  store.addClaim({id:'delivery-claim',predicate:'Delivery day',value:'Tuesday',origin:'human-authored',epistemicState:'unverified',evidence:[{id:'memory:delivery-note@1',kind:'memory',memoryID:'delivery-note',memoryRevision:1}]});
-  const prepared=await service.prepare({version:1,evidence:[{id:'brief',source:'knowledge',domain:'facts',recordID:'delivery-claim',fields:['predicate','value','epistemicState','observedAt']}],questions:[q('fit')]},{owner});
-  assert.equal(prepared.packet[0].value.value,'Tuesday');assert.equal(prepared.packet[0].provenance.evidenceRefs[0].kind,'claim-record');
-  store.correctClaim({id:'delivery-claim',value:'Wednesday',epistemicState:'disputed',evidence:[{id:'authored-correction',detail:'A corrected receipt.'}]});
+  store.createMemory({id:'delivery-note',title:'Delivery',kind:'note',body:'The parcel arrived Tuesday.',data:{value:'Tuesday'}});
+  const prepared=await service.prepare({version:1,evidence:[{id:'brief',source:'memory',domain:'memories',recordID:'delivery-note',fields:['data.value']}],questions:[q('fit')]},{owner});
+  assert.equal(prepared.packet[0].value['data.value'],'Tuesday');assert.equal(prepared.packet[0].provenance.evidenceRefs[0].kind,'memory-revision');
+  store.reviseMemory({id:'delivery-note',expectedRevision:1,body:'The parcel arrived Wednesday.'});
   const result=await service.evaluate({receiptID:prepared.receiptID},{owner});assert.equal(result.status,'evidence-changed');assert.equal(calls.length,0);
 });
 

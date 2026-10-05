@@ -58,12 +58,10 @@ export async function retrievalCorpus() {
     boundary: { status: 'complete', messageCount: messages.length }, provenance: { method: 'captured native text', snapshotHash: hash(JSON.stringify(messages)) },
     members: messages.map((message, ordinal) => ({ kind: 'opencode_text', ref: message.info.id, revision: 'native-fixture-1', availability: 'available',
       hash: hash(message.parts[0].text), locator: { ordinal, role: message.info.role, text: message.parts[0].text, providerID: message.info.model?.providerID, modelID: message.info.model?.modelID } })) });
-  store.setMemoryPin({ id: retainedID, pinned: true, expectedRevision: 0 });
   const missingID = 'memory:missing-original';
   store.createMemory({ id: missingID, kind: 'conversation_snapshot', title: 'Missing original configuration discussion', body: 'Configuration evidence has a missing original source.',
     source: { projectID: projects[1].id, sessionID: 'ses_missing_original' }, boundary: { status: 'missing_source', missingSources: ['ses_missing_original'] },
     members: [{ kind: 'session', ref: 'ses_missing_original', availability: 'missing_source' }] });
-  store.setMemoryPin({ id: missingID, pinned: true, expectedRevision: 0 });
   store.createMemory({ id: 'memory:vanilla-setup', kind: 'note', title: 'Fresh setup agreement', body: 'Start with an empty warehouse; OpenCode remains authoritative for native settings.', source: { projectID: projects[0].id } });
   store.createMemory({ id: 'memory:archived-note', kind: 'note', title: 'Archived setup note', body: 'Historical setup instructions are retained as an archived note.', source: { projectID: projects[1].id } });
   store.archiveMemory({ id: 'memory:archived-note', expectedRevision: 0 });
@@ -88,8 +86,8 @@ export async function retrievalCorpus() {
     { id: 'native-id-scope', input: { domain: 'conversations', query: session.id, projectID: projects[1].id }, expected: [] },
     { id: 'conversation-phrase-model', input: { domain: 'conversations', query: 'OpenCode owns provider authentication', phrase: true, model: 'opencode/free' }, expected: [session.id] },
     { id: 'memory-exact-id', input: { domain: 'memories', query: 'memory:vanilla-setup' }, expected: ['memory:vanilla-setup'] },
-    { id: 'pinned-home', input: { domain: 'memories', query: '', pinnedOnly: true }, expected: [retainedID, missingID] },
-    { id: 'pinned-project-model', input: { domain: 'memories', query: '', pinnedOnly: true, projectID: projects[0].id, model: 'opencode/free' }, expected: [retainedID] },
+    { id: 'global-memory-browse', input: { domain: 'memories', query: '' }, expected: [retainedID, missingID, 'memory:vanilla-setup', 'claim:configuration-native', 'claim:configuration-disputed', 'claim:warehouse-prior'] },
+    { id: 'project-model-memory', input: { domain: 'memories', query: '', projectID: projects[0].id, model: 'opencode/free' }, expected: [retainedID] },
     { id: 'missing-source-retained', input: { domain: 'memories', query: 'memory:missing-original' }, expected: [missingID] },
     { id: 'memory-paraphrase-limitation', input: { domain: 'memories', query: 'remembered discussions' }, expected: [], semanticTargets: [retainedID], limitation: 'Lexical memory search does not translate remembered discussions into captured conversation evidence. No JEV or semantic fallback is invoked.' },
     { id: 'archived-hidden', input: { domain: 'memories', query: 'memory:archived-note' }, expected: [] },
@@ -97,9 +95,9 @@ export async function retrievalCorpus() {
     { id: 'contradictions-retained', input: { domain: 'facts', query: 'Configuration authority' }, expected: ['claim:configuration-native', 'claim:configuration-disputed'] },
     { id: 'origin-independent-from-support', input: { domain: 'facts', query: 'Configuration authority', origin: 'source-reported', epistemicState: 'supported' }, expected: ['claim:configuration-native'] },
     { id: 'claim-exact-id', input: { domain: 'facts', query: 'claim:configuration-disputed' }, expected: ['claim:configuration-disputed'] },
-    { id: 'current-claim-replacement', input: { domain: 'facts', query: 'Warehouse persistence engine' }, expected: [corrected.id] },
+    { id: 'current-claim-replacement', input: { domain: 'facts', query: 'Warehouse persistence engine' }, expected: ['claim:warehouse-prior'] },
     { id: 'historical-claim-included', input: { domain: 'facts', query: 'claim:warehouse-prior', includeHistorical: true }, expected: ['claim:warehouse-prior'] },
-    { id: 'historical-claim-hidden', input: { domain: 'facts', query: 'claim:warehouse-prior' }, expected: [] },
+    { id: 'historical-claim-hidden', input: { domain: 'facts', query: 'claim:warehouse-prior' }, expected: ['claim:warehouse-prior'] },
   ];
   return { root, dataHome, store, service, projects, files, cases, retainedID, missingID, async close() { store.close(); await rm(root, { recursive: true, force: true }); } };
 }

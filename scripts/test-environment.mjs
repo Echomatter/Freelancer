@@ -41,6 +41,13 @@ export function createTestEnvironment(inherited = process.env) {
     XDG_CACHE_HOME: path.join(dataHome, 'native-cache'),
     XDG_STATE_HOME: path.join(dataHome, 'native-state'),
     GH_CONFIG_DIR: path.join(dataHome, 'native-config', 'gh'),
+    // Browser binaries are immutable tool installations, not test state.
+    // Point disposable workers at the exact Playwright cache installed for
+    // this user instead of looking for a nonexistent cache under nativeHome.
+    PLAYWRIGHT_BROWSERS_PATH: inherited.PLAYWRIGHT_BROWSERS_PATH || (process.platform === 'win32'
+      ? path.join(inherited.LOCALAPPDATA || process.env.LOCALAPPDATA || os.homedir(), 'ms-playwright')
+      : process.platform === 'darwin' ? path.join(os.homedir(), 'Library', 'Caches', 'ms-playwright')
+        : path.join(os.homedir(), '.cache', 'ms-playwright')),
     TEMP: path.join(dataHome, 'native-temp'),
     TMP: path.join(dataHome, 'native-temp'),
   };

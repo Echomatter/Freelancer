@@ -857,7 +857,7 @@ export function createDelegator({ client, toolkitRoot, directory, select, record
           if (!reservation) {
             receipt.status = 'parallel_limit';
             receipt.attempts.pop();
-            receipt.result = 'User child concurrency limit reached. Keep this assignment in the parent or wait for an existing child; no child started.';
+            receipt.result = 'No child started; no execution attempt was made because the user child-concurrency limit is currently full. Do not immediately repeat this dispatch. Inspect delegate({workers:true}) and wait for a worker to settle before retrying this same bounded assignment if it is still useful, or continue a smaller independent slice directly in the parent. This capacity status may change; a no_qualified_route or exhausted model pool must not be retried unchanged.';
             await atomicJson(receiptFile, receipt);
             return receipt;
           }

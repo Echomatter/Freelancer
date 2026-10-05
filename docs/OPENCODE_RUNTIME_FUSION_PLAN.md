@@ -145,7 +145,7 @@ The goal is architectural ownership, not ideological code purity.
 Import the pinned upstream OpenCode revision into:
 
 ```text
-runtime/opencode-upstream/
+vendor/opencode/
 ```
 
 This branch carries a reproducible import script and an upstream manifest.
@@ -182,6 +182,30 @@ OpenCode will continue to evolve.
 The fusion architecture must assume that Freelancer periodically compares against upstream and selectively absorbs useful changes.
 
 The desired relationship is not "copy once and forget." It is closer to an internal downstream runtime distribution with a known upstream lineage.
+
+---
+
+## A4. Staging gates before source modification
+
+Do not modify imported OpenCode source immediately after the subtree lands. The staging branch must first satisfy these gates:
+
+1. **Version compatibility gate:** resolve the current Freelancer `@opencode-ai/plugin` version against the pinned OpenCode package version. At branch creation these were 1.18.31 and 1.18.34 respectively; treat that skew as an explicit compatibility decision, not an assumption.
+2. **Build-island gate:** prove the vendored Bun workspace can install, typecheck, and run its own relevant tests without changing Freelancer's Node/npm toolchain.
+3. **Package-map gate:** complete the runtime/presentation package classification in `docs/OPENCODE_RUNTIME_PACKAGE_MAP.md`.
+4. **Parity-harness gate:** define bounded old-runtime versus candidate-runtime scenarios in `docs/OPENCODE_RUNTIME_PARITY_HARNESS.md`.
+5. **Authority gate:** identify every current Freelancer permission, paid-model, project-scope, Git agreement, and child-session authority dependency before replacing the corresponding runtime boundary.
+6. **Persistence gate:** inventory current OpenCode and Freelancer stores before any schema merge. Physical database consolidation is frozen until ownership and migration evidence justify it.
+
+The source layout during staging is intentionally explicit:
+
+```text
+vendor/opencode/                 # recognizable upstream source; minimal local edits
+runtime/                         # future Freelancer-owned runtime code and adapters
+tests/runtime-parity/            # old-vs-new conformance scenarios when implementation begins
+docs/                            # maps, decisions, migration evidence
+```
+
+This makes upstream provenance visually different from Freelancer-owned runtime code.
 
 ---
 
@@ -362,7 +386,7 @@ If adapter code keeps growing, the architecture is moving in the wrong direction
 
 # Phase F — Unify persistence deliberately
 
-The long-term product should have one coherent Freelancer data platform, but not one undifferentiated schema.
+The long-term product should have one coherent Freelancer data architecture, but physical consolidation into a single SQLite file is not a success criterion. Keep separate physical stores while ownership, migrations, locking, rollback, or upstream compatibility benefit from separation. Merge stores only when the same runtime and migration system genuinely own both sides and the operational benefit is demonstrated.
 
 Inventory all persistent state and assign canonical ownership.
 
@@ -388,7 +412,7 @@ freelancer.sqlite
 └── git project state
 ```
 
-One physical SQLite database is desirable where technically sane, but logical ownership must remain explicit.
+Logical ownership must remain explicit regardless of physical layout. A single SQLite file may become desirable later, but the staging plan should assume multiple stores are acceptable until migration behavior, WAL/locking, rollback, and upstream-sync consequences are measured.
 
 Do not merge:
 - provider secrets;
@@ -628,19 +652,22 @@ Do not let fixture success stand in for real runtime success.
 
 The recommended implementation sequence is:
 
-1. Pin and vendor OpenCode upstream.
-2. Build it from within the Freelancer repository.
-3. Document runtime versus presentation boundaries.
-4. Complete runtime and UI gap analyses.
-5. Introduce a Freelancer Runtime facade.
-6. Move one duplicated domain at a time behind the facade.
-7. Delete redundant translation code continuously.
-8. Consolidate persistence only after ownership is explicit.
-9. Introduce the Capability Runtime.
-10. Fold unified browser/computer use into that capability layer.
-11. Keep MCP as the extension escape hatch.
-12. Periodically compare against upstream OpenCode and selectively absorb improvements.
-13. Consider collapsing process boundaries only after architecture stabilizes.
+1. Pin OpenCode upstream and resolve the explicit version-compatibility gate.
+2. Vendor the pinned source under `vendor/opencode/` without changing Freelancer's root package-manager ownership.
+3. Prove the vendored OpenCode Bun workspace can bootstrap and execute independently as a build island.
+4. Complete the package map and parity-harness definitions.
+5. Build the relevant runtime closure from within the Freelancer repository.
+6. Document runtime versus presentation boundaries.
+7. Complete runtime and UI gap analyses.
+8. Introduce a Freelancer Runtime facade.
+9. Move one duplicated domain at a time behind the facade.
+10. Delete redundant translation code continuously.
+11. Consolidate persistence logically first; merge physical stores only when justified.
+12. Introduce the Capability Runtime.
+13. Fold unified browser/computer use into that capability layer.
+14. Keep MCP as the extension escape hatch.
+15. Periodically compare against upstream OpenCode and selectively absorb improvements.
+16. Consider collapsing process boundaries only after architecture stabilizes.
 
 ---
 

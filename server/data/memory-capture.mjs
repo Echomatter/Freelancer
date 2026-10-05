@@ -46,16 +46,21 @@ export function createMemoryCaptureService(db, tx) {
         const job = db.prepare(`${jobSelect} WHERE job_id=? AND status='running'`).get(jobID);
         if (!job) throw Error('Capture job is no longer running.');
         const item = db.prepare('SELECT deleted_at FROM memory_items WHERE memory_id=?').get(job.memoryID);
-        const current = db.prepare('SELECT revision,revision_id AS id FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(job.memoryID);
+        const current = db.prepare('SELECT revision,revision_id AS id,title,body,provenance_json,capture_boundary_json,data_json,evidence_json FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(job.memoryID);
         if (!item || item.deleted_at !== null || current.revision !== job.expectedRevision)
           throw Error('Memory changed during capture. Refresh to capture its current source.');
         const revisionID = randomUUID(), revision = current.revision + 1, now = Date.now();
         const snapshotHash = createHash('sha256').update(JSON.stringify({messages,members,boundary})).digest('hex');
         const attemptedAt=Number.isSafeInteger(boundary.attemptedAt)?boundary.attemptedAt:now;
         const sourceCapturedAt=Object.hasOwn(boundary,'capturedAt')?boundary.capturedAt:now;
-        db.prepare('INSERT INTO memory_item_revisions VALUES(?,?,?,?,?,?,?)')
-          .run(revisionID,job.memoryID,revision,body,JSON.stringify({...provenance,snapshotHash}),
-            JSON.stringify({...boundary,capturedAt:sourceCapturedAt,attemptedAt,snapshotCreatedAt:now}),now);
+        const previousProvenance=JSON.parse(current.provenance_json);
+        const edited=previousProvenance.userEditedText===true||JSON.parse(current.capture_boundary_json).bodyEdited===true;
+        const nextProvenance={...previousProvenance,...provenance,...(edited?{userEditedText:true,sourceSnapshotHash:snapshotHash}:{snapshotHash})};
+        if(edited)delete nextProvenance.snapshotHash;
+        db.prepare(`INSERT INTO memory_item_revisions(revision_id,memory_id,revision,body,provenance_json,capture_boundary_json,created_at,title,data_json,evidence_json)
+          VALUES(?,?,?,?,?,?,?,?,?,?)`)
+          .run(revisionID,job.memoryID,revision,edited?current.body:body,JSON.stringify(nextProvenance),
+            JSON.stringify({...boundary,...(edited?{bodyEdited:true}:{}),capturedAt:sourceCapturedAt,attemptedAt,snapshotCreatedAt:now}),now,current.title,current.data_json,current.evidence_json);
         const insert = db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)');
         members.forEach((member,ordinal) => insert.run(revisionID,ordinal,member.kind,member.ref,member.revision ?? null,
           JSON.stringify(member.locator ?? {}),member.hash ?? null,member.availability ?? 'available'));

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { Archive, ArchiveRestore, BookOpen, Download, LoaderCircle, MessageSquare, Pin } from "lucide-react";
+import { Archive, ArchiveRestore, BookOpen, Download, LoaderCircle, MessageSquare, CloudUpload } from "lucide-react";
 import { api } from "./api";
 import { HelpHint, HelpScope } from "./HelpHint";
 import { SessionActivity, useProjectActivity } from "./SessionActivity";
@@ -19,10 +19,12 @@ type Project = { id: string; name: string; organization?: { archivedAt?: number 
 export type ConversationResult = {
   project: string; projectName: string; session: string; title: string; excerpt?: string;
   navigationSession?: string; navigationTitle?: string; evidence?: any; imported?: boolean;
+  originalSourceRef?: Record<string, unknown>; sourceRevision?: { hash?: string | null };
   cached?: boolean; updatedAt?: number; goal?: any;
-  organization?: { revision?: number; pinnedAt?: number | null; archived?: boolean;
+  organization?: { revision?: number; archived?: boolean;
     nativeArchived?: boolean; projectArchived?: boolean; archiveScope?: string | null };
 };
+export type RememberState = { status: "saving" | "saved" | "error"; id?: string; error?: string };
 type UndoRow = ConversationResult & { previousArchived: boolean };
 const identity = (row: ConversationResult) => `${row.project}:${row.navigationSession ?? row.session}`;
 const target = (row: ConversationResult): ConversationResult => ({ ...row,
@@ -34,16 +36,17 @@ const archived = (row: ConversationResult) => !!(row.organization?.archived || r
 // Native browsing and retained search share one result collection and the
 // existing history API. There is no independent management page or route.
 export function ConversationResults({ projects, project, results, searching, loading = false, pages,
-  pinnedOnly = false, currentProject, activity, initialConversation, revision, selectionScope,
-  onOpen, onReadEvidence, onChange }: {
+  currentProject, activity, initialConversation, revision, selectionScope,
+  rememberBusy = false, rememberState, onOpen, onReadEvidence, onRemember, onChange }: {
   projects: Project[]; project?: string; results: ConversationResult[]; searching: boolean;
-  loading?: boolean; pages?: ReactNode; pinnedOnly?: boolean; currentProject?: string;
+  loading?: boolean; pages?: ReactNode; currentProject?: string;
   activity?: Record<string, any>; initialConversation?: { project: string; session: string };
   revision: number; selectionScope: string;
+  rememberBusy?: boolean; rememberState?: (row: ConversationResult) => RememberState | undefined;
   onOpen: (project: string, session: string) => Promise<void>;
-  onReadEvidence: (row: ConversationResult) => Promise<void>; onChange: () => Promise<void>;
+  onReadEvidence: (row: ConversationResult) => Promise<void>; onRemember: (row: ConversationResult) => Promise<void>; onChange: () => Promise<void>;
 }) {
-  const [scope, setScope] = useState("all"), [onlyPins, setOnlyPins] = useState(false);
+  const [scope, setScope] = useState("all");
   const [limit, setLimit] = useState(100), [nativeRows, setNativeRows] = useState<ConversationResult[]>([]);
   const [nativeLoading, setNativeLoading] = useState(false), [nativeMore, setNativeMore] = useState(false);
   const [nativeCoverage, setNativeCoverage] = useState<string[]>([]), [nativeError, setNativeError] = useState("");
@@ -60,7 +63,7 @@ export function ConversationResults({ projects, project, results, searching, loa
   const projectIDs = projects.filter(item => !project || item.id === project).map(item => item.id).join("\n");
 
   useEffect(() => { alive.current = true; return () => { alive.current = false; activeRead.current++; }; }, []);
-  useEffect(() => { setSelected(new Map()); setConfirmation(null); setLimit(100); }, [project, searching, pinnedOnly]);
+  useEffect(() => { setSelected(new Map()); setConfirmation(null); setLimit(100); }, [project, searching]);
   useEffect(() => { setSelected(new Map()); setConfirmation(null); }, [selectionScope]);
   useEffect(() => {
     if (searching) return;
@@ -94,10 +97,9 @@ export function ConversationResults({ projects, project, results, searching, loa
   }, [projectIDs, project, searching, limit, epoch, revision]);
 
   const sourceRows = searching ? results : nativeRows;
-  const rows = sourceRows.filter(row => (scope === "all" || (scope === "archived") === archived(row)) &&
-    (!(pinnedOnly || onlyPins) || !!row.organization?.pinnedAt));
+  const rows = sourceRows.filter(row => scope === "all" || (scope === "archived") === archived(row));
   const targets = [...new Map(rows.map(row => [identity(row), target(row)])).values()];
-  const busy = !!pending, reading = searching ? loading : nativeLoading;
+  const busy = !!pending || rememberBusy, reading = searching ? loading : nativeLoading;
   const selectedRows = [...selected.values()].map(row => target(sourceRows.find(item => identity(item) === identity(row)) ?? row));
   const projectArchived = (row: ConversationResult) => !!row.organization?.projectArchived ||
     !!projects.find(item => item.id === row.project)?.organization?.archivedAt;
@@ -105,7 +107,7 @@ export function ConversationResults({ projects, project, results, searching, loa
   const evidenceAvailable = (row: ConversationResult) => row.evidence?.kind === "opencode-snapshot" &&
     !!row.evidence?.sourceSystemID && !!row.evidence?.snapshotRevisionSha256;
 
-  // A reload can remove an unpinned row or change the loaded native window.
+  // A reload can remove a row or change the loaded native window.
   // Keep native Load more selections only while their conversations stay visible.
   useEffect(() => {
     if (reading) return;
@@ -114,7 +116,7 @@ export function ConversationResults({ projects, project, results, searching, loa
       const next = new Map([...current].filter(([key]) => visible.has(key)));
       return next.size === current.size ? current : next;
     });
-  }, [sourceRows, reading, scope, pinnedOnly, onlyPins]);
+  }, [sourceRows, reading, scope]);
 
   useEffect(() => {
     if (!initialConversation?.session) return;
@@ -132,17 +134,6 @@ export function ConversationResults({ projects, project, results, searching, loa
     try { await action(); }
     catch (caught) { if (alive.current) setError((caught as Error).message); }
     finally { mutation.current = false; if (alive.current) setPending(""); }
-  }
-  async function pin(row: ConversationResult) {
-    let saved = false;
-    await perform(`pin:${identity(row)}`, async () => {
-      try {
-        await api("history/pin", { project: row.project, session: row.session,
-          pinned: !row.organization?.pinnedAt, revision: row.organization?.revision ?? 0 }, "PUT");
-        saved = true; setNotice(`${row.organization?.pinnedAt ? "Unpinned" : "Pinned"} ${row.title}.`);
-        await refresh();
-      } catch (caught) { throw Error(saved ? `Pin changed, but refresh failed: ${(caught as Error).message}` : (caught as Error).message); }
-    });
   }
   async function archive(value: boolean, items: ConversationResult[]) {
     await perform("archive", async () => {
@@ -188,25 +179,25 @@ export function ConversationResults({ projects, project, results, searching, loa
     });
   }
 
-  return <section className="content-search-group conversation-search-group" aria-label="Conversation results" aria-busy={reading}>
+  return <section className="content-search-group conversation-search-group" aria-label="Conversation results" aria-busy={reading || rememberBusy}>
     <HelpScope topic="history-search" details={<>{!searching && nativeCoverage.map(value => <p key={value}>{value}</p>)}
-      <p>Archive and pin filters apply to loaded conversations or the current retained-search page. Load more or continue search pages for older matches. Export all results exports the displayed conversations, deduplicated to their parent. Each download contains up to 20 parents from one project. Older pages are not included until loaded. Goal chats retain their archive controls in Project settings → Goals. Native permission and delivery safeguards remain authoritative.</p></>}>
-      <h2><MessageSquare size={17} />{pinnedOnly ? "Pinned conversations" : "Conversations"}<span>{rows.length}</span></h2>
+      <p>Remember saves the conversation to memory immediately. The saved reader offers Edit for an optional summary or details. Retained search results preserve their exact source window; native browsing captures the available conversation. Retrying uses the same source and memory ID. Archive controls apply to loaded conversations or the current retained-search page. Load more or continue search pages for older matches. Export all results exports the displayed conversations, deduplicated to their parent. Each download contains up to 20 parents from one project. Older pages are not included until loaded. Goal chats retain their archive controls in Project settings → Goals. Native permission and delivery safeguards remain authoritative.</p></>}>
+      <h2><MessageSquare size={17} />Conversations<span>{rows.length}</span></h2>
       <div className="conversation-search-controls">
         <Field label="Conversation status"><select value={scope} disabled={busy} onChange={event => { setScope(event.target.value); setSelected(new Map()); }}>
           <option value="all">Any status</option><option value="active">Active</option><option value="archived">Archived</option>
         </select></Field>
-        {!pinnedOnly && <label className="content-search-phrase"><input type="checkbox" checked={onlyPins} disabled={busy}
-          onChange={event => { setOnlyPins(event.target.checked); setSelected(new Map()); }} />Pinned conversations only</label>}
         <Button disabled={busy || reading || !targets.length} onClick={() => void exportRows(targets)}><Download size={16} />Export all results</Button>
       </div>
       {(notice || !!undo.length) && <div className="conversation-search-notice" role="status">{notice}{!!undo.length && <Button disabled={busy} aria-label="Undo last conversation archive change" onClick={() => void undoArchive()}>Undo</Button>}</div>}
       {error && <p className="notice error conversation-search-error" role="alert">{error}</p>}
       {nativeError && !searching && <div className="notice error content-search-error" role="alert"><span>{nativeError}</span><Button disabled={busy || reading} onClick={() => setEpoch(value => value + 1)}>Retry conversations</Button></div>}
       {reading && <span role="status"><LoaderCircle size={16} className="spin" />Loading conversations…</span>}
-      {!reading && !rows.length && (!nativeError || searching) && <span className="conversation-search-empty">{pinnedOnly || onlyPins ? "No pinned conversations in this view." : "No conversations in this view."}</span>}
+      {!reading && !rows.length && (!nativeError || searching) && <span className="conversation-search-empty">No conversations in this view.</span>}
       <div className="indexed-search-results">{rows.map(hit => {
         const row = target(hit), key = identity(hit), parent = !!hit.navigationSession && hit.navigationSession !== hit.session;
+        const remembered = rememberState?.(hit), rememberLabel = remembered?.status === "saved" ? "Open memory"
+          : remembered?.status === "saving" ? "Saving…" : remembered?.status === "error" ? "Retry save" : "Remember";
         const activityRow = row.project === currentProject ? activity?.[row.session] : row.project === project ? effectiveActivity?.[row.session] : undefined;
         const archiveReason = row.goal ? "Manage this goal’s archive in Project settings → Goals." : projectArchived(row) ? "Restore the project before changing its conversation archives." : undefined;
         return <div className="content-search-conversation" key={`${hit.project}:${hit.session}`}>
@@ -214,18 +205,19 @@ export function ConversationResults({ projects, project, results, searching, loa
             onChange={event => setSelected(current => { const value = new Map(current); if (event.target.checked) value.set(key, row); else value.delete(key); return value; })} />
           <button type="button" className="indexed-search-result" aria-label={`Open conversation ${hit.title} in ${hit.projectName}`} disabled={busy}
             onClick={() => void perform(`open:${key}`, () => onOpen(row.project, row.session))}>
-            <span className="indexed-result-heading"><strong>{!hit.imported && <SessionActivity activity={activityRow} goal={row.goal} />}{hit.title}</strong><small>{row.organization?.pinnedAt ? "Pinned" : "Conversation"}</small></span>
+             <span className="indexed-result-heading"><strong>{!hit.imported && <SessionActivity activity={activityRow} goal={row.goal} />}{hit.title}</strong><small>Conversation</small></span>
             <span className="indexed-result-path"><span>{hit.projectName}</span><span>{hit.imported ? "Retained import · read only" : row.organization?.projectArchived ? "Archived project" : row.organization?.archiveScope === "freelancer" ? "Hidden in Freelancer" : row.organization?.nativeArchived ? "Archived in OpenCode" : "OpenCode conversation"}</span>
               {hit.cached && <span>Previously seen</span>}{Number.isFinite(hit.updatedAt) && <time dateTime={new Date(hit.updatedAt!).toISOString()}>{new Date(hit.updatedAt!).toLocaleDateString()}</time>}</span>
             {hit.excerpt && <span className="indexed-result-excerpt">{hit.excerpt}</span>}
             <span className="indexed-result-open"><MessageSquare size={15} />{parent ? `Open parent: ${row.title}` : "Open conversation"}</span>
           </button>
           <div className="conversation-result-actions">
-            <Button aria-label={`${row.organization?.pinnedAt ? "Unpin" : "Pin"}${parent ? " parent conversation" : ""} ${row.title}`} aria-pressed={!!row.organization?.pinnedAt} disabled={busy || reading} onClick={() => void pin(row)}><Pin size={16} />{row.organization?.pinnedAt ? "Unpin" : "Pin"}{parent ? " parent" : ""}</Button>
             <Button disabled={busy || reading || archiveBlocked(row)} title={archiveReason} aria-label={`${archived(row) ? "Restore" : "Archive"} conversation ${row.title}`}
               onClick={() => setConfirmation({ archived: !archived(row), items: [row] })}>{archived(row) ? <ArchiveRestore size={16} /> : <Archive size={16} />}{archived(row) ? "Restore" : "Archive"}</Button>
             <Button aria-label={`Export conversation ${row.title}`} disabled={busy || reading} onClick={() => void exportRows([row])}><Download size={16} />Export</Button>
+            <Button disabled={busy || reading} aria-label={`${rememberLabel} conversation ${hit.title}`} title={remembered?.status === "saved" ? "Open the saved memory" : "Save this conversation to memory"} onClick={() => void onRemember(hit)}><CloudUpload size={16} />{rememberLabel}</Button>
             {evidenceAvailable(hit) && <Button disabled={busy} aria-label={`Read retained evidence ${hit.title}`} onClick={() => void perform("evidence", () => onReadEvidence(hit))}><BookOpen size={16} />Read evidence</Button>}
+            {remembered?.error && <p className="notice error memory-source-error" role="alert">{remembered.error}</p>}
           </div>
         </div>;
       })}</div>

@@ -133,7 +133,7 @@ test("parser and classifier integration API behaves for helper consumers", async
   assert.equal(isInspectAllowed("unknown_mutator", {}), false);
 });
 
-test("inspect-only project restricts regular agents but allows read-only skills", async (t) => {
+test("inspect-only Git agreement restricts managed history changes without restricting unrelated tools", async (t) => {
   const root = await mkdtemp(path.join(os.tmpdir(), "git-guard-inspect-"));
   t.after(() => rm(root, { recursive: true, force: true }));
   const state = path.join(root, ".state/webpage");
@@ -179,17 +179,20 @@ test("inspect-only project restricts regular agents but allows read-only skills"
   await check("websearch", { query: "test" });
   await check("webfetch", { url: "https://example.com" });
   await check("task", { description: "x", prompt: "y" });
-  // Inspect-only leeway: bounded helpers + shell inspection allowed;
-  // code writes stay blocked.
+  // The agreement applies to managed history; source/tool access remains
+  // governed by captured execution policy and native permissions.
   await check("delegate", { agentID: "researcher" });
+  await check("write", { filePath: "src/example.js" });
+  await check("edit", { filePath: "src/example.js" });
+  await check("content_index", { operation: "rebuild" });
+  await check("memory", { operation: "remember" });
+  await check("model_catalog", { operation: "refresh" });
   await check("bash", { command: "ls" });
-  // Shell is not a filesystem sandbox: the guard does not parse redirects;
-  // native permissions and instructions govern shell writes.
+  // Shell is not a filesystem sandbox: native permissions govern shell writes.
   await check("bash", { command: "echo hi > src/note.txt" });
-  for (const tool of ["write", "edit"])
-    await assert.rejects(check(tool), /inspect only|code writes/);
   // Shell git bypass still blocked via command pattern.
   await assert.rejects(check("bash", { command: "git status" }), /agreement/);
+  await assert.rejects(check("git_project", { action: "execute", planID: "plan" }), /managed Git history changes/);
 });
 
 test("inspect-only uses operation-aware classification without brittle names", async (t) => {
@@ -199,13 +202,16 @@ test("inspect-only uses operation-aware classification without brittle names", a
     await check("lsp", { operation, file: "src/example.js" });
   }
   await check("lsp", { operation: "goToImplementation", file: "src/example.js" });
-  // Unknown LSP operations and unknown tools stay denied.
-  await assert.rejects(check("lsp", { operation: "rename" }), /inspect only/);
-  await assert.rejects(check("lsp", {}), /inspect only/);
-  await assert.rejects(check("unknown_mutator", {}), /inspect only/);
-  // Operation-aware content_index and git_project boundaries.
+  // LSP and unknown application tools are not governed by the Git agreement.
+  await check("lsp", { operation: "rename" });
+  await check("lsp", {});
+  await check("unknown_mutator", {});
+  // Operation-aware managed Git boundary; non-Git tool operations stay open.
   await check("content_index", { operation: "search" });
-  await assert.rejects(check("content_index", { operation: "nuke-everything" }), /inspect only/);
+  await check("content_index", { operation: "nuke-everything" });
+  await check("memory", { operation: "forget" });
+  await check("model_catalog", { operation: "refresh" });
+  await check("evidence_evaluation", { operation: "evaluate" });
   await check("git_project", { action: "preview" });
   await check("git_project", { action: "request", reason: "Ask to change inspection agreement" });
   await assert.rejects(check("git_project", { action: "request", planID: "approved-plan" }), /inspect only/);
@@ -213,12 +219,9 @@ test("inspect-only uses operation-aware classification without brittle names", a
     await assert.rejects(check("git_project", { action }), /inspect only/);
   }
   await assert.rejects(check("git_project", {}), /inspect only/);
-  // apply_patch shapes are writes: blocked in inspect even for normal paths.
-  await assert.rejects(
-    check("apply_patch", { patchText: "*** Begin Patch\n*** Add File: src/x.js\n+hi\n*** End Patch" }),
-    /inspect only/,
-  );
-  await assert.rejects(check("apply_patch", { patch: [{ type: "Add", path: "src/x.js" }] }), /inspect only/);
+  // apply_patch source writes are outside the Git-history agreement.
+  await check("apply_patch", { patchText: "*** Begin Patch\n*** Add File: src/x.js\n+hi\n*** End Patch" });
+  await check("apply_patch", { patch: [{ type: "Add", path: "src/x.js" }] });
   // Protected reads stay blocked with the managed-history message.
   await assert.rejects(check("read", { filePath: ".state/webpage/settings.json" }), /Private Git|managed history/);
 });

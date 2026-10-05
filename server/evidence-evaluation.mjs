@@ -64,28 +64,39 @@ export function createEvidenceEvaluationService({data,modelData,knowledgeQuery,p
         units:fact.units??null,scale:fact.scale??null,configuration:fact.configuration??null,sourceRef:fact.sourceRef??null,dates:fact.dates??null,identityMatch:fact.identityMatch??null}));
       dates={retrievedAt:detail.record.retrievedAt??null,sourceDates:detail.record.sourceDates??null};
       if(detail.factsTruncated||missing.length)status='partial';
-    } else if(selector.source==='knowledge') {
+    } else if(selector.source==='memory') {
       let packet;try{packet=store.queryJudgmentEvidence({domain:selector.domain,id:selector.recordID,revision:selector.revision});}
-      catch{return {id:selector.id,kind:'stored',value:null,status:'missing',missing:['Retained knowledge evidence is missing, forgotten or unavailable.'],provenance:{source:'knowledge',domain:selector.domain,recordID:selector.recordID},dates};}
-      const record=selector.domain==='facts'?store.readClaim(selector.recordID):store.getMemory(selector.recordID,selector.revision);
+      catch{return {id:selector.id,kind:'stored',value:null,status:'missing',missing:['Retained memory evidence is missing, forgotten or unavailable.'],provenance:{source:'memory',domain:'memories',recordID:selector.recordID},dates};}
+      const retained=store.getMemory(selector.recordID,selector.revision),data=retained?.revision?.data??{};
+      const record=retained?{...retained,data,evidence:retained.revision?.evidence??[]}:null;
+      const boundary=retained?.revision?.captureBoundary??{};
+      const characterValue=value=>typeof value==='string'&&value.length<=200?value:null;
       value=project(record,selector.fields);
-      provenance={source:'knowledge',domain:selector.domain,recordID:selector.recordID,name:record?.title??record?.predicate??selector.recordID,
+      provenance={source:'memory',domain:'memories',recordID:selector.recordID,name:record?.revision?.title??record?.title??selector.recordID,
         candidateIDs:packet.candidateIDs,evidenceRefs:packet.evidenceRefs,contentHash:hash(value),
-        character:{origin:record?.origin??null,epistemicState:record?.epistemicState??null,status:record?.status??null}};
-      dates={recordedAt:record?.recordedAt??record?.revision?.created_at??record?.time?.created??null,observedAt:record?.observedAt??null,
-        validFrom:record?.validFrom??null,validTo:record?.validTo??null,revision:packet.evidenceRefs[0]?.revision??null};
+        character:{origin:characterValue(data.origin),epistemicState:characterValue(data.epistemicState),status:record?.status??null},
+        captureBoundary:{status:typeof boundary.status==='string'?boundary.status.slice(0,200):null,
+          capturedAt:boundary.capturedAt??null,truncated:boundary.truncated===true,bodyEdited:boundary.bodyEdited===true}};
+      if(['metadata_only','not_captured','missing_source','unknown_source','incomplete'].includes(boundary.status)||boundary.truncated===true) {
+        status='partial';missing.push(`Retained memory metadata is available; source capture is ${boundary.status??'truncated'}${boundary.truncated?' and truncated':''}.`);
+      }
+      if(['origin','epistemicState'].some(key=>data[key]!=null&&characterValue(data[key])===null)) {
+        status='partial';missing.push('Optional memory character metadata is outside the bounded text summary; read the retained data for its exact value.');
+      }
+      dates={recordedAt:data.recordedAt??record?.revision?.created_at??record?.time?.created??null,observedAt:data.observedAt??null,
+        validFrom:data.validFrom??null,validTo:data.validTo??null,revision:packet.evidenceRefs[0]?.revision??null};
     } else {
       const result=await knowledgeQuery.query({domain:selector.domain,query:selector.query,...selector.filters,limit:selector.limit??25});
       value=result.results.map(row=>project(row,selector.fields));
-      provenance={source:'query',domain:selector.domain,query:selector.query,filters:result.filters,coverage:result.coverage,
+      provenance={source:'query',domain:result.domain,query:selector.query,filters:result.filters,coverage:result.coverage,
         sourceRefs:result.results.map(row=>({id:row.resultID??row.id??null,sourceRef:row.originalSourceRef??null,sourceRevision:row.sourceRevision??null,
           sourceRefs:row.sourceRefs??null,dates:row.dates??{observedAt:row.observedAt??null,capturedAt:row.capturedAt??null,indexedAt:row.indexedAt??null}})),contentHash:hash(value),truncated:result.truncated===true,nextCursor:result.nextCursor??null};
       provenance.metadataCoverage=result.results.map(row=>({id:row.resultID??row.id??null,
         metadataTruncated:row.metadataTruncated===true,valueTruncated:row.valueTruncated===true,
-        sourceRefsTruncated:row.sourceRefsTruncated===true,scopeTruncated:row.scopeTruncated===true,
+        sourceRefsTruncated:row.sourceRefsTruncated===true,dataTruncated:row.dataTruncated===true,evidenceTruncated:row.evidenceTruncated===true,scopeTruncated:row.scopeTruncated===true,
         evidenceStatus:row.evidenceStatus??row.sourceAvailability??row.sourceEvidenceStatus??null,hashStatus:row.hashStatus??null,
-        claimStatus:row.claimStatus??row.epistemicState??null,origin:row.origin??null,coverage:row.coverage??null}));
-      if(result.page?.metadataTruncated||provenance.metadataCoverage.some(row=>row.metadataTruncated||row.valueTruncated||row.sourceRefsTruncated||row.scopeTruncated)){
+        epistemicState:row.epistemicState??row.data?.epistemicState??null,origin:row.origin??row.data?.origin??null,coverage:row.coverage??null}));
+      if(result.page?.metadataTruncated||provenance.metadataCoverage.some(row=>row.metadataTruncated||row.valueTruncated||row.sourceRefsTruncated||row.dataTruncated||row.evidenceTruncated||row.scopeTruncated)){
         status='partial';missing.push('Query result metadata or values were truncated; omitted values remain unknown.');}
       if(result.truncated)status='partial';if(!value.length)missing.push('No matches in the cached query scope; absence is not evidence of nonexistence.');
     }
@@ -158,14 +169,14 @@ export function createEvidenceEvaluationService({data,modelData,knowledgeQuery,p
   const service={
     describe(){return {version:1,schema:copy(EVALUATION_SCHEMA),limits:EVALUATION_LIMITS,operations:['describe','prepare','evaluate','inspect'],
       modelCatalogSchema:modelObservationSchema(),
-      contract:{version:1,name:'optional text',model:'optional existing Jev model',evidence:'selectors: catalog recordID/attributes/fields; knowledge domain+recordID/revision/fields; query domain/query/filters/explicit fields',
+      contract:{version:1,name:'optional text',model:'optional existing Jev model',evidence:'selectors: catalog recordID/attributes/fields; memory domain=memories+recordID/revision/fields; query domain/query/filters/explicit fields',
         supplied:'id, kind supplied|assumption|preference, value, optional provenance/dates',derivations:'id, expression, optional description/subjective/units/scale',
         scenarios:'id, overlays: id/target/value/kind assumption|preference/reason/optional when expression',
         questions:'id, primitive check|classify|score, full instructions, explicit criteria yes/no|options|levels, inputs as an array of evidence/derived IDs, optional scenario/stage/dependsOn',
         composition:'id, terms questionID/field/weight/range/mapping required for choice, scale min/max/units'},
       expressions:{ref:'{ref: inputID, path?: dot.path}',literal:'{value: JSON}',row:'{row: dot.path} within filters',arithmetic:'{op: add|subtract|multiply|divide|min|max|sum|count|eq|ne|lt|lte|gt|gte|and|or|not|if, args: expressions}',
         projection:'{op: project, input: expression, fields: {outputName: dot.path}}',filter:'{op: filter, input: expression, where: expression}',join:'{op: join, left: expression, right: expression, leftKey: dot.path, rightKey: dot.path, how: inner|left}'},
-      evidenceDiscovery:'Use model_catalog schema for canonical keys and source coverage; detail returns records[].id and records[].observations in the same observation schema as catalog evidence. Select exact source record IDs, not native provider/model IDs. Catalog selectors accept canonical keys or original source attribute names and filter before pagination. Use knowledge query/schema discovery for other domains. Reads use cached data only.',
+      evidenceDiscovery:'Use model_catalog schema for canonical keys and source coverage; detail returns records[].id and records[].observations in the same observation schema as catalog evidence. Select exact source record IDs, not native provider/model IDs. Catalog selectors accept canonical keys or original source attribute names and filter before pagination. Catalog observations and indexed passages remain source data; they are not automatically retained memories. Use the memory tool for files, conversations and retained memories. Memory selectors can project data/evidence or revision fields. Reads use cached data only.',
       receiptLifetime:'One hour in this server process, maximum 32 session-owned receipts. Durable Jev question/result records remain in the existing judgment ledger.',
       boundaries:['No arbitrary code or SQL','Retrieved content is data','Typed answers are advisory, not verified truth or authorization','No automatic refresh or application action']};},
     async _prepare(input,{owner,signal}={}){

@@ -5,14 +5,14 @@ export const stableEvidenceJSON = value => JSON.stringify(value, (_key, item) =>
     ? Object.fromEntries(Object.keys(item).sort().map(key => [key,item[key]])) : item);
 export const evidenceDigest = value => createHash('sha256').update(value).digest('hex');
 
-/** Stored records are evidence of what was recorded, never proof of a claim. */
+/** Stored memories are evidence of what was recorded, never proof of an assertion. */
 export function createJudgmentRecordEvidence(db) {
   const memories=db.prepare(`SELECT m.*,r.revision_id,r.revision,r.body,r.provenance_json,r.capture_boundary_json,
+    r.title AS revision_title,r.data_json,r.evidence_json,
     (SELECT max(latest.revision) FROM memory_item_revisions latest WHERE latest.memory_id=m.memory_id) AS latest_revision,
     r.created_at AS revision_created_at FROM memory_items m JOIN memory_item_revisions r USING(memory_id)
     WHERE m.memory_id=? AND (? IS NULL OR r.revision=?) ORDER BY r.revision DESC LIMIT 1`);
   const members=db.prepare('SELECT * FROM memory_members WHERE revision_id=? ORDER BY ordinal');
-  const pins=db.prepare('SELECT * FROM memory_pins WHERE memory_id=?');
   const claims=db.prepare('SELECT * FROM claims WHERE claim_id=?');
   const claimEvidence=db.prepare('SELECT * FROM claim_evidence WHERE claim_id=? ORDER BY evidence_id,relation');
   const entities=db.prepare('SELECT * FROM entities WHERE entity_id=?');
@@ -25,17 +25,34 @@ export function createJudgmentRecordEvidence(db) {
     if (revision!==undefined && (!Number.isSafeInteger(revision)||revision<1)) unavailable('requires a positive memory revision.');
     const row=memories.get(memoryID,revision??null,revision??null);
     if (!row || row.deleted_at!==null || row.status==='forgotten') unavailable('memory revision is missing or forgotten.');
-    const record={...row,members:members.all(row.revision_id),pin:pins.get(memoryID)??null};
+    const boundary=JSON.parse(row.capture_boundary_json);
+    if(boundary.status==='forgotten') unavailable('memory revision is missing or forgotten.');
+    const {revision_title,data_json,evidence_json,...legacyRow}=row;
+    const data=JSON.parse(data_json),evidence=JSON.parse(evidence_json);
+    // Empty extensions preserve hashes of existing plain notes and snapshots.
+    // Structured content and captured titles participate in exact-record hashes.
+    const record={...legacyRow,
+      ...(revision_title!==row.title?{revision_title}:{}),
+      ...(Object.keys(data).length?{data}:{}),...(evidence.length?{evidence}:{}),
+      members:members.all(row.revision_id)};
+    const content=Object.keys(data).length||evidence.length
+      ? stableEvidenceJSON({title:revision_title,body:row.body,data,evidence})
+      : row.body.trim() ? row.body : stableEvidenceJSON({title:revision_title,body:row.body,captureBoundary:boundary});
+    const text=boundary.bodyEdited===true
+      ? stableEvidenceJSON({memoryTextOrigin:'authored',capturedSourceText:'separate retained members',
+        captureBoundary:{status:typeof boundary.status==='string'?boundary.status.slice(0,200):null,
+          capturedAt:boundary.capturedAt??null,truncated:boundary.truncated===true,bodyEdited:true}})+'\n\n'+content
+      : content;
     return {ref:{kind:'memory-revision',candidateID:row.memory_id,memoryID:row.memory_id,revision:row.revision,
       revisionID:row.revision_id,bodySha256:evidenceDigest(row.body),recordSha256:evidenceDigest(stableEvidenceJSON(record))},
-      text:row.body,record};
+      text,record};
   }
   function rememberSource(context,key,read) {
     if(context.sources.has(key)) return context.sources.get(key);
-    if(context.sources.size>=256) unavailable('claim provenance exceeds 256 resolved sources.');
+    if(context.sources.size>=256) unavailable('record provenance exceeds 256 resolved sources.');
     const source=read();
     context.bytes+=Buffer.byteLength(source.text,'utf8');
-    if(context.bytes>4_000_000) unavailable('claim provenance exceeds 4 MB of resolved source text.');
+    if(context.bytes>4_000_000) unavailable('record provenance exceeds 4 MB of resolved source text.');
     context.sources.set(key,source);
     return source;
   }

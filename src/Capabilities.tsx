@@ -45,6 +45,7 @@ export function Capabilities({ data, modelData, sessionID, onClose }: {
   const skills = inventory?.skills ?? [];
   const availableTools = tools.filter(row => ['Available', 'Loaded'].includes(toolLabel(row))).length;
   const availableSkills = skills.filter(row => skillLabel(row, inventory?.probes?.skills) === 'Found').length;
+  const skillInspectionNote = (row: Skill) => row.discovered ? null : row.unavailableReason;
   return <div className="capability-view">
     <PageHeading title="Capabilities" icon={Wrench} actions={<>
       <Button type="button" variant="primary" disabled={loading} onClick={() => setRefresh(n => n + 1)}>
@@ -76,14 +77,14 @@ export function Capabilities({ data, modelData, sessionID, onClose }: {
           </li>)}</ul>
           {!tools.length && <p>No tools were returned by this inspection.</p>}
         </Panel>
-        <Panel title="Skills" className="capability-section" collapsible storageKey="skills" summaryText={`${skills.length} · ${availableSkills} available`} help="capability-skills" helpDetails={<details><summary>Technical details</summary>
-          {inventory.skills.map((row, index) => <p key={index}><strong>{row.name}</strong> · {row.origin}{row.unavailableReason && <> — {row.unavailableReason}</>}</p>)}
+        <Panel title="Skills" className="capability-section" collapsible storageKey="skills" summaryText={`${skills.length} · ${availableSkills} found`} help="capability-skills" helpDetails={<details><summary>Technical details</summary>
+          {inventory.skills.map((row, index) => <p key={index}><strong>{row.name}</strong> · {row.origin}{skillInspectionNote(row) && <> — {skillInspectionNote(row)}</>}</p>)}
           {inventory.probes?.skills?.reason && <p>{inventory.probes.skills.reason}</p>}
         </details>}>
           <ul className="capability-rows" aria-label="Skill inventory">{skills.map((row, index) => <li key={`${row.name}:${row.origin}:${index}`}>
             <details className="capability-item">
               <summary><span className="capability-name">{row.name}</span><Badge tone={skillLabel(row, inventory.probes?.skills) === 'Found' ? 'success' : 'neutral'}>{skillLabel(row, inventory.probes?.skills)}</Badge></summary>
-              <p className="capability-description">{row.summary || 'Guidance OpenCode can load when it fits your task.'}</p>
+              <p className="capability-description">{row.summary || 'Reusable guidance OpenCode can load when it fits your task. It does not control tool access.'}</p>
             </details>
           </li>)}</ul>
           {!skills.length && <p>{inventory.probes?.skills?.state === 'unavailable'

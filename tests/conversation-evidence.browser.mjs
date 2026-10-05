@@ -71,12 +71,29 @@ async function searchConversations(page, query) {
 const workerHit = page => page.locator('.content-search-conversation').filter({ hasText: 'Linked worker' });
 const reader = page => page.getByRole('dialog', { name: 'Retained conversation evidence', exact: true });
 
+test('memory cloud opens a source-linked chat summary draft', { tag: ['@app'] }, async ({ appBrowser: browser, own }) => {
+  const f = await retainedFixture(own), page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  await page.goto(f.url);
+  await searchConversations(page, 'retainedworkerneedle');
+  const hit = workerHit(page);
+  await expect(hit).toHaveCount(1);
+  await hit.getByRole('button', { name: 'Add conversation summary to memory: Important conversation', exact: true }).click();
+  const editor = page.getByRole('dialog', { name: 'New memory', exact: true });
+  await expect(editor.locator('.knowledge-selected-evidence')).toContainText('History project');
+  await expect(editor.getByLabel('Memory summary', { exact: true })).toHaveAttribute('required', '');
+  await editor.getByLabel('Memory summary', { exact: true }).fill('A manually curated summary of the retained chat.');
+  await editor.getByRole('button', { name: 'Save memory', exact: true }).click();
+  const saved = page.getByRole('dialog', { name: 'Linked worker', exact: true });
+  await expect(saved.locator('.knowledge-memory-body')).toHaveText('A manually curated summary of the retained chat.');
+  await expect(saved.getByText('Retained evidence · 1', { exact: true })).toBeVisible();
+});
+
 test('unpinned worker search preserves original retained evidence and separates parent navigation at phone width', { tag: ['@app'] },
   async ({ appBrowser: browser, own }, info) => {
     const f = await retainedFixture(own), page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
     const evidenceRequests = [];
     page.on('request', request => {
-      if (new URL(request.url()).pathname === '/api/knowledge' && request.method() === 'POST') {
+      if (new URL(request.url()).pathname === '/api/memory' && request.method() === 'POST') {
         const body = request.postDataJSON();
         if (body.operation === 'opencode-read') evidenceRequests.push(body);
       }
@@ -88,16 +105,17 @@ test('unpinned worker search preserves original retained evidence and separates 
       await expect(hit).toHaveCount(1);
       await expect(hit.locator('.indexed-result-heading strong')).toHaveText('Linked worker');
       await expect(hit).toContainText(originalBody);
-      await expect(hit).toContainText('Open parent conversation: Important conversation');
+      await expect(hit).toContainText('Open parent: Important conversation');
       await expect(hit).not.toContainText('Updated native worker title');
-      await expect(hit.getByRole('button', { name: 'Pin parent conversation Important conversation', exact: true })).toHaveAttribute('aria-pressed', 'false');
+      await expect(hit.getByRole('button', { name: 'Add conversation summary to memory: Important conversation', exact: true })).toBeVisible();
+      await expect(hit.getByRole('button', { name: /pin parent conversation/i })).toHaveCount(0);
       await page.setViewportSize({ width: 390, height: 844 });
       await hit.scrollIntoViewIfNeeded();
-      await expect(hit.getByRole('button', { name: 'Read retained evidence', exact: true })).toBeVisible();
+      await expect(hit.getByRole('button', { name: 'Read retained evidence Linked worker', exact: true })).toBeVisible();
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true,
         'worker identity, retained evidence and parent actions fit phone width');
       await info.attach('worker-search-phone', { body: await page.screenshot({ fullPage: true }), contentType: 'image/png' });
-      await hit.getByRole('button', { name: 'Read retained evidence', exact: true }).click();
+      await hit.getByRole('button', { name: 'Read retained evidence Linked worker', exact: true }).click();
     });
     await test.step('Read the original body and snapshot hash without substituting current native text', async () => {
       const evidence = reader(page);

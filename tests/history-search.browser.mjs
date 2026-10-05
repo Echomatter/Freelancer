@@ -27,8 +27,7 @@ test('history-search', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
     await page.getByRole('heading', { name: 'Manage chats' }).waitFor();
     await page.getByRole('checkbox', { name: 'Select Important conversation' }).waitFor();
     assert.equal(await page.getByRole('checkbox', { name: 'Select Important conversation' }).count(), 1);
-    await page.getByRole('button', { name: 'Pin Important conversation' }).click();
-    await page.getByRole('button', { name: 'Unpin Important conversation' }).waitFor();
+    await expect(page.getByRole('button', { name: /pin important conversation/i })).toHaveCount(0);
     await page.getByRole('checkbox', { name: 'Select Important conversation' }).check();
     assert.equal(await page.getByRole('button', { name: 'Export selected' }).isEnabled(), true);
     const download = page.waitForEvent('download');
@@ -39,7 +38,7 @@ test('history-search', { tag: ["@app"] }, async ({ appBrowser: browser, own }) =
     await page.getByRole('button', { name: 'Archived', exact: true }).click();
     await page.getByRole('checkbox', { name: 'Select Important conversation' }).waitFor();
     assert.equal((await f.api('history?project=history_project&scope=archived')).sessions[0].id, 'ses_history');
-    console.log('PASS settings navigation opens conversation history with activity, pin, archive, and export controls');
+    console.log('PASS settings navigation opens conversation history with activity, archive, and export controls');
   } finally {
     await browser.close();
     await f.close();

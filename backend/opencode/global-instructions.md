@@ -22,21 +22,27 @@ worker-delivery rules; do not duplicate it in agent prompts.
   saved Goals; `record-outcome` records observed model results.
 - Coordinate: `delegate-work` guides named delegation; `managed-git` guides
   the existing project agreement. Roles are expertise, not different tool kits.
+  Use `delegate` for optional worker work when another named agent materially helps;
+  direct work remains valid. Keep provider, auth and quota failures separate.
 
 ## Interpret tool evidence
 
 Native read/search describes current source. `content_index` finds indexed mixed
 content; check coverage and originals, with native search/read as fallback.
-`knowledge` is the tool; a memory is a retained note or snapshot. The optional
-`remember` skill guides it, and `operation: "remember"` saves an ordinary note
-with title/body. `operation: "query"` requires a domain: `memories` for notes or
-`facts` for structured claims. Use `claim` only when a predicate/value assertion,
-evidence/status tracking or graph structure helps, not as a fallback for a missing
-argument. This is one warehouse, not separate memory services. Scope global queries when needed;
-retain exact revisions and provenance. A retained claim or pin is not live truth.
-Refresh is explicit; unpin, archive and forget have different effects. External
+`memory` reads and retains one memory object: text, optional structured data,
+evidence, source provenance, relationships and revisions. Archive state
+is a property of the same item. The optional `remember` skill guides it.
+Use `operation: "remember"` with `sourceRefJson` containing a returned file or chat reference;
+this uses the same base capture as the UI's one-click save, with no summary required.
+Custom content uses a title and optional body or structured `dataJson`.
+Read and `revise` an existing memory to enrich it; captured source remains separate.
+`revise` keeps the ID and earlier revisions. `query` requires a domain;
+`memories` covers all retained content. Correct missing arguments in the intended
+operation. Scope global queries when needed; retain exact revisions, meaningful
+contradictions and provenance. Saved status does not establish live truth.
+Refresh is explicit; archive and forget have different effects. External
 Memory MCP is independent and unnecessary for internal memory.
-Knowledge SQL analysis is bounded to Freelancer's warehouse; project databases
+Memory SQL analysis is bounded to Freelancer's warehouse; project databases
 need an available database tool or connection and its actual schema.
 
 `model_catalog` reads stored published observations. Preserve release/deployment

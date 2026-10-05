@@ -8,6 +8,7 @@ import { importedChatID } from './imported-history.mjs';
 import { openCodeSourceIdentity, openCodeSnapshotProof } from './data/opencode-warehouse.mjs';
 import { createKnowledgeQuery } from './data/knowledge-query.mjs';
 import { createMemoryCaptureRunner } from './memory-capture.mjs';
+import { memorySourceReference,memorySourceType } from '../domain/knowledge-input.mjs';
 import {
   idPattern,
   sessionKey,
@@ -164,11 +165,17 @@ export function createHistoryService({
     return beforeWrite ? beforeWrite(input) : data().recordOpenCodeSnapshot(input);
   }
   const captures = createMemoryCaptureRunner({ data, async readSource(job,signal) {
-    const project = await app.project(job.projectID), startedAt = Date.now();
+    const startedAt = Date.now(), previous=data().getMemory(job.memoryID);
+    const selected=previous?.revision.provenance.rememberSource;
+    const exact=selected?.snapshotRevisionSha256
+      ?data().readOpenCodeSession({...selected,limit:500}):null;
+    if(exact&&exact.status!=='ok')throw Error('The selected exact retained chat snapshot is unavailable; no newer source was substituted.');
+    const project = exact?null:await app.project(job.projectID);
     let session, native;
     try {
-      session = await own(project,job.sessionID,{signal});
-      native = session.imported ? app.importedHistory.get(job.projectID,job.sessionID)?.messages
+      session = exact?{id:job.sessionID,title:exact.session.title,parentID:exact.session.parentID,
+        time:{created:exact.session.createdAt,updated:exact.session.updatedAt,archived:exact.session.archivedAt}}:await own(project,job.sessionID,{signal});
+      native = exact?exact.messages.map(row=>({info:row.info,parts:row.parts})):session.imported ? app.importedHistory.get(job.projectID,job.sessionID)?.messages
         : await request(project,`/session/${encodeURIComponent(job.sessionID)}/message`,{signal});
       if (!Array.isArray(native)) throw Error('Conversation messages are unavailable.');
     } catch (error) {
@@ -189,7 +196,7 @@ export function createHistoryService({
           sourceAvailability:availability,attemptedAt:startedAt}};
     }
     const messages=[],members=[]; let bytes=0,omitted=0,truncated=false,retainedNative=native,retainedSnapshot;
-    if (!session.imported) {
+    if (!session.imported&&!exact) {
       let projectionSafe=false;
       const bounded=boundedEventMessages(native,job.sessionID);
       retainedNative=bounded.messages;
@@ -197,8 +204,9 @@ export function createHistoryService({
       projectionSafe=!bounded.truncated&&bounded.messages.length===native.length&&native.length<=5000;
       retainedSnapshot=await captureOpenCode(job.projectID,session,retainedNative,projectionSafe,signal,undefined,projectionSafe);
     }
-    const source = session.imported ? undefined : await sourceIdentity({ signal });
-    const retained = source ? data().openCodeMessageRefs({projectID:job.projectID,sessionID:job.sessionID,sourceSystemID:source.sourceSystemID,limit:5000}) : null;
+    const source = exact?{sourceSystemID:exact.session.sourceSystemID}:session.imported ? undefined : await sourceIdentity({ signal });
+    const retained = exact?{messages:exact.messages}:source ? data().openCodeMessageRefs({projectID:job.projectID,sessionID:job.sessionID,sourceSystemID:source.sourceSystemID,limit:5000}) : null;
+    if(exact)truncated=exact.truncated;
     for (const row of retainedNative) {
       signal.throwIfAborted();
       const info=row.info ?? row;
@@ -219,19 +227,19 @@ export function createHistoryService({
         revision:evidence?.revisionSha256,locator:value,availability:'retained'});
     }
     if (native.length>5000) truncated=true;
-    let active=true;
+    let active=exact?null:true;
     if (session.imported) active=false;
-    else {
+    else if(!exact) {
       try { const status=await request(project,'/session/status',{signal}); active=!!status?.[job.sessionID]&&status[job.sessionID].type!=='idle'; }
       catch { /* unknown activity is an incomplete boundary */ }
     }
-    return {messages,members,boundary:{status:active||truncated?'incomplete':'complete',active,truncated,
-      startedAt,attemptedAt:startedAt,sourceUpdatedAt:session.time?.updated ?? null,sourceMessageCount:native.length,messageCount:messages.length,
+    return {messages,members,boundary:{status:active||truncated||exact&&exact.coverage!=='complete'?'incomplete':'complete',active,truncated,
+      startedAt,attemptedAt:startedAt,sourceUpdatedAt:session.time?.updated ?? null,sourceMessageCount:exact?.truncated?null:native.length,messageCount:messages.length,
       omittedMessages:omitted,firstMessageID:messages[0]?.messageID ?? null,lastMessageID:messages.at(-1)?.messageID ?? null,
       scope:'user and assistant text from the observed conversation window; tool output, reasoning and attachments are excluded'},
       provenance:{sourceSystem:source?.sourceSystemID ?? 'imported',projectID:job.projectID,sessionID:job.sessionID,
-        sourceSnapshotRevisionSha256:retainedSnapshot?.snapshotRevisionSha256 ?? null,
-        sourceSessionRevisionSha256:retainedSnapshot?.sessionRevisionSha256 ?? null}};
+        sourceSnapshotRevisionSha256:exact?.snapshotRevisionSha256??retainedSnapshot?.snapshotRevisionSha256 ?? null,
+        sourceSessionRevisionSha256:exact?.session.currentRevisionSha256??retainedSnapshot?.sessionRevisionSha256 ?? null}};
   }});
   async function retainedSourceUpdates(memory) {
     const result={state:'unknown',basis:'retained-local-data',liveSource:'not-checked',checkedAt:Date.now(),
@@ -1026,7 +1034,7 @@ export function createHistoryService({
         };
       } catch (error) {
         if (!isLocalDataUnavailable(error)) throw error;
-        const fallbackOrganization = { revision: 0, pinnedAt: null, hiddenAt: null,
+        const fallbackOrganization = { revision: 0, hiddenAt: null,
           projectArchived: false, hiddenByParent: false, archived: false,
           nativeArchived: false, archiveScope: null };
         return {
@@ -1079,31 +1087,63 @@ export function createHistoryService({
         archive: await archiveMode(),
       };
     },
-    async pin(projectID, id, body) {
-      if (typeof body.pinned !== "boolean" || !Number.isInteger(body.revision))
-        throw Error("Choose Pin or Unpin.");
-      if (!idPattern.test(id||'')) throw Error('Choose a chat.');
-      const project=await app.project(projectID);
-      const header=data().headers(projectID).find(row=>row.id===id);
-      let session=header ? {id,title:header.title,parentID:header.parentID,directory:project.directory} : null;
-      if (body.pinned || !session) {
-        try { session=await own(project,id); }
-        catch (error) { if (!session) throw error; }
+    async rememberMemory({sourceRef,title,body,summary,data:structured,evidence,provenance={},kind='memory',projectID,expectedRevision,actor='user'}) {
+      if(body!==undefined&&summary!==undefined)throw Error('Supply memory body or summary, not both.');
+      const text=body??summary,ref=memorySourceReference(sourceRef);
+      if(!ref){
+        if(['conversation_snapshot','file_snapshot'].includes(kind))throw Error('Chat and file memories require their actual source reference.');
+        return {...data().createMemory({kind,title,body:text??'',data:structured,evidence,provenance,source:{projectID},actor}),sourceType:'custom'};
       }
-      data().remember(projectID, [session]);
-      const annotation=data().setConversationPin({ projectID,sessionID:id,title:session.title,
-        parentID:session.parentID,pinned:body.pinned,revision:body.revision });
-      if (body.pinned) {
-        const job=data().queueMemoryCapture({memoryID:`conversation:${projectID}:${id}`,projectID,sessionID:id});
-        captures.start();
-        return {...annotation,capture:job};
+      if(ref.kind==='file'){
+        const source=data().indexedFileSource(ref.sourceIdentity,ref.revisionIdentity);
+        const settings=await app.store.read('settings');
+        const project=settings.projects.find(row=>sameDirectory(row.directory,source.projectKey));
+        if(ref.projectID&&ref.projectID!==project?.id)throw Error('The selected file source does not belong to that project.');
+        return data().rememberFileSource({ref,projectID:project?.id??ref.projectID,title,body:text,data:structured,evidence,provenance,expectedRevision,actor});
       }
-      return annotation;
+      if(!idPattern.test(ref.sessionID))throw Error('Choose an actual chat source.');
+      const id=`conversation:${ref.projectID}:${ref.sessionID}`;
+      const existing=data().getMemory(id),hasEnrichment=[title,text,structured,evidence].some(value=>value!==undefined);
+      if(existing&&hasEnrichment&&expectedRevision!==existing.revision.revision)
+        throw Object.assign(Error('This chat is already remembered. Read its current memory and supply expectedRevision before enriching it.'),{status:409});
+      const exact=ref.snapshotRevisionSha256?data().readOpenCodeSession({...ref,limit:1}):null;
+      if(exact&&exact.status!=='ok')throw Error('The selected exact retained chat snapshot is unavailable; no newer source was substituted.');
+      let session=exact?.session;
+      if(!session&&!existing){const project=await app.project(ref.projectID);session=await own(project,ref.sessionID);data().remember(ref.projectID,[session]);}
+      const receipt=data().rememberConversationSnapshot({projectID:ref.projectID,sessionID:ref.sessionID,title:session?.title,parentID:session?.parentID,provenance,actor});
+      let memory=data().getMemory(id);
+      const sourceChanged=!!ref.snapshotRevisionSha256&&(memory.revision.provenance.sourceSnapshotRevisionSha256!==ref.snapshotRevisionSha256||memory.revision.provenance.sourceSystem!==ref.sourceSystemID);
+      const uncaptured=memory.revision.captureBoundary.capturedAt==null;
+      const previousJob=data().memoryCaptureJob(id),pending=previousJob&&['queued','running'].includes(previousJob.status);
+      const fingerprint=createHash('sha256').update(JSON.stringify(['conversation',ref.projectID,ref.sessionID,ref.sourceSystemID??null,ref.snapshotRevisionSha256??null])).digest('hex');
+      if(pending&&(hasEnrichment||memory.revision.provenance.sourceFingerprint&&memory.revision.provenance.sourceFingerprint!==fingerprint))
+        throw Object.assign(Error('This chat capture is still running. Read its capture status before enriching or choosing another exact snapshot.'),{status:409});
+      const shouldCapture=!pending&&(receipt.created||sourceChanged||uncaptured||previousJob?.status==='failed');
+      if(hasEnrichment||shouldCapture){
+        const patch={...(title===undefined?{}:{title}),...(text===undefined?{}:{body:text}),...(structured===undefined?{}:{data:structured}),...(evidence===undefined?{}:{evidence})};
+        const metadata={...provenance,...(shouldCapture?{rememberSource:ref,sourceFingerprint:fingerprint}:{}),...(text===undefined?{}:{userEditedText:true})};
+        data().reviseMemory({id,expectedRevision:memory.revision.revision,...patch,provenance:metadata,actor,sourceCapture:shouldCapture,reason:'Remember source and optional enrichment.'});
+        memory=data().getMemory(id);
+      }
+      const capture=shouldCapture?data().queueMemoryCapture({memoryID:id,projectID:ref.projectID,sessionID:ref.sessionID}):pending?previousJob:undefined;
+      if(capture)captures.start();
+      return {...receipt,sourceType:'chat',revision:memory.revision.revision,...(capture?{capture}:{}),sourceCaptured:!capture&&memory.members.some(member=>member.kind==='message'),captureChanged:!!capture,coverage:memory.revision.captureBoundary.status};
     },
     async refreshMemory(id) {
       const memory=data().getMemory(id);
-      if (!memory || memory.kind!=='conversation_snapshot') throw Error('Choose a retained conversation memory.');
+      if(memory?.kind==='file_snapshot'){
+        const source=memory.revision.provenance.rememberSource;
+        if(!source||source.kind!=='file')throw Error('This file memory has no exact indexed source binding.');
+        const latest=data().indexedFileSource(source.sourceIdentity);
+        return this.rememberMemory({sourceRef:{kind:'file',sourceIdentity:source.sourceIdentity,revisionIdentity:latest.revisionIdentity}});
+      }
+      if (!memory || memory.kind!=='conversation_snapshot') throw Error('Choose a retained chat or file memory.');
       await app.project(memory.source_project_id);
+      const previousJob=data().memoryCaptureJob(id);
+      if(previousJob&&['queued','running'].includes(previousJob.status)){captures.start();return {job:previousJob};}
+      const source={kind:'conversation',projectID:memory.source_project_id,sessionID:memory.source_session_id};
+      const fingerprint=createHash('sha256').update(JSON.stringify(['conversation',source.projectID,source.sessionID,null,null])).digest('hex');
+      data().reviseMemory({id,expectedRevision:memory.revision.revision,provenance:{rememberSource:source,sourceFingerprint:fingerprint},sourceCapture:true,actor:'user',reason:'Refresh bounded current chat source.'});
       const job=data().queueMemoryCapture({memoryID:id,projectID:memory.source_project_id,sessionID:memory.source_session_id});
       captures.start();
       return {job};
@@ -1114,11 +1154,12 @@ export function createHistoryService({
       const settings=await app.store.read('settings'),project=settings.projects.find(row=>row.id===memory.source_project_id);
       const boundary=memory.revision.captureBoundary;
       const sourceUpdates=await retainedSourceUpdates(memory);
-      return {id:memory.memory_id,kind:memory.kind,title:memory.title,body:memory.revision.body,
-        project:memory.source_project_id,projectName:project?.name ?? 'Shared memory',session:memory.source_session_id,
+      return {id:memory.memory_id,kind:memory.kind,sourceType:memorySourceType(memory),title:memory.revision.title ?? memory.title,body:memory.revision.body,
+        data:memory.revision.data ?? {},evidence:memory.revision.evidence ?? [],provenance:memory.revision.provenance ?? {},
+        project:memory.source_project_id,projectName:project?.name ?? (memory.source_project_id ? `Retained project · ${memory.source_project_id}` : 'Shared memory'),session:memory.source_session_id,
         status:memory.status,coverage:boundary.status ?? 'authored',boundary,
-        revision:memory.revision.revision,pinnedAt:memory.pinnedAt ?? null,pinRevision:memory.pinRevision ?? 0,archiveRevision:memory.archiveRevision ?? 0,
-        originalPinnedAt:memory.originalPinnedAt ?? null,capturedAt:boundary.capturedAt ?? null,
+        revision:memory.revision.revision,archiveRevision:memory.archiveRevision ?? 0,
+        capturedAt:boundary.capturedAt ?? null,
         snapshotHash:memory.revision.provenance.snapshotHash ?? '',revisions:memory.revisions,members:memory.members,sourceUpdates,
         annotationRevision:memory.source_session_id ? data().annotation(memory.source_project_id,memory.source_session_id).revision : undefined,
         job:data().memoryCaptureJob(id),messages:memory.members.filter(member=>member.kind==='message').map(member=>member.locator),
@@ -1127,12 +1168,14 @@ export function createHistoryService({
     async searchMemory(query,options={}) {
       if (options.projectID) await app.project(options.projectID);
       const found=await knowledgeQuery.query({ domain: 'memories', query, projectID: options.projectID,
-        kind: options.kind, model: options.model, phrase: options.phrase === true, pinnedOnly: options.pinned === true,
+        kind: options.kind, model: options.model,modelProvider:options.modelProvider,origin:options.origin,
+        epistemicState:options.epistemicState,status:options.status,includeHistorical:options.includeHistorical,
+        phrase: options.phrase === true,
         includeArchived: options.includeArchived === true, limit: options.limit, cursor: options.cursor });
       const settings=await app.store.read('settings');
       const projects=new Map(settings.projects.map(project=>[project.id,project]));
       const results=found.results.map(item=>({...item,project:item.projectID,session:item.sessionID,
-        projectName:projects.get(item.projectID)?.name ?? 'Shared memory',
+        projectName:projects.get(item.projectID)?.name ?? (item.projectID ? `Retained project · ${item.projectID}` : 'Shared memory'),
         annotationRevision:item.sessionID ? data().annotation(item.projectID,item.sessionID).revision : undefined,
         job:data().memoryCaptureJob(item.id)}));
       return {...found,status:results.length?'ok':'empty',results,

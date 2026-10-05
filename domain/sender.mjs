@@ -24,16 +24,22 @@ export function senderState(chat, session) {
   // that stale status: stop treating the chat as running so the user can send
   // a recovery message and queued delivery can record the failure.
   const failed = !!last?.info?.error && !approvals && !tools;
+  const retry = status === 'retry' && !approvals && !tools && !awaitingReceipt &&
+    (!user || complete || messages.some(m => m.info?.role === 'assistant'));
   // A busy native session may be doing slow inference even with no assistant
   // message yet. Elapsed time alone cannot authorize another parent turn.
   // Native idle with an older unanswered turn is recoverable after the brief
   // acceptance/status transition window has passed.
+  // A provider retry/usage gate is not active inference; once the turn has
+  // ended or a native answer exists, it is recoverable without replaying the
+  // stale turn.
   const userAge = user?.info?.time?.created == null ? 0 : Date.now() - user.info.time.created;
   const interrupted = !approvals && !awaitingReceipt &&
     (status === 'idle' && (staleTools || !!user && !complete && userAge > 3000) ||
-      status !== 'idle' && !tools &&
+      status === 'retry' && retry ||
+      status !== 'idle' && status !== 'retry' && !tools &&
       (!!user && complete || !user && messages.some(m => m.info?.role === 'assistant')));
-  const busy = !failed && !interrupted && (status !== 'idle' || approvals || tools || awaitingReceipt || !complete);
+  const busy = !failed && !interrupted && (status !== 'idle' && status !== 'retry' || approvals || tools || awaitingReceipt || !complete);
   return { busy, approvals, ready: !busy, userID: user?.info.id, failed, interrupted,
     failure: failed ? String(last.info.error) : interrupted ? 'This response appears to have stopped. Inspect the chat, then send a recovery message to continue.' : '' };
 }

@@ -56,6 +56,15 @@ temporary data for each journey. The shared `own` fixture closes registered
 resources even when setup or an assertion fails. Servers use disposable data;
 tests must never use a user's native database or authenticated provider.
 
+The npm test runners and direct Playwright commands create temporary Freelancer
+and OpenCode data/config homes. They remove inherited runtime activation,
+private bridge values and provider credentials before starting fixture workers.
+This isolation also applies when an agent launches tests from the installed app.
+`FREELANCER_TEST_DATA_HOME` selects an explicit disposable test directory for
+nested runners; caller-supplied directories are retained. The shared application
+fixture uses a simulated Funnel adapter, so setup and teardown cannot change the
+installed app's tunnel.
+
 Keep contracts for authority checks, routing, idempotency, uncertain delivery,
 restart recovery, data migrations, filesystem races, Git safety, mathematical
 properties and hostile inputs. Browser clicks cannot replace those checks.

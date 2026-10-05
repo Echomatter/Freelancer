@@ -17,8 +17,8 @@ A version 1 contract has these top-level components:
 
 | Component | Purpose |
 | --- | --- |
-| `evidence` | Select bounded records from `catalog`, exact `knowledge` facts/memories, or a local `query` over files, conversations, facts, and memories. Exact knowledge memory selectors may pin a revision. Query selectors carry a query, explicit projected fields, and domain-specific optional filters (`phrase`, model/provider, source, role, status, kind, pin/archive flags, epistemic state/origin/history, and project scope). Queries use cached local data; with no scope filter the existing helper searches globally across registered projects. |
-| `supplied` | Attach caller-provided values with an explicit kind: `supplied`, `assumption`, or `preference`. These are inputs to this request, not stored facts. Include provenance/date metadata when known. |
+| `evidence` | Select bounded records from `catalog`, an exact retained record with `source: "memory"` and `domain: "memories"`, or a local `query` over files, conversations and memories. Exact memory selectors may specify a revision. Query selectors carry a query, explicit projected fields and domain-specific filters, including project scope, source attributes, model, origin/status and pin/archive state. Queries use cached local data; with no scope filter the existing helper searches globally across registered projects. |
+| `supplied` | Attach caller-provided values with an explicit kind: `supplied`, `assumption`, or `preference`. These are inputs to this request, not retained source records. Include provenance/date metadata when known. |
 | `derivations` | Compute deterministic values from declared references, such as arithmetic or normalized fields. The expression language is the documented contract, not arbitrary JavaScript. |
 | `scenarios` | Apply request-local overlays to declared targets. An overlay is an assumption or preference and never changes the retained source record. |
 | `questions` | Ask bounded typed questions using evidence IDs as inputs. `check` is yes/no, `classify` chooses from an unordered set, and `score` places an item on declared ordered levels. Questions may specify a stage and dependencies. |
@@ -205,12 +205,20 @@ through that existing path.
 Deterministic arithmetic, filtering, exact matching, and threshold checks
 should stay in code. Use Jev only where semantic interpretation is needed.
 Neither a typed result nor a composed score can authorize an action, grant
-permission, trigger delegation, create or edit a knowledge memory/claim, or
+permission, trigger delegation, create or edit a memory, or
 approve paid use. Actual judgment calls are recorded in the existing judgment
-ledger; they do not become authored knowledge. The tool does not provide
+ledger; they do not become authored memories. The tool does not provide
 arbitrary SQL or code execution. Native permissions and explicit user consent
 remain authoritative; the native permission prompt applies when a contract
-contains questions, not for purely factual preparation/evaluation.
+contains questions, not for deterministic evidence preparation or composition.
+
+## Selector compatibility
+
+Older `source: "knowledge"` selectors and the `facts` domain are accepted as
+hidden compatibility inputs and normalized to memory records. New contracts
+use `source: "memory"`, domain `memories` and an exact retained ID/revision.
+This does not turn model-catalog observations into memories or change their
+source values, identities or schema.
 
 ## TypeSafe semantics and references
 
@@ -230,4 +238,4 @@ derivations, scenarios, stages, receipts, and composition around those typed
 judgments. The TypeSafe [JavaScript SDK reference](https://docs.typesafe.ai/sdk/javascript)
 is relevant to application integrations; the vendor's [official skill](https://github.com/typesafe-ai/skills/blob/65a39f393687675ce170e6094757de20370365b9/skills/typesafe-ai/SKILL.md)
 is optional guidance. No separate external Memory service is required for
-Freelancer's internal warehouse and graph.
+Freelancer's internal memories and retained relationships.

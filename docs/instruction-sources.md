@@ -40,7 +40,7 @@ Sources are composed at different points in native execution. The table is an in
 ## Native baseline and project rules
 
 Freelancer extends OpenCode's normal development-agent behavior with its named
-catalog, managed delegation/Git, goals and retained knowledge. It keeps the native
+catalog, managed delegation/Git, goals and retained memories. It keeps the native
 provider prompt and lifecycle prompts rather than duplicating them as defaults.
 The provider composition described here was audited against OpenCode **1.18.31**. Its
 [request composition](https://github.com/anomalyco/opencode/blob/v1.18.31/packages/opencode/src/session/llm/request.ts#L50)
@@ -87,8 +87,15 @@ change routing, store memory automatically or grant tool access. Native discover
 schemas and permissions govern actual exposure. Unavailable auxiliary services
 leave ordinary reasoning and other permitted methods available.
 
-Internal memory, canonical conversation pins and graph knowledge share the
-per-user warehouse through `knowledge`; no external Memory MCP is required.
+The shared `memory` tool retrieves and intentionally retains memories in the
+per-user warehouse; the optional `remember` skill guides its use. One memory
+holds text, optional structured data, evidence, provenance and relationships.
+Pinning and archiving organize the same record, and edits preserve revisions.
+File and chat sources save through `sourceRefJson`, using the same base capture
+as the UI's one-click Remember action. Summaries and further details are optional;
+custom memories use a title and optional text. Captured source and edited narrative
+remain distinct on the same record.
+No external Memory MCP is required.
 Read exact retained revisions, capture boundaries and source evidence. Retention
 is not proof of current source state, and refresh requires explicit intent.
 `model_catalog` supplies stored published observations; its identities, dates,

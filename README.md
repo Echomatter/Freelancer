@@ -121,11 +121,11 @@ Provider colors are configured separately on **Providers**. They give OpenAI, Co
 
 Workspace layout is also adjustable. Resizable panels, the Details panel, Files panel, sticky composer, task/delivery presentation and reduced-motion behavior are designed to remain usable across different window sizes. Appearance and layout preferences persist locally.
 
-### Files, local search and project knowledge
+### Files, local search and memories
 
-**Project settings → Files** gives the selected project a file-oriented workspace view. **Project settings → Search project content** searches indexed files and conversations only in that project. **Application settings → Search all content** searches the same content across every registered project. Results open either the source file in Files or the matching conversation.
+**Project settings → Files** gives the selected project a file-oriented workspace view. **Project settings → Search project content** searches files, conversations and memories in that project. **Application settings → Search all content** searches the same content across every registered project. Results open the source file, matching conversation or retained memory.
 
-Freelancer also maintains a local content index so project knowledge can be searched without making the model rediscover every file for every question. The index covers readable source, configuration and document content throughout registered project roots while skipping generated/private areas and unsupported binary formats.
+Freelancer also maintains a local content index so project content can be searched without making the model rediscover every file for every question. The index covers readable source, configuration and document content throughout registered project roots while skipping generated/private areas and unsupported binary formats.
 
 **Application settings → Content & Storage** lets you inspect and maintain that derived data. You can refresh project-file indexes, refresh the searchable conversation index, optimize full-text indexes, run a SQLite quick check, and compact free database pages.
 
@@ -133,12 +133,11 @@ The conversation index covers registered projects and can search titles plus use
 
 ### History and local data
 
-**Search all content** finds files and conversations across projects. Its **Conversations** tab includes browsing, pins, archive, restore, Undo and export. **Pinned** brings conversation pins and retained memory pins together. **Archive, pin or export…** in a chat opens this search page with that parent conversation selected.
+**Search all content** finds files, conversations and memories across projects. Its **Conversations** tab includes browsing, archive, restore, Undo and export. Remembering a chat retains a memory of its captured source window. **Archive or export…** in a chat opens this search page with that parent conversation selected.
 
 It supports:
 
 - Active, Archived and All views;
-- pinning;
 - multi-selection;
 - reversible local hiding/archiving where the native API does not provide a reversible archive contract;
 - Undo for supported organization actions;
@@ -362,9 +361,9 @@ Each run uses the selected model and the current agent instructions. Normal prov
 
 Search project content looks for your words in indexed files and conversations for the selected project. Search all content uses the same search across every registered project, including archived content. File results open the original in Project settings → Files; conversation results open the parent conversation. Refresh indexes in Content & Storage to include older or recent changes. Generated folders, credentials, tool output, reasoning, attachments, drafts and unsupported binary files are excluded.
 
-Retained memories and recorded claims also appear in knowledge search with their origins, status and exact evidence. Facts are recorded claims from knowledge tools; the search page reviews their sources and can correct an existing claim. FTS5 indexes text and finds matching passages. A matching passage is not proof that a claim is true or current.
+Memories hold text, structured data, evidence and captured conversations in one record. Use New memory or Edit memory; optional structured data and evidence are under the editor’s expandable details. Earlier revisions stay readable, including their recorded titles and sources. FTS5 finds matching text; a result does not prove that its contents are true or current.
 
-Pin a conversation or retained note to keep it in Pinned. Archiving a memory is reversible, and unpinning preserves the retained memory. Show more results expands the first page of each result group; Next opens the next page within a group. If nothing matches, try different words or refresh the indexes in Content & Storage.
+Archiving a memory is reversible. Captured conversations show their source boundary separately from user-edited memory text. Show more results expands the first page of each result group; Next opens the next page within a group. If nothing matches, try different words or refresh the indexes in Content & Storage.
 <!-- /help -->
 
 <!-- help:index-coverage -->
@@ -442,7 +441,7 @@ Putting a project away hides it from active navigation. Its folder, Git agreemen
 <!-- help:history-search -->
 ### Conversations in search
 
-Open Search all content → Conversations to browse native history or search retained conversation text. Choose a project or browse registered projects; use Active, Archived or All, select conversations, and pin, archive, restore or export. Cached entries are checked when opened. Pinned combines conversation and retained memory pins. Search coverage and indexing guidance are in the page help. Refresh older content in Application settings → Content & Storage.
+Open Search all content → Conversations to browse native history or search retained conversation text. Choose a project or browse registered projects; use Active, Archived or All, select conversations, and archive, restore or export. Cached entries are checked when opened. Remembering a chat keeps a captured memory; read it in Memories. Search coverage and indexing guidance are in the page help. Refresh older content in Application settings → Content & Storage.
 <!-- /help -->
 
 <!-- help:history-export -->
@@ -665,7 +664,7 @@ The tool list covers native and plugin registry definitions. Connected MCP servi
 <!-- help:capability-skills -->
 ### Skills
 
-Skills provide instructions that agents can load when useful. Found means OpenCode discovered the skill; it does not prove that its dependencies are installed. Missing file and Not found report missing instructions. Unknown means inspection could not confirm the state. Technical file locations and dependency details appear below.
+Skills provide guidance OpenCode can load when useful. Found means OpenCode discovered the instructions; it does not prove that every optional dependency mentioned by that skill is installed. Skills do not gate tools or permissions. Missing file and Not found report missing instructions. Unknown means inspection could not confirm discovery. Technical file locations appear below.
 <!-- /help -->
 
 <!-- help:mcp-connections -->

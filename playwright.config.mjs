@@ -1,4 +1,10 @@
 import { defineConfig } from '@playwright/test';
+import { applyTestEnvironment, createTestEnvironment } from './scripts/test-environment.mjs';
+
+// Also protect direct `npx playwright test` invocations that bypass our runner.
+const testEnvironment = createTestEnvironment();
+applyTestEnvironment(testEnvironment);
+process.once('exit', () => testEnvironment.cleanup());
 
 export default defineConfig({
   testDir: './tests',

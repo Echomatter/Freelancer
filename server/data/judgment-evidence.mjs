@@ -86,12 +86,13 @@ export function createJudgmentEvidenceResolver(db) {
       throw Error('Every TypeSafe candidate must be represented by resolved source evidence.');
     return { resolved: true, evidenceCount: refs.size, candidateCount: citedCandidates.size };
   }
-  assertJudgmentEvidence.packet=({domain,id,revision,query=''}={})=>{
+  assertJudgmentEvidence.packet=({domain='memories',id,revision,query=''}={})=>{
     required(id,'record ID');
     if(typeof query!=='string'||query.length>200) throw Error('Judgment evidence query is limited to 200 characters.');
-    if(domain!=='memories'&&domain!=='facts') throw Error('Judgment evidence packets require memories or facts.');
-    if(domain==='facts'&&revision!==undefined) throw Error('Claim records use their exact record hash, not a memory revision.');
-    const source=domain==='memories'?records.memory(id,revision):records.claim(id);
+    if(domain!=='memories'&&domain!=='facts') throw Error('Judgment evidence packets require memories.');
+    // Old facts selectors read the migrated ID through the canonical revision;
+    // old claim-record references remain resolvable by assertReferences below.
+    const source=records.memory(id,revision);
     const text=source.text.slice(0,20_000);
     if(!text.trim()) throw Error('Judgment evidence needs a nonempty retained text span.');
     const packet={state:{query,evidence:[{...source.ref,text}]},candidateIDs:[source.ref.candidateID],evidenceRefs:[source.ref]};

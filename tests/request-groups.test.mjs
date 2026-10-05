@@ -71,6 +71,16 @@ test("stale busy status with an already-answered latest turn is recoverable", ()
   assert.equal(state.ready, true);
 });
 
+test("provider retry status does not keep a finished parent turn blocked", () => {
+  const answered = { ...assistantText("a1"), info: { id: "a1", role: "assistant", parentID: "u1",
+    time: { completed: 100 }, finish: "stop" } };
+  const state = senderState({ messages: [user("u1"), answered], status: { chat: { type: "retry" } },
+    permissions: [], questions: [], receipts: [] }, "chat");
+  assert.equal(state.interrupted, true);
+  assert.equal(state.ready, true);
+  assert.equal(state.busy, false);
+});
+
 test("stale busy status after native conversation compaction is recoverable", () => {
   const state = senderState({ messages: [assistantText("a1")], status: { chat: { type: "busy" } },
     permissions: [], questions: [], receipts: [] }, "chat");

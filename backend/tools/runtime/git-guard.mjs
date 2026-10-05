@@ -78,15 +78,15 @@ export async function gitToolGuard({
   if (!p) return;
   const agreement = settings.gitProjects?.[p.id];
 
-  // R-008: operation-aware inspect-only enforcement. Known nonmutating
-  // operations (including nonmutating native LSP) are permitted; known
-  // mutating tools and unknown tools/operations stay denied. Shell file
-  // effects are not parsed here; native shell permissions govern writes.
+  // The inspect preset is a Git-history agreement, not a project-wide
+  // read-only assignment. Enforce it only on managed Git mutations;
+  // captured readOnly execution policy and native permissions govern other
+  // tool operations. Shell Git bypass is blocked separately below.
   const isInspectOnly = agreement?.tracking && agreement.preset === "inspect";
-  if (isInspectOnly && !isInspectAllowed(input.tool, args ?? {})) {
+  if (isInspectOnly && input.tool === "git_project" && !isInspectAllowed(input.tool, args ?? {})) {
     const kind = classifyToolOperation(input.tool, args ?? {});
     throw Error(
-      `This project's saved GitHub agreement is inspect only, so source writes are blocked (${input.tool}:${kind}). Read, search, delegate inspection, or use git_project request to ask the user to change the agreement.`,
+      `This project's saved GitHub agreement is inspect only, so managed Git history changes are blocked (${input.tool}:${kind}). Use git_project request to ask the user to change the agreement.`,
     );
   }
 

@@ -20,6 +20,16 @@ export function unifiedConfig(runtimeRoot, env = process.env) {
     env = runtimeRoot;
     runtimeRoot = env.FREELANCER_RUNTIME_ROOT;
   }
+  // OpenCode shell children inherit these variables. An explicitly requested
+  // fixture or other runtime root must never acquire the live runtime's state.
+  if (env.FREELANCER_RUNTIME_DATA_MODE === 'unified' && runtimeRoot) {
+    const owner = env.FREELANCER_RUNTIME_ROOT;
+    const normalized = value => {
+      const resolved = path.resolve(value);
+      return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+    };
+    if (!owner || normalized(runtimeRoot) !== normalized(owner)) return null;
+  }
   let runtimeID;
   if (env.FREELANCER_RUNTIME_DATA_MODE === 'unified') runtimeID = env.FREELANCER_RUNTIME_ID;
   else if (runtimeRoot) {

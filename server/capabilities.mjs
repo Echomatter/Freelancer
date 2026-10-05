@@ -4,6 +4,8 @@ import { describeCapability } from '../domain/capability-descriptions.mjs';
 
 const nativeTools = ['bash', 'read', 'glob', 'grep', 'edit', 'write', 'apply_patch',
   'webfetch', 'websearch', 'skill', 'todowrite', 'question', 'task', 'invalid', 'lsp'];
+const freelancerKnownTools = ['delegate', 'git_project', 'content_index', 'goal_checkpoint',
+  'memory', 'model_catalog', 'evidence_evaluation', 'knowledge'];
 const text = value => typeof value === 'string' ? value.slice(0, 300) : null;
 const summary = value => typeof value === 'string' && value.trim()
   ? value.replace(/\s+/g, ' ').trim().slice(0, 240) : null;
@@ -60,26 +62,30 @@ export function createCapabilities({ host, backendRoot }) {
       let manifest = {};
       try { manifest = JSON.parse(await readFile(path.join(backendRoot, 'opencode/catalog.json'), 'utf8')); }
       catch { diagnostics.push({ kind: 'manifest-unavailable', name: 'Freelancer catalog' }); }
-      const freelancerTools = names(manifest.tools);
+      const freelancerTools = [...new Set([...freelancerKnownTools, ...names(manifest.tools), ...names(manifest.plugins)])];
       const tools = [...new Set([...nativeTools, ...freelancerTools, ...registered])].sort().map(id => {
         const permission = permissionFor(profile?.permission, id);
         const nativePermission = permission === 'unknown' ? permissionFor(effectiveConfig.permission, id) : permission;
         const disabled = (profile?.tools?.[id] ?? effectiveConfig.tools?.[id]) === false;
         const discovered = ids.state === 'observed' ? registered.has(id) : null;
         const exposure = exposed.state === 'observed' ? modelTools.has(id) && !disabled : null;
+        // A captured inspection-only assignment constrains source writes. A
+        // saved Git inspect agreement applies only to Git operations and must
+        // not disable unrelated file-editing tools.
         const sourceWriteBlocked = ['edit', 'write', 'apply_patch'].includes(id)
-          && (boundaries.inspectionOnly === true || boundaries.gitInspectOnly === true);
+          && boundaries.inspectionOnly === true;
         const applicationAccess = id === 'task' || sourceWriteBlocked ? 'blocked'
-          : ['delegate', 'git_project', 'lsp', 'content_index', 'bash'].includes(id) ? 'operation-dependent' : 'shared';
+          : ['delegate', 'git_project', 'lsp', 'content_index', 'bash', 'memory', 'model_catalog', 'evidence_evaluation'].includes(id) ? 'operation-dependent' : 'shared';
         const reason = id === 'task' ? 'Use delegate({agent, task}); native task is not a second worker dispatch path.'
-          : sourceWriteBlocked ? 'Source writes are disabled by the captured inspection assignment or saved project agreement.'
-          : disabled ? 'Explicit native tool configuration disables this tool.'
-          : nativePermission === 'deny' ? 'Native permission denies this tool.'
-          : discovered === false ? (id === 'websearch' ? 'Native websearch is not registered for this provider/configuration.'
-            : 'Tool is not registered in this runtime.')
-          : exposure === false ? (id === 'websearch' && discovered === false
-            ? 'Native websearch requires an eligible OpenCode/OpenCode Go provider or explicit OPENCODE_ENABLE_EXA/OPENCODE_ENABLE_PARALLEL opt-in. Native permissions still apply.'
-            : 'Tool is not exposed to the selected model.')
+          : sourceWriteBlocked ? 'Source writes are disabled by the captured inspection-only assignment.'
+          : disabled ? 'Explicit native tool configuration disables this tool for this provider/model/configuration.'
+          : nativePermission === 'deny' ? 'Native permission denies this tool for this provider/model/configuration.'
+          : discovered === false ? (id === 'websearch'
+            ? 'Native websearch is not available for this provider/model/configuration.'
+            : `Tool ${id} is not available for this provider/model/configuration.`)
+          : exposure === false ? (id === 'websearch'
+            ? 'Native websearch is not available for the selected provider/model/configuration. OpenCode may require an eligible provider or explicit opt-in; native permissions still apply.'
+            : 'Tool is not available for the selected provider/model/configuration.')
           : discovered === null ? ids.reason : exposure === null ? exposed.reason : null;
         return { id, summary: describe('tools', id, exposed.value?.find?.(row => row?.id === id)?.description),
           origin: freelancerTools.includes(id) ? 'Freelancer plugin' : nativeTools.includes(id) ? 'OpenCode native' : 'OpenCode custom/plugin/MCP',

@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
+import { createTestEnvironment } from './test-environment.mjs';
 
 // Forward native filtering, UI, headed, debug and worker controls. Unknown
 // filters fail instead of silently reporting an empty passing suite.
@@ -25,10 +26,16 @@ if (process.env.FREELANCER_ALL_PALETTES === '1') {
   console.log(`Exhaustive palette sweep: ${palettes.length} palettes x ${targets.length ? targets.join(' ') : 'all browser journeys'} (timeout 600s, traces without DOM snapshots).`);
 }
 const require = createRequire(import.meta.url);
-const env = { ...process.env };
+const testEnvironment = createTestEnvironment();
+const { env } = testEnvironment;
 // Playwright sets FORCE_COLOR for workers. Preserve a monochrome preference
 // without Node warning about two conflicting color controls on every worker.
 if (env.NO_COLOR !== undefined) { delete env.NO_COLOR; env.FORCE_COLOR = '0'; }
-const child = spawn(process.execPath, [require.resolve('@playwright/test/cli'), 'test', ...args], { stdio: 'inherit', env });
-child.on('error', error => { console.error(error); process.exitCode = 1; });
-child.on('exit', (code, signal) => { process.exitCode = signal ? 1 : code ?? 1; });
+try {
+  process.exitCode = await new Promise(resolve => {
+    const child = spawn(process.execPath, [require.resolve('@playwright/test/cli'), 'test', ...args], { stdio: 'inherit', env });
+    let failed = false;
+    child.once('error', error => { console.error(error); failed = true; });
+    child.once('close', (code, signal) => resolve(failed || signal ? 1 : code ?? 1));
+  });
+} finally { testEnvironment.cleanup(); }

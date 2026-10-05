@@ -13,7 +13,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { privateIPv4 } from "./lan.mjs";
 import { createRemoteAccess } from "./remote-access.mjs";
 import { readRestoreRecoveryState, acknowledgeRestoreRecovery } from './data/recovery.mjs';
-import { requireKnowledgeSelectors } from '../domain/knowledge-input.mjs';
+import { requireMemorySelectors } from '../domain/knowledge-input.mjs';
 
 const types = {
   ".html": "text/html",
@@ -178,13 +178,13 @@ export async function startServer({ application: app, assets, port = 0, readActi
           if (!agentBridge || req.method !== "POST") return send(403, { error: "Native Git tool only" });
           return send(200, await app.gitAgentAction(body));
         }
-        if (route === '/api/knowledge/agent' || route === '/api/knowledge') {
-          if (req.method !== 'POST' || route.endsWith('/agent') && !agentBridge) return send(403, { error: 'Native knowledge tool only' });
-          requireKnowledgeSelectors(body);
+        if (['/api/memory/agent','/api/memory','/api/knowledge/agent','/api/knowledge'].includes(route)) {
+          if (req.method !== 'POST' || route.endsWith('/agent') && !agentBridge) return send(403, { error: 'Native memory tool only' });
+          requireMemorySelectors(body);
           if (body.cursor !== undefined && !['query','search','claims'].includes(body.operation))
             return send(400,{error:'Query continuation is supported only for query, search or claims.'});
-          if (route==='/api/knowledge' && !['query','search','read','status','claims','read-claim','opencode-read','pin','archive','refresh','evidence','remember','revise','forget','entity','entity-search','entity-read','open-nodes','read-graph','search-nodes','claim','correct-claim','relate','revise-relation','relation-history','relations','delete-relation','delete-entity'].includes(body.operation))
-            return send(403,{error:'This operation requires the native knowledge tool.'});
+          if (!route.endsWith('/agent') && !['query','search','read','status','claims','read-claim','opencode-read','archive','refresh','evidence','remember','revise','forget','entity','entity-search','entity-read','open-nodes','read-graph','search-nodes','claim','correct-claim','relate','revise-relation','relation-history','relations','delete-relation','delete-entity'].includes(body.operation))
+            return send(403,{error:'This operation requires the native memory tool.'});
           const data = app.localData.get();
           // Native tools stamp execution identity separately from a source read
           // target. Older trusted adapters used sessionID for their actor.
@@ -202,6 +202,27 @@ export async function startServer({ application: app, assets, port = 0, readActi
             if (typeof value !== 'string' || value.length > limit) throw Error(`${label} must be bounded JSON text.`);
             return JSON.parse(value);
           };
+          const retainedData = () => {
+            const names = ['origin','method','epistemicState','validFrom','validTo','observedAt'];
+            const supplied = body.dataJson !== undefined || body.scopeJson !== undefined || names.some(name => body[name] !== undefined);
+            if (!supplied) return undefined;
+            const value = body.dataJson === undefined && body.operation === 'revise'
+              ? {...(data.getMemory(body.id)?.revision.data ?? {})}
+              : parseObject(body.dataJson, 'Memory data', 1_000_000);
+            for (const name of names) if (body[name] !== undefined) value[name] = body[name];
+            if (body.scopeJson !== undefined) value.scope = parseObject(body.scopeJson, 'Memory scope');
+            return value;
+          };
+          const retainedEvidence = () => {
+            if (body.evidenceJson === undefined) return undefined;
+            const items = parseObject(body.evidenceJson, 'Memory evidence', 1_000_000).items;
+            if (!Array.isArray(items)) throw Error('Memory evidence must contain an items array.');
+            return items;
+          };
+          const retainedProvenance = () => {
+            const supplied = body.provenanceJson === undefined ? undefined : parseObject(body.provenanceJson, 'Memory provenance', 100_000);
+            return agentBridge ? {...supplied, sessionID:actorSessionID, messageID:actorMessageID,actorSessionID,actorMessageID} : supplied;
+          };
           const stableJSON = value => JSON.stringify(value, (_key,item) => {
             if (!item || Array.isArray(item) || typeof item !== 'object') return item;
             return Object.fromEntries(Object.keys(item).sort().map(key => [key,item[key]]));
@@ -218,8 +239,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
             case 'query': return send(200,await app.knowledgeQuery.query(body));
             case 'search': {
               const found=await app.knowledgeQuery.query({domain:'memories',query:body.query ?? '',projectID:body.projectID,
-                projectDirectory:body.projectDirectory,global:body.global,kind:body.kind,model:body.model,
-                phrase:body.phrase ?? false,pinnedOnly:body.pinnedOnly ?? body.pinned ?? false,
+                projectDirectory:body.projectDirectory,global:body.global,kind:body.kind,model:body.model,modelProvider:body.modelProvider,
+                origin:body.origin,epistemicState:body.epistemicState,status:body.status,includeHistorical:body.includeHistorical,
+                phrase:body.phrase ?? false,
                 includeArchived:body.includeArchived ?? false,limit:body.limit,cursor:body.cursor});
               return send(200,{...found,status:found.results.length?'ok':'empty',items:found.results});
             }
@@ -232,7 +254,6 @@ export async function startServer({ application: app, assets, port = 0, readActi
               return send(200,{...found,status:found.results.length?'ok':'empty'});
             }
             case 'read-claim': return send(200,data.readClaim(body.id) ?? {status:'missing',id:body.id});
-            case 'pin': return send(200,data.setMemoryPin({id:body.id,pinned:body.pinned,expectedRevision:body.expectedRevision,actor}));
             case 'archive':
             case 'restore': {
               const archived=body.operation==='restore'?false:body.archived ?? (agentBridge?true:undefined);
@@ -270,8 +291,9 @@ export async function startServer({ application: app, assets, port = 0, readActi
             case 'relations': return send(200, { status:'ok', relations:data.listRelations({ entityID:body.id, asOf:body.asOf, limit:body.limit }) });
             case 'delete-relation': return send(200, data.deleteRelation({ id:body.relationID, actor, reason:body.reason }));
             case 'delete-entity': return send(200, data.deleteEntity({ id:body.id, actor, reason:body.reason }));
-            case 'remember': return send(200, data.createMemory({ kind: body.type ?? 'note', title: body.title, body: body.body, provenance: { sessionID: actorSessionID, messageID: actorMessageID }, source: { projectID: body.projectID }, actor }));
-            case 'revise': return send(200, data.reviseMemory({ id: body.id, expectedRevision: body.expectedRevision, body: body.body, provenance: { sessionID: actorSessionID, messageID: actorMessageID }, actor }));
+            case 'remember': return send(200,await app.history.rememberMemory({kind:body.type??'memory',sourceRef:body.sourceRefJson,title:body.title,body:body.body,summary:body.summary,
+              data:retainedData(),evidence:retainedEvidence(),provenance:retainedProvenance(),projectID:body.projectID,expectedRevision:body.expectedRevision,actor}));
+            case 'revise': return send(200, data.reviseMemory({ id: body.id, expectedRevision: body.expectedRevision, title:body.title, body: body.body, data:retainedData(), evidence:retainedEvidence(), provenance:retainedProvenance(), actor,reason:body.reason }));
             case 'forget': return send(200, data.forgetMemory({ id: body.id, actor, reason: body.reason }));
             case 'analyze': return send(200, await data.analyze(body.sql, parseObject(body.paramsJson, 'SQL parameters'), { maxRows: 200, maxBytes: 400_000, timeoutMs: 1500, signal: requestAbort.signal }));
             case 'judgment-definition': return send(200, data.createJudgmentDefinition({ id:body.definitionID, version:body.definitionVersion, questionID:body.questionID, primitive:body.primitive, question:parseJSON(body.questionJson,'Judgment question'), criteria:parseObject(body.criteriaJson,'Judgment criteria',20_000) }));
@@ -382,7 +404,7 @@ export async function startServer({ application: app, assets, port = 0, readActi
               if(body.projectID&&!settings.projects.some(item=>item.id===body.projectID)) throw Error('Choose a registered project.');
               return send(200,await app.history.backfillOpenCode({projectID:body.projectID,resume:body.resume!==false,pageSize:body.pageSize,signal:requestAbort.signal}));
             }
-            default: throw Error('Unknown knowledge operation. Save an ordinary note with operation: "remember" and title/body; retrieve notes with operation: "query" and domain: "memories". Use the current schema for other operations; claim creates a different structured record.');
+            default: throw Error('Unknown memory operation. Save with operation: "remember" and sourceRefJson copied from a chat or indexed file, or a custom title and optional body/dataJson; read with operation: "read" and id; search with operation: "query" and domain: "memories". Follow the current schema for other operations.');
           }
         }
         if (route === "/api/git" && req.method === "GET") return send(200, await app.gitProjects.inspect(project));
@@ -532,12 +554,15 @@ export async function startServer({ application: app, assets, port = 0, readActi
             return send(200,await history.searchMemory(url.searchParams.get('q') ?? '',{
               projectID:url.searchParams.get('project') || undefined,kind:url.searchParams.get('kind') || undefined,
               model:url.searchParams.get('model') || undefined,phrase:url.searchParams.get('phrase')==='true',
-              pinned:url.searchParams.get('pinnedOnly')==='true',includeArchived:url.searchParams.get('includeArchived')==='true',limit:Number(url.searchParams.get('limit'))||undefined,
+              modelProvider:url.searchParams.get('modelProvider') || undefined,origin:url.searchParams.get('origin') || undefined,
+              epistemicState:url.searchParams.get('epistemicState') || undefined,status:url.searchParams.get('status') || undefined,
+              includeHistorical:url.searchParams.get('includeHistorical')==='true',
+              includeArchived:url.searchParams.get('includeArchived')==='true',limit:Number(url.searchParams.get('limit'))||undefined,
               cursor:url.searchParams.get('cursor')||undefined}));
           if (route==='/api/memory/item'&&req.method==='GET')
             return send(200,await history.readMemory(url.searchParams.get('id'),url.searchParams.has('revision')?Number(url.searchParams.get('revision')):undefined));
           if (route==='/api/memory/refresh'&&req.method==='POST') return send(200,await history.refreshMemory(body.id));
-          if (route==='/api/knowledge/evidence'&&req.method==='GET') {
+          if (['/api/memory/evidence','/api/knowledge/evidence'].includes(route)&&req.method==='GET') {
             const result=app.localData.get().readContentEvidence(Object.fromEntries(url.searchParams));
             const projectRow=(await app.store.read('settings')).projects.find(row=>
               (process.platform==='win32'?path.resolve(row.directory).toLowerCase():path.resolve(row.directory))===result.projectKey);
@@ -570,8 +595,6 @@ export async function startServer({ application: app, assets, port = 0, readActi
             result.sessions = result.sessions.map(s => ({ ...s, goal: rows.find(g => g.session === s.id) }));
             return send(200, result);
           }
-          if (route === "/api/history/pin" && req.method === "PUT")
-            return send(200, await history.pin(project, session, body));
           if (route === "/api/history/archive" && req.method === "PUT") {
             if (await goals?.forSession(project, session)) throw Error('Archive or restore this goal from Project settings → Goals to keep its chat together.');
             return send(200, await history.archive(project, session, body, sender.organize));

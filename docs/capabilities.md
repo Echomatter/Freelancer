@@ -29,8 +29,10 @@ environment/header fields accept native string values and
 persistence, OAuth credentials and resolution. Freelancer does not copy these
 values into its settings, agent prompts or diagnostic responses.
 
-Freelancer's built-in memory and Pinned Memory use the shared application
-database and native `knowledge` tool. No Memory MCP setup is required. An existing
+Freelancer's memories use the shared application database and native `memory`
+tool. Each record can hold text, structured data, evidence, relationships and
+revisions; pin and archive states organize that same record. The optional
+`remember` skill guides retention. No Memory MCP setup is required. An existing
 external Memory connection remains visible as a custom OpenCode service; its
 independent graph is not synchronized with Freelancer memory or pins.
 
@@ -112,9 +114,9 @@ guide method and evidence selection; they are not routing rules, permission
 stages or tool access gates. Native OpenCode determines actual exposure and
 permissions. Missing guidance or an unavailable auxiliary service leaves other
 permitted methods available. Memory MCP remains separate from Freelancer's
-internal retained knowledge, graph and pins.
+internal memories and their retained relationships.
 
-Source reads, published documentation, retrieved web content, retained knowledge,
+Source reads, published documentation, retrieved web content, retained memories,
 typed Jev answers and browser observations support different claims. Combine
 them while preserving their limits. Recorded model outcomes remain authoritative
 for performance observations; remembered lessons and judgments may advise a

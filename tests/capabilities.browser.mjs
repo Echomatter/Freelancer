@@ -8,7 +8,7 @@ async function openCapabilities(page, url, { expand = true } = {}) {
   await page.getByRole('button', { name: 'Application settings', exact: true }).click();
   await page.locator('.settings-drawer-links:not([hidden])').getByRole('button', { name: 'Capabilities', exact: true }).click();
   await expect(page.getByRole('heading', { name: 'Capabilities', exact: true })).toBeVisible();
-  if (expand) for (const name of ['Tools', 'Skills', 'Connected Services (MCP)']) {
+  if (expand) for (const name of ['Tools', 'Skills', 'Connected services']) {
     const heading = page.getByRole('heading', { name, exact: true });
     if (await heading.locator('..').locator('..').getAttribute('open') === null) await heading.click();
   }
@@ -64,7 +64,7 @@ test('capability observations and failed MCP actions are honest and sanitized', 
   await expect(readRow).toContainText('Loaded');
   await expect(page.getByRole('searchbox')).toHaveCount(0);
   await expect(page.getByRole('combobox')).toHaveCount(0);
-  await expect(page.getByRole('heading', { name: 'Connected Services (MCP)', exact: true })).toHaveCount(1);
+  await expect(page.getByRole('heading', { name: 'Connected services', exact: true })).toHaveCount(1);
   await page.screenshot({ path: testInfo.outputPath('capabilities-cleanup.png') });
   await expect(page.getByText(/Registered.*unverified/)).toHaveCount(0);
   await page.getByRole('button', { name: 'Help: Tools', exact: true }).click();
@@ -101,8 +101,8 @@ test('capability panels start compact and remember their local disclosure state'
   await openCapabilities(page, fixture.url, { expand: false });
   const panels = [
     { name: 'Tools', summary: /\d+ · \d+ available/, content: page.getByRole('list', { name: 'Tool inventory' }), key: 'tools' },
-    { name: 'Skills', summary: /\d+ · \d+ available/, content: page.locator('.capability-section').nth(1), key: 'skills' },
-    { name: 'Connected Services (MCP)', summary: /\d+ · \d+ ready/, content: page.locator('.mcp-service-list'), key: 'mcp' },
+    { name: 'Skills', summary: /\d+ · \d+ found/, content: page.locator('.capability-section').nth(1), key: 'skills' },
+    { name: 'Connected services', summary: /\d+ configured · \d+ connected/, content: page.locator('.mcp-service-list'), key: 'mcp' },
   ];
   for (const panel of panels) {
     const heading = page.getByRole('heading', { name: panel.name, exact: true });
@@ -169,6 +169,26 @@ test('fresh no-project workspace shows shared Tools and Skills with persistent i
   assert.deepEqual((await fixture.store.read('settings')).projects, []);
   assert.ok(native.calls.every(call => !['POST', 'PATCH', 'DELETE'].includes(call.options.method)), 'inventory and disclosure actions do not change MCP configuration');
   assert.equal(fixture.calls.filter(call => /\/prompt(?:_async)?$/.test(call.route)).length, 0);
+});
+
+test('model-specific tool absence is displayed as an observed exposure state, not incompatibility', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {
+  const fixture = await own(localDataFixture({ timers: false }));
+  attachMcpHost(fixture.host);
+  const page = await appBrowser.newPage();
+  await page.route('**/api/capabilities*', async route => {
+    const response = await route.fetch();
+    const result = await response.json();
+    result.tools = [{ id: 'websearch', summary: 'Search the web.', origin: 'OpenCode native', discovered: true,
+      configured: true, modelExposure: false, nativePermission: 'allow', dependency: 'unverified',
+      unavailableReason: 'Native websearch is not available for the selected provider/model/configuration.' }];
+    await route.fulfill({ response, json: result });
+  });
+  await openCapabilities(page, fixture.url, { expand: false });
+  await page.getByRole('heading', { name: 'Tools', exact: true }).click();
+  const row = page.getByRole('list', { name: 'Tool inventory' }).getByRole('listitem')
+    .filter({ has: page.getByText('websearch', { exact: true }) });
+  await expect(row).toContainText('Not exposed here');
+  await expect(row).not.toContainText('Model unsupported');
 });
 
 test('skill and tool rows reveal short descriptions by click and keyboard without invoking capabilities', { tag: ['@app', '@capability'] }, async ({ appBrowser, own }) => {

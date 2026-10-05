@@ -4,7 +4,7 @@ export function toolLabel(row) {
   return ({ 'Registered · use unverified': 'Loaded', 'Registered · permission unverified': 'Loaded',
     'Permission required': 'Needs permission', 'Permission depends on operation': 'Depends on action',
     'Operation restricted': 'Restricted', 'Explicitly restricted': 'Restricted',
-    'Not registered': 'Unavailable', 'Not exposed by this model': 'Model unsupported',
+     'Not registered': 'Unavailable', 'Not exposed by this model': 'Not exposed here',
     'Dependency unavailable': 'Unavailable' })[status] ?? status;
 }
 // Labels describe observations, never an authorization or a successful tool call.

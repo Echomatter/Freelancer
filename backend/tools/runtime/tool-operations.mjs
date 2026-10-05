@@ -36,6 +36,18 @@ const CONTENT_INDEX_READ_OPERATIONS = new Set([
 // git_project operations that never change history or the saved agreement.
 const GIT_PROJECT_READ_ACTIONS = new Set(["inspect", "preview"]);
 
+// Native Freelancer tools expose both retrieval and mutation through one
+// schema. Inspection-only assignments may use only operations whose handlers
+// do not write retained state, refresh indexes, or invoke inference.
+const MEMORY_READ_OPERATIONS = new Set([
+  "query", "search", "read", "status", "evidence", "entity-search", "entity-read",
+  "open-nodes", "read-graph", "search-nodes", "relation-history", "relations",
+  "analyze", "judgment-provider-status", "judgment-evidence", "query-evidence",
+  "judgment-history", "judgment-cache", "opencode-read", "warehouse-status",
+]);
+const MODEL_CATALOG_READ_OPERATIONS = new Set(["schema", "search", "list", "detail", "status"]);
+const EVIDENCE_EVALUATION_READ_OPERATIONS = new Set(["describe", "inspect"]);
+
 // Tools that are always retrieval/dispatch and never edit project sources.
 // todowrite/todoread track session todos, question asks the user,
 // goal_checkpoint records goal state, skill loads instructions,
@@ -219,6 +231,15 @@ export function classifyToolOperation(tool, args = {}) {
     // Missing/unknown actions stay denied; a bare call carries no proven
     // nonmutating operation and execute/merge/request/prepare mutate history.
     return "unknown";
+  }
+  if (tool === "memory") {
+    return MEMORY_READ_OPERATIONS.has(input.operation) ? "read" : "unknown";
+  }
+  if (tool === "model_catalog") {
+    return MODEL_CATALOG_READ_OPERATIONS.has(input.operation) ? "read" : "unknown";
+  }
+  if (tool === "evidence_evaluation") {
+    return EVIDENCE_EVALUATION_READ_OPERATIONS.has(input.operation) ? "read" : "unknown";
   }
   if (tool === "lsp") {
     return NONMUTATING_LSP_OPERATIONS.has(input.operation) ? "read" : "unknown";

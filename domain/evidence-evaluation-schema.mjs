@@ -11,11 +11,11 @@ export const EVALUATION_SCHEMA={
     evidence:array(ref('selector'),20),supplied:array(ref('supplied'),100),derivations:array(ref('derivation'),50),
     scenarios:array(ref('scenario'),10),questions:array(ref('question'),20),composition:array(ref('composition'),20)},['version']),
   $defs:{
-    selector:record({id,source:{enum:['catalog','knowledge','query']},recordID:text,domain:{enum:['files','conversations','facts','memories']},
+    selector:record({id,source:{enum:['catalog','memory','query']},recordID:text,domain:{enum:['files','conversations','memories']},
       revision:{type:'integer',minimum:1},attributes:array({...text,maxLength:300},30),fields:array({...text,maxLength:300},30),
       limit:{type:'integer',minimum:1,maximum:200},query:{type:'string',maxLength:200},filters:ref('filters')},['id','source']),
     filters:record(Object.fromEntries(['model','modelProvider','source','role','status','kind','epistemicState','origin','projectID','projectDirectory'].map(key=>[key,{type:'string'}]).concat(
-      ['phrase','pinnedOnly','includeArchived','includeHistorical','global'].map(key=>[key,{type:'boolean'}]))),[]),
+      ['phrase','includeArchived','includeHistorical','global'].map(key=>[key,{type:'boolean'}]))),[]),
     supplied:record({id,kind:{enum:['supplied','assumption','preference']},value:{},provenance:{},dates:{}},['id','kind','value']),
     derivation:record({id,expression:ref('expression'),description:text,subjective:{type:'boolean'},units:{},scale:{}},['id','expression']),
     scenario:record({id,overlays:array(ref('overlay'),30)},['id','overlays']),
@@ -39,7 +39,7 @@ export const EVALUATION_SCHEMA={
 // checked by the deterministic controller after JSON schema validation.
 EVALUATION_SCHEMA.$defs.selector.allOf=[
   {if:{properties:{source:{const:'catalog'}}},then:{required:['recordID'],properties:{domain:false,revision:false,query:false,filters:false}}},
-  {if:{properties:{source:{const:'knowledge'}}},then:{required:['recordID','domain'],properties:{domain:{enum:['facts','memories']},attributes:false,query:false,filters:false}}},
+  {if:{properties:{source:{const:'memory'}}},then:{required:['recordID','domain'],properties:{domain:{const:'memories'},attributes:false,query:false,filters:false}}},
   {if:{properties:{source:{const:'query'}}},then:{required:['domain','query','fields'],properties:{limit:{type:'integer',minimum:1,maximum:50},fields:{minItems:1},recordID:false,revision:false,attributes:false}}},
 ];
 EVALUATION_SCHEMA.$defs.question.allOf=[['check','yes'],['classify','options'],['score','levels']].map(([primitive,key])=>({

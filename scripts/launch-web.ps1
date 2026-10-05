@@ -34,7 +34,10 @@ function Get-ChromePath {
 }
 function Get-RunningInfo {
     try {
-        $info = Read-FreelancerState (Join-Path $state 'launch.json')
+        # launch.json is the canonical ephemeral process receipt. Read it
+        # directly so a PowerShell helper does not resolve a different
+        # checkout's warehouse while checking an installed app.
+        $info = Get-Content -LiteralPath (Join-Path $state 'launch.json') -Raw | ConvertFrom-Json
         $lock = Get-Content -LiteralPath (Join-Path $state 'application.lock') -Raw | ConvertFrom-Json
         if ($info.appRoot -ne $appRoot -or $info.pid -ne $lock.pid) { return }
         # Get-Process by ID is instant; a WMI/CIM query here would run on every

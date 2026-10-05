@@ -249,12 +249,7 @@ test('local-data', { tag: ["@app"] }, async ({ appBrowser: browser, own }) => {
     );
 
     await openHistory();
-    await history
-      .getByRole("button", { name: "Pin Important conversation", exact: true })
-      .click();
-    await history
-      .getByRole("button", { name: "Unpin Important conversation", exact: true })
-      .waitFor();
+    await expect(history.getByRole("button", { name: /pin important conversation/i })).toHaveCount(0);
     await history
       .getByRole("checkbox", {
         name: "Select Important conversation",

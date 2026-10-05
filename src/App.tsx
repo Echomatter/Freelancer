@@ -1246,21 +1246,6 @@ export default function App() {
       await refresh();
     });
   }
-  async function pinChat(sessionRow: any) {
-    await run(async () => {
-      await api(
-        "history/pin",
-        {
-          project,
-          session: sessionRow.id,
-          pinned: !sessionRow.organization?.pinnedAt,
-          revision: sessionRow.organization?.revision ?? 0,
-        },
-        "PUT",
-      );
-      await refresh();
-    });
-  }
   async function exportChat(sessionRow: any) {
     await run(async () => {
       const saved = await api("history/export", {
@@ -1400,7 +1385,6 @@ export default function App() {
                 return continueChatInNew(s);
               }}
               onArchive={archiveChat}
-              onPin={pinChat}
               onExport={exportChat}
               onRename={renameChat}
             />
@@ -1514,7 +1498,7 @@ export default function App() {
               <div className="error-banner" role="alert">
                 Freelancer could not open its local SQLite data:{" "}
                 {data.localDataError}. Native OpenCode chats remain available;
-                local pins, archives, drafts, and search may be unavailable. The
+                local archives, drafts, and search may be unavailable. The
                 database was left untouched.
               </div>
             )}
@@ -1688,6 +1672,7 @@ export default function App() {
                               current ?? (session ? { id: session } : undefined)
                             }
                             busy={busy}
+                            retrying={chat.status?.[session]?.type === "retry"}
                             draft={draft}
                             setDraft={setDraft}
                             draftLoading={draftMemory.loading}

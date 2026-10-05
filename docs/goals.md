@@ -2,7 +2,7 @@
 
 ## Active goal: Unified data, memory, and evidence warehouse
 
-Build Freelancer's operational, content, memory, pin, and evidence warehouse
+Build Freelancer's operational, content, memory, and evidence warehouse
 in one fresh per-user SQLite database, with Freelancer-only application
 preferences kept separately. Preserve OpenCode as the execution engine and
 native owner of general options, provider inventory/authentication, and MCP

@@ -7,9 +7,9 @@ $state = Join-Path $appRoot 'backend\.state\webpage'
 $launchFile = Join-Path $state 'launch.json'
 $lockFile = Join-Path $state 'application.lock'
 
-if (Read-FreelancerState $launchFile) {
+if (Test-Path -LiteralPath $launchFile) {
     try {
-        $launchText = Read-FreelancerState $launchFile | ConvertTo-Json -Compress
+        $launchText = Get-Content -LiteralPath $launchFile -Raw
         $record = $launchText | ConvertFrom-Json
     }
     catch { throw 'Freelancer launch record is unreadable. No process was stopped.' }
@@ -37,7 +37,7 @@ if (Read-FreelancerState $launchFile) {
             $serverProcess = Get-Process -Id ([int]$record.pid) -ErrorAction SilentlyContinue
         } while ($serverProcess -and (Get-Date) -lt $deadline)
         if ($serverProcess) { throw 'Freelancer did not finish its graceful shutdown. It was left running to protect local data.' }
-    } elseif ((Read-FreelancerState $launchFile | ConvertTo-Json -Compress) -eq $launchText) {
+    } elseif ((Get-Content -LiteralPath $launchFile -Raw) -eq $launchText) {
         # A crashed server cannot remove its launch record. The recorded PID is
         # gone and the document is unchanged, so it is safe to discard.
         Remove-FreelancerState $launchFile

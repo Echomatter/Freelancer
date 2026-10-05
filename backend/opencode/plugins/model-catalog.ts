@@ -16,7 +16,7 @@ const ModelCatalog: Plugin = async ({ directory }) => {
       sources: tool.schema.array(tool.schema.enum(['modelsdev','artificial-analysis'])).min(1).max(2).optional().describe('Refresh only: requested sources; omitted uses configured sources. Artificial Analysis requires its existing key.'),
       kind: tool.schema.enum(['model','deployment','configuration']).optional().describe('List/search record kind; a benchmark configuration is not a deployment limit.'),
       attributes: tool.schema.array(tool.schema.string().min(1).max(300)).max(30).optional().describe('Detail only: canonical keys from schema or exact original source attributes. Selection precedes pagination.'),
-      limit: tool.schema.number().int().min(1).max(200).optional().describe('List/search allow 1–100 records; detail allows 1–200 facts.'),
+      limit: tool.schema.number().int().min(1).max(200).optional().describe('List/search allow 1–100 records; detail allows 1–200 source observations.'),
       cursor: tool.schema.string().max(1024).optional().describe('Use nextCursor with the same filters and limit. Continue detail with the exact source records[].id, not a native ID.'),
     },
     async execute(args, context) {

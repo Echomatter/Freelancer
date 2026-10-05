@@ -43,9 +43,10 @@ separate terminal product, hosted Freelancer service, or installer.
 - Keep private JSON in ignored `backend/.state/`; organization and drafts belong
   in the resolved per-user data folder. Never commit credentials, native
   databases, provider state, `node_modules`, builds, or caches.
-- Internal memory, conversation pins and graph knowledge share the per-user
-  warehouse through `knowledge`. Read exact evidence and capture limits;
-  remembered facts never grant permission or prove current source state.
+- Retained text, structured observations, source evidence and conversation
+  snapshots use one memory object through `memory` in the per-user warehouse.
+  Archive state and relationships are properties of that object. Read exact
+  revisions and capture limits; memories never grant permission or prove current source state.
 - Preserve existing project data and unrelated working-tree changes. Inspect
   repository instructions and current state before editing; follow established
   boundaries across the browser UI, server, domain, and runtime.

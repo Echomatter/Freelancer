@@ -4,7 +4,7 @@ import { createLocalDataStore } from '../server/data/store.mjs';
 import { createKnowledgeQuery } from '../server/data/knowledge-query.mjs';
 import { withUnifiedDatabase } from '../backend/tools/runtime/unified-database.mjs';
 
-const usage = 'Usage: node scripts/knowledge.mjs query <files|conversations|memories|facts> [text] [--project-id ID | --project-directory PATH | --global] [--model PROVIDER/MODEL] [--model-provider PROVIDER] [--phrase] [--source TEXT] [--role ROLE] [--status STATUS] [--kind KIND] [--pinned-only] [--include-archived] [--epistemic-state STATE] [--origin ORIGIN] [--include-historical] [--limit 50] [--cursor TOKEN] [--data-home PATH] [--runtime-id ID]';
+const usage = 'Usage: node scripts/knowledge.mjs query <files|conversations|memories> [text] [--project-id ID | --project-directory PATH | --global] [--model PROVIDER/MODEL] [--model-provider PROVIDER] [--phrase] [--source TEXT] [--role ROLE] [--status STATUS] [--kind KIND] [--include-archived] [--epistemic-state STATE] [--origin ORIGIN] [--include-historical] [--limit 50] [--cursor TOKEN] [--data-home PATH] [--runtime-id ID]';
 
 function parse(args) {
   if (args.shift() !== 'query') throw Error(usage);
@@ -12,7 +12,7 @@ function parse(args) {
   if (args[0] !== undefined && !args[0].startsWith('--')) input.query = args.shift();
   const names = { '--project-id': 'projectID', '--project-directory': 'projectDirectory', '--model': 'model', '--model-provider': 'modelProvider', '--source': 'source',
     '--role': 'role', '--status': 'status', '--kind': 'kind', '--epistemic-state': 'epistemicState', '--origin': 'origin', '--limit': 'limit', '--cursor': 'cursor' };
-  const booleans = { '--phrase': 'phrase', '--pinned-only': 'pinnedOnly', '--include-archived': 'includeArchived', '--include-historical': 'includeHistorical', '--global': 'global' };
+  const booleans = { '--phrase': 'phrase', '--include-archived': 'includeArchived', '--include-historical': 'includeHistorical', '--global': 'global' };
   const seen = new Set();
   while (args.length) {
     const flag = args.shift();

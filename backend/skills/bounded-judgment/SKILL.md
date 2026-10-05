@@ -45,7 +45,7 @@ for changed weights. When declared numeric criteria settle a comparison, code ca
 select the result without another model choice.
 
 A connected Jev MCP is another valid route with its own schema. `typesafe-ai`
-covers integration development; durable `knowledge` definitions support explicitly
+covers integration development; durable `memory` definitions support explicitly
 reusable questions. No skill is a prerequisite. Keep credentials/private configuration
 out of state and preserve native cost/disclosure consent.
 

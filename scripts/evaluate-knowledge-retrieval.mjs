@@ -23,13 +23,13 @@ const scenarios = [
     old_revision:{reference:'fixture:claim-rev1#L2',projectID:'synthetic-e',path:'claim-history.md',status:'historical',validTo:'2026-09-18',text:'Revision 1, captured 2026-09-12: retry_limit was 2.'},
     current_revision:{reference:'fixture:claim-rev2#L2',projectID:'synthetic-e',path:'claim-history.md',status:'current',validFrom:'2026-09-18',text:'Revision 2, corrected 2026-09-18: retry_limit is 3.'},
   } },
-  { id:'pinned_chat', query:'What did the pinned conversation say about preserving the original pin time?', positive:'pinned_snapshot', candidates:{
-    pinned_snapshot:{reference:'fixture:pin-session-4@rev-2#msg-7',projectID:'synthetic-f',path:'conversation snapshot',status:'pinned',pinnedAt:'2026-08-02T09:30:00Z',text:'Keep the original pin timestamp as pin time; record this capture as a separate later snapshot revision.'},
-    nearby_chat:{reference:'fixture:session-8@rev-1#msg-3',projectID:'synthetic-f',path:'conversation snapshot',status:'un-pinned',text:'The message discusses timestamp formatting in a log parser, not conversation pinning.'},
+  { id:'retained_chat', query:'What did the retained conversation say about keeping capture time separate from source time?', positive:'chat_snapshot', candidates:{
+    chat_snapshot:{reference:'fixture:session-4@rev-2#msg-7',projectID:'synthetic-f',path:'conversation snapshot',status:'retained',capturedAt:'2026-08-02T09:30:00Z',text:'Keep the original source time separate from capture time; record this capture as a separate later snapshot revision.'},
+    nearby_chat:{reference:'fixture:session-8@rev-1#msg-3',projectID:'synthetic-f',path:'conversation snapshot',status:'retained',text:'The message discusses timestamp formatting in a log parser, not conversation capture time.'},
   } },
-  { id:'missing_source', query:'Can the original pinned source text be read?', positive:'missing_placeholder', candidates:{
-    missing_placeholder:{reference:'fixture:pin-missing-2',projectID:'synthetic-g',path:'conversation snapshot',status:'missing-source-placeholder',text:'Original source is unavailable. This placeholder preserves the pin identity and original timestamp; it contains no captured conversation text.'},
-    fabricated_content:{reference:'fixture:pin-guess-2',projectID:'synthetic-g',path:'conversation snapshot',status:'unverified',text:'The unavailable conversation probably said to migrate the project data carefully.'},
+  { id:'missing_source', query:'Can the original unavailable source text be read?', positive:'missing_placeholder', candidates:{
+    missing_placeholder:{reference:'fixture:missing-2',projectID:'synthetic-g',path:'conversation snapshot',status:'missing-source-placeholder',text:'Original source is unavailable. This placeholder preserves the source identity; it contains no captured conversation text.'},
+    fabricated_content:{reference:'fixture:guess-2',projectID:'synthetic-g',path:'conversation snapshot',status:'unverified',text:'The unavailable conversation probably said to migrate the project data carefully.'},
   } },
   { id:'multi_project', query:'In project alpha, what is the connection timeout in config.json?', positive:'alpha_config', candidates:{
     alpha_config:{reference:'fixture:alpha-config#L8',projectID:'project-alpha',path:'config.json',status:'current',text:'connection.timeoutMs = 18000'},
@@ -45,7 +45,7 @@ const state={
 const definitions=scenarios.flatMap(scenario=>Object.keys(scenario.candidates).map(candidateID=>({
   questionID:`${scenario.id}__${candidateID}`,
   primitive:'score',
-  question:{task:'Judge retrieval relevance for this exact query and candidate. Respect project identity, source status, revision time, pin metadata, exact identifiers, Unicode, and explicit missing-source placeholders. A missing source is relevant to a question about availability but never supports invented source content.',
+  question:{task:'Judge retrieval relevance for this exact query and candidate. Respect project identity, source status, revision time, exact identifiers, Unicode, and explicit missing-source placeholders. A missing source is relevant to a question about availability but never supports invented source content.',
     query:scenario.query,candidateID,candidatePath:`state.candidates.${scenario.id}.${candidateID}`},
   criteria:{levels:['Poor: unrelated, contradicted, wrong project, wrong time period, or unsupported by the referenced source.','Partial: related but lacks the requested identity, scope, time, or direct answer.','Strong: directly answers the query with matching provenance, scope, identity, and time.']},
 })));

@@ -24,5 +24,5 @@ are separate facts; `verify` establishes the latter.
 
 Provider, authentication, quota, binding and deployment failures are operational
 observations, not coding-quality verdicts. Matching native receipts and the local
-outcome ledger supply execution evidence; `knowledge`, remembered lessons and
+outcome ledger supply execution evidence; `memory`, remembered lessons and
 Jev judgments cannot replace them or create a second statistics ledger.

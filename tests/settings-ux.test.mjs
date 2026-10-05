@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import { settingsGroups, settingsPages, settingsPage, settingsPageForTitle } from '../src/settings-catalog.mjs';
-import { registrationLabel, serviceLabel, skillLabel, toolReason } from '../src/capability-presentation.mjs';
+import { registrationLabel, serviceLabel, skillLabel, toolLabel, toolReason } from '../src/capability-presentation.mjs';
 
 const original = {
   project: ['files', 'search', 'goals', 'sessions', 'delegation', 'github'],
@@ -41,6 +41,9 @@ test('registration never claims successful execution', () => {
   assert.equal(toolReason({ ...registered, discovered: null, unavailableReason: 'Inspection unavailable.' }), 'Inspection unavailable.');
   assert.equal(toolReason({ ...registered, applicationAccess: 'blocked', unavailableReason: 'Use delegate.' }), 'Use delegate.');
 });
+test('model-specific tool exposure is reported without implying model incompatibility', () => {
+  assert.equal(toolLabel({ discovered: true, modelExposure: false, configured: true, nativePermission: 'allow' }), 'Not exposed here');
+});
 test('missing skills, failed probes and MCP auth remain distinct', () => {
   assert.equal(skillLabel({ discovered: false, dependency: 'missing' }, { state: 'unavailable' }), 'Missing file');
   assert.equal(skillLabel({ discovered: false }, { state: 'unavailable' }), 'Unknown');
@@ -52,7 +55,7 @@ test('missing skills, failed probes and MCP auth remain distinct', () => {
   assert.equal(serviceLabel('something-new'), 'Unknown');
 });
 test('new settings styles use only established semantic color tokens', async () => {
-  const allowed = new Set(['accent', 'muted', 'text', 'line', 'panel', 'radius', 'settings-gap', 'settings-panel-padding']);
+  const allowed = new Set(['accent', 'muted', 'text', 'line', 'paper', 'hover', 'danger', 'panel', 'radius', 'settings-gap', 'settings-panel-padding']);
   for (const name of ['settings-ux.css', 'capabilities.css']) {
     const css = await readFile(new URL(`../src/${name}`, import.meta.url), 'utf8');
     assert.doesNotMatch(css, /#[0-9a-f]{3,8}\b|rgba?\(/i);

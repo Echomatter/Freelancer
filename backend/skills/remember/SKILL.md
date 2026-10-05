@@ -1,59 +1,72 @@
 ---
 name: remember
-description: Retrieve or intentionally retain durable notes, source-linked claims, graph knowledge and conversation snapshots through the shared knowledge tool.
+description: Remember files, chats or custom content; retrieve and edit the same saved memory through the shared memory tool.
 ---
 
 # Remember
 
-`knowledge` is the tool. `remember` names both this optional skill and the
-operation that saves a note. Search domain `memories` contains notes/snapshots;
-`facts` contains structured claims. They share the warehouse with pins and
-graph knowledge. External Memory MCP is unnecessary and remains a separate,
-native-owned service.
+Use the shared `memory` tool for retained decisions, preferences, source
+locations, lessons, observations and conversation snapshots. Every retained
+item is a memory. Structured values, evidence, relationships and archive
+state are optional properties of that same object. This skill guides its use;
+native permissions govern mutations.
 
-## Choose what to retain
+## Save or revise
 
-Use `operation: "remember"` by default for useful decisions, preferences,
-source locations, constraints, lessons and rejected approaches. Supply `title`
-and `body`, plus the real registered `projectID` for a project note. Use values
-from the task and current project:
+For a file or chat, use `operation: "remember"` and `sourceRefJson` from its
+returned source reference. This is the same save as the UI's one-click action:
+no title, summary or structured fields are required. The server derives a base
+memory and retains the source within explicit capture limits. Inspect its receipt
+and pending capture state. Repeating the same source saves to the same memory.
 
 ```javascript
-knowledge({operation: "remember", title: noteTitle, body: noteText,
+memory({operation: "remember",
+  sourceRefJson: JSON.stringify(hit.originalSourceRef)})
+```
+
+For custom content, supply a concise `title` and optional `body`. Use the real
+registered `projectID` for project scope. `dataJson` adds an optional structured
+object; text and structured data can coexist:
+
+```javascript
+memory({operation: "remember", title: memoryTitle, body: memoryText,
   projectID: registeredProjectID})
 ```
 
-Use `claim` when structured predicate/value, origin, status, evidence and
-correction/graph semantics help. An ordinary note needs no claim, entity or
-judgment setup. Do not convert or duplicate notes automatically.
+Optional summaries and details enrich a source memory; they do not replace its
+captured source. Read an existing memory and use `revise` to add or correct them.
+Optional `evidenceJson` contains `{items: [...]}` from actual returned source
+references. Optional provenance and structured metadata can preserve origin,
+validation status, scope, dates, entity links and meaningful contradictions.
+Ordinary retention needs no evidence setup or Jev inference.
 
-Every call requires `operation`; `query` also requires `domain`. Title/body
-alone is incomplete. Correct missing fields in the intended operation; a
-malformed note-save request does not establish unsupported notes or require
-a claim fallback.
+`revise` updates the same memory ID and retains prior revisions. Supply its
+current content revision as `expectedRevision`; omitted content/data/evidence
+fields remain intact. Explicit data/evidence replaces the supplied object/list.
+Keep relevant uncertainty and sources; re-read after conflicts.
+
+Every call requires `operation`; `query` also requires `domain`. Correct missing
+arguments in the intended call. Inspect receipts before reporting a successful
+save or using a returned ID.
 
 ## Retrieve
 
-Use `query` with domain `memories` or `facts`. Queries default globally;
-`projectID`/`projectDirectory` narrows them. Continue `nextCursor` with unchanged
-query, filters, scope and limit. Read exact revisions/evidence before relying on
-consequential hits; retain source IDs, hashes, dates, capture limits and status.
+Use `query`, domain `memories`, for all retained content. Queries default globally;
+project selectors narrow them. Continue
+`nextCursor` with unchanged criteria, scope and limit. Read exact revisions and
+evidence before relying on consequential hits.
 
 Partial, metadata-only, disputed or stale content stays explicit. Verify current
-behavior against source or native receipts. A pin retains content; it proves no
-truth or permission. Missing memory does not block repository work.
-
-## Retain deliberately
-
-Keep useful durable knowledge within user/native permissions, with scope,
-reason and actual sources. `revise` updates notes; `correct-claim` preserves
-correction history. Retain meaningful contradictions. Reuse successful receipt
-IDs and report failed saves honestly.
+behavior against source or native receipts. Saved status proves no truth
+or permission. Missing memory does not block repository work. Downloaded catalog
+attributes and extracted index values remain source observations; retain useful
+interpretations deliberately.
 
 Do not automatically mirror chats, files, secrets, private state, temporary
 worker state, todos or routine results. Structured model outcomes remain
-authoritative; qualitative memories do not replace them.
+authoritative. External Memory MCP is unnecessary for this internal store.
 
-Read [operation details](references/operations.md) for examples, graph, retention
-mutations, claims or judgments. `search-index` locates file/chat evidence;
-`bounded-judgment` guides optional evaluation. Skills grant no authority or tool gate.
+Read [operation details](references/operations.md) when editing structured
+content, source links, graph relationships, retention state or stored judgments.
+`search-index` locates file/chat sources; `bounded-judgment` guides optional
+evaluation. Skills grant no authority or tool gate.

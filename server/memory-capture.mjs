@@ -19,7 +19,7 @@ export function createMemoryCaptureRunner({ data, readSource }) {
         }
       }
     }).finally(() => { work = undefined; });
-    // A newly queued pin can arrive while the last source read is finishing.
+    // A newly queued capture can arrive while the last source read is finishing.
     work.then(() => {
       if (!closing && data().resumeMemoryCaptures().length) start();
     }).catch(() => {});

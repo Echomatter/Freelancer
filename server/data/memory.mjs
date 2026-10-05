@@ -1,6 +1,6 @@
-import { randomUUID } from 'node:crypto';
+import { randomUUID, createHash } from 'node:crypto';
+import { memorySourceType } from '../../domain/knowledge-input.mjs';
 import { contentMatch, contentOffset } from '../../domain/content-query.mjs';
-import { createMemoryCaptureService } from './memory-capture.mjs';
 import { createKnowledgeQueries } from './knowledge-queries.mjs';
 import { installKnowledgeResultFunctions } from './knowledge-result.mjs';
 
@@ -11,6 +11,55 @@ const requiredText = (value, name, limit = 4000) => {
   if (typeof value !== 'string' || !value.trim() || value.length > limit) throw Error(`${name} is required and must be at most ${limit} characters.`);
   return value.trim();
 };
+const objectValue = (value, name) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw Error(`${name} must be an object.`);
+  return value;
+};
+function boundedJSON(value, name, fallback, maxBytes = 1_000_000) {
+  const input = value === undefined ? fallback : value;
+  let encoded;
+  try { encoded = JSON.stringify(input); } catch { throw Error(`${name} must contain JSON values.`); }
+  if (typeof encoded !== 'string' || Buffer.byteLength(encoded) > maxBytes) throw Error(`${name} must be JSON under ${maxBytes} bytes.`);
+  return encoded;
+}
+function memoryData(value = {}) {
+  objectValue(value, 'Memory data');
+  for (const key of ['validFrom','validTo','observedAt','recordedAt','supersededAt'])
+    if (value[key] !== undefined && value[key] !== null && !Number.isSafeInteger(value[key])) throw Error(`${key} must be safe integer milliseconds or null.`);
+  if (value.validFrom != null && value.validTo != null && value.validTo < value.validFrom) throw Error('Memory validity ends before it begins.');
+  return boundedJSON(value, 'Memory data', {});
+}
+function memoryEvidence(value = []) {
+  if (!Array.isArray(value) || value.length > 1000) throw Error('Memory evidence accepts at most 1000 references.');
+  const entries = value.map(item => {
+    objectValue(item, 'Memory evidence reference');
+    const id = requiredText(item.id, 'Evidence ID', 2000);
+    const relation=item.relation===undefined?undefined:requiredText(item.relation,'Evidence relation',200);
+    return { ...item, id, ...(relation===undefined?{}:{relation}) };
+  });
+  return boundedJSON(entries, 'Memory evidence', []);
+}
+function memoryBody(value = '') {
+  if (typeof value !== 'string' || Buffer.byteLength(value) > 1_000_000) throw Error('Memory body must be text under 1 MB.');
+  return value;
+}
+const stableJSON = value => JSON.stringify(value, (_key,item) => item && !Array.isArray(item) && typeof item==='object'
+  ? Object.fromEntries(Object.keys(item).sort().map(key=>[key,item[key]])) : item);
+const safeIdentity = value => typeof value==='string' && value.trim() && Buffer.byteLength(value.trim())<=2000 ? value.trim() : null;
+const memoryProjectSQL = `COALESCE(m.source_project_id,
+  CASE WHEN json_type(r.data_json,'$.scope.projectID')='text' AND length(CAST(json_extract(r.data_json,'$.scope.projectID') AS BLOB))<=2000
+    AND trim(json_extract(r.data_json,'$.scope.projectID'))<>'' THEN json_extract(r.data_json,'$.scope.projectID') END,
+  CASE WHEN json_type(r.data_json,'$.scope.project')='text' AND length(CAST(json_extract(r.data_json,'$.scope.project') AS BLOB))<=2000
+    AND trim(json_extract(r.data_json,'$.scope.project'))<>'' THEN json_extract(r.data_json,'$.scope.project') END)`;
+const publicProvenance = value => Object.fromEntries(Object.entries(value).filter(([key])=>key!=='internalCompatibility'));
+const utf8Prefix = value => {
+  const bytes=Buffer.from(value);let end=bytes.length,index=end-1;
+  while(index>=0&&(bytes[index]&0xc0)===0x80)index--;
+  if(index>=0){const lead=bytes[index],width=lead<0x80?1:lead>=0xf0?4:lead>=0xe0?3:lead>=0xc0?2:1;if(end-index<width)end=index;}
+  return bytes.subarray(0,end).toString('utf8');
+};
+const revisionInsert = `INSERT INTO memory_item_revisions(revision_id,memory_id,revision,body,provenance_json,capture_boundary_json,created_at,title,data_json,evidence_json)
+  VALUES(?,?,?,?,?,?,?,?,?,?)`;
 
 export function createMemoryService(db, tx) {
   installKnowledgeResultFunctions(db);
@@ -19,25 +68,35 @@ export function createMemoryService(db, tx) {
       typeof value==='string' && normalize(value).includes(normalize(query)) ? 1 : 0);
     graphSearchDatabases.add(db);
   }
-  function pinConversationSnapshotInTransaction({ projectID, sessionID, title, parentID = null, originalPinnedAt, annotationRevision = 0, creationChange = 'snapshot_created' }) {
-    if (!projectID || !sessionID || !Number.isFinite(originalPinnedAt)) throw Error('Pinned conversation identity and original timestamp are required.');
+  function rememberConversationSnapshotInTransaction({ projectID, sessionID, title, parentID = null, annotationRevision = 0, creationChange = 'snapshot_created', actor='user',provenance={} }) {
+    if (!projectID || !sessionID) throw Error('Conversation identity is required.');
     const id = `conversation:${projectID}:${sessionID}`, now = Date.now(), revisionID = randomUUID();
-    const existing = db.prepare('SELECT memory_id,deleted_at FROM memory_items WHERE memory_id=?').get(id);
+    const existing = db.prepare('SELECT memory_id,kind,source_project_id,source_session_id,deleted_at FROM memory_items WHERE memory_id=?').get(id);
+    if(existing&&(existing.kind!=='conversation_snapshot'||existing.source_project_id!==projectID||existing.source_session_id!==sessionID))throw Error('Conversation memory identity conflicts with a different retained object.');
     const header = db.prepare('SELECT created_at AS createdAt,updated_at AS updatedAt,title FROM session_headers WHERE project_id=? AND session_id=?').get(projectID,sessionID);
     const metadata = header ? { title: header.title, createdAt: header.createdAt, updatedAt: header.updatedAt, parentID } : { title: title || 'Missing conversation source', missingSource: true, parentID };
     if (!existing) {
       db.prepare('INSERT INTO memory_items VALUES(?,?,?,?,?,?,?,?,?,NULL)').run(id,'conversation_snapshot',String(title || metadata.title).slice(0,1000),'active','opencode',projectID,sessionID,now,now);
-      db.prepare('INSERT INTO memory_item_revisions VALUES(?,?,?,?,?,?,?)').run(revisionID,id,1,'',json({ sourceSystem:'opencode', projectID, sessionID, title:metadata.title }),json({ status:'metadata_only', capturedAt:null, originallyPinnedAt:originalPinnedAt, annotationRevision }),now);
+      db.prepare(revisionInsert).run(revisionID,id,1,'',json({ ...publicProvenance(provenance),sourceSystem:'opencode', projectID, sessionID, title:metadata.title }),json({ status:'metadata_only', capturedAt:null, annotationRevision }),now,String(title || metadata.title).slice(0,1000),'{}','[]');
       db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)').run(revisionID,0,'conversation',`${projectID}/${sessionID}`,null,json(metadata),null,header ? 'not_captured' : 'missing_source');
       db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,creationChange,null,revisionID,
-        creationChange === 'legacy_pin_imported' ? 'migration' : 'user',`${projectID}/${sessionID}`,
-        creationChange === 'legacy_pin_imported' ? 'Transcript snapshot was not present in the legacy pin record.' : 'Conversation snapshot placeholder created.',now);
+        actor,`${projectID}/${sessionID}`,
+        'Conversation snapshot placeholder created.',now);
     }
     if (existing?.deleted_at != null)
-      db.prepare("UPDATE memory_items SET status='active',deleted_at=NULL,updated_at=? WHERE memory_id=?").run(now,id);
-    db.prepare('INSERT INTO memory_pins VALUES(?,?,?,?,?) ON CONFLICT(memory_id) DO UPDATE SET original_pinned_at=COALESCE(memory_pins.original_pinned_at,excluded.original_pinned_at),revision=max(memory_pins.revision,excluded.revision)')
-      .run(id,originalPinnedAt,originalPinnedAt,null,Math.max(1,annotationRevision));
-    return { id, pinnedAt:originalPinnedAt, originalPinnedAt, sourceStatus:header ? 'metadata_only' : 'missing_source', created:!existing };
+      {
+        // Forget erased the former transcript. Remembering starts a new source
+        // placeholder; its redacted revisions never become evidence again.
+        const current=db.prepare('SELECT revision,revision_id FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(id);
+        const memoryTitle=String(title||metadata.title).slice(0,1000);
+        db.prepare("UPDATE memory_items SET title=?,status='active',deleted_at=NULL,updated_at=? WHERE memory_id=?").run(memoryTitle,now,id);
+        db.prepare(revisionInsert).run(revisionID,id,(current?.revision??0)+1,'',json({...publicProvenance(provenance),sourceSystem:'opencode',projectID,sessionID,title:metadata.title}),
+          json({status:'metadata_only',capturedAt:null,annotationRevision}),now,memoryTitle,'{}','[]');
+        db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)').run(revisionID,0,'conversation',`${projectID}/${sessionID}`,null,json(metadata),null,header?'not_captured':'missing_source');
+        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,'snapshot_created',current?.revision_id??null,revisionID,
+          actor,`${projectID}/${sessionID}`,'Created a fresh source placeholder after a forgotten snapshot was remembered again.',now);
+      }
+    return { id,sourceStatus:header ? 'metadata_only' : 'missing_source', created:!existing||existing.deleted_at!=null };
   }
   function createEntity({ id = randomUUID(), type, name, aliases = [], sourceRef = '' }) {
     const entityType = requiredText(type, 'Entity type', 200), canonicalName = requiredText(name, 'Entity name', 1000);
@@ -190,9 +249,9 @@ export function createMemoryService(db, tx) {
       return tx(() => {
         const entity = db.prepare('SELECT entity_id FROM entities WHERE entity_id=?').get(entityID);
         if (!entity) return { id:entityID, deleted:false, relationsDeleted:0 };
-        const claimRefs = db.prepare(`SELECT count(*) AS n FROM claims
-          WHERE subject_entity_id=? OR object_entity_id=?`).get(entityID,entityID).n;
-        if (claimRefs) return { id:entityID, deleted:false, reason:'claims_reference_entity', claimsRetained:claimRefs };
+        const memoryRefs = db.prepare(`SELECT count(DISTINCT r.memory_id) AS n FROM memory_item_revisions r JOIN memory_items m USING(memory_id)
+          WHERE m.deleted_at IS NULL AND (json_extract(r.data_json,'$.subjectEntityID')=? OR json_extract(r.data_json,'$.objectEntityID')=?)`).get(entityID,entityID).n;
+        if (memoryRefs) return { id:entityID, deleted:false, reason:'memories_reference_entity', memoriesRetained:memoryRefs };
         const relations = db.prepare('SELECT * FROM entity_relations WHERE from_entity_id=? OR to_entity_id=?').all(entityID,entityID);
         const relationsDeleted = relations.length, now = Date.now();
         for (const relation of relations) {
@@ -383,170 +442,226 @@ export function createMemoryService(db, tx) {
         return { id:relationID, deleted:true };
       });
     },
+    // Hidden compatibility adapters all write the same retained memory service.
     addClaim(input) {
       const predicate = requiredText(input.predicate, 'Claim predicate', 1000);
       const allowedOrigins = new Set(['human-authored','user-stated','source-reported','directly-observed','deterministically-extracted','model-inferred']);
       const allowedStates = new Set(['unverified','supported','disputed','superseded']);
       if (!allowedOrigins.has(input.origin) || !allowedStates.has(input.epistemicState)) throw Error('Claim origin or epistemic state is invalid.');
-      const id = input.id ?? randomUUID(), now = Date.now(), evidence = Array.isArray(input.evidence) ? input.evidence : [];
-      if (!evidence.length || evidence.length > 1000) throw Error('A claim needs 1 to 1000 evidence references.');
+      if (!Array.isArray(input.evidence) || !input.evidence.length) throw Error('A claim needs 1 to 1000 evidence references.');
+      if(input.evidence.some(entry=>entry.relation!==undefined&&!['supports','contradicts','qualifies','supersedes'].includes(entry.relation))) throw Error('Claim evidence relation is invalid.');
+      const encodedEvidence = memoryEvidence(input.evidence), now = Date.now();
       return tx(() => {
-        for (const entityID of [input.subjectEntityID, input.objectEntityID].filter(Boolean))
-          if (!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(entityID)) throw Error('Claim references a missing entity.');
         const duplicate = db.prepare(`SELECT c.claim_id AS id FROM claims c WHERE c.predicate=? AND c.origin=? AND c.method=? AND c.epistemic_state=?
           AND COALESCE(c.subject_entity_id,'')=? AND COALESCE(c.object_entity_id,'')=? AND COALESCE(c.value_json,'')=? AND c.scope_json=? LIMIT 1`)
-          .get(predicate, input.origin, String(input.method ?? 'manual'), input.epistemicState, input.subjectEntityID ?? '', input.objectEntityID ?? '', input.value === undefined ? '' : json(input.value), json(input.scope));
-        const claimID = duplicate?.id ?? id;
-        if (!duplicate) db.prepare('INSERT INTO claims VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
-          id,input.subjectEntityID ?? null,predicate,input.objectEntityID ?? null,
-          input.value === undefined ? null : json(input.value),input.origin,String(input.method ?? 'manual'),input.epistemicState,
-          json(input.scope),input.validFrom ?? null,input.validTo ?? null,input.observedAt ?? null,now,null,
-          String(input.actor ?? ''),input.modelProvider ?? null,input.modelID ?? null);
-        const normalizedEvidence = evidence.map(item => ({ id: requiredText(item.id, 'Evidence ID', 2000), relation: item.relation ?? 'supports', value: json(item) }));
-        if (normalizedEvidence.some(item => !['supports','contradicts','qualifies','supersedes'].includes(item.relation))) throw Error('Claim evidence relation is invalid.');
-        const save = db.prepare('INSERT INTO claim_evidence VALUES(?,?,?,?,?) ON CONFLICT(claim_id,evidence_id,relation) DO NOTHING');
-        for (const item of normalizedEvidence) save.run(claimID,item.id,item.relation,item.value,now);
-        return { id: claimID, created: !duplicate };
-      });
-    },
-    correctClaim({ id, expectedEpistemicState, predicate, subjectEntityID, objectEntityID, value,
-      origin, method, epistemicState, scope, validFrom, validTo, observedAt, evidence, actor = 'user', reason = '' }) {
-      const allowedOrigins = new Set(['human-authored','user-stated','source-reported','directly-observed','deterministically-extracted','model-inferred']);
-      const allowedStates = new Set(['unverified','supported','disputed']);
-      const items = Array.isArray(evidence) ? evidence : [];
-      if (!items.length || items.length > 1000) throw Error('A claim correction needs 1 to 1000 evidence references.');
-      if (!allowedStates.has(epistemicState)) throw Error('A correction must state its epistemic status.');
-      const now = Date.now();
-      return tx(() => {
-        const prior = db.prepare('SELECT * FROM claims WHERE claim_id=?').get(requiredText(id, 'Claim ID', 2000));
-        if (!prior || prior.superseded_at !== null || prior.epistemic_state === 'superseded') throw Object.assign(Error('Claim is missing or already superseded.'),{status:409});
-        if (expectedEpistemicState && prior.epistemic_state !== expectedEpistemicState) throw Object.assign(Error('Claim changed; reload before correcting it.'),{status:409});
-        const next = {
-          predicate: requiredText(predicate ?? prior.predicate, 'Claim predicate', 1000),
-          subjectEntityID: subjectEntityID === undefined ? prior.subject_entity_id : subjectEntityID,
-          objectEntityID: objectEntityID === undefined ? prior.object_entity_id : objectEntityID,
-          valueJSON: value === undefined ? prior.value_json : json(value),
-          origin: origin ?? prior.origin, method: method ?? prior.method, epistemicState,
-          scopeJSON: scope === undefined ? prior.scope_json : json(scope),
-          validFrom: validFrom === undefined ? prior.valid_from : validFrom,
-          validTo: validTo === undefined ? prior.valid_to : validTo,
-          observedAt: observedAt === undefined ? prior.observed_at : observedAt,
-        };
-        if (!allowedOrigins.has(next.origin)) throw Error('Claim origin is invalid.');
-        if (next.validFrom !== null && next.validTo !== null && next.validTo < next.validFrom) throw Error('Claim validity ends before it begins.');
-        for (const entityID of [next.subjectEntityID, next.objectEntityID].filter(Boolean))
-          if (!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(entityID)) throw Error('Claim references a missing entity.');
-        const normalizedEvidence = items.map(item => ({
-          id: requiredText(item.id, 'Evidence ID', 2000),
-          relation: item.relation ?? 'supports',
-          json: json(item),
-        }));
-        if (normalizedEvidence.some(item => !['supports','contradicts','qualifies','supersedes'].includes(item.relation)))
-          throw Error('Claim evidence relation is invalid.');
-        const newID = randomUUID();
-        const duplicate = db.prepare(`SELECT claim_id AS id FROM claims WHERE superseded_at IS NULL AND epistemic_state<>'superseded'
-          AND claim_id<>? AND predicate=? AND origin=? AND method=? AND epistemic_state=?
-          AND COALESCE(subject_entity_id,'')=? AND COALESCE(object_entity_id,'')=? AND COALESCE(value_json,'')=? AND scope_json=?
-          ORDER BY recorded_at,claim_id LIMIT 1`).get(prior.claim_id,next.predicate,next.origin,next.method,next.epistemicState,
-            next.subjectEntityID ?? '',next.objectEntityID ?? '',next.valueJSON ?? '',next.scopeJSON);
-        const replacementID = duplicate?.id ?? newID;
-        db.prepare("UPDATE claims SET epistemic_state='superseded',superseded_at=? WHERE claim_id=?").run(now,prior.claim_id);
-        if (!duplicate) {
-          db.prepare('INSERT INTO claims VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)').run(
-            newID,next.subjectEntityID ?? null,next.predicate,next.objectEntityID ?? null,next.valueJSON,
-            next.origin,next.method,next.epistemicState,next.scopeJSON,next.validFrom,next.validTo,next.observedAt,
-            now,null,String(actor),prior.model_provider,prior.model_id);
+          .get(predicate,input.origin,String(input.method ?? 'manual'),input.epistemicState,input.subjectEntityID ?? '',input.objectEntityID ?? '',
+            input.value === undefined ? '' : json(input.value),json(input.scope));
+        if (duplicate) {
+          const current=this.getMemory(duplicate.id), entries=JSON.parse(encodedEvidence);
+          const merged=new Map(current.revision.evidence.map(entry=>[JSON.stringify([entry.id,entry.relation??'supports']),entry]));
+          for (const entry of entries) {
+            const key=JSON.stringify([entry.id,entry.relation??'supports']);
+            if(!merged.has(key)) merged.set(key,{...entry,createdAt:now});
+          }
+          if(merged.size!==current.revision.evidence.length)
+            this.reviseMemory({id:duplicate.id,expectedRevision:current.revision.revision,evidence:[...merged.values()],actor:input.actor??'user',reason:'Additional retained evidence.'});
+          return {id:duplicate.id,created:false};
         }
-        const saveEvidence = db.prepare('INSERT INTO claim_evidence VALUES(?,?,?,?,?) ON CONFLICT(claim_id,evidence_id,relation) DO NOTHING');
-        for (const item of normalizedEvidence) saveEvidence.run(replacementID,item.id,item.relation,item.json,now);
-        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(
-          randomUUID(),null,prior.claim_id,'claim_corrected',prior.claim_id,replacementID,String(actor),
-          normalizedEvidence.map(item => item.id).join(','),String(reason),now);
-        return { id: replacementID, priorID: prior.claim_id, created: !duplicate, corrected: true };
+        const data={predicate,origin:input.origin,method:String(input.method??'manual'),epistemicState:input.epistemicState,
+          scope:input.scope??{},validFrom:input.validFrom??null,validTo:input.validTo??null,observedAt:input.observedAt??null,
+          recordedAt:now,supersededAt:input.epistemicState==='superseded'?now:null,subjectEntityID:input.subjectEntityID??null,
+          objectEntityID:input.objectEntityID??null,actor:String(input.actor??''),modelProvider:input.modelProvider??null,modelID:input.modelID??null,
+          ...(input.value===undefined?{}:{value:input.value})};
+        return this.createMemory({id:input.id??randomUUID(),title:predicate,data,
+          evidence:JSON.parse(encodedEvidence).map(entry=>({...entry,createdAt:now})),
+          source:{system:'freelancer',projectID:data.scope.projectID??data.scope.project??null},actor:input.actor??'user'});
       });
     },
-    createMemory({ id = randomUUID(), kind, title, body, provenance = {}, boundary = {}, source = {}, members = [], actor = 'user' }) {
-      const memoryKind = requiredText(kind, 'Memory kind', 100), memoryTitle = requiredText(title, 'Memory title', 1000);
-      if (typeof body !== 'string' || body.length > 1_000_000) throw Error('Memory body must be text under 1 MB.');
-      const now = Date.now(), revisionID = randomUUID();
-      return tx(() => {
-        const prior = db.prepare('SELECT memory_id FROM memory_items WHERE memory_id=?').get(id);
-        if (prior) return { id, created: false };
-        db.prepare('INSERT INTO memory_items VALUES(?,?,?,?,?,?,?,?,?,NULL)').run(id,memoryKind,memoryTitle,'active',source.system ?? '',source.projectID ?? null,source.sessionID ?? null,now,now);
-        db.prepare('INSERT INTO memory_item_revisions VALUES(?,?,?,?,?,?,?)').run(revisionID,id,1,body,json(provenance),json(boundary),now);
-        const save = db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)');
-        members.forEach((member, ordinal) => save.run(revisionID,ordinal,requiredText(member.kind,'Member kind',100),requiredText(member.ref,'Member reference',2000),member.revision ?? null,json(member.locator),member.hash ?? null,member.availability ?? 'available'));
-        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,'created',null,revisionID,actor,String(source.ref ?? ''),'',now);
-        return { id, revisionID, revision: 1, created: true };
+    correctClaim({id,expectedEpistemicState,expectedRevision,predicate,subjectEntityID,objectEntityID,value,
+      origin,method,epistemicState,scope,validFrom,validTo,observedAt,evidence,actor='user',reason=''}) {
+      if (!Array.isArray(evidence) || !evidence.length) throw Error('A claim correction needs 1 to 1000 evidence references.');
+      if(evidence.some(entry=>entry.relation!==undefined&&!['supports','contradicts','qualifies','supersedes'].includes(entry.relation))) throw Error('Claim evidence relation is invalid.');
+      if(!['unverified','supported','disputed'].includes(epistemicState)) throw Error('A correction must state its epistemic status.');
+      return tx(()=>{
+        const memory=this.getMemory(requiredText(id,'Claim ID',2000)),prior=memory?.revision.data;
+        if(!prior?.predicate || prior.supersededAt!=null || prior.epistemicState==='superseded') throw Object.assign(Error('Claim is missing or already superseded.'),{status:409});
+        if(expectedEpistemicState && prior.epistemicState!==expectedEpistemicState) throw Object.assign(Error('Claim changed; reload before correcting it.'),{status:409});
+        const data={...prior,predicate:requiredText(predicate??prior.predicate,'Claim predicate',1000),epistemicState,
+          subjectEntityID:subjectEntityID===undefined?prior.subjectEntityID:subjectEntityID,
+          objectEntityID:objectEntityID===undefined?prior.objectEntityID:objectEntityID,
+          origin:origin??prior.origin,method:method??prior.method,scope:scope===undefined?prior.scope:scope,
+          validFrom:validFrom===undefined?prior.validFrom:validFrom,validTo:validTo===undefined?prior.validTo:validTo,
+          observedAt:observedAt===undefined?prior.observedAt:observedAt,recordedAt:Date.now(),actor:String(actor),
+          ...(value===undefined?{}:{value})};
+        if(!['human-authored','user-stated','source-reported','directly-observed','deterministically-extracted','model-inferred'].includes(data.origin)) throw Error('Claim origin is invalid.');
+        const receipt=this.reviseMemory({id,expectedRevision:expectedRevision??memory.revision.revision,title:data.predicate,data,
+          evidence:JSON.parse(memoryEvidence(evidence)).map(entry=>({...entry,createdAt:Date.now()})),actor,reason});
+        return {...receipt,priorID:id,corrected:true};
       });
     },
-    pinConversationSnapshot({ projectID, sessionID, title, parentID = null, originalPinnedAt, annotationRevision = 0 }) {
-      return tx(() => pinConversationSnapshotInTransaction({ projectID,sessionID,title,parentID,originalPinnedAt,annotationRevision }));
-    },
-    setConversationPin({ projectID, sessionID, title, parentID = null, pinned, revision }) {
-      if (!projectID || !sessionID || typeof pinned !== 'boolean' || !Number.isInteger(revision)) throw Error('Pinned conversation identity, action and revision are required.');
-      return tx(() => {
-        const old = db.prepare('SELECT pinned_at AS pinnedAt,hidden_at AS hiddenAt,revision FROM session_annotations WHERE project_id=? AND session_id=?').get(projectID,sessionID)
-          ?? { pinnedAt:null,hiddenAt:null,revision:0 };
-        if (revision !== old.revision) throw Object.assign(Error('This item changed in another window. Reload before saving.'),{status:409});
-        const id = `conversation:${projectID}:${sessionID}`;
-        if (pinned) pinConversationSnapshotInTransaction({ projectID,sessionID,title,parentID,
-          originalPinnedAt:old.pinnedAt ?? Date.now(),annotationRevision:revision + 1 });
-        else db.prepare('DELETE FROM memory_pins WHERE memory_id=?').run(id);
-        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)')
-          .run(randomUUID(),id,null,pinned?'pin':'unpin',null,null,'user',`${projectID}/${sessionID}`,'',Date.now());
-        db.prepare('INSERT INTO session_annotations VALUES(?,?,?,?,?) ON CONFLICT(project_id,session_id) DO UPDATE SET pinned_at=NULL,hidden_at=excluded.hidden_at,revision=excluded.revision')
-          .run(projectID,sessionID,null,old.hiddenAt,revision + 1);
-        const capture = pinned ? createMemoryCaptureService(db,tx).queueMemoryCapture({memoryID:id,projectID,sessionID}) : undefined;
-        return { capture,pinnedAt:pinned ? db.prepare('SELECT pinned_at FROM memory_pins WHERE memory_id=?').get(id).pinned_at : null,
-          hiddenAt:old.hiddenAt,revision:revision + 1 };
+    createMemory({id=randomUUID(),kind='memory',title,body='',data={},evidence=[],provenance={},boundary={},source={},members=[],actor='user'}) {
+      const memoryID=requiredText(id,'Memory ID',2000),memoryKind=requiredText(kind,'Memory kind',100),memoryTitle=requiredText(title,'Memory title',1000);
+      const memoryText=memoryBody(body),dataJSON=memoryData(data),evidenceJSON=memoryEvidence(evidence);
+      const provenanceJSON=boundedJSON(publicProvenance(objectValue(provenance,'Memory provenance')),'Memory provenance',{});
+      const boundaryJSON=boundedJSON(objectValue(boundary,'Memory capture boundary'),'Memory capture boundary',{});
+      if(!Array.isArray(members)||members.length>5000) throw Error('Memory accepts at most 5000 captured source members.');
+      const now=Date.now(),revisionID=randomUUID();
+      return tx(()=>{
+        if(db.prepare('SELECT memory_id FROM memory_items WHERE memory_id=?').get(memoryID)) return {id:memoryID,created:false};
+        for(const entityID of [data.subjectEntityID,data.objectEntityID].filter(Boolean))
+          if(!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(requiredText(entityID,'Memory entity ID',2000))) throw Error('Memory references a missing entity.');
+        const projectID=source.projectID==null?safeIdentity(data.scope?.projectID)??safeIdentity(data.scope?.project):safeIdentity(source.projectID);
+        if(source.projectID!=null&&!projectID) throw Error('Memory source project must be a bounded project ID.');
+        db.prepare('INSERT INTO memory_items VALUES(?,?,?,?,?,?,?,?,?,NULL)').run(memoryID,memoryKind,memoryTitle,'active',source.system??'',projectID,source.sessionID??null,now,now);
+        db.prepare(revisionInsert).run(revisionID,memoryID,1,memoryText,provenanceJSON,boundaryJSON,now,memoryTitle,dataJSON,evidenceJSON);
+        const save=db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)');
+        members.forEach((member,ordinal)=>save.run(revisionID,ordinal,requiredText(member.kind,'Member kind',100),requiredText(member.ref,'Member reference',2000),member.revision??null,json(member.locator),member.hash??null,member.availability??'available'));
+        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),memoryID,null,'created',null,revisionID,actor,String(source.ref??''),'',now);
+        return {id:memoryID,revisionID,revision:1,created:true};
       });
     },
-    migrateLegacyPinsBatch({ limit = 250 } = {}) {
-      const rows = db.prepare(`SELECT a.project_id AS projectID,a.session_id AS sessionID,a.pinned_at AS pinnedAt,a.revision AS revision,
-        h.title,h.parent_id AS parentID FROM session_annotations a LEFT JOIN session_headers h
-        ON h.project_id=a.project_id AND h.session_id=a.session_id WHERE a.pinned_at IS NOT NULL
-        ORDER BY a.pinned_at,a.project_id,a.session_id LIMIT ?`).all(Math.max(1,Math.min(2000,Number(limit)||250)));
-      let imported = 0;
-      for (const row of rows) {
-        const moved = tx(() => {
-          const current = db.prepare('SELECT pinned_at FROM session_annotations WHERE project_id=? AND session_id=?')
-            .get(row.projectID,row.sessionID);
-          if (current?.pinned_at !== row.pinnedAt) return false;
-          const memory = db.prepare(`SELECT m.deleted_at AS deletedAt,m.status,p.memory_id AS pinnedMemory
-            FROM memory_items m LEFT JOIN memory_pins p USING(memory_id)
-            WHERE m.kind='conversation_snapshot' AND m.source_project_id=? AND m.source_session_id=?`)
-            .get(row.projectID,row.sessionID);
-          if (memory?.status !== 'forgotten' && memory?.deletedAt == null)
-            pinConversationSnapshotInTransaction({ ...row, originalPinnedAt:row.pinnedAt,annotationRevision:row.revision,creationChange:'legacy_pin_imported' });
-          db.prepare('UPDATE session_annotations SET pinned_at=NULL WHERE project_id=? AND session_id=? AND pinned_at=?')
-            .run(row.projectID,row.sessionID,row.pinnedAt);
-          const remaining = db.prepare('SELECT count(*) n FROM session_annotations WHERE pinned_at IS NOT NULL').get().n;
-          db.prepare(`INSERT INTO memory_migration_runs VALUES('legacy-chat-pins-v1',1,?,?)
-            ON CONFLICT(migration_id) DO UPDATE SET imported_count=memory_migration_runs.imported_count+1,
-            remaining_count=excluded.remaining_count,completed_at=excluded.completed_at`)
-            .run(remaining,remaining === 0 ? Date.now() : 0);
-          return true;
-        });
-        if (moved) imported++;
+    rememberConversationSnapshot(input) {
+      requiredText(input.projectID,'Source project ID',2000);requiredText(input.sessionID,'Source session ID',2000);
+      return tx(()=>rememberConversationSnapshotInTransaction({...input,creationChange:'snapshot_created'}));
+    },
+    indexedFileSource(sourceIdentity,revisionIdentity) {
+      requiredText(sourceIdentity,'Indexed file source identity',16_000);
+      if(revisionIdentity!==undefined)requiredText(revisionIdentity,'Indexed file revision',2000);
+      const row=revisionIdentity===undefined
+        ?db.prepare(`SELECT r.* FROM content_sources s JOIN content_source_revisions r
+          ON r.source_identity=s.source_identity AND r.revision_identity=s.revision_identity
+          WHERE s.source_identity=?`).get(sourceIdentity)
+        :db.prepare('SELECT * FROM content_source_revisions WHERE source_identity=? AND revision_identity=?').get(sourceIdentity,revisionIdentity);
+      if(!row)throw Error('The selected indexed file revision is unavailable. Search the content index and use its returned source reference.');
+      return {sourceIdentity:row.source_identity,revisionIdentity:row.revision_identity,projectKey:row.project_key,path:row.virtual_path,
+        capturedAt:row.captured_at,metadata:JSON.parse(row.metadata_json)};
+    },
+    rememberFileSource({ref,projectID,title,body,data,evidence,expectedRevision,provenance={},actor='user'}) {
+      const selected=this.indexedFileSource(ref.sourceIdentity,ref.revisionIdentity);
+      if(ref.locator!==undefined&&!db.prepare('SELECT 1 FROM content_unit_revisions WHERE source_identity=? AND revision_identity=? AND locator=? AND sha256=?').get(ref.sourceIdentity,ref.revisionIdentity,ref.locator,ref.unitSha256))
+        throw Error('The selected file passage does not belong to that exact indexed revision.');
+      const id=`file:${createHash('sha256').update(ref.sourceIdentity).digest('hex')}`;
+      const sourceRef={kind:'file',sourceIdentity:ref.sourceIdentity,revisionIdentity:ref.revisionIdentity,...(projectID?{projectID}:{})};
+      const sourceFingerprint=createHash('sha256').update(stableJSON(['file',ref.sourceIdentity,ref.revisionIdentity])).digest('hex');
+      const statistics=db.prepare('SELECT count(*) AS units,coalesce(sum(length(CAST(text AS BLOB))),0) AS bytes FROM content_unit_revisions WHERE source_identity=? AND revision_identity=?').get(ref.sourceIdentity,ref.revisionIdentity);
+      const units=db.prepare(`WITH budget AS (
+        SELECT unit_no,locator,heading,sha256,length(CAST(text AS BLOB)) AS sourceBytes,text,
+          coalesce(sum(length(CAST(text AS BLOB))) OVER(ORDER BY unit_no ROWS BETWEEN UNBOUNDED PRECEDING AND 1 PRECEDING),0) AS precedingBytes
+        FROM content_unit_revisions WHERE source_identity=? AND revision_identity=?)
+        SELECT unit_no,locator,substr(heading,1,1000) AS heading,sha256,sourceBytes,
+          substr(CAST(text AS BLOB),1,min(200000,900000-precedingBytes)) AS textBytes
+        FROM budget WHERE precedingBytes<900000 ORDER BY unit_no LIMIT 4999`).all(ref.sourceIdentity,ref.revisionIdentity)
+          .map(({textBytes,...unit})=>({...unit,text:utf8Prefix(textBytes),retainedBytes:textBytes.byteLength}));
+      const now=Date.now(),sourceTitle=String(selected.path.split(/[\\/]/).at(-1)||selected.path||'Indexed file').slice(0,1000);
+      const members=[{kind:'source',ref:ref.sourceIdentity,revision:ref.revisionIdentity,hash:selected.metadata.sourceSha256??null,availability:'retained',
+        locator:{sourceIdentity:ref.sourceIdentity,revisionIdentity:ref.revisionIdentity,path:selected.path,projectKey:selected.projectKey,extractionStatus:selected.metadata.extractionStatus??null}}];
+      const retainedUnits=[];let memberBytes=Buffer.byteLength(json(members[0]));
+      for(const unit of units){
+        const member={kind:'content-unit',ref:ref.sourceIdentity,revision:ref.revisionIdentity,hash:unit.sha256,availability:'retained',
+        locator:{sourceIdentity:ref.sourceIdentity,revisionIdentity:ref.revisionIdentity,locator:unit.locator,unitSha256:unit.sha256,
+          unit:unit.unit_no,path:selected.path,projectKey:selected.projectKey,heading:unit.heading,text:unit.text,textTruncated:unit.retainedBytes<unit.sourceBytes}};
+        const size=Buffer.byteLength(json(member));if(memberBytes+size>1_000_000)break;
+        memberBytes+=size;members.push(member);retainedUnits.push(unit);
       }
-      const remaining = db.prepare('SELECT count(*) n FROM session_annotations WHERE pinned_at IS NOT NULL').get().n;
-      if (!db.prepare("SELECT 1 FROM memory_migration_runs WHERE migration_id='legacy-chat-pins-v1'").get())
-        db.prepare("INSERT INTO memory_migration_runs VALUES('legacy-chat-pins-v1',0,?,?)").run(remaining,remaining === 0 ? Date.now() : 0);
-      return { status: remaining === 0 ? 'complete' : 'incomplete', imported, remaining };
+      const capturedText=retainedUnits.map(unit=>unit.text).join('\n\n');
+      const truncated=statistics.units>retainedUnits.length||retainedUnits.some(unit=>unit.retainedBytes<unit.sourceBytes);
+      const captureBoundary={status:!retainedUnits.length?'metadata_only':truncated?'incomplete':'complete',truncated,capturedAt:now,sourceCapturedAt:selected.capturedAt,
+        sourceUnitCount:statistics.units,unitCount:retainedUnits.length,sourceTextBytes:statistics.bytes,retainedTextBytes:Buffer.byteLength(capturedText),retainedMemberBytes:memberBytes,
+        scope:'Indexed extracted text from the selected immutable file revision; binary data and unsupported content are excluded.'};
+      const captureProvenance={...publicProvenance(provenance),rememberSource:sourceRef,sourceFingerprint,sourcePath:selected.path,
+        sourceRevisionIdentity:ref.revisionIdentity,sourceSha256:selected.metadata.sourceSha256??null};
+      return tx(()=>{
+        const item=db.prepare('SELECT * FROM memory_items WHERE memory_id=?').get(id);
+        if(item&&(item.kind!=='file_snapshot'||item.source_system!=='content-index'))throw Error('File memory identity conflicts with a different retained object.');
+        const current=item?db.prepare('SELECT * FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(id):null;
+        if(item?.deleted_at===null&&[title,body,data,evidence].some(value=>value!==undefined)&&expectedRevision!==current.revision)
+          throw Object.assign(Error('This source is already remembered. Read its current memory and supply expectedRevision before enriching it.'),{status:409});
+        const currentProvenance=current?JSON.parse(current.provenance_json):{};
+        const same=item?.deleted_at===null&&currentProvenance.sourceFingerprint===sourceFingerprint;
+        const nextTitle=title===undefined?(item?.deleted_at===null?current.title:sourceTitle):requiredText(title,'Memory title',1000);
+        const editedBody=body!==undefined||item?.deleted_at===null&&(currentProvenance.userEditedText===true||JSON.parse(current.capture_boundary_json).bodyEdited===true);
+        const nextBody=body===undefined?(editedBody?current.body:capturedText):memoryBody(body);
+        const nextData=data===undefined?(item?.deleted_at===null?current.data_json:'{}'):memoryData(data);
+        const nextEvidence=evidence===undefined?(item?.deleted_at===null?current.evidence_json:'[]'):memoryEvidence(evidence);
+        const structured=JSON.parse(nextData);
+        for(const entityID of [structured.subjectEntityID,structured.objectEntityID].filter(Boolean))
+          if(!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(requiredText(entityID,'Memory entity ID',2000)))throw Error('Memory references a missing entity.');
+        if(same&&nextTitle===current.title&&nextBody===current.body&&nextData===current.data_json&&nextEvidence===current.evidence_json)
+          return {id,created:false,revision:current.revision,sourceType:'file',sourceCaptured:retainedUnits.length>0,captureChanged:false,coverage:captureBoundary.status,truncated};
+        const revisionID=randomUUID(),revision=(current?.revision??0)+1;
+        const nextProvenance={...(item?.deleted_at===null?currentProvenance:{}),...captureProvenance,...(editedBody?{userEditedText:true}: {})};
+        const boundary={...captureBoundary,...(editedBody?{bodyEdited:true}: {})};
+        if(!item)db.prepare('INSERT INTO memory_items VALUES(?,?,?,?,?,?,?,?,?,NULL)').run(id,'file_snapshot',nextTitle,'active','content-index',projectID??null,null,now,now);
+        else db.prepare("UPDATE memory_items SET title=?,status=CASE WHEN deleted_at IS NOT NULL THEN 'active' ELSE status END,deleted_at=NULL,updated_at=? WHERE memory_id=?").run(nextTitle,now,id);
+        db.prepare(revisionInsert).run(revisionID,id,revision,memoryBody(nextBody),boundedJSON(nextProvenance,'Memory provenance',{}),boundedJSON(boundary,'Memory capture boundary',{}),now,nextTitle,nextData,nextEvidence);
+        const save=db.prepare('INSERT INTO memory_members VALUES(?,?,?,?,?,?,?,?)');
+        members.forEach((member,ordinal)=>save.run(revisionID,ordinal,member.kind,member.ref,member.revision,json(member.locator),member.hash,member.availability));
+        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,item?'captured':'created',current?.revision_id??null,revisionID,actor,ref.sourceIdentity,'Indexed file revision retained.',now);
+        return {id,created:!item||item.deleted_at!=null,revision,revisionID,sourceType:'file',sourceCaptured:retainedUnits.length>0,captureChanged:!same,coverage:captureBoundary.status,truncated};
+      });
     },
-    reviseMemory({ id, expectedRevision, body, provenance = {}, boundary = {}, actor = 'user', reason = '' }) {
-      if (typeof body !== 'string' || body.length > 1_000_000) throw Error('Memory body must be text under 1 MB.');
-      return tx(() => {
-        const item = db.prepare('SELECT updated_at FROM memory_items WHERE memory_id=? AND deleted_at IS NULL').get(id);
-        const current = db.prepare('SELECT revision,revision_id AS revisionID FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(id);
-        if (!item || !current) throw Error('Memory does not exist.');
-        if (current.revision !== expectedRevision) throw Object.assign(Error('Memory changed; reload before revising.'),{status:409});
-        const revisionID = randomUUID(), revision = current.revision + 1, now = Date.now();
-        db.prepare('INSERT INTO memory_item_revisions VALUES(?,?,?,?,?,?,?)').run(revisionID,id,revision,body,json(provenance),json(boundary),now);
-        db.prepare('UPDATE memory_items SET updated_at=? WHERE memory_id=?').run(now,id);
-        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,'revised',current.revisionID,revisionID,actor,'',String(reason),now);
-        return { id, revisionID, revision, created: true };
+    reviseMemory({id,expectedRevision,title,body,data,evidence,provenance,boundary,actor='user',reason='',sourceCapture=false}) {
+      const memoryID=requiredText(id,'Memory ID',2000);
+      if(!Number.isSafeInteger(expectedRevision)||expectedRevision<1) throw Error('Choose the current memory revision before revising.');
+      const suppliedTitle=title===undefined?undefined:requiredText(title,'Memory title',1000);
+      const suppliedBody=body===undefined?undefined:memoryBody(body);
+      const suppliedData=data===undefined?undefined:memoryData(data);
+      const suppliedEvidence=evidence===undefined?undefined:memoryEvidence(evidence);
+      if(provenance!==undefined) objectValue(provenance,'Memory provenance');
+      if(boundary!==undefined) objectValue(boundary,'Memory capture boundary');
+      return tx(()=>{
+        const item=db.prepare('SELECT * FROM memory_items WHERE memory_id=? AND deleted_at IS NULL').get(memoryID);
+        const current=db.prepare('SELECT * FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(memoryID);
+        if(!item||!current) throw Error('Memory does not exist.');
+        if(current.revision!==expectedRevision) throw Object.assign(Error('Memory changed; reload before revising.'),{status:409});
+        const nextData=suppliedData??current.data_json;
+        const structured=JSON.parse(nextData);
+        for(const entityID of [structured.subjectEntityID,structured.objectEntityID].filter(Boolean))
+          if(!db.prepare('SELECT 1 FROM entities WHERE entity_id=?').get(requiredText(entityID,'Memory entity ID',2000))) throw Error('Memory references a missing entity.');
+        const nextTitle=suppliedTitle??current.title,nextBody=suppliedBody??current.body;
+        const storedProvenance=JSON.parse(current.provenance_json);
+        const nextProvenance={...storedProvenance,...publicProvenance(provenance??{})};
+        if(!sourceCapture&&['conversation_snapshot','file_snapshot'].includes(item.kind))for(const key of ['rememberSource','sourceFingerprint','sourceSystem','projectID','sessionID','sourcePath','sourceRevisionIdentity','sourceSha256','sourceTitle'])
+          if(Object.hasOwn(storedProvenance,key))nextProvenance[key]=storedProvenance[key];
+        const nextBoundary={...JSON.parse(current.capture_boundary_json),...boundary};
+        if(['conversation_snapshot','file_snapshot'].includes(item.kind) && nextBody!==current.body) {
+          // Sources remain retained, while the edited narrative is no longer
+          // presented as their exact captured transcript.
+          nextBoundary.bodyEdited=true;
+          nextProvenance.userEditedText=true;
+          nextBoundary.sourceSnapshotRevision=nextBoundary.sourceSnapshotRevision??current.revision;
+          nextProvenance.sourceSnapshotHash=nextProvenance.sourceSnapshotHash??nextProvenance.snapshotHash??null;
+          delete nextProvenance.snapshotHash;
+        }
+        const revisionID=randomUUID(),revision=current.revision+1,now=Date.now();
+        const nextEvidence=suppliedEvidence??current.evidence_json;
+        const compatibility=storedProvenance.internalCompatibility?.claim;
+        if(compatibility) {
+          const retained=structuredClone(compatibility),previous=JSON.parse(current.data_json);
+          if(suppliedData!==undefined) {
+            if(stableJSON(previous.value)!==stableJSON(structured.value)) delete retained.valueJSON;
+            if(stableJSON(previous.scope)!==stableJSON(structured.scope)) delete retained.scopeJSON;
+          }
+          if(suppliedEvidence!==undefined) {
+            const key=entry=>JSON.stringify([entry.id,entry.relation??'supports']);
+            const prior=new Map(JSON.parse(current.evidence_json).map(entry=>[key(entry),entry]));
+            const next=new Map(JSON.parse(nextEvidence).map(entry=>[key(entry),entry]));
+            retained.evidence=(retained.evidence??[]).filter(entry=>prior.has(key(entry))&&next.has(key(entry))
+              &&stableJSON(prior.get(key(entry)))===stableJSON(next.get(key(entry))));
+          }
+          nextProvenance.internalCompatibility={...storedProvenance.internalCompatibility,claim:retained};
+        }
+        const publicProvenanceJSON=boundedJSON(publicProvenance(nextProvenance),'Memory provenance',{});
+        const storedProvenanceJSON=JSON.stringify({...JSON.parse(publicProvenanceJSON),
+          ...(nextProvenance.internalCompatibility?{internalCompatibility:nextProvenance.internalCompatibility}:{})});
+        db.prepare(revisionInsert).run(revisionID,memoryID,revision,nextBody,
+          storedProvenanceJSON,boundedJSON(nextBoundary,'Memory capture boundary',{}),now,
+          nextTitle,nextData,nextEvidence);
+        db.prepare(`INSERT INTO memory_members(revision_id,ordinal,member_kind,source_ref,source_revision,locator_json,content_hash,availability)
+          SELECT ?,ordinal,member_kind,source_ref,source_revision,locator_json,content_hash,availability FROM memory_members WHERE revision_id=?`).run(revisionID,current.revision_id);
+        db.prepare('UPDATE memory_items SET title=?,updated_at=? WHERE memory_id=?').run(nextTitle,now,memoryID);
+        db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),memoryID,null,'revised',current.revision_id,revisionID,actor,'',String(reason),now);
+        return {id:memoryID,revisionID,revision,created:true};
       });
     },
     getMemory(id, requestedRevision) {
@@ -557,15 +672,18 @@ export function createMemoryService(db, tx) {
         ? db.prepare('SELECT * FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC LIMIT 1').get(id)
         : db.prepare('SELECT * FROM memory_item_revisions WHERE memory_id=? AND revision=?').get(id,requestedRevision);
       if (!revision) return null;
+      if(JSON.parse(revision.capture_boundary_json).status==='forgotten') return null;
       const members = db.prepare(`SELECT ordinal,member_kind AS kind,source_ref AS ref,source_revision AS revision,
         locator_json AS locator,content_hash AS hash,availability FROM memory_members WHERE revision_id=? ORDER BY ordinal`)
         .all(revision.revision_id).map(member => ({...member,locator:JSON.parse(member.locator)}));
-      const revisions = db.prepare('SELECT revision,created_at AS createdAt FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC').all(id);
-      const pin = db.prepare('SELECT pinned_at AS pinnedAt,original_pinned_at AS originalPinnedAt,revision AS pinRevision FROM memory_pins WHERE memory_id=?').get(id);
+      const revisions = db.prepare('SELECT revision,title,created_at AS createdAt FROM memory_item_revisions WHERE memory_id=? ORDER BY revision DESC').all(id);
       const archiveRevision=db.prepare("SELECT count(*) AS n FROM memory_changes WHERE memory_id=? AND change_type IN ('archived','restored')").get(id).n;
-      return { ...item, ...pin,pinRevision:this.memoryPinRevision(id), archiveRevision, members, revisions, revision: { ...revision, provenance: JSON.parse(revision.provenance_json), captureBoundary: JSON.parse(revision.capture_boundary_json) } };
+      const {data_json,evidence_json,provenance_json,capture_boundary_json,...captured}=revision;
+      return { ...item, sourceType:memorySourceType(item),title:revision.title, archiveRevision, members, revisions,
+        revision: { ...captured, data:JSON.parse(data_json), evidence:JSON.parse(evidence_json),
+          provenance:publicProvenance(JSON.parse(provenance_json)),captureBoundary:JSON.parse(capture_boundary_json) } };
     },
-    searchMemory(query = '', { kind, projectID, model, phrase = false, pinned = false, includeForgotten = false, includeArchived = false, limit = 25, offset = 0 } = {}) {
+    searchMemory(query = '', { kind, status, projectID, projectIDs, model, modelProvider, origin, epistemicState, includeHistorical=false, phrase = false, includeForgotten = false, includeArchived = false, limit = 25, offset = 0 } = {}) {
       if (typeof query !== 'string') throw Error('Memory search must be text.');
       const text = query.trim(), match = contentMatch(query,{phrase});
       const bounded = Math.max(1, Math.min(200, Number(limit) || 25));
@@ -574,29 +692,65 @@ export function createMemoryService(db, tx) {
       if (!includeForgotten) where.push('m.deleted_at IS NULL');
       if (!includeArchived) where.push("m.status<>'archived'");
       if (kind) { where.push('m.kind=?'); params.push(kind); }
-      if (projectID) { where.push('m.source_project_id=?'); params.push(projectID); }
-      if (pinned) where.push('p.memory_id IS NOT NULL');
-      if (model) { where.push(`EXISTS (SELECT 1 FROM memory_members mm WHERE mm.revision_id=r.revision_id
-        AND json_extract(mm.locator_json,'$.providerID') || '/' || json_extract(mm.locator_json,'$.modelID')=?)`); params.push(model); }
+      if (status) { where.push('m.status=?'); params.push(status); }
+      if (!includeHistorical && epistemicState!=='superseded') where.push(`json_extract(r.data_json,'$.supersededAt') IS NULL AND COALESCE(json_extract(r.data_json,'$.epistemicState'),'')<>'superseded'`);
+      const project=memoryProjectSQL;
+      if (projectID) { where.push(project+'=?'); params.push(projectID); }
+      else if(Array.isArray(projectIDs)) {
+        const selected=[...new Set(projectIDs)];
+        where.push(selected.length?`(${project} IS NULL OR ${project} IN (${selected.map(()=>'?').join(',')}))`:project+' IS NULL');
+        params.push(...selected);
+      }
+      if(origin) { where.push(`json_extract(r.data_json,'$.origin')=?`);params.push(origin); }
+      if(epistemicState) { where.push(`json_extract(r.data_json,'$.epistemicState')=?`);params.push(epistemicState); }
+      let modelID=model,provider=modelProvider;
+      if(typeof model==='string' && model.includes('/')) {
+        const split=model.indexOf('/');
+        if(!provider) {provider=model.slice(0,split);modelID=model.slice(split+1);}
+        else if(model.startsWith(provider+'/')) modelID=model.slice(provider.length+1);
+      }
+      if (modelID) {
+        where.push(`((json_extract(r.data_json,'$.modelID')=? ${provider?"AND json_extract(r.data_json,'$.modelProvider')=?":''}) OR EXISTS
+          (SELECT 1 FROM memory_members mm WHERE mm.revision_id=r.revision_id AND json_extract(mm.locator_json,'$.modelID')=?
+            ${provider?"AND json_extract(mm.locator_json,'$.providerID')=?":''}))`);
+        params.push(modelID,...(provider?[provider]:[]),modelID,...(provider?[provider]:[]));
+      } else if(provider) {
+        where.push(`(json_extract(r.data_json,'$.modelProvider')=? OR EXISTS (SELECT 1 FROM memory_members mm WHERE mm.revision_id=r.revision_id AND json_extract(mm.locator_json,'$.providerID')=?))`);
+        params.push(provider,provider);
+      }
       const exact = text && db.prepare(`SELECT m.memory_id FROM memory_items m JOIN memory_item_revisions r USING(memory_id)
-        LEFT JOIN memory_pins p USING(memory_id) WHERE m.memory_id=? AND ${where.join(' AND ')}`).get(text,...params);
+        WHERE m.memory_id=? AND ${where.join(' AND ')}`).get(text,...params);
       if (exact) { where.push('m.memory_id=?'); params.push(exact.memory_id); }
       if (text && !match) return { status:'empty',items:[],truncated:false };
       const useMatch = exact ? '' : match;
       if (useMatch) { where.push('memory_search_fts MATCH ?'); params.push(useMatch); }
       const rows = db.prepare(`WITH hits AS MATERIALIZED (
         SELECT r.revision_id,m.updated_at,m.memory_id,length(CAST(r.body AS BLOB)) AS bodyBytes,${useMatch ? 'bm25(memory_search_fts)' : '0'} AS score
-        FROM memory_item_revisions r JOIN memory_items m USING(memory_id) LEFT JOIN memory_pins p USING(memory_id)
+        FROM memory_item_revisions r JOIN memory_items m USING(memory_id)
         ${useMatch ? 'JOIN memory_search_fts ON memory_search_fts.revision_id=r.revision_id' : ''}
         WHERE ${where.join(' AND ')} ORDER BY score,m.updated_at DESC,m.memory_id LIMIT ? OFFSET ?),
         budgeted AS MATERIALIZED (SELECT *,sum(bodyBytes) OVER(ORDER BY score,updated_at DESC,memory_id ROWS UNBOUNDED PRECEDING) AS hashBytes FROM hits)
-        SELECT m.memory_id AS id,m.kind,m.title,m.status,m.source_project_id AS projectID,
+        SELECT m.memory_id AS id,m.kind,r.title,m.status,${memoryProjectSQL} AS projectID,
         m.source_session_id AS sessionID,m.source_system AS sourceSystem,r.revision,r.revision_id AS revisionID,
         substr(r.body,1,240) AS body,length(r.body)>240 AS bodyTruncated,
+        substr(COALESCE(NULLIF(r.body,''),r.data_json -> '$.value',''),1,240) AS structuredExcerpt,
+        CASE WHEN length(CAST(r.data_json AS BLOB))<=min(8192,1000000/(SELECT count(*) FROM budgeted)/4)
+          THEN r.data_json ELSE json_object('predicate',substr(json_extract(r.data_json,'$.predicate'),1,1000),
+            'origin',substr(json_extract(r.data_json,'$.origin'),1,200),'epistemicState',substr(json_extract(r.data_json,'$.epistemicState'),1,100),
+            'modelProvider',substr(json_extract(r.data_json,'$.modelProvider'),1,200),'modelID',substr(json_extract(r.data_json,'$.modelID'),1,200)) END AS dataJSON,
+        length(CAST(r.data_json AS BLOB))>min(8192,1000000/(SELECT count(*) FROM budgeted)/4) AS dataTruncated,
+        CASE WHEN length(CAST(r.evidence_json AS BLOB))<=min(8192,1000000/(SELECT count(*) FROM budgeted)/4)
+          THEN r.evidence_json ELSE '[]' END AS evidenceJSON,
+        length(CAST(r.evidence_json AS BLOB))>min(8192,1000000/(SELECT count(*) FROM budgeted)/4) AS evidenceTruncated,
+        json_array_length(r.evidence_json) AS evidenceCount,
+        substr(json_extract(r.data_json,'$.origin'),1,200) AS origin,substr(json_extract(r.data_json,'$.epistemicState'),1,100) AS epistemicState,
+        substr(json_extract(r.data_json,'$.modelProvider'),1,200) AS modelProvider,substr(json_extract(r.data_json,'$.modelID'),1,200) AS modelID,
+        length(COALESCE(json_extract(r.data_json,'$.origin'),''))>200 OR length(COALESCE(json_extract(r.data_json,'$.epistemicState'),''))>100
+          OR length(COALESCE(json_extract(r.data_json,'$.modelProvider'),''))>200 OR length(COALESCE(json_extract(r.data_json,'$.modelID'),''))>200 AS structuredMetadataTruncated,
+        json_extract(r.data_json,'$.observedAt') AS structuredObservedAt,
         CASE WHEN hits.hashBytes<=4000000 THEN freelancer_body_sha256(r.body) ELSE NULL END AS bodySha256,
         CASE WHEN hits.hashBytes>4000000 THEN 'hash-work-limit' ELSE NULL END AS bodyHashUnavailableReason,
-        r.created_at AS revisionCreatedAt,m.created_at AS createdAt,m.updated_at AS updatedAt,p.pinned_at AS pinnedAt,
-        (SELECT count(*) FROM memory_changes ch WHERE ch.memory_id=m.memory_id AND ch.change_type IN ('pin','unpin','legacy_pin_imported')) AS pinRevision,
+        r.created_at AS revisionCreatedAt,m.created_at AS createdAt,m.updated_at AS updatedAt,
         (SELECT count(*) FROM memory_changes ch WHERE ch.memory_id=m.memory_id AND ch.change_type IN ('archived','restored')) AS archiveRevision,
         json_extract(r.provenance_json,'$.snapshotHash') AS snapshotHash,
         json_object('status',json_extract(r.capture_boundary_json,'$.status'),
@@ -604,7 +758,8 @@ export function createMemoryService(db, tx) {
           'attemptedAt',json_extract(r.capture_boundary_json,'$.attemptedAt'),
           'snapshotCreatedAt',json_extract(r.capture_boundary_json,'$.snapshotCreatedAt'),
           'messageCount',json_extract(r.capture_boundary_json,'$.messageCount'),
-          'truncated',json_extract(r.capture_boundary_json,'$.truncated')) AS boundaryJSON,
+          'truncated',json_extract(r.capture_boundary_json,'$.truncated'),'bodyEdited',json_extract(r.capture_boundary_json,'$.bodyEdited'),
+          'sourceSnapshotRevision',json_extract(r.capture_boundary_json,'$.sourceSnapshotRevision')) AS boundaryJSON,
         (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id) AS sourceRefCount,
         (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id AND mm.availability='missing_source') AS missingSourceCount,
         (SELECT count(*) FROM memory_members mm WHERE mm.revision_id=r.revision_id AND mm.availability='unknown_source') AS unknownSourceCount,
@@ -623,29 +778,32 @@ export function createMemoryService(db, tx) {
             length(CAST(locator_json AS BLOB))>8192 AS locatorOversized
             FROM memory_members WHERE revision_id=r.revision_id ORDER BY ordinal LIMIT 32) mr) AS sourceRefsJSON,
         hits.score AS score
-        FROM budgeted hits JOIN memory_item_revisions r USING(revision_id) JOIN memory_items m USING(memory_id) LEFT JOIN memory_pins p USING(memory_id)
+        FROM budgeted hits JOIN memory_item_revisions r USING(revision_id) JOIN memory_items m USING(memory_id)
         ORDER BY hits.score,m.updated_at DESC,m.memory_id`).all(...params,bounded+1,start);
       return { status: rows.length ? 'ok' : 'empty', truncated:rows.length>bounded,
-        items: rows.slice(0,bounded).map(({boundaryJSON,sourceRefsJSON,...row}) => {
+        items: rows.slice(0,bounded).map(({boundaryJSON,sourceRefsJSON,dataJSON,evidenceJSON,structuredExcerpt,structuredObservedAt,...row}) => {
           const boundary=JSON.parse(boundaryJSON),sourceRefs=JSON.parse(sourceRefsJSON);
-          const omitted=sourceRefs.some(ref=>ref.summaryTruncated);
-          return {...row,bodyTruncated:!!row.bodyTruncated,excerpt:row.body,boundary,messageCount:boundary.messageCount??0,
+          const omitted=sourceRefs.some(ref=>ref.summaryTruncated),data=JSON.parse(dataJSON),evidence=JSON.parse(evidenceJSON);
+          const metadataReasons=[...(omitted?['source-ref-byte-limit']:[]),...(row.dataTruncated?['data-byte-limit']:[]),...(row.evidenceTruncated?['evidence-byte-limit']:[]),...(row.structuredMetadataTruncated?['structured-field-limit']:[])];
+          return {...row,sourceType:memorySourceType(row),data,evidence,dataTruncated:!!row.dataTruncated,evidenceTruncated:!!row.evidenceTruncated,structuredMetadataTruncated:!!row.structuredMetadataTruncated,
+            evidenceAvailability:row.evidenceCount?'recorded-provenance':'not-recorded',bodyTruncated:!!row.bodyTruncated,excerpt:structuredExcerpt,boundary,messageCount:boundary.messageCount??0,
             sourceRefs,sourceRefsTruncated:row.sourceRefCount>sourceRefs.length||omitted,
-            ...(omitted?{metadataTruncated:true,metadataTruncationReasons:['source-ref-byte-limit']}:{}),
+            ...(metadataReasons.length?{metadataTruncated:true,metadataTruncationReasons:metadataReasons}:{}),
             matchKind:exact?'exact-id':useMatch?'fts':'browse',coverage:boundary.status??'authored',
             sourceAvailability:['missing_source','unknown_source','metadata_only'].includes(boundary.status)?boundary.status:
               row.missingSourceCount?'missing_source':row.unknownSourceCount?'unknown_source':row.uncapturedSourceCount?'not_captured':
-                row.unresolvedSourceCount?'recorded-provenance':row.sourceRefCount?'retained':'authored',
-            observedAt:boundary.capturedAt??null,capturedAt:boundary.capturedAt??null,indexedAt:row.revisionCreatedAt,
+                row.unresolvedSourceCount?'recorded-provenance':row.sourceRefCount?'retained':row.evidenceCount?'recorded-provenance':'authored',
+            observedAt:structuredObservedAt??boundary.capturedAt??null,capturedAt:boundary.capturedAt??null,indexedAt:row.revisionCreatedAt,
             source: { system: row.sourceSystem || (row.projectID ? 'freelancer-project' : 'freelancer'),projectID:row.projectID,sessionID:row.sessionID }};
         }) };
     },
     memoryStatus() {
       return {
         entities: db.prepare('SELECT count(*) n FROM entities').get().n,
-        claims: db.prepare('SELECT count(*) n FROM claims').get().n,
         memories: db.prepare("SELECT count(*) n FROM memory_items WHERE deleted_at IS NULL").get().n,
-        pinned: db.prepare('SELECT count(*) n FROM memory_pins p JOIN memory_items m USING(memory_id) WHERE m.deleted_at IS NULL').get().n,
+        archived: db.prepare("SELECT count(*) n FROM memory_items WHERE deleted_at IS NULL AND status='archived'").get().n,
+        withData: db.prepare("SELECT count(*) n FROM memory_items m JOIN memory_item_revisions r USING(memory_id) WHERE m.deleted_at IS NULL AND r.revision=(SELECT max(x.revision) FROM memory_item_revisions x WHERE x.memory_id=m.memory_id) AND r.data_json<>'{}'").get().n,
+        withEvidence: db.prepare("SELECT count(*) n FROM memory_items m JOIN memory_item_revisions r USING(memory_id) WHERE m.deleted_at IS NULL AND r.revision=(SELECT max(x.revision) FROM memory_item_revisions x WHERE x.memory_id=m.memory_id) AND json_array_length(r.evidence_json)>0").get().n,
       };
     },
     archiveMemory({id,expectedRevision,actor='user',reason=''}) {
@@ -686,12 +844,7 @@ export function createMemoryService(db, tx) {
         if (!item) return { id, forgotten: false };
         const now = Date.now();
         db.prepare('UPDATE memory_items SET status=?,deleted_at=?,updated_at=? WHERE memory_id=?').run('forgotten',now,now,id);
-        db.prepare('DELETE FROM memory_pins WHERE memory_id=?').run(id);
-        const source = db.prepare('SELECT kind,source_project_id AS projectID,source_session_id AS sessionID FROM memory_items WHERE memory_id=?').get(id);
-        if (source?.kind === 'conversation_snapshot' && source.projectID && source.sessionID)
-          db.prepare('UPDATE session_annotations SET pinned_at=NULL,revision=revision+1 WHERE project_id=? AND session_id=?')
-            .run(source.projectID,source.sessionID);
-        db.prepare(`UPDATE memory_item_revisions SET body='',provenance_json='{}',capture_boundary_json='{"status":"forgotten"}' WHERE memory_id=?`).run(id);
+        db.prepare(`UPDATE memory_item_revisions SET title='',body='',data_json='{}',evidence_json='[]',provenance_json='{}',capture_boundary_json='{"status":"forgotten"}' WHERE memory_id=?`).run(id);
         db.prepare('DELETE FROM memory_members WHERE revision_id IN (SELECT revision_id FROM memory_item_revisions WHERE memory_id=?)').run(id);
         db.prepare('INSERT INTO memory_changes VALUES(?,?,?,?,?,?,?,?,?,?)').run(randomUUID(),id,null,'forgotten',null,null,actor,'',String(reason),now);
         return { id, forgotten: true };

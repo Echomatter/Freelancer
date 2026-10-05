@@ -2,6 +2,7 @@ import { spawnSync } from 'node:child_process';
 import { readdir } from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createTestEnvironment } from './test-environment.mjs';
 
 const gitFixtures = new Set(['git-project.test.mjs', 'git-project-http.test.mjs']);
 export function parseContractArguments(args) {
@@ -47,25 +48,29 @@ export function planContractBatches(files, { platform = process.platform, concur
 
 export function runContractBatches(batches, nodeArgs = [], { spawn = spawnSync, log = console.log, reportError = console.error } = {}) {
   let status = 0;
-  for (const batch of batches) {
-    log(`Contract batch: ${batch.name}; ${batch.files.length} files; ${batch.concurrency} workers.`);
-    let result;
-    try {
-      result = spawn(process.execPath, ['--test', `--test-concurrency=${batch.concurrency}`, ...nodeArgs,
-        ...batch.files.map(file => path.normalize(file))], { stdio: 'inherit' });
-    } catch (error) {
-      reportError(`Contract batch ${batch.name} could not start: ${error.message ?? error}`);
-      status = 1;
-      continue;
+  if (!batches.length) return status;
+  const testEnvironment = createTestEnvironment();
+  try {
+    for (const batch of batches) {
+      log(`Contract batch: ${batch.name}; ${batch.files.length} files; ${batch.concurrency} workers.`);
+      let result;
+      try {
+        result = spawn(process.execPath, ['--test', `--test-concurrency=${batch.concurrency}`, ...nodeArgs,
+          ...batch.files.map(file => path.normalize(file))], { stdio: 'inherit', env: testEnvironment.env });
+      } catch (error) {
+        reportError(`Contract batch ${batch.name} could not start: ${error.message ?? error}`);
+        status = 1;
+        continue;
+      }
+      if (result.error) {
+        reportError(`Contract batch ${batch.name} could not start: ${result.error.message ?? result.error}`);
+        status = 1;
+      } else if (result.status !== 0) {
+        status = result.status ?? 1;
+        reportError(`Contract batch ${batch.name} failed (${result.signal ? `signal ${result.signal}` : `exit ${status}`}).`);
+      }
     }
-    if (result.error) {
-      reportError(`Contract batch ${batch.name} could not start: ${result.error.message ?? result.error}`);
-      status = 1;
-    } else if (result.status !== 0) {
-      status = result.status ?? 1;
-      reportError(`Contract batch ${batch.name} failed (${result.signal ? `signal ${result.signal}` : `exit ${status}`}).`);
-    }
-  }
+  } finally { testEnvironment.cleanup(); }
   return status;
 }
 

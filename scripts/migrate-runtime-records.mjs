@@ -27,17 +27,12 @@ if (operation === 'runtime-records' && args.length === 6 && args[0] === '--sourc
     throw Error('The records database source must be the runtime-root .state/webpage/records.sqlite file.');
   const result = await withStore(args[3], store => store.migrateRuntimeRecords(args[1], { quiesced:true, runtimeID:args[5] }));
   console.log(JSON.stringify(result,null,2));
-} else if (operation === 'legacy-pins' && args.length >= 2 && args[0] === '--runtime-root' && path.isAbsolute(args[1]) &&
-    (args.length === 2 || args.length === 4 && args[2] === '--batch-size' && /^\d+$/.test(args[3]))) {
-  const result = await withStore(args[1], store => store.migrateLegacyPins(args.length === 4 ? Number(args[3]) : 250));
-  console.log(JSON.stringify(result,null,2));
 } else if (operation === 'runtime-state-files' && args.length === 4 && args[0] === '--root' && args[2] === '--runtime-id' &&
     path.isAbsolute(args[1]) && runtimeID(args[3])) {
   const result = await withStore(args[1], store => store.migrateRuntimeStateFiles(args[1], { quiesced:true, runtimeID:args[3] }));
   console.log(JSON.stringify(result,null,2));
 } else {
   console.error('Usage: node scripts/migrate-runtime-records.mjs runtime-records --source <runtime-root/.state/webpage/records.sqlite> --runtime-root <absolute-runtime-root> --runtime-id <stable-id>');
-  console.error('   or: node scripts/migrate-runtime-records.mjs legacy-pins --runtime-root <absolute-runtime-root> [--batch-size 250]');
   console.error('   or: node scripts/migrate-runtime-records.mjs runtime-state-files --root <absolute-runtime-root> --runtime-id <registered-id>');
   process.exitCode = 2;
 }

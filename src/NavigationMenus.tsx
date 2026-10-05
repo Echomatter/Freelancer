@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Archive, Check, ChevronDown, Download, FolderKanban, FolderPlus, Pin, Plus, MessageSquareText, Settings, WandSparkles } from "lucide-react";
+import { Archive, Check, ChevronDown, Download, FolderKanban, FolderPlus, Plus, MessageSquareText, Settings, WandSparkles } from "lucide-react";
 import { SessionActivity } from "./SessionActivity";
 import "./navigation-menus.css";
 
@@ -54,11 +54,11 @@ export function ProjectNavigation({ projects, selected, disabled, expanded, onTo
   </section>;
 }
 
-export function ChatNavigation({ sessions, selected, disabled, creating, expanded, onToggle, onDismiss, onNew, onSelect, onContinue, onArchive, onPin, onExport, onRename }: {
+export function ChatNavigation({ sessions, selected, disabled, creating, expanded, onToggle, onDismiss, onNew, onSelect, onContinue, onArchive, onExport, onRename }: {
   sessions: any[]; selected: string; disabled?: boolean; creating?: boolean;
   expanded: boolean; onToggle: () => void; onDismiss: () => void;
   onNew: () => void; onSelect: (session: any) => void; onContinue: (session: any) => void;
-  onArchive: (session: any) => void; onPin: (session: any) => void; onExport: (session: any) => void;
+  onArchive: (session: any) => void; onExport: (session: any) => void;
   onRename: (session: any, title: string) => void;
 }) {
   const [menu, setMenu] = useState(""), [renameTitle, setRenameTitle] = useState("");
@@ -91,7 +91,6 @@ export function ChatNavigation({ sessions, selected, disabled, creating, expande
           <button type="button" className="nav-chat-select" disabled={disabled} title={session.title || "New chat"} aria-current={session.id === selected ? "page" : undefined} onClick={() => { setMenu(""); onSelect(session); }}>
             {!session.imported && <SessionActivity activity={session.activity} goal={session.goal} />}
             <span>{session.imported ? "Imported · " : ""}{session.title || "New chat"}</span>
-            {session.organization?.pinnedAt && <Pin className="nav-chat-pinned" size={13} aria-label="Pinned" />}
           </button>
           <button type="button" className="nav-chat-manage-trigger" aria-label={`Manage ${session.title || "New chat"}`} title={`Manage ${session.title || "New chat"}`} aria-expanded={menu === session.id} disabled={disabled}
            onClick={() => { setRenameTitle(session.title ?? ""); setMenu((value) => value === session.id ? "" : session.id); }}><Settings size={15} aria-hidden="true" /></button>
@@ -102,7 +101,6 @@ export function ChatNavigation({ sessions, selected, disabled, creating, expande
             </form>}
             {!session.goal && <button type="button" disabled={disabled} onClick={() => { closeMenu(); onContinue(session); }}><WandSparkles size={14} />Continue in new chat</button>}
             {!session.goal && <button type="button" disabled={disabled || !!session.organization?.archived} onClick={() => { closeMenu(); onArchive(session); }}><Archive size={14} />Archive</button>}
-            <button type="button" disabled={disabled} aria-pressed={!!session.organization?.pinnedAt} onClick={() => { closeMenu(); onPin(session); }}><Pin size={14} />{session.organization?.pinnedAt ? "Unpin" : "Pin"}</button>
             <button type="button" disabled={disabled} onClick={() => { closeMenu(); onExport(session); }}><Download size={14} />Export</button>
           </div>}
         </div>)}

@@ -53,43 +53,49 @@ The server prints a JSON line containing its loopback `url`. Open that URL. The 
 
 The **Available Usage** meter is an estimate from provider observations. A missing percentage is not proof of exhaustion. Its sidebar disclosure keeps you in the current chat. [Interpret the meter →](available-usage.md)
 
-The sidebar keeps the project picker, recent chats, and Available Usage meter visible. Expand **Project settings** for Files, Search project content, Goals, Session defaults, Delegation, and GitHub. Expand **Application settings** for Agents, Models, Available Usage, Providers, Appearance, Capabilities, Scheduled prompts, Search all content, Content & Storage, File access, and Remote access. Capabilities lists tools and skills, with one shared MCP connection section. Technical explanations are in each card’s help bubble. File access scope is under **Application settings → File access**. The text-only breadcrumb starts with the project folder, which opens Files. In delegated chats, parent titles return to their conversations; the current chat appears last. File browsing follows the folder path through to the current file. Settings use folder → current page without an extra settings-scope crumb. Narrow screens keep the folder and nearest parent above the current title. Connection state and controls such as Details remain beside the breadcrumb. Each icon opens its feature in the main pane; collapsing the drawers leaves more room for recent chats. Use **Search all content → Conversations** for conversation browsing, archive, restore and export; **Pinned** combines conversation and retained memory pins. **Content & Storage** shows project archives, local data locations, index coverage and database stats, and offers index refresh and SQLite maintenance.
+The sidebar keeps the project picker, recent chats, and Available Usage meter visible. Expand **Project settings** for Files, Search project content, Goals, Session defaults, Delegation, and GitHub. Expand **Application settings** for Agents, Models, Available Usage, Providers, Appearance, Capabilities, Scheduled prompts, Search all content, Content & Storage, File access, and Remote access. Capabilities lists tools and skills, with one shared MCP connection section. Technical explanations are in each card’s help bubble. File access scope is under **Application settings → File access**. The text-only breadcrumb starts with the project folder, which opens Files. In delegated chats, parent titles return to their conversations; the current chat appears last. File browsing follows the folder path through to the current file. Settings use folder → current page without an extra settings-scope crumb. Narrow screens keep the folder and nearest parent above the current title. Connection state and controls such as Details remain beside the breadcrumb. Each icon opens its feature in the main pane; collapsing the drawers leaves more room for recent chats. Use **Search all content → Conversations** for conversation browsing, archive, restore and export. **Content & Storage** shows project archives, local data locations, index coverage and database stats, and offers index refresh and SQLite maintenance.
 
 GitHub is optional. **Project settings → GitHub** separately configures local checkpoints, account sign-in, the destination repository, and the working agreement. Connecting is not uploading. [Set up Git safely →](github-projects.md)
 
-## Search and retained knowledge
+## Search and memories
 
 Open **Application settings → Search all content** to search across registered
 projects, or **Project settings → Search project content** to stay within one
-project. An empty search opens your pinned memories. Choose **Files**,
-**Conversations**, **Memories**, **Facts**, or **Pinned** to focus the list.
+project. Choose **Files**, **Conversations** or **Memories** to focus the list,
+or **All content** to search them together.
 Search matches the words you enter; **Exact phrase** also requires their order.
-It may miss paraphrases. Coverage messages describe which sources were indexed;
+It may miss paraphrases. Page help describes which sources were indexed;
 **Show more** expands a limited result list.
 
 - **Files and conversations:** Open the live source or read retained file
   evidence. Live content can differ from the indexed revision. Refresh indexes
   in Content & Storage; open chats also refresh their indexed text as they load.
-- **Pinned conversations:** Pin a chat to keep a retained memory. Capture can
-  take time; the reader shows progress and incomplete or unavailable coverage.
+- **Remember a file or chat:** Click **Remember** to save it immediately, without
+  filling in a form. The reader opens the saved memory; choose **Edit memory**
+  whenever you want to change its title, add a summary or record more details.
+  File, Chat and Custom labels identify its source. File memories retain indexed
+  extracted text; they do not copy original binary files.
+- **Captured sources:** Chat capture can take time; the reader shows progress
+  and incomplete or unavailable coverage. A saved memory can still be capturing.
   **Refresh snapshot** reads the source again. Earlier revisions remain available
   in the revision picker. **Open live conversation** opens the current native
   chat separately. A source error does not prove that the chat was deleted.
   Capture details show when the text was captured separately from the latest
   source check; a failed check preserves earlier retained text.
-- **Notes:** Use **New memory** to save a title and text, choosing a project scope
-  when needed. Open the note to edit it; older revisions remain readable.
-- **Facts:** Search recorded claims and inspect their origin, status and retained
-  evidence. FTS5 provides text search; a matching passage does not establish a
-  verified fact. There is no separate **New fact** form. **Correct fact** records
-  an evidence-backed replacement and reason while preserving the previous claim
-  and its evidence. Include historical facts to inspect earlier or disputed claims.
+- **Custom memories:** Use **New memory** to save a title and optional text, choosing a project
+  scope when needed. Optional structured data and evidence live under expandable
+  details. A memory can also retain observations, preferences, dates, status and
+  relationships. **Edit memory** creates a revision of the same record; older
+  titles, content and evidence remain readable. For files and chats, edited memory
+  text or a model-written summary is separate from the retained source capture.
 
-**Unpin** removes an item from pinned memory while keeping its retained content.
+The model uses the same memory save as the UI. It can add a summary or structured
+details, but those are optional.
+
 **Archive memory** hides it from the ordinary memory list; include archived
 memories to find it and choose **Restore memory**. Neither action archives the
 native conversation. **Forget memory** requires confirmation and removes the
-retained content, revisions and pins. Its native conversation remains in
+retained content, revisions and remembered-chat links. Its native conversation remains in
 OpenCode, and existing backups may contain copies. Conversation and project
 archives have separate controls in Search all content → Conversations and Content & Storage.
 

@@ -225,7 +225,7 @@ test("canonical containment handles separators, case and escapes", async (t) => 
   assert.equal(isWithinDirectory(projA, ""), false);
 });
 
-test("scope combines with the readonly agreement without bypass", async (t) => {
+test("file scope remains independent of the Git inspect agreement", async (t) => {
   const { external, check } = await scopeFixture(t, {
     scope: "project",
     preset: "inspect",
@@ -235,12 +235,10 @@ test("scope combines with the readonly agreement without bypass", async (t) => {
     check("write", { filePath: path.join(external, "x.js") }),
     /limited to this project folder/,
   );
-  // In-scope writes are still blocked by the inspect-only agreement.
-  await assert.rejects(check("write", { filePath: "src/x.js" }), /inspect only/);
-  await assert.rejects(
-    check("apply_patch", { patchText: "*** Begin Patch\n*** Add File: src/x.js\n+hi\n*** End Patch" }),
-    /inspect only/,
-  );
+  // In-scope source writes are not Git history changes. Their actual execution
+  // remains governed by captured assignment policy and native permissions.
+  await check("write", { filePath: "src/x.js" });
+  await check("apply_patch", { patchText: "*** Begin Patch\n*** Add File: src/x.js\n+hi\n*** End Patch" });
   // In-scope reads stay allowed; protected reads stay blocked as managed history.
   await check("read", { filePath: "src/x.js" });
   await assert.rejects(

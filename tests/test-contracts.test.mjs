@@ -83,7 +83,7 @@ test('batch failures and spawn errors are reported while every later batch still
   assert.match(errors[1], /real Git failed \(exit 3\)/);
   for (const [index, call] of calls.entries()) {
     assert.equal(call.executable, process.execPath);
-    assert.deepEqual(call.options, { stdio: 'inherit' });
+    assert.deepEqual(call.options, { stdio: 'inherit', env: call.options.env });
     assert.deepEqual(call.args, ['--test', `--test-concurrency=${batches[index].concurrency}`, '--test-name-pattern', 'fixture',
       ...batches[index].files.map(file => path.normalize(file))]);
   }

@@ -253,7 +253,16 @@ export async function localDataFixture({ gitOptions = {}, timers = true, persist
   const runtime = await startServer({
     timers,
     recoveryDataHome,
-    remoteAccess: await createRemoteAccess({ file: path.join(root, "remote-access.json") }),
+    remoteAccess: await createRemoteAccess({
+      file: path.join(root, "remote-access.json"),
+      // Fixture setup/teardown must never inspect or change the host's Funnel.
+      funnel: {
+        target: 'http://127.0.0.1:0',
+        async inspect() { return { available: false, active: false, routes: [], occupiedPorts: [] }; },
+        async enable() { throw Error('Public web tunneling is disabled in this fixture.'); },
+        async disable() {},
+      },
+    }),
     application: app,
     readActivity: createActivityReader({ project: app.project, host }),
     assets: fileURLToPath(new URL("../../dist/", import.meta.url)),

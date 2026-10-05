@@ -120,24 +120,24 @@ test("tools separate registration, model exposure, and explicit denial", async (
   assert.equal(toolById(result, "bash").modelExposure, true);
   assert.equal(toolById(result, "bash").unavailableReason, null);
   assert.equal(toolById(result, "edit").modelExposure, false);
-  assert.equal(toolById(result, "edit").unavailableReason, "Tool is not exposed to the selected model.");
+  assert.equal(toolById(result, "edit").unavailableReason, "Tool is not available for the selected provider/model/configuration.");
   assert.equal(toolById(result, "grep").nativePermission, "deny");
-  assert.equal(toolById(result, "grep").unavailableReason, "Native permission denies this tool.");
+  assert.equal(toolById(result, "grep").unavailableReason, "Native permission denies this tool for this provider/model/configuration.");
   assert.equal(toolById(result, "write").configured, false);
   assert.equal(
     toolById(result, "write").unavailableReason,
-    "Explicit native tool configuration disables this tool.",
+    "Explicit native tool configuration disables this tool for this provider/model/configuration.",
   );
   assert.equal(toolById(result, "webfetch").configured, false);
   assert.equal(toolById(result, "delegate").origin, "Freelancer plugin");
   assert.equal(toolById(result, "bash").origin, "OpenCode native");
   assert.match(toolById(result, "bash").evidence, /successful use not verified/);
-  assert.equal(toolById(result, "websearch").unavailableReason, "Native websearch is not registered for this provider/configuration.");
+  assert.equal(toolById(result, "websearch").unavailableReason, "Native websearch is not available for this provider/model/configuration.");
   assert.deepEqual(result.toolStatus.websearch, {
     discovered: false, modelExposure: false, nativePermission: 'unknown',
-    unavailableReason: 'Native websearch is not registered for this provider/configuration.',
+    unavailableReason: 'Native websearch is not available for this provider/model/configuration.',
   });
-  assert.equal(toolById(result, "lsp"), undefined);
+  assert.equal(toolById(result, "lsp").discovered, false);
 });
 
 test('websearch status distinguishes a registered tool not exposed to the selected model', async t => {
@@ -151,7 +151,7 @@ test('websearch status distinguishes a registered tool not exposed to the select
   });
   assert.deepEqual(result.toolStatus.websearch, {
     discovered: true, modelExposure: false, nativePermission: 'unknown',
-    unavailableReason: 'Tool is not exposed to the selected model.',
+    unavailableReason: 'Native websearch is not available for the selected provider/model/configuration. OpenCode may require an eligible provider or explicit opt-in; native permissions still apply.',
   });
 });
 
@@ -203,6 +203,28 @@ test('captured inspection and saved Git boundaries are diagnosed independently o
       assert.match(toolById(result, 'task').unavailableReason, /delegate\(\{agent, task\}\)/);
     }
   }
+});
+
+test('saved Git inspect agreement does not block unrelated source-writing tools', async t => {
+  const backendRoot = await tempBackend(t);
+  const host = fakeHost({ '/experimental/tool/ids': { value: ['edit', 'write', 'apply_patch', 'git_project'] } });
+  const result = await createCapabilities({ host, backendRoot }).read({ directory: dir(), projectID: 'p',
+    boundaries: { inspectionOnly: false, gitInspectOnly: true, fileAccessScope: 'computer' } });
+  for (const id of ['edit', 'write', 'apply_patch']) {
+    assert.equal(toolById(result, id).applicationAccess, 'shared', `${id} remains available independently of the Git agreement`);
+    assert.notEqual(toolById(result, id).unavailableReason, 'Source writes are disabled by the captured inspection-only assignment.');
+  }
+  assert.equal(toolById(result, 'git_project').applicationAccess, 'operation-dependent');
+  assert.equal(result.boundaries.gitInspectOnly, true);
+});
+
+test('tools with operation-specific access are not presented as universally shared', async t => {
+  const backendRoot = await tempBackend(t);
+  const host = fakeHost({ '/experimental/tool/ids': { value: ['memory', 'model_catalog', 'evidence_evaluation'] } });
+  const result = await createCapabilities({ host, backendRoot }).read({ directory: dir(), projectID: 'p',
+    boundaries: { inspectionOnly: true, gitInspectOnly: false, fileAccessScope: 'computer' } });
+  for (const id of ['memory', 'model_catalog', 'evidence_evaluation'])
+    assert.equal(toolById(result, id).applicationAccess, 'operation-dependent', `${id} includes both read and mutating operations`);
 });
 
 test('native patterned permissions remain conditional and agent tool decisions override inherited flags', async t => {

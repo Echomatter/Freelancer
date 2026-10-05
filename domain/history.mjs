@@ -66,7 +66,6 @@ export function organizedSessions(
     })
     .sort(
       (a, b) =>
-        Number(!!b.organization.pinnedAt) - Number(!!a.organization.pinnedAt) ||
         (b.time?.updated || 0) - (a.time?.updated || 0) ||
         a.id.localeCompare(b.id),
     );

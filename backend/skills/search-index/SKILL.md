@@ -19,7 +19,7 @@ do not establish truth.
 | Native chat text | `chats` with `query`; optional exact `model` filter |
 | Index coverage/freshness | `status`; `sources` or `meta` for detail |
 | Indexed unit | `unit` with returned `source` and `unit` number |
-| Extracted structured values | `facts` with source/family/kind/label filters |
+| Extracted structured observations | `observations` with source/family/kind/label filters |
 
 For `search` and `chats`, select another registered `projectID` or use
 `global: true`; do not combine them. Start with exact names or phrases, expand
@@ -39,9 +39,9 @@ Content & Storage can refresh older conversations.
 
 Use native source search when the index is missing, stale or incomplete.
 Rebuild only when useful and index maintenance is within the assignment and
-native permissions. `rebuild` uses `facts: none` by default; `general`, `special`
-and `both` add derived extraction, not authored knowledge claims. Do not rebuild
+native permissions. `rebuild` uses `extraction: none` by default; `general`, `special`
+and `both` add derived source observations. Do not rebuild
 each turn or interpret an explicit restriction on all writes as permission.
 
-Use `remember` for retained memories/claims/graph evidence and `web-research` for
+Use `remember` for retained memories, structured data and evidence, and `web-research` for
 external sources. Neither a worker nor a sequence of skill loads is required.

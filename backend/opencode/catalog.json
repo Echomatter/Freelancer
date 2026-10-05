@@ -26,7 +26,7 @@
     "git_project",
     "content_index",
     "goal_checkpoint",
-    "knowledge",
+    "memory",
     "model_catalog",
     "evidence_evaluation"
   ],

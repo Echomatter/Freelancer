@@ -59,6 +59,7 @@ export function Chat({
   todos = EMPTY_TODOS,
   session,
   busy,
+  retrying = false,
   draft,
   setDraft,
   model,
@@ -92,6 +93,7 @@ export function Chat({
   todos?: any[];
   session: any;
   busy: boolean;
+  retrying?: boolean;
   draft: string;
   setDraft: (s: string) => void;
   model: string;
@@ -508,6 +510,11 @@ export function Chat({
         }}
       >
         <div className="chat-transcript" ref={transcript}>
+          {retrying && (
+            <p className="notice" role="status">
+              OpenCode is retrying this response. No reply is available yet. Stop the response to end the retry before choosing another model.
+            </p>
+          )}
           {!messages.length && !pendingSend && busy ? (
             <Empty icon={LoaderCircle} title="Starting your conversation…" />
           ) : !messages.length && !pendingSend ? (

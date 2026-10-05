@@ -10,7 +10,7 @@ description: Orient to a project or resume interrupted work by finding its curre
 2. Find the relevant entry points and trace enough source to explain current
    behavior, constraints and dependencies. Use native code search for symbols
    and call paths; `search-index` helps locate mixed documents and chat text.
-3. Retrieve prior decisions through `knowledge` when they would change the
+3. Retrieve prior decisions through `memory` when they would change the
    approach. `remember` covers retained evidence and capture limits. Verify
    consequential remembered claims against current source or native receipts.
 4. Identify the smallest useful next action and available checks. Reuse valid

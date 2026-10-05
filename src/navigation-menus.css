@@ -60,7 +60,6 @@
 .nav-project-select > span, .nav-chat-select > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .nav-project-select > svg, .nav-chat-select > svg { flex: 0 0 auto; color: var(--muted); }
 .nav-manage, .nav-chat-manage-trigger { display: grid; place-items: center; flex: 0 0 auto; width: 32px; height: 32px; margin: 0 3px 0 0; padding: 0; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--muted); }
-.nav-chat-pinned { flex: 0 0 auto; color: var(--accent); }
 .nav-manage:hover:not(:disabled), .nav-chat-manage-trigger:hover:not(:disabled), .nav-chat-manage-trigger[aria-expanded="true"] { background: var(--paper); border-color: var(--line); color: var(--accent); }
 .nav-manage:disabled, .nav-chat-manage-trigger:disabled { opacity: .5; }
 .nav-chat-menu { display: grid; flex: 0 0 100%; min-width: 0; padding: 5px; margin-top: 3px; border: 1px solid var(--line); border-radius: 9px; background: var(--paper); }

@@ -17,7 +17,7 @@ tool use remains available.
 | --- | --- | --- |
 | Recover working context | `reorient` | Current objective, instructions, source state and next action |
 | Find local files or chats | `search-index` | Bounded indexed hits checked against decisive originals |
-| Retain or correct knowledge | `remember` | Ordinary notes/snapshots, optional structured claims, graph relations and pin operations |
+| Retain or revise a memory | `remember` | One retained record with text, structured data, evidence, relationships and revision/pin/archive state |
 | Investigate external evidence | `web-research` | A sourced answer with version, disagreement and uncertainty |
 | Confirm a library/API contract | `context7-mcp` | Version-specific documentation through the native Context7 tools |
 | Read a known URL | `fetch` | Retrieved source text with truncation and citation limits |
@@ -41,12 +41,15 @@ comparison may use `bounded-judgment` after gathering evidence; it does not need
 a durable memory definition. A paused or uncertain worker needs native receipt
 inspection through `delegate-work` before any new dispatch.
 
-The optional `remember` skill guides the shared `knowledge` tool. Its ordinary
-`remember` operation saves notes; retained notes/snapshots use query domain
-`memories`. Optional `claim` records add structured predicate/value, evidence
-and status in `facts`.
-Remembering repository locations or decisions defaults to a note. An incomplete
-call needs its missing arguments corrected, not a claim fallback; see the
+The optional `remember` skill guides the shared `memory` tool. Its `remember`
+operation saves a file or chat from `sourceRefJson` without requiring a summary,
+or custom content from a title and optional text/data. The UI and model use the
+same capture. `revise` updates that record while preserving earlier revisions.
+Evidence, provenance, dates, status
+and relationships are optional information on the memory, and pin/archive state
+organizes it. Query domain `memories` retrieves retained records; `files` and
+`conversations` retrieve indexed source content. Correct incomplete arguments
+in the intended call; see the
 [tool naming and operation contract](tools-library.md#freelancer-tools).
 
 ## Instruction ownership and detail
@@ -76,7 +79,7 @@ only when it is necessary to use that specific procedure correctly.
 
 | Detailed reference | Read when |
 | --- | --- |
-| `remember/references/operations.md` | Performing retention, graph, pin or reusable judgment operations |
+| `remember/references/operations.md` | Performing retention, graph or reusable judgment operations |
 | `fetch/references/setup.md` | Diagnosing native Fetch setup or Windows encoding |
 | `playwright/references/mcp-operations.md` | Choosing browser operations or checking version-specific parameters |
 | `reason-through/references/sequential-thinking.md` | Calling optional Sequential Thinking |
@@ -94,7 +97,7 @@ distinct results without introducing another executor or capability gate.
 | Runtime skill | Source and revision | What was retained or adapted |
 | --- | --- | --- |
 | `context7-mcp` | Upstash [official OpenCode skill](https://github.com/upstash/context7/blob/bfa02ea67b5707fe0e0a673faa49d0f50b28c80b/packages/opencode/skills/context7-mcp/SKILL.md), commit `bfa02ea67b5707fe0e0a673faa49d0f50b28c80b` (2026-10-02) | Official body retained with a local native-discovery, scope, privacy, version, and fallback note. MIT notice copied to `LICENSE.upstream`. |
-| `typesafe-ai` | TypeSafe [official agent skill](https://github.com/typesafe-ai/skills/blob/65a39f393687675ce170e6094757de20370365b9/skills/typesafe-ai/SKILL.md), commit `65a39f393687675ce170e6094757de20370365b9` (2026-09-12) | Official body retained with a local note explaining existing knowledge judgments, evidence freshness, paid consent, and SDK/MCP credential separation. MIT notice copied to `LICENSE.upstream`. |
+| `typesafe-ai` | TypeSafe [official agent skill](https://github.com/typesafe-ai/skills/blob/65a39f393687675ce170e6094757de20370365b9/skills/typesafe-ai/SKILL.md), commit `65a39f393687675ce170e6094757de20370365b9` (2026-09-12) | Official body retained with a local note explaining stored memory judgments, evidence freshness, paid consent, and SDK/MCP credential separation. MIT notice copied to `LICENSE.upstream`. |
 | `playwright` | Microsoft [MCP documentation](https://github.com/microsoft/playwright-mcp/blob/f183dad4a52965583e3cc1d59b88cdc279e2e57d/README.md), commit `f183dad4a52965583e3cc1d59b88cdc279e2e57d` (2026-09-28), Apache-2.0 | Native MCP guidance derived from documented browser operations. No official MCP `SKILL.md` was found in that revision's repository tree. |
 | `fetch` | MCP reference [Fetch documentation](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/fetch/README.md) and [parameter definitions](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/fetch/src/mcp_server_fetch/server.py), commit `f46d9578190b476b3501923ea8977d899e8db2cb` (2026-09-22), MIT | New native-tool guidance for URL retrieval, bounded character continuation, source citation, and documented Windows encoding troubleshooting. No official skill was found in the repository tree. |
 | `reason-through` | MCP reference [Sequential Thinking documentation](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/sequentialthinking/README.md) and [registration](https://github.com/modelcontextprotocol/servers/blob/f46d9578190b476b3501923ea8977d899e8db2cb/src/sequentialthinking/index.ts), same commit/date, MIT | Existing optional reasoning guidance expanded with real required, revision, and branch parameters. No official skill was found in the repository tree. |
@@ -117,7 +120,7 @@ local integration notes:
 | --- | --- | --- |
 | Playwright MCP | Native tab selection/navigation, accessibility snapshots, click/type/fill/select, waiting for visible state, screenshots, discovered console/network diagnostics | Current Microsoft docs use `target` for references/selectors; older servers may expose `ref`. Follow the actual native schema. Optional server capabilities remain optional; the skill does not enable them. |
 | Context7 MCP | `resolve-library-id` with `libraryName`/`query`, then `query-docs` with `libraryId`/`query`; exact supplied library IDs can be queried directly | OpenCode may prefix tool names. Documentation ranking is advisory, and selected version/source must be reported. General code review and business-logic debugging do not require a remote lookup. |
-| TypeSafe | Official Choice, Noul, Score, current SDK/API documentation, uncertainty, batching, and source-grounded design | Everyday `bounded-judgment` uses `evidence_evaluation`; explicitly reusable `knowledge` definitions remain available. The tool supplies a generic local evidence-contract workflow; its JSON is Freelancer-owned, not TypeSafe wire format. Configured provider status is not inference proof. A separately configured community Jev MCP exposes its own schema and auth boundary. |
+| TypeSafe | Official Choice, Noul, Score, current SDK/API documentation, uncertainty, batching, and source-grounded design | Everyday `bounded-judgment` uses `evidence_evaluation`; explicitly reusable definitions remain available through `memory`. The tool supplies a generic local evidence-contract workflow; its JSON is Freelancer-owned, not TypeSafe wire format. Configured provider status is not inference proof. A separately configured community Jev MCP exposes its own schema and auth boundary. |
 | Fetch MCP | `fetch` with `url`, `max_length`, `start_index`, and `raw`; continuation offset counts characters | A fetch is neither a search nor an authenticated browser session. Truncation and configured robots/permission refusals remain visible. Native commands/environment are not changed by this skill. |
 | Sequential Thinking MCP | `thought`, `thoughtNumber`, `totalThoughts`, `nextThoughtNeeded`, revision fields, and branch fields | At the checked revision, the README says `sequential_thinking` but registration uses `sequentialthinking`. Use the discovered name. Reasoning output is not source verification or permission. |
 
@@ -155,8 +158,8 @@ They describe observed capabilities; they are not another permission system.
 Native or user-installed skills outside that manifest retain their own sources
 and fall back to their source-provided summaries.
 
-The task map above is the canonical organization. Internal memory and canonical
-pins use `knowledge` in the per-user warehouse; no external Memory MCP is needed.
+The task map above is the canonical organization. Memories and their pin state
+use `memory` in the per-user warehouse; no external Memory MCP is needed.
 `content_index` complements native source search. `model_catalog` and recorded
 outcomes provide evidence, while native eligibility and consent still govern
 delegation. The [evidence evaluation guide](evidence-evaluation.md) documents the
@@ -180,7 +183,7 @@ criteria, exact evidence/configuration identity, small projected state, comparab
 batches for larger requested sets, and distinct missingness versus model uncertainty.
 Its reference holds a minimal local contract and advanced receipt/composition details.
 `typesafe-ai` retains the official body for integration development; durable
-`knowledge` definitions remain available for reusable questions.
+definitions remain available through `memory` for reusable questions.
 
 `debug` handles an observed failure; `reason-through` handles decisions and
 dependencies. Sequential Thinking records supplied steps/revisions and adds no

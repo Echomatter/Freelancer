@@ -284,12 +284,12 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
       "content_meta", "content_sources", "content_units", "content_units_fts",
       "content_facts", "content_fact_stats", "chat_search", "chat_search_state",
       "project_index_state", "memory_search_fts", "claims_search_fts",
-      "knowledge_claim_evidence", "knowledge_current_claims", "knowledge_memory_evidence",
+      "claims", "claim_evidence", "knowledge_claim_evidence", "knowledge_current_claims", "knowledge_memory_evidence",
       "knowledge_pinned_memories", "knowledge_source_coverage", "opencode_source_coverage",
       "knowledge_task_outcomes", "knowledge_outcome_summary",
     ]);
     const derivedViews = new Set([
-      "knowledge_claim_evidence", "knowledge_current_claims", "knowledge_memory_evidence",
+      "claims", "claim_evidence", "knowledge_claim_evidence", "knowledge_current_claims", "knowledge_memory_evidence",
       "knowledge_pinned_memories", "knowledge_source_coverage", "opencode_source_coverage",
       "knowledge_task_outcomes", "knowledge_outcome_summary",
     ]);
@@ -304,7 +304,7 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
         throw Error(`Index repair stopped because expected derived table ${name} is missing.`);
     }
     // A normal reset is deliberately in-place: operational evidence and
-    // uncertainty, durable memory/pins, the SQLite handle and file identity
+    // uncertainty, durable memory, the SQLite handle and file identity
     // remain intact. Corrupt-database recovery is a separate operation.
     return tx(() => {
       db.exec(`DELETE FROM content_facts;
@@ -325,21 +325,16 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
           project_key UNINDEXED, filename, virtual_path, source_role, status,
           heading, locator, text, tokenize='unicode61 remove_diacritics 2'
         );
-        DROP TABLE memory_search_fts;
-        CREATE VIRTUAL TABLE memory_search_fts USING fts5(
-          memory_id UNINDEXED, revision_id UNINDEXED, title, body,
-          tokenize='unicode61 remove_diacritics 2'
-        );`);
-      db.exec(`INSERT INTO memory_search_fts(memory_id,revision_id,title,body)
-        SELECT m.memory_id,r.revision_id,m.title,r.body FROM memory_items m
-        JOIN memory_item_revisions r ON r.memory_id=m.memory_id`);
-      // The migration owns the shared FTS column and backfill contract. Repair
-      // recreates only this derived index, retaining claims and their evidence.
-      const claimsSchema = readFileSync(new URL('./migration-19.sql', import.meta.url), 'utf8');
-      const claimsStart = claimsSchema.indexOf('CREATE VIRTUAL TABLE claims_search_fts');
-      const claimsEnd = claimsSchema.indexOf('CREATE TRIGGER claims_search_insert');
-      db.exec('DROP TABLE claims_search_fts');
-      db.exec(claimsSchema.slice(claimsStart, claimsEnd));
+        `);
+      // Schema24 owns both projections. Repair reuses their exact columns and
+      // backfill SQL while retained memory revisions/evidence remain untouched.
+      const memorySchema = readFileSync(new URL('./migration-24.sql', import.meta.url), 'utf8');
+      for (const section of ['canonical-memory-search','compatibility-claim-search']) {
+        const start = memorySchema.indexOf(`-- BEGIN ${section}`);
+        const end = memorySchema.indexOf(`-- END ${section}`, start);
+        if (start < 0 || end < 0) throw Error('Canonical memory search repair contract is missing.');
+        db.exec(memorySchema.slice(start, end));
+      }
       // The source manifests and failures remain durable. A repaired FTS needs
       // a fresh publication receipt even when its source hash is unchanged.
       warehouse.requeueWarehouseDerivations();
@@ -369,13 +364,11 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
     plain(
       db
         .prepare(
-          `SELECT COALESCE(p.pinned_at,a.pinned_at) AS pinnedAt,a.hidden_at AS hiddenAt,a.revision
-           FROM session_annotations a LEFT JOIN memory_items m ON m.kind='conversation_snapshot'
-             AND m.source_project_id=a.project_id AND m.source_session_id=a.session_id
-           LEFT JOIN memory_pins p ON p.memory_id=m.memory_id WHERE a.project_id=? AND a.session_id=?`,
+          `SELECT a.hidden_at AS hiddenAt,a.revision
+            FROM session_annotations a WHERE a.project_id=? AND a.session_id=?`,
         )
         .get(project, id),
-    ) ?? { pinnedAt: null, hiddenAt: null, revision: 0 };
+    ) ?? { hiddenAt: null, revision: 0 };
   return {
     directory,
     filename,
@@ -685,14 +678,8 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
       });
       return { status:'validated-copy',manifest };
     },
-    migrateLegacyPins(limit = 250) {
-      const key = 'legacy-chat-pins-v1';
-      const previous = db.prepare('SELECT imported_count AS imported,remaining_count AS remaining FROM memory_migration_runs WHERE migration_id=?').get(key);
-      if (previous?.remaining === 0) return { status: 'complete', imported: previous.imported, remaining: 0 };
-      const batch = createMemoryService(db, tx).migrateLegacyPinsBatch({ limit });
-      const progress = db.prepare('SELECT imported_count AS imported,remaining_count AS remaining FROM memory_migration_runs WHERE migration_id=?').get(key);
-      return { ...batch, status: progress.remaining === 0 ? 'complete' : 'incomplete',
-        remaining:progress.remaining, importedTotal:progress.imported };
+    migrateLegacyPins() {
+      return { status: 'retired', imported: 0, remaining: 0 };
     },
     indexStats() {
       const fileProjects = db.prepare(`WITH projects AS (
@@ -950,10 +937,8 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
       return Object.fromEntries(
         db
           .prepare(
-            `SELECT a.session_id AS id,COALESCE(p.pinned_at,a.pinned_at) AS pinnedAt,a.hidden_at AS hiddenAt,a.revision
-             FROM session_annotations a LEFT JOIN memory_items m ON m.kind='conversation_snapshot'
-               AND m.source_project_id=a.project_id AND m.source_session_id=a.session_id
-             LEFT JOIN memory_pins p ON p.memory_id=m.memory_id WHERE a.project_id=?`,
+            `SELECT a.session_id AS id,a.hidden_at AS hiddenAt,a.revision
+              FROM session_annotations a WHERE a.project_id=?`,
           )
           .all(project)
           .map(({ id, ...r }) => [id, r]),
@@ -964,17 +949,12 @@ export function createLocalDataStore(directory, { readOnly = false } = {}) {
       return tx(() => {
         const old = annotation(project, id);
         if (revision !== old.revision) throw conflict();
-        const canonicalPin = db.prepare(`SELECT 1 FROM memory_pins p JOIN memory_items m USING(memory_id)
-          WHERE m.kind='conversation_snapshot' AND m.source_project_id=? AND m.source_session_id=?`).get(project,id);
-        const legacyPin = db.prepare('SELECT pinned_at FROM session_annotations WHERE project_id=? AND session_id=?').get(project,id)?.pinned_at ?? null;
-        const compatibilityPinnedAt = canonicalPin ? null :
-          ('pinnedAt' in change ? change.pinnedAt : legacyPin);
         db.prepare(
-          "INSERT INTO session_annotations VALUES (?,?,?,?,?) ON CONFLICT(project_id,session_id) DO UPDATE SET pinned_at=excluded.pinned_at,hidden_at=excluded.hidden_at,revision=excluded.revision",
+          "INSERT INTO session_annotations VALUES (?,?,?,?,?) ON CONFLICT(project_id,session_id) DO UPDATE SET pinned_at=session_annotations.pinned_at,hidden_at=excluded.hidden_at,revision=excluded.revision",
         ).run(
           project,
           id,
-          compatibilityPinnedAt,
+          null,
           "hiddenAt" in change ? change.hiddenAt : old.hiddenAt,
           revision + 1,
         );

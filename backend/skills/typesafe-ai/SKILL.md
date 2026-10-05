@@ -26,7 +26,7 @@ generic `evidence_evaluation` contract: select stored or supplied evidence and
 ask a small, explicit question. This vendor skill covers designing and building
 TypeSafe integrations; use its live references for actual API/SDK semantics.
 
-Explicitly reusable memory/fact questions can use `knowledge` judgment definitions.
+Explicitly reusable retained-memory questions can use `memory` judgment definitions.
 Discover its current schema: `judgment-evidence`/`query-evidence` returns exact
 candidateIDs/evidenceRefs; `judgment-definition` versions a question;
 `judgment-evaluate`/`judgment-evaluate-batch` evaluates it; history/cache inspects

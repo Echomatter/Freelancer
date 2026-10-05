@@ -6,6 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createLocalDataStore } from '../server/data/store.mjs';
+import { createKnowledgeQuery } from '../server/data/knowledge-query.mjs';
 import { DatabaseSync } from 'node:sqlite';
 import { deflateRawSync } from 'node:zlib';
 import { FRESH_RUNTIME_ID } from '../server/runtime-config.mjs';
@@ -84,7 +85,7 @@ test('Node project content indexer rebuilds, searches, and reports freshness wit
   await writeFile(path.join(project,'.cache','generated.md'),'A cached zephyr should not enter project search.');
   const store=createRegisteredStore(path.join(root,'data'),project);
   store.createMemory({id:'authored-before-extraction',kind:'note',title:'Authored memory',body:'Keep this authored interpretation.'});
-  store.pinConversationSnapshot({projectID:'fixture-project',sessionID:'ses_before_extraction',title:'Retained pin',originalPinnedAt:987});
+  store.rememberConversationSnapshot({projectID:'fixture-project',sessionID:'ses_before_extraction',title:'Retained pin',annotationRevision:4});
   store.close();
   const db=path.join(root,'data','freelancer.sqlite'), indexer=path.resolve('backend/tools/project-content-indexer.mjs');
   const invoke=(...args)=>spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,...args],{cwd:project,encoding:'utf8',env:{...process.env,PATH:''}});
@@ -147,12 +148,50 @@ test('Node project content indexer rebuilds, searches, and reports freshness wit
   const repairedStore=createLocalDataStore(path.join(root,'data'));
   try {
     assert.equal(repairedStore.getMemory('authored-before-extraction').revision.body,'Keep this authored interpretation.');
-    assert.equal(repairedStore.getMemory('conversation:fixture-project:ses_before_extraction').originalPinnedAt,987);
+    assert.equal(repairedStore.getMemory('conversation:fixture-project:ses_before_extraction').revision.captureBoundary.status,'metadata_only');
     repairedStore.maintainIndex('reset');
     const retained=await repairedStore.analyze(`SELECT text FROM content_unit_revisions WHERE source_identity=$source AND revision_identity=$revision AND locator=$locator`,
       {$source:originalIdentity,$revision:originalRevision,$locator:firstHit.locator});
     assert.match(retained.rows[0].text,/Jupiter and its rings/,'derived index repair preserves historical evidence revisions');
   } finally { repairedStore.close(); }
+});
+
+test('content search indexes retained memory, agent skills, and shared internal instructions', async t => {
+  const root=await mkdtemp(path.join(os.tmpdir(),'freelancer-guidance-index-'));
+  t.after(()=>rm(root,{recursive:true,force:true}));
+  const project=path.join(root,'project'),data=path.join(root,'data');
+  await mkdir(path.join(project,'backend','skills','example-skill','references'),{recursive:true});
+  await mkdir(path.join(project,'backend','opencode'),{recursive:true});
+  await mkdir(path.join(project,'backend','global'),{recursive:true});
+  await writeFile(path.join(project,'.gitignore'),'backend/\nordinary-private-note.md\n');
+  await writeFile(path.join(project,'ordinary-private-note.md'),'quartzordinarymuststayignored');
+  await writeFile(path.join(project,'backend','skills','example-skill','SKILL.md'),'---\nname: example-skill\ndescription: quartz skill guidance for content retrieval\n---\n');
+  await writeFile(path.join(project,'backend','skills','example-skill','references','operations.md'),'quartz skill operation reference');
+  await writeFile(path.join(project,'backend','global','WORKSTYLE.md'),'quartz shared global instruction');
+  await writeFile(path.join(project,'backend','opencode','global-instructions.md'),'quartz internal instruction for agents');
+  const initialized=spawnSync('git',['init','-q',project],{encoding:'utf8'});
+  assert.equal(initialized.status,0,initialized.stderr);
+  const store=createRegisteredStore(data,project);
+  store.createMemory({id:'quartz-memory',kind:'note',title:'Quartz retained memory',body:'quartz retained memory body'});
+  store.close();
+  const db=path.join(data,'freelancer.sqlite'),indexer=path.resolve('backend/tools/project-content-indexer.mjs');
+  const invoke=(...args)=>spawnSync(process.execPath,[indexer,'--db',db,'--project-key',project,...args],{cwd:project,encoding:'utf8'});
+  const rebuilt=invoke('rebuild','--root',project,'--facts','none');
+  assert.equal(rebuilt.status,0,rebuilt.stderr);
+  for(const [query,expected] of [['quartz','SKILL.md'],['operation reference','operations.md'],['instruction for agents','global-instructions.md'],['shared global instruction','WORKSTYLE.md']]) {
+    const result=invoke('search',query);
+    assert.equal(result.status,0,result.stderr);
+    assert.match(result.stdout,new RegExp(expected.replace('.','\\.')),`missing indexed guidance for ${query}`);
+  }
+  assert.doesNotMatch(invoke('search','quartzordinarymuststayignored').stdout,/ordinary-private-note\.md/,'ordinary ignored files remain excluded');
+  const reader=createLocalDataStore(data);
+  try {
+    assert.equal(reader.getMemory('quartz-memory').revision.body,'quartz retained memory body');
+    const query=createKnowledgeQuery({data:reader,getProjects:()=>[{id:'fixture-project',directory:project}]});
+    const memories=await query.query({domain:'memories',query:'quartz'});
+    assert.equal(memories.results[0].id,'quartz-memory','retained memories remain searchable in All content');
+  }
+  finally { reader.close(); }
 });
 
 test('Node indexer skips an unreadable extraction and keeps searchable sources', async t => {

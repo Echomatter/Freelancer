@@ -56,6 +56,14 @@ export async function projectSourceInventory(root) {
   const probe=spawnSync('git',['-C',root,'rev-parse','--is-inside-work-tree'],{encoding:'utf8',windowsHide:true,timeout:10000,maxBuffer:8192});
   const gitRepository=!probe.error && probe.status===0 && probe.stdout.trim()==='true';
   const directories=new Map();
+  // Skills and shared execution guidance are first-party product content.
+  // Git ignore rules may be used by a developer to hide local files, but must
+  // not make the agent's own instruction catalog invisible to content search.
+  const internalGuidance = new Set([
+    'backend/global/WORKSTYLE.md',
+    'backend/opencode/global-instructions.md',
+  ]);
+  const internalSkill = file => /^backend\/skills\/[^/]+\/(?:SKILL\.md|references\/[^/]+\.md)$/i.test(file.replaceAll('\\','/'));
   async function safeFile(full) {
     const rp=relative(root,full);
     if(!rp || rp==='..' || rp.startsWith('../') || path.isAbsolute(rp)) return false;
@@ -71,7 +79,8 @@ export async function projectSourceInventory(root) {
   }
   async function consider(full,tracked=false) {
     const rp=relative(root,full), name=path.basename(full).toLowerCase(), ext=path.extname(name);
-    if(privateSource(rp) || !tracked && generatedSource(rp)) return;
+    const guidance = internalGuidance.has(rp.replaceAll('\\','/')) || internalSkill(rp);
+    if(privateSource(rp) || !guidance && !tracked && generatedSource(rp)) return;
     try {
       if(!await safeFile(full)) return;
       const s=await stat(full), maximum=['.pdf','.docx','.xlsx','.zip'].includes(ext)?MAX_DOCUMENT_FILE_BYTES:MAX_TEXT_FILE_BYTES;
@@ -93,6 +102,23 @@ export async function projectSourceInventory(root) {
       if(!['EACCES','EPERM','ENOENT','ENOTDIR','EBUSY'].includes(error.code)) throw error;
       failures.push({source:rp,error:`File could not be inspected: ${error.code}.`});
     }
+  }
+  async function addInternalGuidance() {
+    const explicit = [...internalGuidance];
+    const skillsRoot = path.join(root,'backend','skills');
+    try {
+      for (const skill of await readdir(skillsRoot,{withFileTypes:true})) {
+        if (!skill.isDirectory() || skill.isSymbolicLink()) continue;
+        explicit.push(`backend/skills/${skill.name}/SKILL.md`);
+        const references = path.join(skillsRoot,skill.name,'references');
+        try {
+          for (const entry of await readdir(references,{withFileTypes:true}))
+            if (entry.isFile() && !entry.isSymbolicLink() && entry.name.toLowerCase().endsWith('.md'))
+              explicit.push(`backend/skills/${skill.name}/references/${entry.name}`);
+        } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      }
+    } catch (error) { if (error.code !== 'ENOENT') throw error; }
+    for (const file of explicit) await consider(path.join(root,...file.split('/')),true);
   }
   if(gitRepository) {
     const listed=spawnSync('git',['-C',root,'ls-files','--cached','--others','--exclude-standard','--stage','-z','--','.'],{encoding:'utf8',windowsHide:true,timeout:30000,maxBuffer:8*1024*1024});
@@ -117,6 +143,7 @@ export async function projectSourceInventory(root) {
       if(seen.has(file))continue;seen.add(file);visited++;
       await consider(path.resolve(root,file),tracked || explicitIncludes.has(file));
     }
+    await addInternalGuidance();
   } else {
   async function walk(dir) {
     for (const entry of await readdir(dir, { withFileTypes: true })) {
